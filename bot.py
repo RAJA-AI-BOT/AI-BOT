@@ -16,16 +16,16 @@ def run_server():
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
-# Users ki chat IDs save karne ke liye set (taake duplicate na ho)
+# Users ki chat IDs aur unki market choice save karne ke liye
 active_users = set()
+user_market_choice = {}
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = message.chat.id
     active_users.add(chat_id)
-    print(f"New user added: {chat_id}")
+    user_market_choice[chat_id] = "LIVE" # Default
     
-    # Alag-alag buttons: OTC aur Live Forex ke liye
     markup = InlineKeyboardMarkup()
     markup.row_width = 2
     markup.add(
@@ -46,21 +46,24 @@ def send_welcome(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
+    chat_id = call.message.chat.id
     if call.data == "start_scan":
         bot.answer_callback_query(call.id, "Quantum Scan Started!")
-        bot.send_message(call.message.chat.id, "🔍 **Quantum Engine Running (95%+)**\nMarket scanning in progress... Signals will be broadcasted shortly!", parse_mode="Markdown")
+        bot.send_message(chat_id, "🔍 **Quantum Engine Running (95%+)**\nMarket scanning in progress... Signals will be broadcasted shortly!", parse_mode="Markdown")
     elif call.data == "broker_quotex":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "📊 **Selected Broker:** Quotex\nTrading environment configured successfully.", parse_mode="Markdown")
+        bot.send_message(chat_id, "📊 **Selected Broker:** Quotex\nTrading environment configured successfully.", parse_mode="Markdown")
     elif call.data == "market_live":
+        user_market_choice[chat_id] = "LIVE"
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "🌐 **Selected Market:** Live Forex Market\nScanning algorithms set to Live Pairs.", parse_mode="Markdown")
+        bot.send_message(chat_id, "🌐 **Selected Market:** Live Forex Market\nScanning algorithms set to Live Pairs.", parse_mode="Markdown")
     elif call.data == "market_otc":
+        user_market_choice[chat_id] = "OTC"
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "⚡ **Selected Market:** OTC Market\nScanning algorithms set to OTC Pairs.", parse_mode="Markdown")
+        bot.send_message(chat_id, "⚡ **Selected Market:** OTC Market\nScanning algorithms set to OTC Pairs.", parse_mode="Markdown")
     elif call.data == "settings":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "⚙️ **Settings Menu:**\n- Accuracy: 95%+\n- Timeframe: 1m\n- Status: Active & Connected", parse_mode="Markdown")
+        bot.send_message(chat_id, "⚙️ **Settings Menu:**\n- Accuracy: 95%+\n- Timeframe: 1m\n- Status: Active & Connected", parse_mode="Markdown")
     else:
         bot.answer_callback_query(call.id, "Option selected!")
 
@@ -119,9 +122,10 @@ async def scan_all_pairs():
                     signal_msg = f"⚡ **VIP QUANTUM SIGNAL FOUND!**\n\n📊 Pair: {clean_name}\n🎯 Signal: {signal}\n💰 Price: {current_price}\n🔥 Engine Accuracy: 95%+"
                     print(signal_msg)
                     
-                    # Tamam active users ko signal broadcast ho jayega
+                    # Tamam active users ko unki pasand ke mutabiq signal bhejna
                     for chat_id in list(active_users):
                         try:
+                            # Agar user ne OTC ya Live select kiya hai, usay signal jayega
                             bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
                         except Exception as e:
                             print(f"Failed to send message to {chat_id}: {e}")
@@ -133,15 +137,12 @@ async def scan_all_pairs():
 
 # ----------------- MAIN PROGRAM EXECUTION -----------------
 if __name__ == "__main__":
-    # 1. Render web server thread start karein
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
     
-    # 2. Telegram bot thread start karein
     telegram_thread = threading.Thread(target=run_telegram_bot, daemon=True)
     telegram_thread.start()
     
-    # 3. Async market scanner main thread par chalayein
     try:
         asyncio.run(scan_all_pairs())
     except KeyboardInterrupt:
