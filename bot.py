@@ -1,37 +1,68 @@
-asyncio
-import json
-import websockets
+import asyncio
+import time
+import yfinance as yf
 
-# Binance public live WebSocket URL (Free & Public Live Data Feed)
-# Aap yahan "btcusdt@ticker" ya "eurusdt" waghera ka live feed use kar sakte hain
-WS_URL = "wss://stream.binance.com:9443/ws/btcusdt@trade"
+# Dropdown ke tamam major forex pairs ki list (Yahoo Finance format ke mutabiq)
+PAIRS = [
+    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", 
+    "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", 
+    "AUDJPY=X", "EURAUD=X", "GBPAUD=X", "CADJPY=X", "EURCAD=X", 
+    "GBPCAD=X", "NZDJPY=X", "AUDNZD=X", "EURCHF=X", "GBPCHF=X"
+]
 
-async def analyze_realtime_candles():
-    print("Connecting to live market data stream...")
+def fetch_latest_candle(symbol):
     try:
-        async with websockets.connect(WS_URL) as websocket:
-            print("Successfully subscribed to live market feed.")
-
-            # Continuous live loop
-            async for message in websocket:
-                data = json.loads(message)
-                
-                # Live price extract karna
-                price = data.get("p") # Price
-                
-                if price:
-                    # Yahan aap apna 8-indicator logic ya technical check run karenge
-                    signal = evaluate_indicators(price)
-                    
-                    if signal:
-                        print(f"⚡ REAL-TIME SIGNAL FOUND: {signal} at price {price}")
-                        
+        # Har pair ka latest 1-minute data fetch karna
+        data = yf.download(symbol, period="1d", interval="1m", progress=False)
+        if not data.empty:
+            latest = data.iloc[-1]
+            return {
+                "symbol": symbol,
+                "close": float(latest["Close"]),
+                "open": float(latest["Open"]),
+                "high": float(latest["High"]),
+                "low": float(latest["Low"])
+            }
     except Exception as e:
-        print(f"Connection error: {e}")
+        print(f"Error fetching {symbol}: {e}")
+    return None
 
-def evaluate_indicators(price):
-    # Dummy logic: Yahan aap apni indicators ki conditions likh sakte hain
-    return "CALL (UP)"
+async def scan_all_pairs():
+    print("Starting multi-pair live market scan for all currency pairs...")
+    
+    while True:
+        print(f"\n--- Scan Cycle Started at {time.strftime('%H:%M:%S')} ---")
+        
+        for symbol in PAIRS:
+            candle = fetch_latest_candle(symbol)
+            
+            if candle:
+                current_price = candle["close"]
+                clean_name = symbol.replace("=X", "")
+                print(f"[{clean_name}] Live Price: {current_price}")
+                
+                # Yahan aap apna indicator logic run kar sakte hain
+                signal = evaluate_strategy(candle)
+                
+                if signal:
+                    print(f"⚡ SIGNAL FOUND on {clean_name}: {signal} at {current_price}")
+            
+            # Rate limit bachane ke liye thora gap
+            await asyncio.sleep(2)
+        
+        print("--- Scan Cycle Completed. Waiting for next cycle... ---")
+        # Tamam pairs scan hone ke baad agla cycle 60 seconds baad chalega
+        await asyncio.sleep(60)
+
+Ddef evaluate_strategy(candle):
+    # Sample logic: Agar Close price Open se zyada hai toh CALL, warna PUT
+    if candle["close"] > candle["open"]:
+        return "CALL (UP)"
+    else:
+        return "PUT (DOWN)"
 
 if __name__ == "__main__":
-    asyncio.run(analyze_realtime_candles())
+    try:
+        asyncio.run(scan_all_pairs())
+    except KeyboardInterrupt:
+        print("Bot stopped by user.")
