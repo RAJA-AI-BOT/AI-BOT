@@ -5,7 +5,7 @@ import math
 from datetime import datetime
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-
+from fastapi.responses import HTMLResponse
 app = FastAPI(title="Professional Quotex OTC AI Signal Engine")
 
 app.add_middleware(
@@ -167,4 +167,11 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.send_text(json.dumps(response_payload))
             await asyncio.sleep(5)
     except WebSocketDisconnect:
-        print("Client disconnected")
+        print("Client disconnected") 
+       @app.get("/", response_class=HTMLResponse)
+async def get_index():
+    try:
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    except FileNotFoundError:
+        return "index.html file not found on server."
