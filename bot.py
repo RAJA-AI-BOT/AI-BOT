@@ -52,11 +52,12 @@ async def scan_all_pairs():
                 if signal:
                     print(f"⚡ SIGNAL FOUND on {clean_name}: {signal} at {current_price}")
             
-            # Rate limit se bachne ke liye delay
+            # Rate limit se bachne ke liye delay (4 seconds har pair ke baad)
             await asyncio.sleep(4)
             
         print("--- Cycle completed. Waiting for next scan... ---")
-        await asyncio.sleep(30)
+        # Rate limit control karne ke liye cycle gap ko 60 seconds kar diya hai
+        await asyncio.sleep(60)
 
 def evaluate_strategy(candle):
     if candle["close"] > candle["open"]:
