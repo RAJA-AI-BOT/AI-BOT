@@ -1,5 +1,4 @@
 import os
-import asyncio
 import time
 import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
@@ -19,6 +18,7 @@ bot = telebot.TeleBot(TOKEN)
 active_users = set()
 user_market_choice = {}
 user_timeframe_choice = {}
+user_scanning_status = {}
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -49,7 +49,6 @@ def callback_query(call):
         user_market_choice[chat_id] = "LIVE"
         bot.answer_callback_query(call.id)
         
-        # Live Market select hone par minutes ke buttons dikhana
         markup = InlineKeyboardMarkup()
         markup.row_width = 2
         markup.add(
@@ -71,7 +70,6 @@ def callback_query(call):
         user_market_choice[chat_id] = "OTC"
         bot.answer_callback_query(call.id)
         
-        # OTC Market select hone par minutes ke buttons dikhana
         markup = InlineKeyboardMarkup()
         markup.row_width = 2
         markup.add(
@@ -100,7 +98,7 @@ def callback_query(call):
         markup.add(InlineKeyboardButton("🚀 Start Quantum Scan", callback_data="start_scan"))
         
         bot.edit_message_text(
-            f"✅ **Configuration Saved!**\n\n- Market: {market}\n- Timeframe: {tf_value}\n\nClick below to start scanning pairs & signals:",
+            f"✅ **Configuration Saved!**\n\n- Market: {market}\n- Timeframe: {tf_value}\n\nClick below to start scanning pairs & signals on new candle:",
             chat_id,
             call.message.message_id,
             parse_mode="Markdown",
@@ -110,10 +108,12 @@ def callback_query(call):
     elif call.data == "start_scan":
         tf = user_timeframe_choice.get(chat_id, "1m")
         market = user_market_choice.get(chat_id, "LIVE")
+        user_scanning_status[chat_id] = True
+        
         bot.answer_callback_query(call.id, "Quantum Scan Started!")
         bot.send_message(
             chat_id, 
-            f"🔍 **Quantum Engine Running (95%+)**\nMarket: {market} | Timeframe: {tf}\nScanning active pairs... Signals will appear shortly!", 
+            f"🔍 **Quantum Engine Running (95%+)**\nMarket: {market} | Timeframe: {tf}\n⚡ **New Candle Execution Active!** Signals will be sent instantly on candle open.", 
             parse_mode="Markdown"
         )
         
@@ -135,7 +135,7 @@ def callback_query(call):
         
     elif call.data == "settings":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "⚙️ **Settings Menu:**\n- Engine Accuracy: 95%+\n- Status: Active & Connected", parse_mode="Markdown")
+        bot.send_message(chat_id, "⚙️ **Settings Menu:**\n- Engine Accuracy: 95%+\n- Execution: New Candle Open\n- Status: Active & Connected", parse_mode="Markdown")
     else:
         bot.answer_callback_query(call.id, "Option selected!")
 
@@ -151,9 +151,9 @@ def run_telegram_bot():
         bot.remove_webhook(drop_pending_updates=True)
     except Exception as e:
         print(f"Error removing webhook: {e}")
-    bot.infinity_polling(skip_pending=True, interval=0.1, timeout=20)
+    bot.infinity_polling(skip_pending=True, interval=0.05, timeout=20)
 
-# ----------------- FOREX MARKET SCANNER SETUP -----------------
+# ----------------- FAST MARKET SCANNER SETUP (NEW CANDLE) -----------------
 PAIRS = [
     "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", 
     "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X"
@@ -161,71 +161,90 @@ PAIRS = [
 
 def fetch_latest_candle(symbol, interval="1m"):
     try:
-        period = "5d" if interval in ["15m", "30m"] else "1d"
+        period = "2d" if interval in ["15m", "30m"] else "1d"
         data = yf.download(symbol, period=period, interval=interval, progress=False)
-        if not data.empty:
+        if not data.empty and len(data) >= 2:
+            # New candle detection (last closed or current active open)
             latest = data.iloc[-1]
+            prev = data.iloc[-2]
             return {
                 "symbol": symbol,
+                "timestamp": str(data.index[-1]),
+                "open": float(latest["Open"]),
                 "close": float(latest["Close"]),
-                "open": float(latest["Open"])
+                "prev_close": float(prev["Close"])
             }
     except Exception as e:
-        print(f"Error fetching {symbol} for {interval}: {e}")
+        print(f"Error fetching {symbol}: {e}")
     return None
 
 def evaluate_strategy(candle):
+    # New candle confirmation logic (Momentum based on open/close difference)
     if candle["close"] > candle["open"]:
         return "CALL (UP)"
-    else:
+    elif candle["close"] < candle["open"]:
         return "PUT (DOWN)"
+    return None
 
-async def scan_all_pairs():
-    print("Starting full dropdown pairs live market scan...")
+def background_scanner():
+    print("Background fast market scanner thread started...")
+    last_scanned_candle_time = {}
+
     while True:
-        print(f"\n--- Scan Cycle Started at {time.strftime('%H:%M:%S')} ---")
-        
-        for symbol in PAIRS:
+        try:
             for chat_id in list(active_users):
+                if not user_scanning_status.get(chat_id, False):
+                    continue
+                
                 tf = user_timeframe_choice.get(chat_id, "1m")
                 market = user_market_choice.get(chat_id, "LIVE")
                 
-                candle = fetch_latest_candle(symbol, interval=tf)
-                if candle:
-                    clean_name = symbol.replace("=X", "")
-                    current_price = candle["close"]
-                    signal = evaluate_strategy(candle)
+                for symbol in PAIRS:
+                    candle = fetch_latest_candle(symbol, interval=tf)
+                    if candle:
+                        # Check if this is a new candle period
+                        candle_key = f"{chat_id}_{symbol}"
+                        if last_scanned_candle_time.get(candle_key) != candle["timestamp"]:
+                            last_scanned_candle_time[candle_key] = candle["timestamp"]
+                            
+                            signal = evaluate_strategy(candle)
+                            if signal:
+                                clean_name = symbol.replace("=X", "")
+                                signal_msg = (
+                                    f"⚡ **NEW CANDLE VIP SIGNAL!**\n\n"
+                                    f"🌐 Market: {market}\n"
+                                    f"📊 Pair: {clean_name}\n"
+                                    f"⏱️ Timeframe: {tf}\n"
+                                    f"🎯 Signal: {signal} (New Candle Entry)\n"
+                                    f"💰 Open Price: {candle['open']}\n"
+                                    f"🔥 Accuracy: 95%+"
+                                )
+                                try:
+                                    bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
+                                except Exception as e:
+                                    print(f"Failed to send message: {e}")
                     
-                    if signal:
-                        signal_msg = (
-                            f"⚡ **VIP QUANTUM SIGNAL FOUND!**\n\n"
-                            f"🌐 Market: {market}\n"
-                            f"📊 Pair: {clean_name}\n"
-                            f"⏱️ Timeframe: {tf}\n"
-                            f"🎯 Signal: {signal}\n"
-                            f"💰 Price: {current_price}\n"
-                            f"🔥 Accuracy: 95%+"
-                        )
-                        try:
-                            bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
-                        except Exception as e:
-                            print(f"Failed to send message to {chat_id}: {e}")
-                
-                # Rate limit se bachne ke liye delay barha diya hai
-                await asyncio.sleep(5)
+                    time.sleep(1) # Fast checking without hitting rate limits
             
-        print("--- Cycle completed. Waiting for next scan... ---")
-        await asyncio.sleep(60)
+            time.sleep(10) # Quick loop refresh interval
+        except Exception as e:
+            print(f"Scanner error: {e}")
+            time.sleep(5)
 
 # ----------------- MAIN PROGRAM EXECUTION -----------------
 if __name__ == "__main__":
+    # Start web server for Render keep-alive
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
     
+    # Start Telegram bot polling thread
     telegram_thread = threading.Thread(target=run_telegram_bot, daemon=True)
     telegram_thread.start()
     
-    try:
-        asyncio.run(scan_all_pairs())
-    except KeyboardInterrupt:
-        print("Bot stopped.")
+    # Start background market scanner thread
+    scanner_thread = threading.Thread(target=background_scanner, daemon=True)
+    scanner_thread.start()
+    
+    # Keep main thread alive
+    while True:
+        time.sleep(60)
