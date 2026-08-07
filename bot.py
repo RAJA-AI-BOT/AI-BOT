@@ -29,7 +29,6 @@ def send_welcome(message):
     markup = InlineKeyboardMarkup()
     markup.row_width = 2
     markup.add(
-        InlineKeyboardButton("📊 Broker: Quotex", callback_data="broker_quotex"),
         InlineKeyboardButton("🌐 Live Forex Market", callback_data="market_live"),
         InlineKeyboardButton("⚡ OTC Market", callback_data="market_otc"),
         InlineKeyboardButton("🚀 Start Quantum Scan", callback_data="start_scan"),
@@ -50,9 +49,6 @@ def callback_query(call):
     if call.data == "start_scan":
         bot.answer_callback_query(call.id, "Quantum Scan Started!")
         bot.send_message(chat_id, "🔍 **Quantum Engine Running (95%+)**\nMarket scanning in progress... Signals will be broadcasted shortly!", parse_mode="Markdown")
-    elif call.data == "broker_quotex":
-        bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "📊 **Selected Broker:** Quotex\nTrading environment configured successfully.", parse_mode="Markdown")
     elif call.data == "market_live":
         user_market_choice[chat_id] = "LIVE"
         bot.answer_callback_query(call.id)
@@ -76,10 +72,10 @@ def echo_all(message):
 def run_telegram_bot():
     print("Telegram bot polling started...")
     try:
-        bot.remove_webhook() # Purane webhook ya conflict ko khatam karne ke liye
+        bot.remove_webhook(drop_pending_updates=True)
     except Exception as e:
         print(f"Error removing webhook: {e}")
-    bot.infinity_polling()
+    bot.infinity_polling(skip_pending=True)
 
 # ----------------- FOREX MARKET SCANNER SETUP -----------------
 PAIRS = [
@@ -126,7 +122,6 @@ async def scan_all_pairs():
                     signal_msg = f"⚡ **VIP QUANTUM SIGNAL FOUND!**\n\n📊 Pair: {clean_name}\n🎯 Signal: {signal}\n💰 Price: {current_price}\n🔥 Engine Accuracy: 95%+"
                     print(signal_msg)
                     
-                    # Tamam active users ko unki pasand ke mutabiq signal bhejna
                     for chat_id in list(active_users):
                         try:
                             bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
