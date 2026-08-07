@@ -54,7 +54,7 @@ async def scan_all_pairs():
         # Tamam pairs scan hone ke baad agla cycle 60 seconds baad chalega
         await asyncio.sleep(60)
 
-Ddef evaluate_strategy(candle):
+def evaluate_strategy(candle):
     # Sample logic: Agar Close price Open se zyada hai toh CALL, warna PUT
     if candle["close"] > candle["open"]:
         return "CALL (UP)"
