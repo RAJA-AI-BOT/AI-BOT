@@ -147,11 +147,15 @@ def echo_all(message):
 
 def run_telegram_bot():
     print("Telegram bot polling started...")
-    try:
-        bot.remove_webhook(drop_pending_updates=True)
-    except Exception as e:
-        print(f"Error removing webhook: {e}")
-    bot.infinity_polling(skip_pending=True, interval=0.05, timeout=20)
+    while True:
+        try:
+            # Conflict error se bachne ke liye webhook remove kar ke thora wait karein
+            bot.remove_webhook(drop_pending_updates=True)
+            time.sleep(1)
+            bot.infinity_polling(skip_pending=True, interval=0.1, timeout=20)
+        except Exception as e:
+            print(f"Polling error encountered: {e}")
+            time.sleep(5)
 
 # ----------------- FAST MARKET SCANNER SETUP (NEW CANDLE) -----------------
 PAIRS = [
@@ -164,7 +168,6 @@ def fetch_latest_candle(symbol, interval="1m"):
         period = "2d" if interval in ["15m", "30m"] else "1d"
         data = yf.download(symbol, period=period, interval=interval, progress=False)
         if not data.empty and len(data) >= 2:
-            # New candle detection (last closed or current active open)
             latest = data.iloc[-1]
             prev = data.iloc[-2]
             return {
@@ -179,7 +182,6 @@ def fetch_latest_candle(symbol, interval="1m"):
     return None
 
 def evaluate_strategy(candle):
-    # New candle confirmation logic (Momentum based on open/close difference)
     if candle["close"] > candle["open"]:
         return "CALL (UP)"
     elif candle["close"] < candle["open"]:
@@ -202,7 +204,6 @@ def background_scanner():
                 for symbol in PAIRS:
                     candle = fetch_latest_candle(symbol, interval=tf)
                     if candle:
-                        # Check if this is a new candle period
                         candle_key = f"{chat_id}_{symbol}"
                         if last_scanned_candle_time.get(candle_key) != candle["timestamp"]:
                             last_scanned_candle_time[candle_key] = candle["timestamp"]
@@ -224,27 +225,23 @@ def background_scanner():
                                 except Exception as e:
                                     print(f"Failed to send message: {e}")
                     
-                    time.sleep(1) # Fast checking without hitting rate limits
+                    time.sleep(1)
             
-            time.sleep(10) # Quick loop refresh interval
+            time.sleep(10)
         except Exception as e:
             print(f"Scanner error: {e}")
             time.sleep(5)
 
 # ----------------- MAIN PROGRAM EXECUTION -----------------
 if __name__ == "__main__":
-    # Start web server for Render keep-alive
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
     
-    # Start Telegram bot polling thread
     telegram_thread = threading.Thread(target=run_telegram_bot, daemon=True)
     telegram_thread.start()
     
-    # Start background market scanner thread
     scanner_thread = threading.Thread(target=background_scanner, daemon=True)
     scanner_thread.start()
     
-    # Keep main thread alive
     while True:
         time.sleep(60)
