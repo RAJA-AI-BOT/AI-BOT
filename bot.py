@@ -1,43 +1,36 @@
-import asyncio
+asyncio
 import json
 import websockets
 
-# Apne broker ya data feed ka real WebSocket URL yahan paste karein
-WS_URL = "wss://your-real-websocket-url-here"
+# Binance public live WebSocket URL (Free & Public Live Data Feed)
+# Aap yahan "btcusdt@ticker" ya "eurusdt" waghera ka live feed use kar sakte hain
+WS_URL = "wss://stream.binance.com:9443/ws/btcusdt@trade"
 
 async def analyze_realtime_candles():
     print("Connecting to live market data stream...")
     try:
         async with websockets.connect(WS_URL) as websocket:
-            # Step 1: Subscription payload bhejen
-            subscribe_payload = {
-                "action": "subscribe",
-                "channel": "candles",
-                "symbol": "EURUSD"
-            }
-            await websocket.send(json.dumps(subscribe_payload))
-            print("Successfully subscribed to live candle feed.")
+            print("Successfully subscribed to live market feed.")
 
-            # Step 2: Continuous live loop
+            # Continuous live loop
             async for message in websocket:
                 data = json.loads(message)
                 
-                # Real-time candle data extract karna (Open, High, Low, Close, Volume)
-                candle = data.get("candle", {})
-                close_price = candle.get("close")
+                # Live price extract karna
+                price = data.get("p") # Price
                 
-                if close_price:
+                if price:
                     # Yahan aap apna 8-indicator logic ya technical check run karenge
-                    signal = evaluate_indicators(candle)
+                    signal = evaluate_indicators(price)
                     
                     if signal:
-                        print(f"[{candle.get('time')}] ⚡ REAL-TIME SIGNAL FOUND: {signal} at price {close_price}")
+                        print(f"⚡ REAL-TIME SIGNAL FOUND: {signal} at price {price}")
                         
     except Exception as e:
         print(f"Connection error: {e}")
 
-def evaluate_indicators(candle):
-    # Yahan aap apni indicators ki conditions likh sakte hain
+def evaluate_indicators(price):
+    # Dummy logic: Yahan aap apni indicators ki conditions likh sakte hain
     return "CALL (UP)"
 
 if __name__ == "__main__":
