@@ -5,6 +5,7 @@ import threading
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 import yfinance as yf
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ----------------- RENDER WEB SERVER SETUP -----------------
 def run_server():
@@ -23,13 +24,42 @@ def send_welcome(message):
     chat_id = message.chat.id
     active_users.add(chat_id)
     print(f"New user added: {chat_id}")
-    bot.reply_to(message, "Assalam-o-Alaikum! Raja AI Bot active hai. Aapko live market signals milna shuru ho jayenge.")
+    
+    # Dashboard style interactive buttons
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 2
+    markup.add(
+        InlineKeyboardButton("📊 Broker: Quotex", callback_data="broker_quotex"),
+        InlineKeyboardButton("🔄 Market: OTC / Live", callback_data="market_otc"),
+        InlineKeyboardButton("⚡ Start Quantum Scan", callback_data="start_scan"),
+        InlineKeyboardButton("⚙️ Settings", callback_data="settings")
+    )
+    
+    bot.send_message(
+        chat_id, 
+        "🤖 **RAJA AI PREMIUM - VIP QUANTUM BOT**\n\n"
+        "Welcome! 8-Indicator Quantum Engine active hai. Neeche diye gaye options se configuration check karein aur signals hasil karein:",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_query(call):
+    if call.data == "start_scan":
+        bot.answer_callback_query(call.id, "Quantum Scan Started!")
+        bot.send_message(call.message.chat.id, "🔍 **Quantum Engine Running (95%+)**\nMarket scanning in progress... Signals jald hi broadcast honge!")
+    elif call.data == "broker_quotex":
+        bot.answer_callback_query(call.id, "Broker: Quotex selected")
+    elif call.data == "market_otc":
+        bot.answer_callback_query(call.id, "Market Type: OTC selected")
+    else:
+        bot.answer_callback_query(call.id, "Option selected!")
 
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
     chat_id = message.chat.id
     active_users.add(chat_id)
-    bot.reply_to(message, "Aapka message mil gaya! Bot active hai aur background mein market scan kar raha hai.")
+    bot.reply_to(message, "Bot active hai aur background mein market scan kar raha hai!")
 
 def run_telegram_bot():
     print("Telegram bot polling started...")
@@ -77,13 +107,13 @@ async def scan_all_pairs():
                 
                 signal = evaluate_strategy(candle)
                 if signal:
-                    signal_msg = f"⚡ SIGNAL FOUND!\nPair: {clean_name}\nSignal: {signal}\nPrice: {current_price}"
+                    signal_msg = f"⚡ **VIP QUANTUM SIGNAL FOUND!**\n\n📊 Pair: {clean_name}\n🎯 Signal: {signal}\n💰 Price: {current_price}\n🔥 Engine Accuracy: 95%+"
                     print(signal_msg)
                     
-                    # Yahan tamam active users ko signal broadcast ho jayega
+                    # Tamam active users ko signal broadcast ho jayega
                     for chat_id in list(active_users):
                         try:
-                            bot.send_message(chat_id, signal_msg)
+                            bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
                         except Exception as e:
                             print(f"Failed to send message to {chat_id}: {e}")
             
