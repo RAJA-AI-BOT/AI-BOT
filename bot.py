@@ -75,6 +75,10 @@ def echo_all(message):
 
 def run_telegram_bot():
     print("Telegram bot polling started...")
+    try:
+        bot.remove_webhook() # Purane webhook ya conflict ko khatam karne ke liye
+    except Exception as e:
+        print(f"Error removing webhook: {e}")
     bot.infinity_polling()
 
 # ----------------- FOREX MARKET SCANNER SETUP -----------------
@@ -125,7 +129,6 @@ async def scan_all_pairs():
                     # Tamam active users ko unki pasand ke mutabiq signal bhejna
                     for chat_id in list(active_users):
                         try:
-                            # Agar user ne OTC ya Live select kiya hai, usay signal jayega
                             bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
                         except Exception as e:
                             print(f"Failed to send message to {chat_id}: {e}")
