@@ -8,25 +8,30 @@ import telebot
 
 # ----------------- RENDER WEB SERVER SETUP -----------------
 def run_server():
-    # Render ke liye port 10000 par HTTP server chalana zaroori hai taake service active rahe
     server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
     server.serve_forever()
 
 # ----------------- TELEGRAM BOT SETUP -----------------
-# Render environment variables se token uthayega
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
+# Users ki chat IDs save karne ke liye set (taake duplicate na ho)
+active_users = set()
+
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
-    bot.reply_to(message, "Assalam-o-Alaikum! Raja AI Bot active hai aur market scan kar raha hai.")
+    chat_id = message.chat.id
+    active_users.add(chat_id)
+    print(f"New user added: {chat_id}")
+    bot.reply_to(message, "Assalam-o-Alaikum! Raja AI Bot active hai. Aapko live market signals milna shuru ho jayenge.")
 
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
-    bot.reply_to(message, f"Aapka message mil gaya: {message.text}")
+    chat_id = message.chat.id
+    active_users.add(chat_id)
+    bot.reply_to(message, "Aapka message mil gaya! Bot active hai aur background mein market scan kar raha hai.")
 
 def run_telegram_bot():
-    # Telegram bot ko background mein chalane ke liye
     print("Telegram bot polling started...")
     bot.infinity_polling()
 
@@ -72,7 +77,15 @@ async def scan_all_pairs():
                 
                 signal = evaluate_strategy(candle)
                 if signal:
-                    print(f"⚡ SIGNAL FOUND on {clean_name}: {signal} at {current_price}")
+                    signal_msg = f"⚡ SIGNAL FOUND!\nPair: {clean_name}\nSignal: {signal}\nPrice: {current_price}"
+                    print(signal_msg)
+                    
+                    # Yahan tamam active users ko signal broadcast ho jayega
+                    for chat_id in list(active_users):
+                        try:
+                            bot.send_message(chat_id, signal_msg)
+                        except Exception as e:
+                            print(f"Failed to send message to {chat_id}: {e}")
             
             await asyncio.sleep(4)
             
