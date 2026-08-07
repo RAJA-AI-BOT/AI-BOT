@@ -1,17 +1,12 @@
 import asyncio
 import time
 import yfinance as yf
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, SimpleHTTPRequestHandler
 import threading
 
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is running successfully!")
-
 def run_server():
-    server = HTTPServer(('0.0.0.0', 10000), SimpleHandler)
+    # SimpleHTTPRequestHandler automatically index.html ko browser par show kar deta hai
+    server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
     server.serve_forever()
 
 # Dropdown ke tamam pairs ki mukammal list
@@ -52,11 +47,9 @@ async def scan_all_pairs():
                 if signal:
                     print(f"⚡ SIGNAL FOUND on {clean_name}: {signal} at {current_price}")
             
-            # Rate limit se bachne ke liye delay (4 seconds har pair ke baad)
             await asyncio.sleep(4)
             
         print("--- Cycle completed. Waiting for next scan... ---")
-        # Rate limit control karne ke liye cycle gap ko 60 seconds kar diya hai
         await asyncio.sleep(60)
 
 def evaluate_strategy(candle):
