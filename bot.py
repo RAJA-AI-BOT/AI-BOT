@@ -19,32 +19,25 @@ bot = telebot.TeleBot(TOKEN)
 # Users ki preferences save karne ke liye
 active_users = set()
 user_market_choice = {}
-user_timeframe_choice = {} # Timeframe save karne ke liye (1m, 5m, 15m, 30m)
+user_timeframe_choice = {}
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
     chat_id = message.chat.id
     active_users.add(chat_id)
-    user_market_choice[chat_id] = "LIVE"
-    user_timeframe_choice[chat_id] = "1m" # Default timeframe
     
     markup = InlineKeyboardMarkup()
     markup.row_width = 2
     markup.add(
-        InlineKeyboardButton("🌐 Live Forex Market", callback_data="market_live"),
+        InlineKeyboardButton("🌐 Live Market", callback_data="market_live"),
         InlineKeyboardButton("⚡ OTC Market", callback_data="market_otc"),
-        InlineKeyboardButton("⏱️ Timeframe: 1m", callback_data="tf_1m"),
-        InlineKeyboardButton("⏱️ Timeframe: 5m", callback_data="tf_5m"),
-        InlineKeyboardButton("⏱️ Timeframe: 15m", callback_data="tf_15m"),
-        InlineKeyboardButton("⏱️ Timeframe: 30m", callback_data="tf_30m"),
-        InlineKeyboardButton("🚀 Start Quantum Scan", callback_data="start_scan"),
         InlineKeyboardButton("⚙️ Settings", callback_data="settings")
     )
     
     bot.send_message(
         chat_id, 
         "🤖 **RAJA AI PREMIUM - VIP QUANTUM BOT**\n\n"
-        "Welcome! Select your preferred Market and Timeframe below to begin scanning:",
+        "Welcome! Please select your Market type below to choose trade minutes:",
         parse_mode="Markdown",
         reply_markup=markup
     )
@@ -52,28 +45,98 @@ def send_welcome(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     chat_id = call.message.chat.id
-    if call.data == "start_scan":
-        tf = user_timeframe_choice.get(chat_id, "1m")
-        bot.answer_callback_query(call.id, f"Quantum Scan Started ({tf})!")
-        bot.send_message(chat_id, f"🔍 **Quantum Engine Running (95%+)**\nTimeframe: {tf}\nMarket scanning in progress...", parse_mode="Markdown")
-    elif call.data == "market_live":
+    
+    if call.data == "market_live":
         user_market_choice[chat_id] = "LIVE"
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "🌐 **Selected Market:** Live Forex Market", parse_mode="Markdown")
+        
+        # Live Market select hone par minutes ke buttons dikhana
+        markup = InlineKeyboardMarkup()
+        markup.row_width = 2
+        markup.add(
+            InlineKeyboardButton("⏱️ 1 Minute", callback_data="tf_1m"),
+            InlineKeyboardButton("⏱️ 5 Minutes", callback_data="tf_5m"),
+            InlineKeyboardButton("⏱️ 15 Minutes", callback_data="tf_15m"),
+            InlineKeyboardButton("⏱️ 30 Minutes", callback_data="tf_30m"),
+            InlineKeyboardButton("🔙 Back to Menu", callback_data="back_main")
+        )
+        bot.edit_message_text(
+            "🌐 **Live Market Selected**\n\nNow select your trade timeframe (Minutes):",
+            chat_id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+        
     elif call.data == "market_otc":
         user_market_choice[chat_id] = "OTC"
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, "⚡ **Selected Market:** OTC Market", parse_mode="Markdown")
+        
+        # OTC Market select hone par minutes ke buttons dikhana
+        markup = InlineKeyboardMarkup()
+        markup.row_width = 2
+        markup.add(
+            InlineKeyboardButton("⏱️ 1 Minute", callback_data="tf_1m"),
+            InlineKeyboardButton("⏱️ 5 Minutes", callback_data="tf_5m"),
+            InlineKeyboardButton("⏱️ 15 Minutes", callback_data="tf_15m"),
+            InlineKeyboardButton("⏱️ 30 Minutes", callback_data="tf_30m"),
+            InlineKeyboardButton("🔙 Back to Menu", callback_data="back_main")
+        )
+        bot.edit_message_text(
+            "⚡ **OTC Market Selected**\n\nNow select your trade timeframe (Minutes):",
+            chat_id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+        
     elif call.data.startswith("tf_"):
         tf_value = call.data.split("_")[1] # 1m, 5m, 15m, 30m
         user_timeframe_choice[chat_id] = tf_value
-        bot.answer_callback_query(call.id, f"Timeframe set to {tf_value}")
-        bot.send_message(chat_id, f"⏱️ **Timeframe Updated:** {tf_value}\nNow click 'Start Quantum Scan' to fetch signals.", parse_mode="Markdown")
-    elif call.data == "settings":
+        market = user_market_choice.get(chat_id, "LIVE")
+        
+        bot.answer_callback_query(call.id, f"Timeframe set to {tf_value}!")
+        
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🚀 Start Quantum Scan", callback_data="start_scan"))
+        
+        bot.edit_message_text(
+            f"✅ **Configuration Saved!**\n\n- Market: {market}\n- Timeframe: {tf_value}\n\nClick below to start scanning pairs & signals:",
+            chat_id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+        
+    elif call.data == "start_scan":
         tf = user_timeframe_choice.get(chat_id, "1m")
         market = user_market_choice.get(chat_id, "LIVE")
+        bot.answer_callback_query(call.id, "Quantum Scan Started!")
+        bot.send_message(
+            chat_id, 
+            f"🔍 **Quantum Engine Running (95%+)**\nMarket: {market} | Timeframe: {tf}\nScanning active pairs... Signals will appear shortly!", 
+            parse_mode="Markdown"
+        )
+        
+    elif call.data == "back_main":
+        markup = InlineKeyboardMarkup()
+        markup.row_width = 2
+        markup.add(
+            InlineKeyboardButton("🌐 Live Market", callback_data="market_live"),
+            InlineKeyboardButton("⚡ OTC Market", callback_data="market_otc"),
+            InlineKeyboardButton("⚙️ Settings", callback_data="settings")
+        )
+        bot.edit_message_text(
+            "🤖 **RAJA AI PREMIUM - VIP QUANTUM BOT**\n\nWelcome! Please select your Market type below:",
+            chat_id,
+            call.message.message_id,
+            parse_mode="Markdown",
+            reply_markup=markup
+        )
+        
+    elif call.data == "settings":
         bot.answer_callback_query(call.id)
-        bot.send_message(chat_id, f"⚙️ **Settings Menu:**\n- Market: {market}\n- Timeframe: {tf}\n- Accuracy: 95%+", parse_mode="Markdown")
+        bot.send_message(chat_id, "⚙️ **Settings Menu:**\n- Engine Accuracy: 95%+\n- Status: Active & Connected", parse_mode="Markdown")
     else:
         bot.answer_callback_query(call.id, "Option selected!")
 
@@ -81,7 +144,7 @@ def callback_query(call):
 def echo_all(message):
     chat_id = message.chat.id
     active_users.add(chat_id)
-    bot.reply_to(message, "Bot is active! Use /start to configure your timeframes and market.")
+    bot.reply_to(message, "Bot is active! Use /start to open the configuration menu.")
 
 def run_telegram_bot():
     print("Telegram bot polling started...")
@@ -101,7 +164,6 @@ PAIRS = [
 
 def fetch_latest_candle(symbol, interval="1m"):
     try:
-        # Interval ke mutabiq period adjust karna zaroori hai yfinance ke liye
         period = "5d" if interval in ["15m", "30m"] else "1d"
         data = yf.download(symbol, period=period, interval=interval, progress=False)
         if not data.empty:
@@ -127,18 +189,26 @@ async def scan_all_pairs():
         print(f"\n--- Scan Cycle Started at {time.strftime('%H:%M:%S')} ---")
         
         for symbol in PAIRS:
-            # Har user ke mutabiq unka selected timeframe use karna
             for chat_id in list(active_users):
                 tf = user_timeframe_choice.get(chat_id, "1m")
-                candle = fetch_latest_candle(symbol, interval=tf)
+                market = user_market_choice.get(chat_id, "LIVE")
                 
+                candle = fetch_latest_candle(symbol, interval=tf)
                 if candle:
                     clean_name = symbol.replace("=X", "")
                     current_price = candle["close"]
                     signal = evaluate_strategy(candle)
                     
                     if signal:
-                        signal_msg = f"⚡ **VIP QUANTUM SIGNAL FOUND!**\n\n📊 Pair: {clean_name}\n⏱️ Timeframe: {tf}\n🎯 Signal: {signal}\n💰 Price: {current_price}\n🔥 Accuracy: 95%+"
+                        signal_msg = (
+                            f"⚡ **VIP QUANTUM SIGNAL FOUND!**\n\n"
+                            f"🌐 Market: {market}\n"
+                            f"📊 Pair: {clean_name}\n"
+                            f"⏱️ Timeframe: {tf}\n"
+                            f"🎯 Signal: {signal}\n"
+                            f"💰 Price: {current_price}\n"
+                            f"🔥 Accuracy: 95%+"
+                        )
                         try:
                             bot.send_message(chat_id, signal_msg, parse_mode="Markdown")
                         except Exception as e:
