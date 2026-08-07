@@ -25,20 +25,21 @@ def send_welcome(message):
     active_users.add(chat_id)
     print(f"New user added: {chat_id}")
     
-    # Dashboard style interactive buttons
+    # Alag-alag buttons: OTC aur Live Forex ke liye
     markup = InlineKeyboardMarkup()
     markup.row_width = 2
     markup.add(
         InlineKeyboardButton("📊 Broker: Quotex", callback_data="broker_quotex"),
-        InlineKeyboardButton("🔄 Market: OTC / Live", callback_data="market_otc"),
-        InlineKeyboardButton("⚡ Start Quantum Scan", callback_data="start_scan"),
+        InlineKeyboardButton("🌐 Live Forex Market", callback_data="market_live"),
+        InlineKeyboardButton("⚡ OTC Market", callback_data="market_otc"),
+        InlineKeyboardButton("🚀 Start Quantum Scan", callback_data="start_scan"),
         InlineKeyboardButton("⚙️ Settings", callback_data="settings")
     )
     
     bot.send_message(
         chat_id, 
         "🤖 **RAJA AI PREMIUM - VIP QUANTUM BOT**\n\n"
-        "Welcome! 8-Indicator Quantum Engine is active. Please check configuration options below and receive live signals:",
+        "Welcome! 8-Indicator Quantum Engine is active. Please select your market option below to begin:",
         parse_mode="Markdown",
         reply_markup=markup
     )
@@ -51,9 +52,12 @@ def callback_query(call):
     elif call.data == "broker_quotex":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "📊 **Selected Broker:** Quotex\nTrading environment configured successfully.", parse_mode="Markdown")
+    elif call.data == "market_live":
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "🌐 **Selected Market:** Live Forex Market\nScanning algorithms set to Live Pairs.", parse_mode="Markdown")
     elif call.data == "market_otc":
         bot.answer_callback_query(call.id)
-        bot.send_message(call.message.chat.id, "🔄 **Selected Market:** OTC / Live Market\nScanning algorithms updated.", parse_mode="Markdown")
+        bot.send_message(call.message.chat.id, "⚡ **Selected Market:** OTC Market\nScanning algorithms set to OTC Pairs.", parse_mode="Markdown")
     elif call.data == "settings":
         bot.answer_callback_query(call.id)
         bot.send_message(call.message.chat.id, "⚙️ **Settings Menu:**\n- Accuracy: 95%+\n- Timeframe: 1m\n- Status: Active & Connected", parse_mode="Markdown")
