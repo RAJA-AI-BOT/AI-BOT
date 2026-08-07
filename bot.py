@@ -2,8 +2,8 @@ import asyncio
 import json
 import websockets
 
-# WebSocket URL (Maslan broker ya data feed ka live endpoint)
-WS_URL = "wss://your-broker-websocket-url-here"
+# Apne broker ya data feed ka real WebSocket URL yahan paste karein
+WS_URL = "wss://your-real-websocket-url-here"
 
 async def analyze_realtime_candles():
     print("Connecting to live market data stream...")
@@ -28,7 +28,6 @@ async def analyze_realtime_candles():
                 
                 if close_price:
                     # Yahan aap apna 8-indicator logic ya technical check run karenge
-                    # Maslan: RSI calculation, EMA crossover, Bollinger Bands breakout
                     signal = evaluate_indicators(candle)
                     
                     if signal:
@@ -38,9 +37,8 @@ async def analyze_realtime_candles():
         print(f"Connection error: {e}")
 
 def evaluate_indicators(candle):
-    # Dummy logic: Is jagah aap apni real indicators ki conditions likhenge
-    # Misal ke tor par agar RSI < 30 aur EMA bullish ho toh CALL signal return karein
-    return "CALL (UP)" # Ya "PUT (DOWN)" ya None
+    # Yahan aap apni indicators ki conditions likh sakte hain
+    return "CALL (UP)"
 
 if __name__ == "__main__":
     asyncio.run(analyze_realtime_candles())
