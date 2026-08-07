@@ -16,7 +16,6 @@ def run_server():
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
-# Users ki preferences save karne ke liye
 active_users = set()
 user_market_choice = {}
 user_timeframe_choice = {}
@@ -37,7 +36,7 @@ def send_welcome(message):
     bot.send_message(
         chat_id, 
         "🤖 **RAJA AI PREMIUM - VIP QUANTUM BOT**\n\n"
-        "Welcome! Please select your Market type below to choose trade minutes:",
+        "Welcome! Please select your Market type below:",
         parse_mode="Markdown",
         reply_markup=markup
     )
@@ -91,7 +90,7 @@ def callback_query(call):
         )
         
     elif call.data.startswith("tf_"):
-        tf_value = call.data.split("_")[1] # 1m, 5m, 15m, 30m
+        tf_value = call.data.split("_")[1]
         user_timeframe_choice[chat_id] = tf_value
         market = user_market_choice.get(chat_id, "LIVE")
         
@@ -157,9 +156,7 @@ def run_telegram_bot():
 # ----------------- FOREX MARKET SCANNER SETUP -----------------
 PAIRS = [
     "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", 
-    "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", 
-    "AUDJPY=X", "EURAUD=X", "GBPAUD=X", "CADJPY=X", "EURCAD=X", 
-    "GBPCAD=X", "NZDJPY=X", "AUDNZD=X", "EURCHF=X", "GBPCHF=X"
+    "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X"
 ]
 
 def fetch_latest_candle(symbol, interval="1m"):
@@ -214,10 +211,11 @@ async def scan_all_pairs():
                         except Exception as e:
                             print(f"Failed to send message to {chat_id}: {e}")
                 
-                await asyncio.sleep(2)
+                # Rate limit se bachne ke liye delay barha diya hai
+                await asyncio.sleep(5)
             
         print("--- Cycle completed. Waiting for next scan... ---")
-        await asyncio.sleep(30)
+        await asyncio.sleep(60)
 
 # ----------------- MAIN PROGRAM EXECUTION -----------------
 if __name__ == "__main__":
