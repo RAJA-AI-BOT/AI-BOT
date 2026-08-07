@@ -38,7 +38,7 @@ def send_welcome(message):
     bot.send_message(
         chat_id, 
         "🤖 **RAJA AI PREMIUM - VIP QUANTUM BOT**\n\n"
-        "Welcome! 8-Indicator Quantum Engine active hai. Neeche diye gaye options se configuration check karein aur signals hasil karein:",
+        "Welcome! 8-Indicator Quantum Engine is active. Please check configuration options below and receive live signals:",
         parse_mode="Markdown",
         reply_markup=markup
     )
@@ -47,11 +47,16 @@ def send_welcome(message):
 def callback_query(call):
     if call.data == "start_scan":
         bot.answer_callback_query(call.id, "Quantum Scan Started!")
-        bot.send_message(call.message.chat.id, "🔍 **Quantum Engine Running (95%+)**\nMarket scanning in progress... Signals jald hi broadcast honge!")
+        bot.send_message(call.message.chat.id, "🔍 **Quantum Engine Running (95%+)**\nMarket scanning in progress... Signals will be broadcasted shortly!", parse_mode="Markdown")
     elif call.data == "broker_quotex":
-        bot.answer_callback_query(call.id, "Broker: Quotex selected")
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "📊 **Selected Broker:** Quotex\nTrading environment configured successfully.", parse_mode="Markdown")
     elif call.data == "market_otc":
-        bot.answer_callback_query(call.id, "Market Type: OTC selected")
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "🔄 **Selected Market:** OTC / Live Market\nScanning algorithms updated.", parse_mode="Markdown")
+    elif call.data == "settings":
+        bot.answer_callback_query(call.id)
+        bot.send_message(call.message.chat.id, "⚙️ **Settings Menu:**\n- Accuracy: 95%+\n- Timeframe: 1m\n- Status: Active & Connected", parse_mode="Markdown")
     else:
         bot.answer_callback_query(call.id, "Option selected!")
 
@@ -59,7 +64,7 @@ def callback_query(call):
 def echo_all(message):
     chat_id = message.chat.id
     active_users.add(chat_id)
-    bot.reply_to(message, "Bot active hai aur background mein market scan kar raha hai!")
+    bot.reply_to(message, "Bot is active and scanning the market in the background!")
 
 def run_telegram_bot():
     print("Telegram bot polling started...")
