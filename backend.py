@@ -168,8 +168,8 @@ async def websocket_endpoint(websocket: WebSocket):
             await asyncio.sleep(5)
     except WebSocketDisconnect:
         print("Client disconnected") 
-       @app.get("/", response_class=HTMLResponse)
-async def get_index():
+@app.get("/", response_class=HTMLResponse)
+    async def get_index():
     try:
         with open("index.html", "r", encoding="utf-8") as f:
             return f.read()
