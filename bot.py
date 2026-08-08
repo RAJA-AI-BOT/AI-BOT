@@ -13,7 +13,7 @@ def run_server():
     server.serve_forever()
 
 # ----------------- TELEGRAM BOT SETUP -----------------
-TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
 # Market Categories & Expanded Symbols Mapping
