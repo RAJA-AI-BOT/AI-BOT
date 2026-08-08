@@ -10,6 +10,12 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
+# Clear any lingering webhooks or conflicting sessions
+try:
+    bot.remove_webhook()
+except Exception:
+    pass
+
 # Extended Market Lists
 MARKETS = {
     "forex_live": ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", "AUDJPY=X", "EURAUD=X", "GBPAUD=X", "CADJPY=X", "EURCAD=X", "GBPCAD=X", "NZDJPY=X", "AUDNZD=X", "EURCHF=X"],
@@ -44,7 +50,6 @@ NAMES = {
 user_sessions = {}
 
 # --- Bot Handlers (Logic remains same as updated above) ---
-# Paste the same logic for callback handlers and Yahoo Finance scan as provided in the previous message.
 
 def run_server():
     server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
