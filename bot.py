@@ -13,8 +13,9 @@ def run_server():
     server.serve_forever()
 
 # ----------------- TELEGRAM BOT SETUP -----------------
-# Render environment variables se token uthayega
-TOKEN = os.environ.get('BOT_TOKEN')
+# Render environment variables se token aur chat ID uthayega
+TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['start', 'help'])
@@ -54,9 +55,9 @@ def fetch_latest_candle(symbol):
 
 def evaluate_strategy(candle):
     if candle["close"] > candle["open"]:
-        return "CALL (UP)"
+        return "CALL / HIGHER (BUY)"
     else:
-        return "PUT (DOWN)"
+        return "PUT / LOWER (SELL)"
 
 async def scan_all_pairs():
     print("Starting full dropdown pairs live market scan...")
@@ -73,6 +74,25 @@ async def scan_all_pairs():
                 signal = evaluate_strategy(candle)
                 if signal:
                     print(f"⚡ SIGNAL FOUND on {clean_name}: {signal} at {current_price}")
+                    
+                    # Telegram par Signal bhejne ka code
+                    if CHAT_ID and TOKEN:
+                        if "BUY" in signal:
+                            emoji = "🟢"
+                        else:
+                            emoji = "🔴"
+                            
+                        message_text = (
+                            f"🚨 **Raja AI Premium Signal** 🚨\n\n"
+                            f"📊 **Asset:** {clean_name} (OTC/Forex)\n"
+                            f"📈 **Signal:** {emoji} **{signal}**\n"
+                            f"💰 **Price:** {current_price}\n"
+                            f"⏰ **Time:** {time.strftime('%H:%M:%S')}"
+                        )
+                        try:
+                            bot.send_message(CHAT_ID, message_text, parse_mode="Markdown")
+                        except Exception as ex:
+                            print(f"Telegram send error: {ex}")
             
             await asyncio.sleep(4)
             
