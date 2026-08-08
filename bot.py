@@ -10,12 +10,6 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(TOKEN)
 
-# Clear any lingering webhooks or conflicting sessions
-try:
-    bot.remove_webhook()
-except Exception:
-    pass
-
 # Extended Market Lists
 MARKETS = {
     "forex_live": ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", "AUDJPY=X", "EURAUD=X", "GBPAUD=X", "CADJPY=X", "EURCAD=X", "GBPCAD=X", "NZDJPY=X", "AUDNZD=X", "EURCHF=X"],
@@ -58,4 +52,12 @@ def run_server():
 # Start Server
 if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
-    bot.infinity_polling()
+    
+    # Clear old webhooks and pending updates to prevent 409 Conflict
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+    except Exception:
+        pass
+        
+    bot.infinity_polling(skip_pending=True)
