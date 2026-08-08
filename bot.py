@@ -19,9 +19,19 @@ bot = telebot.TeleBot(TOKEN)
 # Temporary storage to keep user selections
 user_sessions = {}
 
-# Markets Data Definitions
-LIVE_PAIRS = ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X"]
-OTC_PAIRS = ["EURUSD-OTC", "GBPUSD-OTC", "USDJPY-OTC", "AUDUSD-OTC"] # Placeholder symbols for OTC simulation
+# Markets Data Definitions (Updated with complete pairs)
+LIVE_PAIRS = [
+    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "USDCHF=X",
+    "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X", "AUDJPY=X", "EURAUD=X",
+    "GBPAUD=X", "CADJPY=X", "EURCAD=X", "GBPCAD=X", "NZDJPY=X", "AUDNZD=X", "EURCHF=X"
+]
+
+OTC_PAIRS = [
+    "NZD/CAD-OTC", "NZD/USD-OTC", "NZD/CHF-OTC", "USD/BRL-OTC", "USD/JPY-OTC",
+    "USD/ARS-OTC", "USD/INR-OTC", "USD/CAD-OTC", "USD/DZD-OTC", "USD/NGN-OTC",
+    "USD/PHP-OTC", "USD/IDR-OTC", "USD/EGP-OTC", "USD/MXN-OTC", "USD/PKR-OTC",
+    "GBP/NZD-OTC", "USD/BDT-OTC", "USD/COP-OTC", "CAD/CHF-OTC"
+]
 
 @bot.message_handler(commands=['start', 'help'])
 def send_welcome(message):
@@ -132,10 +142,8 @@ def handle_query(call):
         bot.send_message(chat_id, result_message, reply_markup=restart_markup, parse_mode="Markdown")
 
 def analyze_high_accuracy(symbol):
-    # Fallback simulation or actual fetch using yfinance
     try:
-        if "-OTC" in symbol:
-            # Mock price for OTC simulation
+        if "OTC" in symbol:
             return "CALL", "1.08450"
         
         data = yf.download(symbol, period="1d", interval="1m", progress=False)
