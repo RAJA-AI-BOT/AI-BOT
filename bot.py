@@ -43,7 +43,7 @@ NAMES = {
 
 user_sessions = {}
 
-# --- Bot Handlers (Logic remains same as updated above) ---
+# --- Bot Handlers ---
 
 def run_server():
     server = HTTPServer(('0.0.0.0', 10000), SimpleHTTPRequestHandler)
@@ -53,11 +53,11 @@ def run_server():
 if __name__ == "__main__":
     threading.Thread(target=run_server, daemon=True).start()
     
-    # Clear old webhooks and pending updates to prevent 409 Conflict
-    try:
-        bot.remove_webhook()
-        time.sleep(1)
-    except Exception:
-        pass
-        
-    bot.infinity_polling(skip_pending=True)
+    while True:
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.infinity_polling(skip_pending=True, interval=1, timeout=20)
+        except Exception as e:
+            print(f"Polling restarted due to error: {e}")
+            time.sleep(5)
