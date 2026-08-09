@@ -28,6 +28,13 @@ def home():
         return send_from_directory('.', 'index.html')
     return "Raja AI Bot Backend with Live Yahoo Finance Data is Running Successfully!"
 
+@app.route('/admin')
+def admin_panel():
+    # Admin page serve karne ke liye route (admin.html file hona zaroori hai)
+    if os.path.exists('admin.html'):
+        return send_from_directory('.', 'admin.html')
+    return "Admin Panel HTML file not found in directory!"
+
 @app.route('/scan', methods=['POST'])
 def scan_markets():
     data = request.json or {}
@@ -97,4 +104,5 @@ def calculate_live_8_indicators(pair):
         return random.randint(85, 92), "CALL"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
