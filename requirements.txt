@@ -5,3 +5,5 @@ websockets
 yarl
 requests
 pyTelegramBotAPI
+flask
+flask-cors
