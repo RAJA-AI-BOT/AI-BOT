@@ -401,60 +401,59 @@
             } catch(e) {}
         }
 
-        // Updated Scan function connecting to Render backend URL
+        // Updated Scan function connecting to Render backend API
         async function startDeepScan() {
-            let selectedPair = document.getElementById('pairSelect').value;
+            let pairSelect = document.getElementById('pairSelect');
+            let selectedPair = pairSelect ? pairSelect.value : "EUR/USD (OTC)";
+            
             document.getElementById('defaultView').style.display = 'none';
             document.getElementById('signalView').style.display = 'none';
             document.getElementById('noSignalView').style.display = 'none';
             document.getElementById('scanView').style.display = 'block';
-
+            
             let progressBar = document.getElementById('scanProgressBar');
+            let consoleBox = document.getElementById('liveScanConsole');
             progressBar.style.width = '0%';
-            let width = 0;
-
-            let interval = setInterval(() => {
-                if (width >= 90) {
-                    clearInterval(interval);
-                } else {
-                    width += 5;
-                    progressBar.style.width = width + '%';
-                }
-            }, 100);
+            consoleBox.innerHTML = '<div class="live-scan-row scanning">Connecting to backend Quantum Engine...</div>';
 
             try {
-                let response = await fetch('https://raja-ai-bot.onrender.com/scan', {
+                progressBar.style.width = '30%';
+                let response = await fetch('/scan', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ pair: selectedPair })
                 });
-
-                let data = await response.json();
-                clearInterval(interval);
-                progressBar.style.width = '100%';
-
+                
+                progressBar.style.width = '70%';
+                let result = await response.json();
+                
                 setTimeout(() => {
+                    progressBar.style.width = '100%';
                     document.getElementById('scanView').style.display = 'none';
-                    if (data.status === 'success') {
+                    
+                    if (result.status === 'success') {
+                        document.getElementById('resModalAsset').innerText = result.pair;
+                        let dirElem = document.getElementById('resModalDirection');
+                        if (result.direction === 'UP') {
+                            dirElem.className = 'signal-direction dir-up';
+                            dirElem.innerHTML = '⬆ UP (BUY)';
+                        } else {
+                            dirElem.className = 'signal-direction dir-down';
+                            dirElem.innerHTML = '⬇ DOWN (SELL)';
+                        }
                         document.getElementById('signalView').style.display = 'block';
-                        document.getElementById('resModalAsset').innerText = selectedPair;
-                        document.getElementById('resModalDirection').innerText = data.direction === 'UP' ? '⬆ UP (BUY)' : '⬇ DOWN (SELL)';
-                        document.getElementById('resModalDirection').className = data.direction === 'UP' ? 'signal-direction dir-up' : 'signal-direction dir-down';
                         playSignalAlertSound();
                     } else {
                         document.getElementById('noSignalView').style.display = 'block';
                     }
-                }, 300);
+                }, 600);
 
             } catch (err) {
-                clearInterval(interval);
-                progressBar.style.width = '100%';
+                consoleBox.innerHTML += '<div class="live-scan-row rejected">Error connecting to server!</div>';
                 setTimeout(() => {
                     document.getElementById('scanView').style.display = 'none';
                     document.getElementById('noSignalView').style.display = 'block';
-                }, 300);
+                }, 800);
             }
         }
 
@@ -466,22 +465,113 @@
             document.getElementById('defaultView').style.display = 'flex';
         }
 
+        function openHistoryInline() {
+            document.getElementById('defaultView').style.display = 'none';
+            document.querySelectorAll('.inline-content-view').forEach(el => el.style.display = 'none');
+            document.getElementById('historyInlineView').style.display = 'block';
+        }
+
+        function openSettingsInline() {
+            document.getElementById('defaultView').style.display = 'none';
+            document.querySelectorAll('.inline-content-view').forEach(el => el.style.display = 'none');
+            document.getElementById('settingsInlineView').style.display = 'block';
+        }
+
+        function openNewsInline() {
+            document.getElementById('defaultView').style.display = 'none';
+            document.querySelectorAll('.inline-content-view').forEach(el => el.style.display = 'none');
+            document.getElementById('newsInlineView').style.display = 'block';
+        }
+
+        function openRiskInline() {
+            document.getElementById('defaultView').style.display = 'none';
+            document.querySelectorAll('.inline-content-view').forEach(el => el.style.display = 'none');
+            document.getElementById('riskInlineView').style.display = 'block';
+            calculateRisk();
+        }
+
+        function calculateRisk() {
+            let base = parseFloat(document.getElementById('baseStakeInput').value) || 10;
+            document.getElementById('step1Display').innerText = '$' + base.toFixed(2);
+            document.getElementById('step2Display').innerText = '$' + (base * 2.2).toFixed(2);
+            document.getElementById('step3Display').innerText = '$' + (base * 4.8).toFixed(2);
+        }
+
+        function setExpiry(btn, time) {
+            document.querySelectorAll('.expiry-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedExpiry = time;
+        }
+
         function updatePairs() {
             let marketType = document.getElementById('marketType').value;
             let pairSelect = document.getElementById('pairSelect');
-            pairSelect.innerHTML = "";
-            let pairs = marketType === 'OTC' ? ['EUR/USD (OTC)', 'GBP/USD (OTC)', 'AUD/CAD (OTC)', 'NZD/CAD (OTC)'] : ['EUR/USD', 'GBP/USD', 'USD/JPY'];
+            pairSelect.innerHTML = '';
+            
+            let pairs = [];
+            if (marketType === 'OTC') {
+                pairs = ['EUR/USD (OTC)', 'GBP/USD (OTC)', 'USD/JPY (OTC)', 'AUD/CAD (OTC)', 'NZD/CAD (OTC)'];
+            } else if (marketType === 'Live') {
+                pairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'EUR/GBP'];
+            } else {
+                pairs = ['BTC/USD', 'ETH/USD', 'LTC/USD'];
+            }
+
             pairs.forEach(p => {
                 let opt = document.createElement('option');
                 opt.value = p;
                 opt.innerText = p;
                 pairSelect.appendChild(opt);
             });
+            document.getElementById('targetPairDisplay').innerText = pairs[0];
+        }
+
+        function updateBrokerAssets() {
+            updatePairs();
+        }
+
+        function verifyAccess() {
+            let keyInput = document.getElementById('verifyLicenseKey').value.trim();
+            let msgBox = document.getElementById('verifyMessage');
+            if(keyInput) {
+                isUserVerified = true;
+                localStorage.setItem('raja_active_key', keyInput);
+                checkRoute();
+            } else {
+                msgBox.style.display = 'block';
+                msgBox.style.background = 'rgba(255,51,102,0.2)';
+                msgBox.style.color = '#ff3366';
+                msgBox.innerText = 'Please enter a valid key!';
+            }
+        }
+
+        function checkRoute() {
+            let activeKey = localStorage.getItem('raja_active_key');
+            if(activeKey || isUserVerified) {
+                document.getElementById('activationScreen').style.display = 'none';
+                document.getElementById('mainAppContent').style.display = 'block';
+                updatePairs();
+                startTimer();
+            } else {
+                document.getElementById('activationScreen').style.display = 'block';
+                document.getElementById('mainAppContent').style.display = 'none';
+            }
+        }
+
+        function startTimer() {
+            if(timerInterval) clearInterval(timerInterval);
+            let timeLeft = 15;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                if(timeLeft < 0) timeLeft = 14;
+                let formatted = "00:" + (timeLeft < 10 ? "0" : "") + timeLeft;
+                let timerEl = document.getElementById('candleTimer');
+                if(timerEl) timerEl.innerText = formatted;
+            }, 1000);
         }
 
         window.onload = function() {
-            updatePairs();
-            document.getElementById('mainAppContent').style.display = 'block';
+            checkRoute();
         };
     </script>
 </body>
