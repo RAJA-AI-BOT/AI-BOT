@@ -1,2 +1,7 @@
-pyTelegramBotAPI
+fastapi
+uvicorn
 yfinance
+websockets
+yarl
+requests
+pyTelegramBotAPI
