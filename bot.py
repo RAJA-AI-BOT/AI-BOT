@@ -1,67 +1,57 @@
-import asyncio
-import os
-import time
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-import uvicorn
-import yfinance as yf
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-app = FastAPI()
+app = Flask(__name__)
+CORS(app)  # Frontend se connection error hatane ke liye zaroori hai
 
-@app.get("/", response_class=HTMLResponse)
-def read_root():
-    if os.path.exists("index.html"):
-        with open("index.html", "r", encoding="utf-8") as f:
-            return f.read()
-    return {"status": "online", "message": "Raja AI Bot is running successfully! (index.html not found)"}
-
-PAIRS = [
-    "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X",
-    "USDCHF=X", "NZDUSD=X", "EURGBP=X", "EURJPY=X", "GBPJPY=X",
-    "AUDJPY=X", "EURAUD=X", "GBPAUD=X", "CADJPY=X", "EURCAD=X",
-    "GBPCAD=X", "NZDJPY=X", "AUDNZD=X", "EURCHF=X", "GBPCHF=X",
-    "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD", "ADA-USD"
+# Saare OTC / Crypto pairs ki list jo aap scan karna chahte hain
+OTC_PAIRS = [
+    "NZD/CAD (OTC)", "EUR/USD (OTC)", "GBP/USD (OTC)", 
+    "AUD/USD (OTC)", "USD/JPY (OTC)", "EUR/GBP (OTC)", "BTC/USD (OTC)"
 ]
 
-def fetch_latest_candle(symbol):
-    try:
-        data = yf.download(symbol, period="5d", interval="1m", progress=False)
-        if not data.empty:
-            latest = data.iloc[-1]
-            close_val = float(latest["Close"].iloc[0]) if hasattr(latest["Close"], "iloc") else float(latest["Close"])
-            open_val = float(latest["Open"].iloc[0]) if hasattr(latest["Open"], "iloc") else float(latest["Open"])
-            return {"symbol": symbol, "close": close_val, "open": open_val}
-    except Exception as e:
-        print(f"Error fetching {symbol}: {e}")
-    return None
-
-def evaluate_strategy(candle):
-    if candle["close"] > candle["open"]:
-        return "CALL (UP)"
-    else:
-        return "PUT (DOWN)"
-
-@app.get("/get-signals")
-async def get_signals():
-    market_data = {}
-    print(f"\n--- On-Demand Scan Started at {time.strftime('%H:%M:%S')} ---")
+@app.route('/scan', methods=['POST'])
+def scan_markets():
+    data = request.json
+    selected_pair = data.get('pair', 'Auto Scan Best Pair (AI)')
     
-    for symbol in PAIRS:
-        candle = await asyncio.to_thread(fetch_latest_candle, symbol)
-        if candle:
-            clean_name = symbol.replace("=X", "").replace("-USD", "/USD")
-            current_price = candle["close"]
-            signal = evaluate_strategy(candle)
+    best_signal = None
+    highest_score = 0
+    
+    # Agar Auto Scan selected hai toh saari market/pairs par loop chalega
+    if selected_pair == "Auto Scan Best Pair (AI)":
+        for pair in OTC_PAIRS:
+            # Yahan aapka 8-indicator quantum calculation logic aayega
+            score, signal_type = calculate_8_indicators(pair) 
             
-            market_data[symbol] = {
-                "clean_name": clean_name,
-                "price": current_price,
-                "signal": signal,
-                "time": time.strftime("%H:%M:%S")
-            }
-            
-    return {"status": "success", "data": market_data}
+            if score > highest_score:
+                highest_score = score
+                best_signal = {
+                    "pair": pair,
+                    "score": score,
+                    "signal": signal_type
+                }
+    else:
+        # Agar user ne specific pair select kiya hai
+        score, signal_type = calculate_8_indicators(selected_pair)
+        best_signal = {
+            "pair": selected_pair,
+            "score": score,
+            "signal": signal_type
+        }
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    return jsonify({
+        "status": "success",
+        "data": best_signal
+    })
+
+def calculate_8_indicators(pair):
+    # Aapka 8-layer deep scan / indicator logic yahan run hoga
+    # Dummy score return kar rahe hain testing ke liye
+    import random
+    score = random.randint(85, 98)
+    signal = "CALL" if random.choice([True, False]) else "PUT"
+    return score, signal
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
