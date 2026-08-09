@@ -2,14 +2,19 @@ import asyncio
 import os
 import time
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 import uvicorn
 import yfinance as yf
 
 app = FastAPI()
 
-@app.get("/")
+# index.html dashboard ko direct root URL par show karne ke liye
+@app.get("/", response_class=HTMLResponse)
 def read_root():
-    return {"status": "online", "message": "Raja AI Bot is running successfully!"}
+    if os.path.exists("index.html"):
+        with open("index.html", "r", encoding="utf-8") as f:
+            return f.read()
+    return {"status": "online", "message": "Raja AI Bot is running successfully! (index.html not found)"}
 
 PAIRS = [
     "EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X",
