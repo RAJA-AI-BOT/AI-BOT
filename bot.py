@@ -49,12 +49,31 @@ def background_market_poller():
 poller_thread = threading.Thread(target=background_market_poller, daemon=True)
 poller_thread.start()
 
+# --- SERVER-SIDE LICENSE VERIFICATION ---
+VALID_VIP_KEYS = ["RAJA-VIP-2026-X99", "RAJA-VIP-PRO-777", "RAJA-AI-MASTERKEY"]
+
+@app.route('/verify-license', methods=['POST'])
+def verify_license():
+    data = request.json or {}
+    user_key = data.get('key', '').strip()
+    
+    if user_key in VALID_VIP_KEYS:
+        return jsonify({
+            "status": "success",
+            "message": "License verified successfully!"
+        })
+    else:
+        return jsonify({
+            "status": "error",
+            "message": "Invalid or expired license key!"
+        }), 401
+
 @app.route('/')
 def home():
     # Ab yeh root URL aapki index.html file serve karega agar woh root directory me hai
     if os.path.exists('index.html'):
         return send_from_directory('.', 'index.html')
-    return "Raja AI Bot Backend with Centralized Caching is Running Successfully!"
+    return "Raja AI Bot Backend with Centralized Caching and Secure License Verification is Running Successfully!"
 
 @app.route('/admin')
 def admin_panel():
