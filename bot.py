@@ -11,11 +11,6 @@ import yfinance as yf
 app = FastAPI()
 
 
-def run_http_server():
-  server = HTTPServer(("0.0.0.0", 10000), SimpleHTTPRequestHandler)
-  server.serve_forever()
-
-
 # ----------------- LIVE MARKET SCANNER & CACHING SETUP -----------------
 PAIRS = [
     # Forex Live Pairs
@@ -48,20 +43,27 @@ PAIRS = [
     "ADA-USD",
 ]
 
-# Global cache taake 50+ users ke liye bar bar Yahoo ko request na jaye
+# Global cache taake users ke liye bar bar Yahoo ko request na jaye
 market_cache = {}
 
 
 def fetch_latest_candle(symbol):
   try:
-    data = yf.download(symbol, period="1d", interval="1m", progress=False)
+    data = yf.download(symbol, period="5d", interval="1m", progress=False)
     if not data.empty:
       latest = data.iloc[-1]
-      return {
-          "symbol": symbol,
-          "close": float(latest["Close"]),
-          "open": float(latest["Open"]),
-      }
+      # Series/DataFrame issue fix karne ke liye safely float extract karna
+      close_val = (
+          float(latest["Close"].iloc[0])
+          if hasattr(latest["Close"], "iloc")
+          else float(latest["Close"])
+      )
+      open_val = (
+          float(latest["Open"].iloc[0])
+          if hasattr(latest["Open"], "iloc")
+          else float(latest["Open"])
+      )
+      return {"symbol": symbol, "close": close_val, "open": open_val}
   except Exception as e:
     print(f"Error fetching {symbol}: {e}")
   return None
@@ -80,7 +82,7 @@ async def scan_all_pairs():
     print(f"\n--- Scan Cycle Started at {time.strftime('%H:%M:%S')} ---")
 
     for symbol in PAIRS:
-      # Blocking yfinance call ko async thread mein chalana taake server block na ho
+      # Blocking yfinance call ko async thread mein chalana
       candle = await asyncio.to_thread(fetch_latest_candle, symbol)
       if candle:
         clean_name = symbol.replace("=X", "").replace("-USD", "/USD")
@@ -96,21 +98,20 @@ async def scan_all_pairs():
         }
         print(f"[{clean_name}] Cached -> Price: {current_price} | Signal: {signal}")
 
-      await asyncio.sleep(2)
+      # Rate limit se bachne ke liye har pair ke darmiyan 4 seconds ka gap rakha hai
+      await asyncio.sleep(4)
 
     print("--- Cycle completed. Waiting for next background refresh... ---")
-    await asyncio.sleep(60)
+    await asyncio.sleep(30)
 
 
 @app.on_event("startup")
 async def startup_event():
-  # Server start hote hi background cache updater chala dein
   asyncio.create_task(scan_all_pairs())
 
 
 @app.get("/get-signals")
 async def get_signals():
-  """Jab 50+ users ek sath request karenge, sab ko foran cache se data milega[cite: 14]"""
   if not market_cache:
     return {"status": "loading", "message": "Data is loading, please wait..."}
   return {"status": "success", "data": market_cache}
@@ -118,8 +119,5 @@ async def get_signals():
 
 # ----------------- MAIN PROGRAM EXECUTION -----------------
 if __name__ == "__main__":
-  # Render ke diye gaye PORT ko automatically uthana (default 10000)
   port = int(os.environ.get("PORT", 10000))
-
-  # FastAPI server ko Uvicorn ke zariye directly Render port par chalana
   uvicorn.run(app, host="0.0.0.0", port=port)
