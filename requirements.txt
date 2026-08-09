@@ -7,3 +7,4 @@ requests
 pyTelegramBotAPI
 flask
 flask-cors
+gunicorn
