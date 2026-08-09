@@ -1,9 +1,10 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import yfinance as yf
 import random
+import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='.', template_folder='.')
 CORS(app)  # Frontend se connection error hatane ke liye zaroori hai
 
 # Live Yahoo Finance supported pairs mapping
@@ -22,6 +23,9 @@ OTC_PAIRS = list(YAHOO_SYMBOLS.keys())
 
 @app.route('/')
 def home():
+    # Ab yeh root URL aapki index.html file serve karega agar woh root directory me hai
+    if os.path.exists('index.html'):
+        return send_from_directory('.', 'index.html')
     return "Raja AI Bot Backend with Live Yahoo Finance Data is Running Successfully!"
 
 @app.route('/scan', methods=['POST'])
