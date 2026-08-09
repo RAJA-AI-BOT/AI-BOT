@@ -1,291 +1,198 @@
-<script>
-    // Global Variables Initialization
-    let timerInterval = null;
-    let scanInterval = null;
-    let selectedExpiry = "1M";
-    let dynamicHistory = JSON.parse(localStorage.getItem('raja_signal_history')) || [];
-    let isUserVerified = false;
-    let latestGeneratedKey = "";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RAJA AI PREMIUM - VIP Signal Bot</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0b0f19; color: #ffffff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+        .app-container { width: 100%; max-width: 480px; background: #131a29; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid #1f293d; margin-bottom: 20px; }
+        .header { background: #1a233a; padding: 15px; text-align: center; border-bottom: 1px solid #2a3650; }
+        .header h2 { color: #00ffcc; font-size: 20px; letter-spacing: 1px; }
+        .content { padding: 20px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-size: 14px; color: #94a3b8; }
+        .form-group input, .form-group select { width: 100%; padding: 12px; background: #0b0f19; border: 1px solid #2a3650; border-radius: 8px; color: #fff; font-size: 14px; }
+        .btn { width: 100%; padding: 12px; background: #00ffcc; color: #0b0f19; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; transition: 0.2s; }
+        .btn:hover { background: #00cca3; }
+    </style>
+</head>
+<body>
 
-    // Auto Candle Timer Sync
-    function initCandleTimer() {
-        if (timerInterval) clearInterval(timerInterval);
-        timerInterval = setInterval(() => {
-            let now = new Date();
-            let totalSeconds = now.getSeconds();
-            let currentSecond = totalSeconds % 15;
-            let remaining = 15 - currentSecond;
-            if (remaining === 15) remaining = 0;
+    <div class="app-container">
+        <div class="header">
+            <h2>RAJA AI PREMIUM</h2>
+            <div id="candleTimer" style="font-size: 13px; color: #00ffcc; margin-top: 4px;">00:15</div>
+        </div>
 
-            let displaySec = remaining < 10 ? "0" + remaining : remaining;
-            let timerEl = document.getElementById('candleTimer');
-            if (timerEl) timerEl.innerText = "00:" + displaySec;
+        <div class="content" id="mainAppContent">
+            <div id="defaultView" style="display: flex; flex-direction: column; gap: 12px;">
+                <div class="form-group">
+                    <label>Market Type</label>
+                    <select id="marketType" onchange="updatePairs()">
+                        <option value="CryptoOTC">Crypto OTC</option>
+                        <option value="CryptoLive">Crypto Live</option>
+                        <option value="ForexOTC">Forex OTC</option>
+                        <option value="ForexLive">Forex Live</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Select Asset / Pair</label>
+                    <select id="pairSelect"></select>
+                </div>
+                <button class="btn" onclick="startDeepScan()">Start Deep Quantum Scan</button>
+            </div>
 
-            let alertBox = document.getElementById('tradeAlert');
-            let hudBox = document.getElementById('hudBoxContainer');
+            <div id="scanView" style="display: none; text-align: center; padding: 10px 0;">
+                <div id="scanStepText" style="font-size: 14px; margin-bottom: 10px; color: #00ffcc;">Initializing filters...</div>
+                <div style="width: 100%; background: #0b0f19; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 15px;">
+                    <div id="scanProgressBar" style="width: 0%; height: 100%; background: #00ffcc; transition: width 0.1s;"></div>
+                </div>
+                <div id="liveScanConsole" style="background: #0b0f19; padding: 10px; border-radius: 6px; font-size: 12px; text-align: left; height: 90px; overflow-y: auto; color: #94a3b8;"></div>
+            </div>
 
-            if (remaining <= 3 && remaining > 0) {
-                if (alertBox) alertBox.style.display = "block";
-                if (hudBox) hudBox.classList.add('alert-flash');
-            } else {
-                if (alertBox) alertBox.style.display = "none";
-                if (hudBox) hudBox.classList.remove('alert-flash');
-            }
-        }, 1000);
-    }
+            <div id="signalView" style="display: none; text-align: center; padding: 10px 0;">
+                <div style="font-size: 13px; color: #94a3b8; margin-bottom: 5px;" id="resModalAsset">EUR/USD (OTC)</div>
+                <div id="resModalDirection" style="font-size: 22px; font-weight: bold; margin: 10px 0;"></div>
+                <div id="resModalMeta" style="font-size: 12px; color: #00ffcc; margin-bottom: 15px;"></div>
+                <button class="btn" onclick="showDefaultView()">Back to Scanner</button>
+            </div>
+        </div>
+    </div>
 
-    // Asset Lists for Broker & Market Types
-    const brokerAssets = {
-        "Quotex": {
-            "CryptoLive": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
-            "CryptoOTC": ["BTC/USD (OTC)", "ETH/USD (OTC)", "SOL/USD (OTC)", "ADA/USD (OTC)"],
-            "ForexLive": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD"],
-            "ForexOTC": ["EUR/USD (OTC)", "GBP/USD (OTC)", "AUD/CAD (OTC)", "EUR/GBP (OTC)", "NZD/CAD (OTC)"]
+    <div class="app-container">
+        <div class="header" style="background: #0f1624;">
+            <h3 style="font-size: 14px; color: #94a3b8; margin-bottom: 8px;">Admin Key Generator</h3>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                <input type="password" id="adminPasswordInput" placeholder="Admin Pass" style="padding: 8px; background: #0b0f19; border: 1px solid #2a3650; border-radius: 6px; color: #fff; width: 50%;">
+                <button class="btn" style="padding: 8px; width: 50%; font-size: 13px;" onclick="generateKey()">Generate</button>
+            </div>
+            <div id="generatedKeyDisplay" style="font-size: 12px; color: #00ffcc; margin-bottom: 6px;"></div>
+            <button class="btn" id="copyKeyBtn" style="display: none; padding: 6px; font-size: 12px; background: #1a233a; color: #00ffcc; border: 1px solid #00ffcc;" onclick="copyGeneratedKey()">Copy Key</button>
+        </div>
+    </div>
+
+    <script>
+        let timerInterval = null;
+        let scanInterval = null;
+        let latestGeneratedKey = "";
+
+        function initCandleTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                let now = new Date();
+                let remaining = 15 - (now.getSeconds() % 15);
+                if (remaining === 15) remaining = 0;
+                let timerEl = document.getElementById('candleTimer');
+                if (timerEl) timerEl.innerText = "00:" + (remaining < 10 ? "0" + remaining : remaining);
+            }, 1000);
         }
-    };
 
-    function updateBrokerAssets() {
-        updatePairs();
-    }
-
-    function updatePairs() {
-        let marketType = document.getElementById('marketType');
-        let pairSelect = document.getElementById('pairSelect');
-        if (!marketType || !pairSelect) return;
-        
-        pairSelect.innerHTML = "";
-        let pairs = brokerAssets["Quotex"][marketType.value] || [];
-        pairs.forEach(pair => {
-            let opt = document.createElement('option');
-            opt.value = pair;
-            opt.innerText = pair;
-            pairSelect.appendChild(opt);
-        });
-    }
-
-    function setExpiry(btn, time) {
-        document.querySelectorAll('.expiry-btn').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        selectedExpiry = time;
-    }
-
-    function showDefaultView() {
-        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view').forEach(el => el.style.display = 'none');
-        let defaultView = document.getElementById('defaultView');
-        if (defaultView) defaultView.style.display = 'flex';
-        let hud = document.getElementById('hudBoxContainer');
-        if (hud) hud.classList.remove('glow-buy', 'glow-sell');
-    }
-
-    function openHistoryInline() {
-        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        let historyView = document.getElementById('historyInlineView');
-        if (historyView) historyView.style.display = 'block';
-        renderHistoryList();
-    }
-
-    function openSettingsInline() {
-        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        let settingsView = document.getElementById('settingsInlineView');
-        if (settingsView) settingsView.style.display = 'block';
-    }
-
-    function openNewsInline() {
-        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        let newsView = document.getElementById('newsInlineView');
-        if (newsView) newsView.style.display = 'block';
-    }
-
-    function openRiskInline() {
-        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        let riskView = document.getElementById('riskInlineView');
-        if (riskView) riskView.style.display = 'block';
-        calculateRisk();
-    }
-
-    function calculateRisk() {
-        let baseInput = document.getElementById('baseStakeInput');
-        if (!baseInput) return;
-        let base = parseFloat(baseInput.value) || 10;
-        let s1 = document.getElementById('step1Display');
-        let s2 = document.getElementById('step2Display');
-        let s3 = document.getElementById('step3Display');
-        if (s1) s1.innerText = "$" + base.toFixed(2);
-        if (s2) s2.innerText = "$" + (base * 2.2).toFixed(2);
-        if (s3) s3.innerText = "$" + (base * 4.8).toFixed(2);
-    }
-
-    function renderHistoryList() {
-        let box = document.getElementById('historyListBox');
-        if (!box) return;
-        if (dynamicHistory.length === 0) {
-            box.innerHTML = `<div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>`;
-            return;
-        }
-        let html = "";
-        dynamicHistory.slice(-5).reverse().forEach(item => {
-            html += `<div class="inline-item"><span>${item.pair} (${item.dir})</span> <span class="win-tag">${item.acc}%</span></div>`;
-        });
-        box.innerHTML = html;
-    }
-
-    function startDeepScan() {
-        document.querySelectorAll('.default-view, .signal-view, .no-signal-view, .inline-content-view').forEach(el => el.style.display = 'none');
-        let scanView = document.getElementById('scanView');
-        if (scanView) scanView.style.display = 'block';
-        let hud = document.getElementById('hudBoxContainer');
-        if (hud) hud.classList.remove('glow-buy', 'glow-sell');
-
-        let progressBar = document.getElementById('scanProgressBar');
-        let consoleBox = document.getElementById('liveScanConsole');
-        let stepText = document.getElementById('scanStepText');
-
-        if (progressBar) progressBar.style.width = '0%';
-        if (consoleBox) consoleBox.innerHTML = `<div class="live-scan-row scanning">Initializing 8-layer quantum filters...</div>`;
-
-        let progress = 0;
-        if (scanInterval) clearInterval(scanInterval);
-
-        scanInterval = setInterval(() => {
-            progress += 4;
-            if (progress <= 100 && progressBar) {
-                progressBar.style.width = progress + '%';
+        const brokerAssets = {
+            "Quotex": {
+                "CryptoLive": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
+                "CryptoOTC": ["BTC/USD (OTC)", "ETH/USD (OTC)", "SOL/USD (OTC)", "ADA/USD (OTC)"],
+                "ForexLive": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD"],
+                "ForexOTC": ["EUR/USD (OTC)", "GBP/USD (OTC)", "AUD/CAD (OTC)", "EUR/GBP (OTC)", "NZD/CAD (OTC)"]
             }
+        };
 
-            if (consoleBox && stepText) {
-                if (progress === 25) {
-                    consoleBox.innerHTML += `<div class="live-scan-row passed">RSI & EMA Convergence: PASSED (96%)</div>`;
-                    stepText.innerText = "Analyzing Bollinger Bands & MACD...";
-                } else if (progress === 50) {
-                    consoleBox.innerHTML += `<div class="live-scan-row passed">Bollinger & MACD Stability: PASSED</div>`;
-                    stepText.innerText = "Checking Candle Patterns & Multi-TF...";
-                } else if (progress === 75) {
-                    consoleBox.innerHTML += `<div class="live-scan-row passed">Wick Rejection & Circuit Check: SECURE</div>`;
-                    stepText.innerText = "Finalizing Quantum Signal Generation...";
-                } else if (progress >= 100) {
-                    clearInterval(scanInterval);
-                    finishScanResult();
+        function updatePairs() {
+            let marketType = document.getElementById('marketType');
+            let pairSelect = document.getElementById('pairSelect');
+            if (!marketType || !pairSelect) return;
+            
+            pairSelect.innerHTML = "";
+            let pairs = brokerAssets["Quotex"][marketType.value] || [];
+            pairs.forEach(pair => {
+                let opt = document.createElement('option');
+                opt.value = pair;
+                opt.innerText = pair;
+                pairSelect.appendChild(opt);
+            });
+        }
+
+        function showDefaultView() {
+            document.getElementById('defaultView').style.display = 'flex';
+            document.getElementById('scanView').style.display = 'none';
+            document.getElementById('signalView').style.display = 'none';
+        }
+
+        function startDeepScan() {
+            document.getElementById('defaultView').style.display = 'none';
+            document.getElementById('scanView').style.display = 'block';
+
+            let progressBar = document.getElementById('scanProgressBar');
+            let consoleBox = document.getElementById('liveScanConsole');
+            let stepText = document.getElementById('scanStepText');
+
+            if (progressBar) progressBar.style.width = '0%';
+            if (consoleBox) consoleBox.innerHTML = `<div style="color: #00ffcc;">Initializing quantum filters...</div>`;
+
+            let progress = 0;
+            if (scanInterval) clearInterval(scanInterval);
+
+            scanInterval = setInterval(() => {
+                progress += 20;
+                if (progress <= 100 && progressBar) {
+                    progressBar.style.width = progress + '%';
                 }
-                consoleBox.scrollTop = consoleBox.scrollHeight;
-            }
-        }, 80);
-    }
+                if (consoleBox && stepText) {
+                    if (progress === 40) {
+                        consoleBox.innerHTML += `<div>RSI & EMA Convergence: PASSED</div>`;
+                        stepText.innerText = "Analyzing Bollinger Bands...";
+                    } else if (progress >= 100) {
+                        clearInterval(scanInterval);
+                        finishScanResult();
+                    }
+                }
+            }, 100);
+        }
 
-    function finishScanResult() {
-        let pairSelect = document.getElementById('pairSelect');
-        let selectedPair = pairSelect ? pairSelect.value : "EUR/USD (OTC)";
-        
-        let targetPairDisplay = document.getElementById('targetPairDisplay');
-        let resModalAsset = document.getElementById('resModalAsset');
-        if (targetPairDisplay) targetPairDisplay.innerText = selectedPair;
-        if (resModalAsset) resModalAsset.innerText = selectedPair;
+        function finishScanResult() {
+            let pairSelect = document.getElementById('pairSelect');
+            let selectedPair = pairSelect ? pairSelect.value : "EUR/USD (OTC)";
+            document.getElementById('resModalAsset').innerText = selectedPair;
 
-        let isBuy = Math.random() > 0.45;
-        let hud = document.getElementById('hudBoxContainer');
-        let lightOverlay = document.getElementById('lightOverlay');
+            let isBuy = Math.random() > 0.45;
+            document.getElementById('scanView').style.display = 'none';
+            document.getElementById('signalView').style.display = 'block';
 
-        let scanView = document.getElementById('scanView');
-        let signalView = document.getElementById('signalView');
-        if (scanView) scanView.style.display = 'none';
-        if (signalView) signalView.style.display = 'block';
+            let dirEl = document.getElementById('resModalDirection');
+            let metaEl = document.getElementById('resModalMeta');
 
-        let dirEl = document.getElementById('resModalDirection');
-        let metaEl = document.getElementById('resModalMeta');
-
-        if (isBuy) {
-            if (dirEl) {
-                dirEl.className = "signal-direction dir-up";
+            if (isBuy) {
+                dirEl.style.color = "#00ffcc";
                 dirEl.innerHTML = "⬆ UP (BUY)";
-            }
-            if (metaEl) metaEl.innerHTML = `CALL 🔺 | Accuracy: 96.8% | TF: ${selectedExpiry}`;
-            if (hud) hud.classList.add('glow-buy');
-            if (lightOverlay) lightOverlay.className = "signal-light-overlay buy-active";
-        } else {
-            if (dirEl) {
-                dirEl.className = "signal-direction dir-down";
+                metaEl.innerHTML = `Accuracy: 96.8%`;
+            } else {
+                dirEl.style.color = "#ff3366";
                 dirEl.innerHTML = "⬇ DOWN (SELL)";
+                metaEl.innerHTML = `Accuracy: 95.4%`;
             }
-            if (metaEl) metaEl.innerHTML = `PUT 🔻 | Accuracy: 95.4% | TF: ${selectedExpiry}`;
-            if (hud) hud.classList.add('glow-sell');
-            if (lightOverlay) lightOverlay.className = "signal-light-overlay sell-active";
         }
 
-        if (typeof playSignalAlertSound === "function") {
-            playSignalAlertSound();
-        }
-
-        dynamicHistory.push({
-            pair: selectedPair,
-            dir: isBuy ? "BUY" : "SELL",
-            acc: isBuy ? "96.8%" : "95.4%"
-        });
-        localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
-    }
-
-    function verifyAccess() {
-        let keyInputEl = document.getElementById('verifyLicenseKey');
-        let msgBox = document.getElementById('verifyMessage');
-        if (!keyInputEl) return;
-        let keyInput = keyInputEl.value.trim();
-
-        if (!keyInput) {
-            if (msgBox) {
-                msgBox.style.display = "block";
-                msgBox.style.background = "rgba(255, 51, 102, 0.2)";
-                msgBox.style.color = "#ff3366";
-                msgBox.innerText = "Please enter your VIP License Key!";
+        function generateKey() {
+            let adminPass = document.getElementById('adminPasswordInput').value.trim();
+            if (adminPass !== "raja2026") {
+                alert("Incorrect Admin Password!");
+                return;
             }
-            return;
+            latestGeneratedKey = 'RAJA-VIP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+            document.getElementById('generatedKeyDisplay').innerText = "Generated Key: " + latestGeneratedKey;
+            document.getElementById('copyKeyBtn').style.display = 'block';
         }
 
-        isUserVerified = true;
-        localStorage.setItem('raja_active_key', keyInput);
-        checkRoute();
-    }
+        function copyGeneratedKey() {
+            navigator.clipboard.writeText(latestGeneratedKey);
+            alert("License key copied to clipboard!");
+        }
 
-    function checkRoute() {
-        let activeKey = localStorage.getItem('raja_active_key');
-        let activationScreen = document.getElementById('activationScreen');
-        let mainAppContent = document.getElementById('mainAppContent');
-        let adminPanel = document.getElementById('adminPanel');
-
-        if (activeKey || isUserVerified) {
-            if (activationScreen) activationScreen.style.display = 'none';
-            if (mainAppContent) mainAppContent.style.display = 'block';
-            if (adminPanel) adminPanel.style.display = 'block';
+        window.onload = function() {
             initCandleTimer();
             updatePairs();
-        } else {
-            if (activationScreen) activationScreen.style.display = 'block';
-            if (mainAppContent) mainAppContent.style.display = 'none';
-            if (adminPanel) adminPanel.style.display = 'block';
-        }
-    }
-
-    function generateKey() {
-        let adminPassInput = document.getElementById('adminPasswordInput');
-        if (!adminPassInput) return;
-        let adminPass = adminPassInput.value.trim();
-
-        if (adminPass !== "raja2026") {
-            alert("Incorrect Admin Password!");
-            return;
-        }
-
-        let randomCode = 'RAJA-VIP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-        latestGeneratedKey = randomCode;
-        let display = document.getElementById('generatedKeyDisplay');
-        if (display) display.innerText = "Generated Key: " + randomCode;
-        let copyBtn = document.getElementById('copyKeyBtn');
-        if (copyBtn) copyBtn.style.display = 'block';
-    }
-
-    function copyGeneratedKey() {
-        navigator.clipboard.writeText(latestGeneratedKey);
-        alert("License key copied to clipboard!");
-    }
-
-    window.onload = function() {
-        checkRoute();
-    };
-</script>
+        };
+    </script>
+</body>
+</html>
