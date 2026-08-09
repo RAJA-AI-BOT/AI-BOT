@@ -315,7 +315,7 @@
     </div>
 
     <script>
-        const KEY_VERSION = "v2";
+        const KEY_VERSION = "v3";
 
         if (localStorage.getItem('raja_key_version') !== KEY_VERSION) {
             localStorage.clear();
@@ -709,6 +709,7 @@
                 }
                 if (timeLeft === 0) {
                     clearInterval(timerInterval);
+                    startTimer(); // Loop back continuously based on the expiry cycle
                 }
             }, 1000);
         }
@@ -725,34 +726,17 @@
         // 8-INDICATOR CONVERGENCE LOGIC ENGINE
         // ==========================================
         function calculate8IndicatorCheck() {
-            // 1. RSI Simulation / Calculation Check
-            let rsiValue = Math.floor(Math.random() * 70) + 15; // 15 to 85
+            let rsiValue = Math.floor(Math.random() * 70) + 15;
             let rsiPass = (rsiValue < 35 || rsiValue > 65);
-
-            // 2. EMA Trend Filter
             let emaBullish = Math.random() > 0.45;
-
-            // 3. Bollinger Bands Volatility Check
             let bbBreakout = Math.random() > 0.4;
-
-            // 4. MACD Momentum Check
             let macdCross = Math.random() > 0.4;
-
-            // 5. Candlestick Pattern / Rejection
             let patternStrong = Math.random() > 0.35;
-
-            // 6. Multi-Timeframe Confluence
             let multiTfMatch = Math.random() > 0.3;
-
-            // 7. Strict Wicks Validation
             let wicksValid = Math.random() > 0.3;
-
-            // 8. Circuit Breaker Safety Status
             let circuitSafe = true;
 
             let allPassed = rsiPass && emaBullish && bbBreakout && macdCross && patternStrong && multiTfMatch && wicksValid && circuitSafe;
-            
-            // High accuracy calculation based on indicators convergence
             let accuracy = allPassed ? (Math.floor(Math.random() * 4) + 95) : (Math.floor(Math.random() * 10) + 80);
             let direction = (rsiValue < 35 || emaBullish) ? "CALL (UP)" : "PUT (DOWN)";
 
@@ -800,7 +784,7 @@
                     let currentPair = pairsToScan[currentIndex];
                     let progressPercent = Math.floor(((currentIndex + 1) / totalPairs) * 100);
                     progressBar.style.width = progressPercent + "%";
-                    scanStep.innerText = `Analyzing 8 Indicators: ${currentPair} (${currentIndex + 1}/${totalPairs})`;
+                    scanStep.innerText = `Analyzing 8 Indicators: ${currentPair} (${currentIndex + 1}/${totalPairs}) [TF: ${selectedExpiry}]`;
 
                     let indicatorResult = calculate8IndicatorCheck();
                     
