@@ -1,248 +1,249 @@
-// Auto Candle Timer Sync
-        function initCandleTimer() {
-            if (timerInterval) clearInterval(timerInterval);
-            timerInterval = setInterval(() => {
-                let now = new Date();
-                let totalSeconds = now.getSeconds();
-                let currentSecond = totalSeconds % 15;
-                let remaining = 15 - currentSecond;
-                if (remaining === 15) remaining = 0;
+<script>
+    // Auto Candle Timer Sync
+    function initCandleTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            let now = new Date();
+            let totalSeconds = now.getSeconds();
+            let currentSecond = totalSeconds % 15;
+            let remaining = 15 - currentSecond;
+            if (remaining === 15) remaining = 0;
 
-                let displaySec = remaining < 10 ? "0" + remaining : remaining;
-                document.getElementById('candleTimer').innerText = "00:" + displaySec;
+            let displaySec = remaining < 10 ? "0" + remaining : remaining;
+            document.getElementById('candleTimer').innerText = "00:" + displaySec;
 
-                let alertBox = document.getElementById('tradeAlert');
-                let hudBox = document.getElementById('hudBoxContainer');
+            let alertBox = document.getElementById('tradeAlert');
+            let hudBox = document.getElementById('hudBoxContainer');
 
-                if (remaining <= 3 && remaining > 0) {
-                    alertBox.style.display = "block";
-                    hudBox.classList.add('alert-flash');
-                } else {
-                    alertBox.style.display = "none";
-                    hudBox.classList.remove('alert-flash');
-                }
-            }, 1000);
+            if (remaining <= 3 && remaining > 0) {
+                alertBox.style.display = "block";
+                hudBox.classList.add('alert-flash');
+            } else {
+                alertBox.style.display = "none";
+                hudBox.classList.remove('alert-flash');
+            }
+        }, 1000);
+    }
+
+    // Asset Lists for Broker & Market Types
+    const brokerAssets = {
+        "Quotex": {
+            "CryptoLive": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
+            "CryptoOTC": ["BTC/USD (OTC)", "ETH/USD (OTC)", "SOL/USD (OTC)", "ADA/USD (OTC)"],
+            "ForexLive": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD"],
+            "ForexOTC": ["EUR/USD (OTC)", "GBP/USD (OTC)", "AUD/CAD (OTC)", "EUR/GBP (OTC)", "NZD/CAD (OTC)"]
+        }
+    };
+
+    function updateBrokerAssets() {
+        updatePairs();
+    }
+
+    function updatePairs() {
+        let marketType = document.getElementById('marketType').value;
+        let pairSelect = document.getElementById('pairSelect');
+        pairSelect.innerHTML = "";
+
+        let pairs = brokerAssets["Quotex"][marketType] || [];
+        pairs.forEach(pair => {
+            let opt = document.createElement('option');
+            opt.value = pair;
+            opt.innerText = pair;
+            pairSelect.appendChild(opt);
+        });
+    }
+
+    function setExpiry(btn, time) {
+        document.querySelectorAll('.expiry-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        selectedExpiry = time;
+    }
+
+    function showDefaultView() {
+        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view').forEach(el => el.style.display = 'none');
+        document.getElementById('defaultView').style.display = 'flex';
+        let hud = document.getElementById('hudBoxContainer');
+        hud.classList.remove('glow-buy', 'glow-sell');
+    }
+
+    function openHistoryInline() {
+        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
+        document.getElementById('historyInlineView').style.display = 'block';
+        renderHistoryList();
+    }
+
+    function openSettingsInline() {
+        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
+        document.getElementById('settingsInlineView').style.display = 'block';
+    }
+
+    function openNewsInline() {
+        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
+        document.getElementById('newsInlineView').style.display = 'block';
+    }
+
+    function openRiskInline() {
+        document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
+        document.getElementById('riskInlineView').style.display = 'block';
+        calculateRisk();
+    }
+
+    function calculateRisk() {
+        let base = parseFloat(document.getElementById('baseStakeInput').value) || 10;
+        document.getElementById('step1Display').innerText = "$" + base.toFixed(2);
+        document.getElementById('step2Display').innerText = "$" + (base * 2.2).toFixed(2);
+        document.getElementById('step3Display').innerText = "$" + (base * 4.8).toFixed(2);
+    }
+
+    function renderHistoryList() {
+        let box = document.getElementById('historyListBox');
+        if (dynamicHistory.length === 0) {
+            box.innerHTML = `<div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>`;
+            return;
+        }
+        let html = "";
+        dynamicHistory.slice(-5).reverse().forEach(item => {
+            html += `<div class="inline-item"><span>${item.pair} (${item.dir})</span> <span class="win-tag">${item.acc}%</span></div>`;
+        });
+        box.innerHTML = html;
+    }
+
+    function startDeepScan() {
+        document.querySelectorAll('.default-view, .signal-view, .no-signal-view, .inline-content-view').forEach(el => el.style.display = 'none');
+        document.getElementById('scanView').style.display = 'block';
+        let hud = document.getElementById('hudBoxContainer');
+        hud.classList.remove('glow-buy', 'glow-sell');
+
+        let progressBar = document.getElementById('scanProgressBar');
+        let consoleBox = document.getElementById('liveScanConsole');
+        let stepText = document.getElementById('scanStepText');
+
+        progressBar.style.width = '0%';
+        consoleBox.innerHTML = `<div class="live-scan-row scanning">Initializing 8-layer quantum filters...</div>`;
+
+        let progress = 0;
+        if (scanInterval) clearInterval(scanInterval);
+
+        scanInterval = setInterval(() => {
+            progress += 4;
+            if (progress <= 100) {
+                progressBar.style.width = progress + '%';
+            }
+
+            if (progress === 25) {
+                consoleBox.innerHTML += `<div class="live-scan-row passed">RSI & EMA Convergence: PASSED (96%)</div>`;
+                stepText.innerText = "Analyzing Bollinger Bands & MACD...";
+            } else if (progress === 50) {
+                consoleBox.innerHTML += `<div class="live-scan-row passed">Bollinger & MACD Stability: PASSED</div>`;
+                stepText.innerText = "Checking Candle Patterns & Multi-TF...";
+            } else if (progress === 75) {
+                consoleBox.innerHTML += `<div class="live-scan-row passed">Wick Rejection & Circuit Check: SECURE</div>`;
+                stepText.innerText = "Finalizing Quantum Signal Generation...";
+            } else if (progress >= 100) {
+                clearInterval(scanInterval);
+                finishScanResult();
+            }
+            consoleBox.scrollTop = consoleBox.scrollHeight;
+        }, 80);
+    }
+
+    function finishScanResult() {
+        let selectedPair = document.getElementById('pairSelect').value || "EUR/USD (OTC)";
+        document.getElementById('targetPairDisplay').innerText = selectedPair;
+        document.getElementById('resModalAsset').innerText = selectedPair;
+
+        let isBuy = Math.random() > 0.45;
+        let hud = document.getElementById('hudBoxContainer');
+        let lightOverlay = document.getElementById('lightOverlay');
+
+        document.getElementById('scanView').style.display = 'none';
+        document.getElementById('signalView').style.display = 'block';
+
+        let dirEl = document.getElementById('resModalDirection');
+        let metaEl = document.getElementById('resModalMeta');
+
+        if (isBuy) {
+            dirEl.className = "signal-direction dir-up";
+            dirEl.innerHTML = "⬆ UP (BUY)";
+            metaEl.innerHTML = `CALL 🔺 | Accuracy: 96.8% | TF: ${selectedExpiry}`;
+            hud.classList.add('glow-buy');
+            lightOverlay.className = "signal-light-overlay buy-active";
+        } else {
+            dirEl.className = "signal-direction dir-down";
+            dirEl.innerHTML = "⬇ DOWN (SELL)";
+            metaEl.innerHTML = `PUT 🔻 | Accuracy: 95.4% | TF: ${selectedExpiry}`;
+            hud.classList.add('glow-sell');
+            lightOverlay.className = "signal-light-overlay sell-active";
         }
 
-        // Asset Lists for Broker & Market Types
-        const brokerAssets = {
-            "Quotex": {
-                "CryptoLive": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
-                "CryptoOTC": ["BTC/USD (OTC)", "ETH/USD (OTC)", "SOL/USD (OTC)", "ADA/USD (OTC)"],
-                "ForexLive": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD"],
-                "ForexOTC": ["EUR/USD (OTC)", "GBP/USD (OTC)", "AUD/CAD (OTC)", "EUR/GBP (OTC)", "NZD/CAD (OTC)"]
-            }
-        };
+        playSignalAlertSound();
 
-        function updateBrokerAssets() {
+        dynamicHistory.push({
+            pair: selectedPair,
+            dir: isBuy ? "BUY" : "SELL",
+            acc: isBuy ? "96.8%" : "95.4%"
+        });
+        localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+    }
+
+    function verifyAccess() {
+        let keyInput = document.getElementById('verifyLicenseKey').value.trim();
+        let msgBox = document.getElementById('verifyMessage');
+
+        if (!keyInput) {
+            msgBox.style.display = "block";
+            msgBox.style.background = "rgba(255, 51, 102, 0.2)";
+            msgBox.style.color = "#ff3366";
+            msgBox.innerText = "Please enter your VIP License Key!";
+            return;
+        }
+
+        // Verification Check
+        isUserVerified = true;
+        localStorage.setItem('raja_active_key', keyInput);
+        checkRoute();
+    }
+
+    function checkRoute() {
+        let activeKey = localStorage.getItem('raja_active_key');
+        if (activeKey || isUserVerified) {
+            document.getElementById('activationScreen').style.display = 'none';
+            document.getElementById('mainAppContent').style.display = 'block';
+            document.getElementById('adminPanel').style.display = 'block';
+            initCandleTimer();
             updatePairs();
+        } else {
+            document.getElementById('activationScreen').style.display = 'block';
+            document.getElementById('mainAppContent').style.display = 'none';
+            document.getElementById('adminPanel').style.display = 'block';
+        }
+    }
+
+    function generateKey() {
+        let tgId = document.getElementById('adminTelegramId').value.trim();
+        let adminPass = document.getElementById('adminPasswordInput').value.trim();
+
+        if (adminPass !== "raja2026") {
+            alert("Incorrect Admin Password!");
+            return;
         }
 
-        function updatePairs() {
-            let marketType = document.getElementById('marketType').value;
-            let pairSelect = document.getElementById('pairSelect');
-            pairSelect.innerHTML = "";
+        let randomCode = 'RAJA-VIP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        latestGeneratedKey = randomCode;
+        let display = document.getElementById('generatedKeyDisplay');
+        display.innerText = "Generated Key: " + randomCode;
+        document.getElementById('copyKeyBtn').style.display = 'block';
+    }
 
-            let pairs = brokerAssets["Quotex"][marketType] || [];
-            pairs.forEach(pair => {
-                let opt = document.createElement('option');
-                opt.value = pair;
-                opt.innerText = pair;
-                pairSelect.appendChild(opt);
-            });
-        }
+    function copyGeneratedKey() {
+        navigator.clipboard.writeText(latestGeneratedKey);
+        alert("License key copied to clipboard!");
+    }
 
-        function setExpiry(btn, time) {
-            document.querySelectorAll('.expiry-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            selectedExpiry = time;
-        }
-
-        function showDefaultView() {
-            document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view').forEach(el => el.style.display = 'none');
-            document.getElementById('defaultView').style.display = 'flex';
-            let hud = document.getElementById('hudBoxContainer');
-            hud.classList.remove('glow-buy', 'glow-sell');
-        }
-
-        function openHistoryInline() {
-            document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-            document.getElementById('historyInlineView').style.display = 'block';
-            renderHistoryList();
-        }
-
-        function openSettingsInline() {
-            document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-            document.getElementById('settingsInlineView').style.display = 'block';
-        }
-
-        function openNewsInline() {
-            document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-            document.getElementById('newsInlineView').style.display = 'block';
-        }
-
-        function openRiskInline() {
-            document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-            document.getElementById('riskInlineView').style.display = 'block';
-            calculateRisk();
-        }
-
-        function calculateRisk() {
-            let base = parseFloat(document.getElementById('baseStakeInput').value) || 10;
-            document.getElementById('step1Display').innerText = "$" + base.toFixed(2);
-            document.getElementById('step2Display').innerText = "$" + (base * 2.2).toFixed(2);
-            document.getElementById('step3Display').innerText = "$" + (base * 4.8).toFixed(2);
-        }
-
-        function renderHistoryList() {
-            let box = document.getElementById('historyListBox');
-            if (dynamicHistory.length === 0) {
-                box.innerHTML = `<div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>`;
-                return;
-            }
-            let html = "";
-            dynamicHistory.slice(-5).reverse().forEach(item => {
-                html += `<div class="inline-item"><span>${item.pair} (${item.dir})</span> <span class="win-tag">${item.acc}%</span></div>`;
-            });
-            box.innerHTML = html;
-        }
-
-        function startDeepScan() {
-            document.querySelectorAll('.default-view, .signal-view, .no-signal-view, .inline-content-view').forEach(el => el.style.display = 'none');
-            document.getElementById('scanView').style.display = 'block';
-            let hud = document.getElementById('hudBoxContainer');
-            hud.classList.remove('glow-buy', 'glow-sell');
-
-            let progressBar = document.getElementById('scanProgressBar');
-            let consoleBox = document.getElementById('liveScanConsole');
-            let stepText = document.getElementById('scanStepText');
-
-            progressBar.style.width = '0%';
-            consoleBox.innerHTML = `<div class="live-scan-row scanning">Initializing 8-layer quantum filters...</div>`;
-
-            let progress = 0;
-            if (scanInterval) clearInterval(scanInterval);
-
-            scanInterval = setInterval(() => {
-                progress += 4;
-                if (progress <= 100) {
-                    progressBar.style.width = progress + '%';
-                }
-
-                if (progress === 25) {
-                    consoleBox.innerHTML += `<div class="live-scan-row passed">RSI & EMA Convergence: PASSED (96%)</div>`;
-                    stepText.innerText = "Analyzing Bollinger Bands & MACD...";
-                } else if (progress === 50) {
-                    consoleBox.innerHTML += `<div class="live-scan-row passed">Bollinger & MACD Stability: PASSED</div>`;
-                    stepText.innerText = "Checking Candle Patterns & Multi-TF...";
-                } else if (progress === 75) {
-                    consoleBox.innerHTML += `<div class="live-scan-row passed">Wick Rejection & Circuit Check: SECURE</div>`;
-                    stepText.innerText = "Finalizing Quantum Signal Generation...";
-                } else if (progress >= 100) {
-                    clearInterval(scanInterval);
-                    finishScanResult();
-                }
-                consoleBox.scrollTop = consoleBox.scrollHeight;
-            }, 80);
-        }
-
-        function finishScanResult() {
-            let selectedPair = document.getElementById('pairSelect').value || "EUR/USD (OTC)";
-            document.getElementById('targetPairDisplay').innerText = selectedPair;
-            document.getElementById('resModalAsset').innerText = selectedPair;
-
-            let isBuy = Math.random() > 0.45;
-            let hud = document.getElementById('hudBoxContainer');
-            let lightOverlay = document.getElementById('lightOverlay');
-
-            document.getElementById('scanView').style.display = 'none';
-            document.getElementById('signalView').style.display = 'block';
-
-            let dirEl = document.getElementById('resModalDirection');
-            let metaEl = document.getElementById('resModalMeta');
-
-            if (isBuy) {
-                dirEl.className = "signal-direction dir-up";
-                dirEl.innerHTML = "⬆ UP (BUY)";
-                metaEl.innerHTML = `CALL 🔺 | Accuracy: 96.8% | TF: ${selectedExpiry}`;
-                hud.classList.add('glow-buy');
-                lightOverlay.className = "signal-light-overlay buy-active";
-            } else {
-                dirEl.className = "signal-direction dir-down";
-                dirEl.innerHTML = "⬇ DOWN (SELL)";
-                metaEl.innerHTML = `PUT 🔻 | Accuracy: 95.4% | TF: ${selectedExpiry}`;
-                hud.classList.add('glow-sell');
-                lightOverlay.className = "signal-light-overlay sell-active";
-            }
-
-            playSignalAlertSound();
-
-            dynamicHistory.push({
-                pair: selectedPair,
-                dir: isBuy ? "BUY" : "SELL",
-                acc: isBuy ? "96.8%" : "95.4%"
-            });
-            localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
-        }
-
-        function verifyAccess() {
-            let keyInput = document.getElementById('verifyLicenseKey').value.trim();
-            let msgBox = document.getElementById('verifyMessage');
-
-            if (!keyInput) {
-                msgBox.style.display = "block";
-                msgBox.style.background = "rgba(255, 51, 102, 0.2)";
-                msgBox.style.color = "#ff3366";
-                msgBox.innerText = "Please enter your VIP License Key!";
-                return;
-            }
-
-            // Verification Check
-            isUserVerified = true;
-            localStorage.setItem('raja_active_key', keyInput);
-            checkRoute();
-        }
-
-        function checkRoute() {
-            let activeKey = localStorage.getItem('raja_active_key');
-            if (activeKey || isUserVerified) {
-                document.getElementById('activationScreen').style.display = 'none';
-                document.getElementById('mainAppContent').style.display = 'block';
-                document.getElementById('adminPanel').style.display = 'block';
-                initCandleTimer();
-                updatePairs();
-            } else {
-                document.getElementById('activationScreen').style.display = 'block';
-                document.getElementById('mainAppContent').style.display = 'none';
-                document.getElementById('adminPanel').style.display = 'block';
-            }
-        }
-
-        function generateKey() {
-            let tgId = document.getElementById('adminTelegramId').value.trim();
-            let adminPass = document.getElementById('adminPasswordInput').value.trim();
-
-            if (adminPass !== "raja2026") {
-                alert("Incorrect Admin Password!");
-                return;
-            }
-
-            let randomCode = 'RAJA-VIP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-            latestGeneratedKey = randomCode;
-            let display = document.getElementById('generatedKeyDisplay');
-            display.innerText = "Generated Key: " + randomCode;
-            document.getElementById('copyKeyBtn').style.display = 'block';
-        }
-
-        function copyGeneratedKey() {
-            navigator.clipboard.writeText(latestGeneratedKey);
-            alert("License key copied to clipboard!");
-        }
-
-        // Initialize application route on load
-        window.onload = function() {
-            checkRoute();
-        };
-    </script>
+    // Initialize application route on load
+    window.onload = function() {
+        checkRoute();
+    };
+</script>
 </body>
 </html>
