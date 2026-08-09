@@ -3,6 +3,8 @@ from flask_cors import CORS
 import yfinance as yf
 import random
 import os
+import time
+import threading
 
 app = Flask(__name__, static_folder='.', template_folder='.')
 CORS(app)  # Frontend se connection error hatane ke liye zaroori hai
@@ -21,12 +23,38 @@ YAHOO_SYMBOLS = {
 # Saare pairs ki list jo scan honge
 OTC_PAIRS = list(YAHOO_SYMBOLS.keys())
 
+# --- CENTRALIZED CACHING & BACKGROUND POLLING ---
+market_cache = {}
+CACHE_DURATION = 30  # Data freshness duration in seconds
+
+def background_market_poller():
+    """Background thread jo continuous intervals par Yahoo se data fetch karke cache update karega taaki 50+ users ke liye crash ya block na ho."""
+    while True:
+        for pair, symbol in YAHOO_SYMBOLS.items():
+            try:
+                ticker = yf.Ticker(symbol)
+                df = ticker.history(period="1d", interval="1m")
+                if df is not None and not df.empty:
+                    close_prices = df['Close'].tolist()
+                    market_cache[pair] = {
+                        "close_prices": close_prices,
+                        "timestamp": time.time()
+                    }
+            except Exception as e:
+                print(f"Background fetch error for {pair}: {e}")
+            time.sleep(2)  # Request spacing to avoid rate limits
+        time.sleep(5)
+
+# Background polling thread start karein
+poller_thread = threading.Thread(target=background_market_poller, daemon=True)
+poller_thread.start()
+
 @app.route('/')
 def home():
     # Ab yeh root URL aapki index.html file serve karega agar woh root directory me hai
     if os.path.exists('index.html'):
         return send_from_directory('.', 'index.html')
-    return "Raja AI Bot Backend with Live Yahoo Finance Data is Running Successfully!"
+    return "Raja AI Bot Backend with Centralized Caching is Running Successfully!"
 
 @app.route('/admin')
 def admin_panel():
@@ -46,7 +74,7 @@ def scan_markets():
     # Agar Auto Scan selected hai toh saari market/pairs par loop chalega
     if selected_pair == "Auto Scan Best Pair (AI)" or not selected_pair:
         for pair in OTC_PAIRS:
-            score, signal_type = calculate_live_8_indicators(pair) 
+            score, signal_type = calculate_live_8_indicators_cached(pair) 
             if score > highest_score:
                 highest_score = score
                 best_signal = {
@@ -60,7 +88,7 @@ def scan_markets():
         if clean_pair not in YAHOO_SYMBOLS:
             clean_pair = "EUR/USD" # Default fallback
             
-        score, signal_type = calculate_live_8_indicators(clean_pair)
+        score, signal_type = calculate_live_8_indicators_cached(clean_pair)
         best_signal = {
             "pair": selected_pair,
             "score": score,
@@ -72,35 +100,39 @@ def scan_markets():
         "data": best_signal
     })
 
-def calculate_live_8_indicators(pair):
+def calculate_live_8_indicators_cached(pair):
+    cached_data = market_cache.get(pair)
+    
+    # Check agar cache available hai aur fresh hai (< CACHE_DURATION)
+    if cached_data and (time.time() - cached_data["timestamp"] < CACHE_DURATION):
+        close_prices = cached_data["close_prices"]
+        if len(close_prices) >= 2:
+            last_close = close_prices[-1]
+            prev_close = close_prices[-2]
+            
+            signal = "CALL" if last_close > prev_close else "PUT"
+            score = round(random.uniform(88.5, 98.9), 2)
+            return score, signal
+
+    # Fallback agar cache me data na ho ya expire ho gaya ho
     symbol = YAHOO_SYMBOLS.get(pair, "EURUSD=X")
     try:
-        # Yahoo Finance se real 1-minute live/historical candles fetch karein
         ticker = yf.Ticker(symbol)
         df = ticker.history(period="1d", interval="1m")
         
         if df is None or len(df) < 5:
-            # Fallback agar data na mile
             return random.randint(85, 95), ("CALL" if random.choice([True, False]) else "PUT")
             
-        # Real Candle Logic (Moving Averages & Price Action check)
         close_prices = df['Close'].tolist()
         last_close = close_prices[-1]
         prev_close = close_prices[-2]
         
-        # Simple Quantum Trend Logic based on real market candles
-        if last_close > prev_close:
-            signal = "CALL"
-        else:
-            signal = "PUT"
-            
-        # Score generation based on real volatility / momentum
+        signal = "CALL" if last_close > prev_close else "PUT"
         score = round(random.uniform(88.5, 98.9), 2)
         return score, signal
         
     except Exception as e:
         print(f"Error fetching live data for {pair}: {e}")
-        # Error hone par safe fallback score aur signal
         return random.randint(85, 92), "CALL"
 
 if __name__ == '__main__':
