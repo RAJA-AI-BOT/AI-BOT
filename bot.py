@@ -11,6 +11,11 @@ import yfinance as yf
 app = FastAPI()
 
 
+@app.get("/")
+def read_root():
+  return {"status": "online", "message": "Raja AI Bot is running successfully!"}
+
+
 # ----------------- LIVE MARKET SCANNER & CACHING SETUP -----------------
 PAIRS = [
     # Forex Live Pairs
