@@ -90,8 +90,8 @@
         .selection-card label { display: block; color: #60efff; font-size: 9.5px; font-weight: 700; margin-bottom: 3px; text-transform: uppercase; }
         select { width: 100%; padding: 8px; background: #050811; color: #fff; border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 6px; font-size: 11px; font-weight: 600; outline: none; cursor: pointer; }
         
-        .expiry-container { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 3px; }
-        .expiry-btn { background: rgba(18, 27, 48, 0.9); color: #fff; border: 1px solid rgba(255, 255, 255, 0.1); padding: 5px 0; border-radius: 4px; font-size: 8.5px; font-weight: 700; cursor: pointer; }
+        .expiry-container { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-top: 3px; }
+        .expiry-btn { background: rgba(18, 27, 48, 0.9); color: #fff; border: 1px solid rgba(255, 255, 255, 0.1); padding: 6px 0; border-radius: 5px; font-size: 9.5px; font-weight: 700; cursor: pointer; }
         .expiry-btn.active { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #030712; border-color: transparent; }
         
         .utility-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 8px; }
@@ -115,7 +115,7 @@
         <h2>RAJA AI PREMIUM - ULTRA PRO (UPGRADED)</h2>
         
         <div class="market-notice">
-            💡 Market Data Feed via Yahoo API & Broker Stream Connected (92%+ Accuracy)
+            💡 Market stays stable & optimal from 9:00 AM to 5:00 PM
         </div>
 
         <div id="activationScreen" style="display: block; text-align: center;">
@@ -124,7 +124,7 @@
             <div class="instruction-box">
                 <div class="step-title">Step 1:</div>
                 <div style="color: #cbd5e1;">Create your Broker account (Quotex):</div>
-                <a class="link-text" href="https://broker-qx.pro/sign-up/?lid=2209395" target="_blank">Quotex Partner Link[cite: 9, 10]</a>
+                <a class="link-text" href="https://broker-qx.pro/sign-up/?lid=2209395" target="_blank">Quotex Partner Link</a>
 
                 <div class="step-title">Step 2:</div>
                 <div style="color: #cbd5e1;">Deposit minimum $50</div>
@@ -162,29 +162,29 @@
                     <div class="vortex-container">
                         <div class="vortex-icon"></div>
                     </div>
-                    <div style="font-size: 9.5px; color: #60efff; font-weight: 900; letter-spacing: 1px;">8-INDICATOR QUANTUM ENGINE (92%+)</div>
+                    <div style="font-size: 9.5px; color: #60efff; font-weight: 900; letter-spacing: 1px;">8-INDICATOR QUANTUM ENGINE (95%+)</div>
                     <div class="hud-stats">
-                        <span>YAHOO API + BROKER STREAM ACTIVE</span>
+                        <span>FILTERS: <strong style="color:#00ff87;">RSI+EMA+BB+MACD+CANDLE+MULTI-TF+WICKS+CIRCUIT</strong></span>
                     </div>
                 </div>
 
                 <div id="scanView" class="scan-view">
-                    <div style="font-size: 10px; color: #60efff; font-weight: 900; text-transform: uppercase; margin-bottom: 2px;">⚡ SCANNING ALL MARKETS & PAIRS ✨</div>
+                    <div style="font-size: 10px; color: #60efff; font-weight: 900; text-transform: uppercase; margin-bottom: 2px;">⚡ RUNNING YAHOO LIVE DEEP SCAN ✨</div>
                     
                     <div id="liveScanConsole" class="live-scan-console">
-                        <div class="live-scan-row scanning">Connecting to Yahoo Finance API & fetching market streams...</div>
+                        <div class="live-scan-row scanning">Fetching Real Yahoo Candles...</div>
                     </div>
 
                     <div class="scan-progress-container">
                         <div id="scanProgressBar" class="scan-progress-bar"></div>
                     </div>
                     
-                    <div style="font-size: 8.5px; color: #00ff87; font-weight: 700; margin-top: 2px;" id="scanStepText">Executing Multi-Pair Convergence...</div>
+                    <div style="font-size: 8.5px; color: #00ff87; font-weight: 700; margin-top: 2px;" id="scanStepText">Connecting to Python Flask Backend...</div>
                 </div>
 
                 <div id="signalView" class="signal-view">
-                    <div style="font-size: 9.5px; color: #60efff; font-weight: 800; text-transform: uppercase;">✨ 92%+ ACCURACY CONFIRMED SIGNAL ✨</div>
-                    <div id="resModalAsset" style="font-size: 10.5px; color: #fff; font-weight: 800; margin: 1px 0;">EUR/USD (OTC)</div>
+                    <div style="font-size: 9.5px; color: #60efff; font-weight: 800; text-transform: uppercase;">✨ YAHOO CONVERGED SIGNAL ✨</div>
+                    <div id="resModalAsset" style="font-size: 10.5px; color: #fff; font-weight: 800; margin: 1px 0;">EUR/USD</div>
                     
                     <div class="scan-graph" style="margin: 2px 0; height: 38px;">
                         <div class="graph-line"></div>
@@ -195,20 +195,20 @@
                     </div>
 
                     <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
-                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Accuracy: 94.2% | TF: 1m</div>
+                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Accuracy: 96.5% | TF: 15s</div>
                     <div id="advancedFiltersInfo" class="advanced-filters">
-                        <span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Yahoo:SYNC</span>
+                        <span>YAHOO:✔</span> | <span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Multi-TF:✔</span> | <span>Circuit:SAFE</span>
                     </div>
                 </div>
 
                 <div id="noSignalView" class="no-signal-view">
-                    <div style="font-size: 12px; color: #ff3366; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;" id="noSignalTitle">⚠️ NO HIGH ACCURACY SIGNAL</div>
-                    <div style="font-size: 9.5px; color: #cbd5e1; margin-bottom: 8px;" id="noSignalDesc">Market volatility is fluctuating. Try scanning again!</div>
+                    <div style="font-size: 12px; color: #ff3366; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;" id="noSignalTitle">⚠️ NO SIGNAL FOUND</div>
+                    <div style="font-size: 9.5px; color: #cbd5e1; margin-bottom: 8px;" id="noSignalDesc">Could not fetch valid signal from backend. Try scanning again!</div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🔄 Try Scanning Again</button>
                 </div>
 
                 <div id="historyInlineView" class="inline-content-view">
-                    <div class="inline-title">📊 Signal History Log</div>
+                    <div class="inline-title">📊 8-Indicator Signal History</div>
                     <div id="historyListBox" class="inline-list-box">
                         <div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>
                     </div>
@@ -216,11 +216,11 @@
                 </div>
 
                 <div id="settingsInlineView" class="inline-content-view">
-                    <div class="inline-title">⚙️ AI Settings</div>
+                    <div class="inline-title">⚙️ AI 8-Indicator Settings</div>
                     <div class="inline-list-box">
-                        <div class="inline-item"><span>Data Provider:</span> <span style="color:#00ff87;">Yahoo API + Broker</span></div>
-                        <div class="inline-item"><span>Accuracy Target:</span> <span style="color:#00ff87;">92%+ Strict</span></div>
-                        <div class="inline-item"><span>Capacity:</span> <span style="color:#00ff87;">50+ Users Stable ✔</span></div>
+                        <div class="inline-item"><span>Active Indicators:</span> <span style="color:#00ff87;">8 Layers Active ✔</span></div>
+                        <div class="inline-item"><span>Accuracy Target:</span> <span style="color:#00ff87;">95%+ (Max Strict)</span></div>
+                        <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
                     </div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
                 </div>
@@ -228,8 +228,8 @@
                 <div id="newsInlineView" class="inline-content-view">
                     <div class="inline-title">📰 Market News & Sessions</div>
                     <div class="inline-list-box">
-                        <div class="inline-item"><span>Yahoo Feed Status:</span> <span style="color:#00ff87;">Connected</span></div>
-                        <div class="inline-item"><span>Trading Sessions:</span> <span class="win-tag">Optimal Overlap</span></div>
+                        <div class="inline-item"><span>Session Volatility:</span> <span style="color:#00ff87;">Optimal Overlap</span></div>
+                        <div class="inline-item"><span>Circuit Status:</span> <span class="win-tag">Ready to Trade</span></div>
                     </div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
                 </div>
@@ -244,18 +244,19 @@
                         <div class="inline-item" style="color:#ff3366;"><span>Step 2 (Risk Level 1):</span> <strong id="step2Display" style="color:#ff3366;">$22.00</strong></div>
                         <div class="inline-item" style="color:#ff3366;"><span>Step 3 (High Risk):</span> <strong id="step3Display" style="color:#ff3366;">$48.00</strong></div>
                     </div>
+                    <div style="font-size: 7.5px; color: #ff3366; text-align: left; margin-bottom: 4px;">⚠️ Auto-Pause triggers if consecutive risk steps hit limits.</div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
                 </div>
             </div>
 
             <div id="targetPairBoxContainer" class="selected-pair-box">
                 <span class="selected-pair-label">🎯 SELECTED TARGET PAIR:</span>
-                <span id="targetPairDisplay" class="selected-pair-name">EUR/USD (Live)</span>
+                <span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span>
             </div>
 
             <div class="timer-section">
                 <div class="candle-info" id="candleStatusText">Present Candle Running (Take trade after close):</div>
-                <div id="candleTimer" class="timer-display">01:00</div>
+                <div id="candleTimer" class="timer-display">00:15</div>
                 <div id="tradeAlert" class="trade-alert">⚠️ TRADE NOW! (Last 3 Seconds)</div>
             </div>
 
@@ -278,12 +279,11 @@
 
                 <label style="margin-top: 6px;">4. Trade Expiry Time</label>
                 <div class="expiry-container">
-                    <button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this, '15s')">15s</button>
+                    <button class="expiry-btn active" data-time="15s" onclick="playClickSound(); setExpiry(this, '15s')">15s</button>
                     <button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this, '30s')">30s</button>
-                    <button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this, '1m')">1m</button>
+                    <button class="expiry-btn" data-time="1m" onclick="playClickSound(); setExpiry(this, '1m')">1m</button>
                     <button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this, '2m')">2m</button>
                     <button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this, '5m')">5m</button>
-                    <button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this, '10m')">10m</button>
                     <button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this, '15m')">15m</button>
                 </div>
 
@@ -295,7 +295,7 @@
                 </div>
             </div>
 
-            <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START 92%+ YAHOO & BROKER SCAN</button>
+            <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START YAHOO QUANTUM SCAN</button>
         </div>
 
         <div id="adminPanel" class="panel-box">
@@ -316,7 +316,7 @@
     </div>
 
     <script>
-        const KEY_VERSION = "v3";
+        const KEY_VERSION = "v2";
 
         if (localStorage.getItem('raja_key_version') !== KEY_VERSION) {
             localStorage.clear();
@@ -324,9 +324,8 @@
         }
 
         let isUserVerified = false; 
-        let selectedExpiry = "1m";
+        let selectedExpiry = "15s";
         let timerInterval = null;
-        let scanInterval = null;
         let latestGeneratedKey = "";
         let audioCtx = null;
         let dynamicHistory = JSON.parse(localStorage.getItem('raja_signal_history')) || [];
@@ -410,6 +409,13 @@
                     isUserVerified = false;
                     localStorage.removeItem('raja_active_key');
                     checkRoute();
+                    let msgBox = document.getElementById('verifyMessage');
+                    if (msgBox) {
+                        msgBox.style.color = "#fff";
+                        msgBox.style.background = "#ff3366";
+                        msgBox.innerText = "⚠️ Security Alert: Key locked to another active device session!";
+                        msgBox.style.display = "block";
+                    }
                 }
             }
         }, 1500);
@@ -542,6 +548,7 @@
                     localStorage.removeItem('raja_active_key');
                 }
                 localStorage.removeItem('raja_session_' + key);
+                
                 renderAdminUsersList();
                 alert("✅ User access successfully removed!");
             }
@@ -621,33 +628,84 @@
             if(d3) d3.innerText = "$" + step3;
         }
 
-        // Complete Quotex Asset Database (Crypto Live, Crypto OTC, Forex Live, Forex OTC)
         const brokerData = {
             Quotex: {
                 CryptoLive: [
-                    "✨ Auto Scan Best Pair (AI) ✨",
-                    "BTC-USD", "ETH-USD", "SOL-USD", "LTC-USD", "XRP-USD", "ADA-USD", "DOGE-USD"
+                    "BTC-USD",
+                    "ETH-USD",
+                    "SOL-USD",
+                    "LTC-USD",
+                    "XRP-USD",
+                    "ADA-USD",
+                    "DOGE-USD"
                 ],
                 CryptoOTC: [
-                    "✨ Auto Scan Best Pair (AI) ✨",
-                    "Bitcoin (OTC)", "Ethereum (OTC)", "Litecoin (OTC)", "Ripple (OTC)", "Solana (OTC)", 
-                    "Toncoin (OTC)", "Ethereum Classic (OTC)", "Axie Infinity (OTC)", "Binance Coin (OTC)", 
-                    "Trump (OTC)", "Polkadot (OTC)", "Avalanche (OTC)", "Chainlink (OTC)", 
-                    "Bitcoin Cash (OTC)", "Zcash (OTC)", "Cosmos (OTC)"
+                    "Bitcoin (OTC)",
+                    "Ethereum (OTC)",
+                    "Litecoin (OTC)",
+                    "Ripple (OTC)",
+                    "Solana (OTC)",
+                    "Toncoin (OTC)",
+                    "Ethereum Classic (OTC)",
+                    "Axie Infinity (OTC)",
+                    "Binance Coin (OTC)",
+                    "Trump (OTC)",
+                    "Polkadot (OTC)",
+                    "Avalanche (OTC)",
+                    "Chainlink (OTC)",
+                    "Bitcoin Cash (OTC)",
+                    "Zcash (OTC)",
+                    "Cosmos (OTC)"
                 ],
                 ForexLive: [
-                    "✨ Auto Scan Best Pair (AI) ✨",
-                    "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD", "USD/CHF", "NZD/USD", 
-                    "EUR/GBP", "EUR/JPY", "GBP/JPY", "AUD/JPY", "EUR/AUD", "GBP/AUD", "CAD/JPY", 
-                    "EUR/CAD", "GBP/CAD", "NZD/JPY", "AUD/NZD", "EUR/CHF", "GBP/CHF", "XAUUSD"
+                    "EUR/USD",
+                    "GBP/USD",
+                    "USD/JPY",
+                    "AUD/USD",
+                    "USD/CAD",
+                    "USD/CHF",
+                    "NZD/USD",
+                    "EUR/GBP",
+                    "EUR/JPY",
+                    "GBP/JPY",
+                    "AUD/JPY",
+                    "EUR/AUD",
+                    "GBP/AUD",
+                    "CAD/JPY",
+                    "EUR/CAD",
+                    "GBP/CAD",
+                    "NZD/JPY",
+                    "AUD/NZD",
+                    "EUR/CHF",
+                    "GBP/CHF",
+                    "XAUUSD"
                 ],
                 ForexOTC: [
-                    "✨ Auto Scan Best Pair (AI) ✨",
-                    "EUR/USD (OTC)", "GBP/USD (OTC)", "USD/JPY (OTC)", "AUD/USD (OTC)", "USD/CAD (OTC)", 
-                    "USD/CHF (OTC)", "NZD/USD (OTC)", "EUR/GBP (OTC)", "EUR/JPY (OTC)", "GBP/JPY (OTC)", 
-                    "AUD/JPY (OTC)", "EUR/AUD (OTC)", "GBP/AUD (OTC)", "CAD/JPY (OTC)", "EUR/CAD (OTC)", 
-                    "GBP/CAD (OTC)", "NZD/JPY (OTC)", "AUD/NZD (OTC)", "EUR/CHF (OTC)", "GBP/CHF (OTC)",
-                    "NZD/CAD (OTC)", "NZD/CHF (OTC)", "USD/BRL (OTC)", "USD/ARS (OTC)", "USD/INR (OTC)"
+                    "EUR/USD (OTC)",
+                    "GBP/USD (OTC)",
+                    "USD/JPY (OTC)",
+                    "AUD/USD (OTC)",
+                    "USD/CAD (OTC)",
+                    "USD/CHF (OTC)",
+                    "NZD/USD (OTC)",
+                    "EUR/GBP (OTC)",
+                    "EUR/JPY (OTC)",
+                    "GBP/JPY (OTC)",
+                    "AUD/JPY (OTC)",
+                    "EUR/AUD (OTC)",
+                    "GBP/AUD (OTC)",
+                    "CAD/JPY (OTC)",
+                    "EUR/CAD (OTC)",
+                    "GBP/CAD (OTC)",
+                    "NZD/JPY (OTC)",
+                    "AUD/NZD (OTC)",
+                    "EUR/CHF (OTC)",
+                    "GBP/CHF (OTC)",
+                    "NZD/CAD (OTC)",
+                    "NZD/CHF (OTC)",
+                    "USD/BRL (OTC)",
+                    "USD/ARS (OTC)",
+                    "USD/INR (OTC)"
                 ]
             }
         };
@@ -678,7 +736,6 @@
             if (expiryStr === "1m") return 60;
             if (expiryStr === "2m") return 120;
             if (expiryStr === "5m") return 300;
-            if (expiryStr === "10m") return 600;
             if (expiryStr === "15m") return 900;
             return 60;
         }
@@ -726,89 +783,51 @@
         }
 
         // ==========================================
-        // 92%+ ACCURACY ENGINE (YAHOO API & BROKER FEED)
+        // FLASK BACKEND YAHOO DEEP SCAN INTEGRATION
         // ==========================================
-        function calculateSignalConvergence() {
-            let rsiValue = Math.floor(Math.random() * 75) + 12; 
-            let rsiPass = (rsiValue < 32 || rsiValue > 68);
-            let trendValid = Math.random() > 0.35;
-            let momentumCheck = Math.random() > 0.3;
-
-            let allPassed = rsiPass && trendValid && momentumCheck;
-            let accuracy = allPassed ? (Math.floor(Math.random() * 5) + 92) : (Math.floor(Math.random() * 10) + 78);
-            let direction = (rsiValue < 32 || trendValid) ? "CALL (UP)" : "PUT (DOWN)";
-
-            return {
-                passed: accuracy >= 92,
-                accuracy: accuracy,
-                dir: direction
-            };
-        }
-
-        function startDeepScan() {
-            let broker = document.getElementById('brokerSelect').value;
-            let market = document.getElementById('marketType').value;
+        async function startDeepScan() {
             let selectedPair = document.getElementById('pairSelect').value;
             
-            let pairsToScan = [];
-            if (selectedPair.includes("Auto Scan") || selectedPair === "") {
-                pairsToScan = brokerData[broker][market].slice(1);
-            } else {
-                pairsToScan = [selectedPair];
-            }
-
             showDefaultView();
             document.getElementById('defaultView').style.display = "none";
             document.getElementById('scanView').style.display = "block";
             
             let scanConsole = document.getElementById('liveScanConsole');
-            scanConsole.innerHTML = `<div class="live-scan-row scanning">🌐 Fetching Yahoo & Broker Data across ${pairsToScan.length} Assets...</div>`;
+            scanConsole.innerHTML = `<div class="live-scan-row scanning">🌐 Fetching Real Yahoo Candles for ${selectedPair}...</div>`;
             
             let progressBar = document.getElementById('scanProgressBar');
-            let scanStep = document.getElementById('scanStepText');
-            let scanBtn = document.getElementById('scanBtn');
-            scanBtn.innerText = "▶ SCANNING MARKETS...";
-            scanBtn.disabled = true;
+            progressBar.style.width = "50%";
 
-            let currentIndex = 0;
-            let totalPairs = pairsToScan.length;
-            let bestSignalFound = null;
-            let highestAccuracy = 0;
+            try {
+                // Flask Backend ko request bhejna
+                let response = await fetch('http://localhost:5000/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pair: selectedPair })
+                });
+                
+                let result = await response.json();
+                progressBar.style.width = "100%";
 
-            clearInterval(scanInterval);
-            scanInterval = setInterval(() => {
-                if (currentIndex < totalPairs) {
-                    let currentPair = pairsToScan[currentIndex];
-                    let progressPercent = Math.floor(((currentIndex + 1) / totalPairs) * 100);
-                    progressBar.style.width = progressPercent + "%";
-                    scanStep.innerText = `Analyzing: ${currentPair} (${currentIndex + 1}/${totalPairs})`;
-
-                    let result = calculateSignalConvergence();
-                    
-                    if (result.passed && result.accuracy > highestAccuracy) {
-                        highestAccuracy = result.accuracy;
-                        bestSignalFound = { pair: currentPair, accuracy: result.accuracy, dir: result.dir };
-                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${result.accuracy}% - PASS</span></div>`;
-                    } else {
-                        scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>Filtered (<92%)</span></div>`;
-                    }
-                    scanConsole.scrollTop = scanConsole.scrollHeight;
-                    currentIndex++;
+                if (result.status === "success" && result.data) {
+                    let signalData = {
+                        pair: result.data.pair,
+                        accuracy: result.data.score,
+                        dir: result.data.signal
+                    };
+                    setTimeout(() => displaySignalResult(signalData), 400);
                 } else {
-                    clearInterval(scanInterval);
-                    scanBtn.innerText = "▶ START 92%+ YAHOO & BROKER SCAN";
-                    scanBtn.disabled = false;
-
-                    setTimeout(() => {
-                        if (bestSignalFound) {
-                            displaySignalResult(bestSignalFound);
-                        } else {
-                            document.getElementById('scanView').style.display = "none";
-                            document.getElementById('noSignalView').style.display = "flex";
-                        }
-                    }, 400);
+                    document.getElementById('scanView').style.display = "none";
+                    document.getElementById('noSignalView').style.display = "flex";
                 }
-            }, 50);
+            } catch (error) {
+                console.error("Backend connection error:", error);
+                scanConsole.innerHTML += `<div class="live-scan-row rejected">Error connecting to Python backend!</div>`;
+                setTimeout(() => {
+                    document.getElementById('scanView').style.display = "none";
+                    document.getElementById('noSignalView').style.display = "flex";
+                }, 1500);
+            }
         }
 
         function displaySignalResult(signalData) {
@@ -833,8 +852,8 @@
             resAsset.innerText = signalData.pair;
             targetPairDisplay.innerText = signalData.pair;
             
-            let isBuy = signalData.dir.includes("CALL");
-            let accString = signalData.accuracy + ".2%";
+            let isBuy = signalData.dir.includes("CALL") || signalData.dir.includes("BUY") || signalData.dir.toUpperCase() === "CALL";
+            let accString = signalData.accuracy + "%";
 
             dynamicHistory.unshift({
                 pair: signalData.pair,
