@@ -6,187 +6,150 @@
     <title>RAJA AI PREMIUM - VIP Signal Bot</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background-color: #0b0f19; color: #ffffff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-        .app-container { width: 100%; max-width: 480px; background: #131a29; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; border: 1px solid #1f293d; margin-bottom: 20px; }
-        .header { background: #1a233a; padding: 15px; text-align: center; border-bottom: 1px solid #2a3650; }
-        .header h2 { color: #00ffcc; font-size: 20px; letter-spacing: 1px; }
-        .content { padding: 20px; }
-        .form-group { margin-bottom: 15px; }
-        .form-group label { display: block; margin-bottom: 5px; font-size: 14px; color: #94a3b8; }
-        .form-group input, .form-group select { width: 100%; padding: 12px; background: #0b0f19; border: 1px solid #2a3650; border-radius: 8px; color: #fff; font-size: 14px; }
-        .btn { width: 100%; padding: 12px; background: #00ffcc; color: #0b0f19; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; transition: 0.2s; }
-        .btn:hover { background: #00cca3; }
+        body { background-color: #0b0f19; color: #ffffff; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 15px; }
+        .app-container { width: 100%; max-width: 480px; background: #131a29; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,0.6); overflow: hidden; border: 1px solid #1f293d; padding: 15px; }
+        .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 12px; }
+        .badge { background: #1a233a; padding: 5px 10px; border-radius: 6px; border: 1px solid #2a3650; color: #00ffcc; cursor: pointer; }
+        .header-box { background: #1a233a; padding: 12px; border-radius: 10px; text-align: center; border: 1px solid #2a3650; margin-bottom: 15px; }
+        .header-title { color: #00ffcc; font-size: 16px; font-weight: bold; margin-bottom: 5px; }
+        .timer-display { font-size: 22px; font-weight: bold; color: #00ffcc; }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; margin-bottom: 4px; font-size: 12px; color: #94a3b8; font-weight: bold; letter-spacing: 0.5px; }
+        .form-group select, .form-group input { width: 100%; padding: 10px; background: #0b0f19; border: 1px solid #2a3650; border-radius: 8px; color: #fff; font-size: 13px; }
+        .expiry-row { display: flex; gap: 5px; margin-bottom: 15px; }
+        .expiry-btn { flex: 1; padding: 8px 0; background: #0b0f19; border: 1px solid #2a3650; border-radius: 6px; color: #94a3b8; font-size: 12px; cursor: pointer; text-align: center; font-weight: bold; transition: 0.2s; }
+        .expiry-btn.active { background: #1a233a; border-color: #00ffcc; color: #00ffcc; }
+        .grid-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+        .menu-btn { padding: 10px; background: #1a233a; border: 1px solid #2a3650; border-radius: 8px; color: #94a3b8; font-size: 12px; font-weight: bold; cursor: pointer; text-align: center; }
+        .menu-btn:hover { border-color: #00ffcc; color: #00ffcc; }
+        .btn-main { width: 100%; padding: 12px; background: #00ffcc; color: #0b0f19; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; text-align: center; transition: 0.2s; }
+        .btn-main:hover { background: #00cca3; }
     </style>
 </head>
 <body>
 
     <div class="app-container">
-        <div class="header">
-            <h2>RAJA AI PREMIUM</h2>
-            <div id="candleTimer" style="font-size: 13px; color: #00ffcc; margin-top: 4px;">00:15</div>
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="badge" id="soundToggle" onclick="toggleSound()">🔊 SOUND: ON</div>
+            <div class="badge" style="color: #ff3366; border-color: #ff3366;" onclick="logoutApp()">LOGOUT</div>
         </div>
 
-        <div class="content" id="mainAppContent">
-            <div id="defaultView" style="display: flex; flex-direction: column; gap: 12px;">
-                <div class="form-group">
-                    <label>Market Type</label>
-                    <select id="marketType" onchange="updatePairs()">
-                        <option value="CryptoOTC">Crypto OTC</option>
-                        <option value="CryptoLive">Crypto Live</option>
-                        <option value="ForexOTC">Forex OTC</option>
-                        <option value="ForexLive">Forex Live</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label>Select Asset / Pair</label>
-                    <select id="pairSelect"></select>
-                </div>
-                <button class="btn" onclick="startDeepScan()">Start Deep Quantum Scan</button>
-            </div>
+        <!-- Header / Timer Box -->
+        <div class="header-box">
+            <div class="header-title">PRESENT CANDLE RUNNING (TAKE TRADE AFTER CLOSE)</div>
+            <div class="timer-display" id="candleTimer">00:00</div>
+        </div>
 
-            <div id="scanView" style="display: none; text-align: center; padding: 10px 0;">
-                <div id="scanStepText" style="font-size: 14px; margin-bottom: 10px; color: #00ffcc;">Initializing filters...</div>
-                <div style="width: 100%; background: #0b0f19; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 15px;">
-                    <div id="scanProgressBar" style="width: 0%; height: 100%; background: #00ffcc; transition: width 0.1s;"></div>
-                </div>
-                <div id="liveScanConsole" style="background: #0b0f19; padding: 10px; border-radius: 6px; font-size: 12px; text-align: left; height: 90px; overflow-y: auto; color: #94a3b8;"></div>
-            </div>
+        <!-- Inputs Section -->
+        <div class="form-group">
+            <label>1. SELECT BROKER PLATFORM</label>
+            <select id="brokerSelect">
+                <option value="Quotex">⚡ Quotex (Broker)</option>
+            </select>
+        </div>
 
-            <div id="signalView" style="display: none; text-align: center; padding: 10px 0;">
-                <div style="font-size: 13px; color: #94a3b8; margin-bottom: 5px;" id="resModalAsset">EUR/USD (OTC)</div>
-                <div id="resModalDirection" style="font-size: 22px; font-weight: bold; margin: 10px 0;"></div>
-                <div id="resModalMeta" style="font-size: 12px; color: #00ffcc; margin-bottom: 15px;"></div>
-                <button class="btn" onclick="showDefaultView()">Back to Scanner</button>
+        <div class="form-group">
+            <label>2. SELECT MARKET TYPE</label>
+            <select id="marketType" onchange="updatePairs()">
+                <option value="ForexOTC">⚡ Forex OTC Market</option>
+                <option value="ForexLive">⚡ Forex Live Market</option>
+                <option value="CryptoOTC">⚡ Crypto OTC Market</option>
+                <option value="CryptoLive">⚡ Crypto Live Market</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>3. SELECT PAIR / ASSET</label>
+            <select id="pairSelect">
+                <option value="Auto">⚡ Auto Scan Best Pair (AI) ⚡</option>
+            </select>
+        </div>
+
+        <!-- Expiry Time Row -->
+        <div class="form-group">
+            <label>4. TRADE EXPIRY TIME</label>
+            <div class="expiry-row">
+                <div class="expiry-btn" onclick="setExpiry('15s', this)">15s</div>
+                <div class="expiry-btn" onclick="setExpiry('30s', this)">30s</div>
+                <div class="expiry-btn active" onclick="setExpiry('1m', this)">1m</div>
+                <div class="expiry-btn" onclick="setExpiry('2m', this)">2m</div>
+                <div class="expiry-btn" onclick="setExpiry('5m', this)">5m</div>
+                <div class="expiry-btn" onclick="setExpiry('15m', this)">15m</div>
             </div>
         </div>
-    </div>
 
-    <div class="app-container">
-        <div class="header" style="background: #0f1624;">
-            <h3 style="font-size: 14px; color: #94a3b8; margin-bottom: 8px;">Admin Key Generator</h3>
-            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-                <input type="password" id="adminPasswordInput" placeholder="Admin Pass" style="padding: 8px; background: #0b0f19; border: 1px solid #2a3650; border-radius: 6px; color: #fff; width: 50%;">
-                <button class="btn" style="padding: 8px; width: 50%; font-size: 13px;" onclick="generateKey()">Generate</button>
-            </div>
-            <div id="generatedKeyDisplay" style="font-size: 12px; color: #00ffcc; margin-bottom: 6px;"></div>
-            <button class="btn" id="copyKeyBtn" style="display: none; padding: 6px; font-size: 12px; background: #1a233a; color: #00ffcc; border: 1px solid #00ffcc;" onclick="copyGeneratedKey()">Copy Key</button>
+        <!-- Grid Menu Buttons -->
+        <div class="grid-menu">
+            <div class="menu-btn" onclick="alert('History panel coming up')">📊 HISTORY</div>
+            <div class="menu-btn" onclick="alert('Settings panel coming up')">⚙️ SETTINGS</div>
+            <div class="menu-btn" onclick="alert('Market News active')">📰 NEWS</div>
+            <div class="menu-btn" onclick="alert('Risk & Recovery tool active')">🛡️ RISK & RECOVERY</div>
         </div>
+
+        <!-- Main Action Button -->
+        <button class="btn-main" onclick="startQuantumScan()">▶ START 8-INDICATOR QUANTUM SCAN</button>
     </div>
 
     <script>
+        let soundOn = true;
+        let selectedExpiryTime = "1m";
         let timerInterval = null;
-        let scanInterval = null;
-        let latestGeneratedKey = "";
+
+        function toggleSound() {
+            soundOn = !soundOn;
+            document.getElementById('soundToggle').innerText = soundOn ? "🔊 SOUND: ON" : "🔇 SOUND: OFF";
+        }
+
+        function setExpiry(time, el) {
+            document.querySelectorAll('.expiry-btn').forEach(b => b.classList.remove('active'));
+            el.classList.add('active');
+            selectedExpiryTime = time;
+        }
 
         function initCandleTimer() {
             if (timerInterval) clearInterval(timerInterval);
             timerInterval = setInterval(() => {
                 let now = new Date();
-                let remaining = 15 - (now.getSeconds() % 15);
-                if (remaining === 15) remaining = 0;
+                let remaining = 60 - (now.getSeconds() % 60);
+                if (selectedExpiryTime === '15s') remaining = 15 - (now.getSeconds() % 15);
+                if (selectedExpiryTime === '30s') remaining = 30 - (now.getSeconds() % 30);
+                if (remaining === 60 || remaining === 15 || remaining === 30) remaining = 0;
+                
                 let timerEl = document.getElementById('candleTimer');
-                if (timerEl) timerEl.innerText = "00:" + (remaining < 10 ? "0" + remaining : remaining);
+                if (timerEl) {
+                    let sec = remaining < 10 ? "0" + remaining : remaining;
+                    timerEl.innerText = "00:" + sec;
+                }
             }, 1000);
         }
 
-        const brokerAssets = {
-            "Quotex": {
-                "CryptoLive": ["BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"],
-                "CryptoOTC": ["BTC/USD (OTC)", "ETH/USD (OTC)", "SOL/USD (OTC)", "ADA/USD (OTC)"],
-                "ForexLive": ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD"],
-                "ForexOTC": ["EUR/USD (OTC)", "GBP/USD (OTC)", "AUD/CAD (OTC)", "EUR/GBP (OTC)", "NZD/CAD (OTC)"]
-            }
+        const marketAssets = {
+            "ForexOTC": ["Auto Scan Best Pair (AI)", "EUR/USD (OTC)", "GBP/USD (OTC)", "AUD/CAD (OTC)", "EUR/GBP (OTC)", "NZD/CAD (OTC)"],
+            "ForexLive": ["Auto Scan Best Pair (AI)", "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD"],
+            "CryptoOTC": ["Auto Scan Best Pair (AI)", "BTC/USD (OTC)", "ETH/USD (OTC)", "SOL/USD (OTC)", "ADA/USD (OTC)"],
+            "CryptoLive": ["Auto Scan Best Pair (AI)", "BTC/USD", "ETH/USD", "SOL/USD", "XRP/USD"]
         };
 
         function updatePairs() {
-            let marketType = document.getElementById('marketType');
+            let marketType = document.getElementById('marketType').value;
             let pairSelect = document.getElementById('pairSelect');
-            if (!marketType || !pairSelect) return;
-            
             pairSelect.innerHTML = "";
-            let pairs = brokerAssets["Quotex"][marketType.value] || [];
-            pairs.forEach(pair => {
+            let assets = marketAssets[marketType] || [];
+            assets.forEach(asset => {
                 let opt = document.createElement('option');
-                opt.value = pair;
-                opt.innerText = pair;
+                opt.value = asset;
+                opt.innerText = asset === "Auto Scan Best Pair (AI)" ? "⚡ Auto Scan Best Pair (AI) ⚡" : asset;
                 pairSelect.appendChild(opt);
             });
         }
 
-        function showDefaultView() {
-            document.getElementById('defaultView').style.display = 'flex';
-            document.getElementById('scanView').style.display = 'none';
-            document.getElementById('signalView').style.display = 'none';
+        function startQuantumScan() {
+            alert("Scanning 8 indicators across " + selectedExpiryTime + " expiry time...");
         }
 
-        function startDeepScan() {
-            document.getElementById('defaultView').style.display = 'none';
-            document.getElementById('scanView').style.display = 'block';
-
-            let progressBar = document.getElementById('scanProgressBar');
-            let consoleBox = document.getElementById('liveScanConsole');
-            let stepText = document.getElementById('scanStepText');
-
-            if (progressBar) progressBar.style.width = '0%';
-            if (consoleBox) consoleBox.innerHTML = `<div style="color: #00ffcc;">Initializing quantum filters...</div>`;
-
-            let progress = 0;
-            if (scanInterval) clearInterval(scanInterval);
-
-            scanInterval = setInterval(() => {
-                progress += 20;
-                if (progress <= 100 && progressBar) {
-                    progressBar.style.width = progress + '%';
-                }
-                if (consoleBox && stepText) {
-                    if (progress === 40) {
-                        consoleBox.innerHTML += `<div>RSI & EMA Convergence: PASSED</div>`;
-                        stepText.innerText = "Analyzing Bollinger Bands...";
-                    } else if (progress >= 100) {
-                        clearInterval(scanInterval);
-                        finishScanResult();
-                    }
-                }
-            }, 100);
-        }
-
-        function finishScanResult() {
-            let pairSelect = document.getElementById('pairSelect');
-            let selectedPair = pairSelect ? pairSelect.value : "EUR/USD (OTC)";
-            document.getElementById('resModalAsset').innerText = selectedPair;
-
-            let isBuy = Math.random() > 0.45;
-            document.getElementById('scanView').style.display = 'none';
-            document.getElementById('signalView').style.display = 'block';
-
-            let dirEl = document.getElementById('resModalDirection');
-            let metaEl = document.getElementById('resModalMeta');
-
-            if (isBuy) {
-                dirEl.style.color = "#00ffcc";
-                dirEl.innerHTML = "⬆ UP (BUY)";
-                metaEl.innerHTML = `Accuracy: 96.8%`;
-            } else {
-                dirEl.style.color = "#ff3366";
-                dirEl.innerHTML = "⬇ DOWN (SELL)";
-                metaEl.innerHTML = `Accuracy: 95.4%`;
-            }
-        }
-
-        function generateKey() {
-            let adminPass = document.getElementById('adminPasswordInput').value.trim();
-            if (adminPass !== "raja2026") {
-                alert("Incorrect Admin Password!");
-                return;
-            }
-            latestGeneratedKey = 'RAJA-VIP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-            document.getElementById('generatedKeyDisplay').innerText = "Generated Key: " + latestGeneratedKey;
-            document.getElementById('copyKeyBtn').style.display = 'block';
-        }
-
-        function copyGeneratedKey() {
-            navigator.clipboard.writeText(latestGeneratedKey);
-            alert("License key copied to clipboard!");
+        function logoutApp() {
+            alert("Logged out successfully.");
         }
 
         window.onload = function() {
