@@ -1,4 +1,12 @@
 <script>
+    // Global Variables Initialization
+    let timerInterval = null;
+    let scanInterval = null;
+    let selectedExpiry = "1M";
+    let dynamicHistory = JSON.parse(localStorage.getItem('raja_signal_history')) || [];
+    let isUserVerified = false;
+    let latestGeneratedKey = "";
+
     // Auto Candle Timer Sync
     function initCandleTimer() {
         if (timerInterval) clearInterval(timerInterval);
@@ -10,17 +18,18 @@
             if (remaining === 15) remaining = 0;
 
             let displaySec = remaining < 10 ? "0" + remaining : remaining;
-            document.getElementById('candleTimer').innerText = "00:" + displaySec;
+            let timerEl = document.getElementById('candleTimer');
+            if (timerEl) timerEl.innerText = "00:" + displaySec;
 
             let alertBox = document.getElementById('tradeAlert');
             let hudBox = document.getElementById('hudBoxContainer');
 
             if (remaining <= 3 && remaining > 0) {
-                alertBox.style.display = "block";
-                hudBox.classList.add('alert-flash');
+                if (alertBox) alertBox.style.display = "block";
+                if (hudBox) hudBox.classList.add('alert-flash');
             } else {
-                alertBox.style.display = "none";
-                hudBox.classList.remove('alert-flash');
+                if (alertBox) alertBox.style.display = "none";
+                if (hudBox) hudBox.classList.remove('alert-flash');
             }
         }, 1000);
     }
@@ -40,11 +49,12 @@
     }
 
     function updatePairs() {
-        let marketType = document.getElementById('marketType').value;
+        let marketType = document.getElementById('marketType');
         let pairSelect = document.getElementById('pairSelect');
+        if (!marketType || !pairSelect) return;
+        
         pairSelect.innerHTML = "";
-
-        let pairs = brokerAssets["Quotex"][marketType] || [];
+        let pairs = brokerAssets["Quotex"][marketType.value] || [];
         pairs.forEach(pair => {
             let opt = document.createElement('option');
             opt.value = pair;
@@ -61,42 +71,53 @@
 
     function showDefaultView() {
         document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view').forEach(el => el.style.display = 'none');
-        document.getElementById('defaultView').style.display = 'flex';
+        let defaultView = document.getElementById('defaultView');
+        if (defaultView) defaultView.style.display = 'flex';
         let hud = document.getElementById('hudBoxContainer');
-        hud.classList.remove('glow-buy', 'glow-sell');
+        if (hud) hud.classList.remove('glow-buy', 'glow-sell');
     }
 
     function openHistoryInline() {
         document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        document.getElementById('historyInlineView').style.display = 'block';
+        let historyView = document.getElementById('historyInlineView');
+        if (historyView) historyView.style.display = 'block';
         renderHistoryList();
     }
 
     function openSettingsInline() {
         document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        document.getElementById('settingsInlineView').style.display = 'block';
+        let settingsView = document.getElementById('settingsInlineView');
+        if (settingsView) settingsView.style.display = 'block';
     }
 
     function openNewsInline() {
         document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        document.getElementById('newsInlineView').style.display = 'block';
+        let newsView = document.getElementById('newsInlineView');
+        if (newsView) newsView.style.display = 'block';
     }
 
     function openRiskInline() {
         document.querySelectorAll('.inline-content-view, .scan-view, .signal-view, .no-signal-view, .default-view').forEach(el => el.style.display = 'none');
-        document.getElementById('riskInlineView').style.display = 'block';
+        let riskView = document.getElementById('riskInlineView');
+        if (riskView) riskView.style.display = 'block';
         calculateRisk();
     }
 
     function calculateRisk() {
-        let base = parseFloat(document.getElementById('baseStakeInput').value) || 10;
-        document.getElementById('step1Display').innerText = "$" + base.toFixed(2);
-        document.getElementById('step2Display').innerText = "$" + (base * 2.2).toFixed(2);
-        document.getElementById('step3Display').innerText = "$" + (base * 4.8).toFixed(2);
+        let baseInput = document.getElementById('baseStakeInput');
+        if (!baseInput) return;
+        let base = parseFloat(baseInput.value) || 10;
+        let s1 = document.getElementById('step1Display');
+        let s2 = document.getElementById('step2Display');
+        let s3 = document.getElementById('step3Display');
+        if (s1) s1.innerText = "$" + base.toFixed(2);
+        if (s2) s2.innerText = "$" + (base * 2.2).toFixed(2);
+        if (s3) s3.innerText = "$" + (base * 4.8).toFixed(2);
     }
 
     function renderHistoryList() {
         let box = document.getElementById('historyListBox');
+        if (!box) return;
         if (dynamicHistory.length === 0) {
             box.innerHTML = `<div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>`;
             return;
@@ -110,73 +131,88 @@
 
     function startDeepScan() {
         document.querySelectorAll('.default-view, .signal-view, .no-signal-view, .inline-content-view').forEach(el => el.style.display = 'none');
-        document.getElementById('scanView').style.display = 'block';
+        let scanView = document.getElementById('scanView');
+        if (scanView) scanView.style.display = 'block';
         let hud = document.getElementById('hudBoxContainer');
-        hud.classList.remove('glow-buy', 'glow-sell');
+        if (hud) hud.classList.remove('glow-buy', 'glow-sell');
 
         let progressBar = document.getElementById('scanProgressBar');
         let consoleBox = document.getElementById('liveScanConsole');
         let stepText = document.getElementById('scanStepText');
 
-        progressBar.style.width = '0%';
-        consoleBox.innerHTML = `<div class="live-scan-row scanning">Initializing 8-layer quantum filters...</div>`;
+        if (progressBar) progressBar.style.width = '0%';
+        if (consoleBox) consoleBox.innerHTML = `<div class="live-scan-row scanning">Initializing 8-layer quantum filters...</div>`;
 
         let progress = 0;
         if (scanInterval) clearInterval(scanInterval);
 
         scanInterval = setInterval(() => {
             progress += 4;
-            if (progress <= 100) {
+            if (progress <= 100 && progressBar) {
                 progressBar.style.width = progress + '%';
             }
 
-            if (progress === 25) {
-                consoleBox.innerHTML += `<div class="live-scan-row passed">RSI & EMA Convergence: PASSED (96%)</div>`;
-                stepText.innerText = "Analyzing Bollinger Bands & MACD...";
-            } else if (progress === 50) {
-                consoleBox.innerHTML += `<div class="live-scan-row passed">Bollinger & MACD Stability: PASSED</div>`;
-                stepText.innerText = "Checking Candle Patterns & Multi-TF...";
-            } else if (progress === 75) {
-                consoleBox.innerHTML += `<div class="live-scan-row passed">Wick Rejection & Circuit Check: SECURE</div>`;
-                stepText.innerText = "Finalizing Quantum Signal Generation...";
-            } else if (progress >= 100) {
-                clearInterval(scanInterval);
-                finishScanResult();
+            if (consoleBox && stepText) {
+                if (progress === 25) {
+                    consoleBox.innerHTML += `<div class="live-scan-row passed">RSI & EMA Convergence: PASSED (96%)</div>`;
+                    stepText.innerText = "Analyzing Bollinger Bands & MACD...";
+                } else if (progress === 50) {
+                    consoleBox.innerHTML += `<div class="live-scan-row passed">Bollinger & MACD Stability: PASSED</div>`;
+                    stepText.innerText = "Checking Candle Patterns & Multi-TF...";
+                } else if (progress === 75) {
+                    consoleBox.innerHTML += `<div class="live-scan-row passed">Wick Rejection & Circuit Check: SECURE</div>`;
+                    stepText.innerText = "Finalizing Quantum Signal Generation...";
+                } else if (progress >= 100) {
+                    clearInterval(scanInterval);
+                    finishScanResult();
+                }
+                consoleBox.scrollTop = consoleBox.scrollHeight;
             }
-            consoleBox.scrollTop = consoleBox.scrollHeight;
         }, 80);
     }
 
     function finishScanResult() {
-        let selectedPair = document.getElementById('pairSelect').value || "EUR/USD (OTC)";
-        document.getElementById('targetPairDisplay').innerText = selectedPair;
-        document.getElementById('resModalAsset').innerText = selectedPair;
+        let pairSelect = document.getElementById('pairSelect');
+        let selectedPair = pairSelect ? pairSelect.value : "EUR/USD (OTC)";
+        
+        let targetPairDisplay = document.getElementById('targetPairDisplay');
+        let resModalAsset = document.getElementById('resModalAsset');
+        if (targetPairDisplay) targetPairDisplay.innerText = selectedPair;
+        if (resModalAsset) resModalAsset.innerText = selectedPair;
 
         let isBuy = Math.random() > 0.45;
         let hud = document.getElementById('hudBoxContainer');
         let lightOverlay = document.getElementById('lightOverlay');
 
-        document.getElementById('scanView').style.display = 'none';
-        document.getElementById('signalView').style.display = 'block';
+        let scanView = document.getElementById('scanView');
+        let signalView = document.getElementById('signalView');
+        if (scanView) scanView.style.display = 'none';
+        if (signalView) signalView.style.display = 'block';
 
         let dirEl = document.getElementById('resModalDirection');
         let metaEl = document.getElementById('resModalMeta');
 
         if (isBuy) {
-            dirEl.className = "signal-direction dir-up";
-            dirEl.innerHTML = "⬆ UP (BUY)";
-            metaEl.innerHTML = `CALL 🔺 | Accuracy: 96.8% | TF: ${selectedExpiry}`;
-            hud.classList.add('glow-buy');
-            lightOverlay.className = "signal-light-overlay buy-active";
+            if (dirEl) {
+                dirEl.className = "signal-direction dir-up";
+                dirEl.innerHTML = "⬆ UP (BUY)";
+            }
+            if (metaEl) metaEl.innerHTML = `CALL 🔺 | Accuracy: 96.8% | TF: ${selectedExpiry}`;
+            if (hud) hud.classList.add('glow-buy');
+            if (lightOverlay) lightOverlay.className = "signal-light-overlay buy-active";
         } else {
-            dirEl.className = "signal-direction dir-down";
-            dirEl.innerHTML = "⬇ DOWN (SELL)";
-            metaEl.innerHTML = `PUT 🔻 | Accuracy: 95.4% | TF: ${selectedExpiry}`;
-            hud.classList.add('glow-sell');
-            lightOverlay.className = "signal-light-overlay sell-active";
+            if (dirEl) {
+                dirEl.className = "signal-direction dir-down";
+                dirEl.innerHTML = "⬇ DOWN (SELL)";
+            }
+            if (metaEl) metaEl.innerHTML = `PUT 🔻 | Accuracy: 95.4% | TF: ${selectedExpiry}`;
+            if (hud) hud.classList.add('glow-sell');
+            if (lightOverlay) lightOverlay.className = "signal-light-overlay sell-active";
         }
 
-        playSignalAlertSound();
+        if (typeof playSignalAlertSound === "function") {
+            playSignalAlertSound();
+        }
 
         dynamicHistory.push({
             pair: selectedPair,
@@ -187,18 +223,21 @@
     }
 
     function verifyAccess() {
-        let keyInput = document.getElementById('verifyLicenseKey').value.trim();
+        let keyInputEl = document.getElementById('verifyLicenseKey');
         let msgBox = document.getElementById('verifyMessage');
+        if (!keyInputEl) return;
+        let keyInput = keyInputEl.value.trim();
 
         if (!keyInput) {
-            msgBox.style.display = "block";
-            msgBox.style.background = "rgba(255, 51, 102, 0.2)";
-            msgBox.style.color = "#ff3366";
-            msgBox.innerText = "Please enter your VIP License Key!";
+            if (msgBox) {
+                msgBox.style.display = "block";
+                msgBox.style.background = "rgba(255, 51, 102, 0.2)";
+                msgBox.style.color = "#ff3366";
+                msgBox.innerText = "Please enter your VIP License Key!";
+            }
             return;
         }
 
-        // Verification Check
         isUserVerified = true;
         localStorage.setItem('raja_active_key', keyInput);
         checkRoute();
@@ -206,22 +245,27 @@
 
     function checkRoute() {
         let activeKey = localStorage.getItem('raja_active_key');
+        let activationScreen = document.getElementById('activationScreen');
+        let mainAppContent = document.getElementById('mainAppContent');
+        let adminPanel = document.getElementById('adminPanel');
+
         if (activeKey || isUserVerified) {
-            document.getElementById('activationScreen').style.display = 'none';
-            document.getElementById('mainAppContent').style.display = 'block';
-            document.getElementById('adminPanel').style.display = 'block';
+            if (activationScreen) activationScreen.style.display = 'none';
+            if (mainAppContent) mainAppContent.style.display = 'block';
+            if (adminPanel) adminPanel.style.display = 'block';
             initCandleTimer();
             updatePairs();
         } else {
-            document.getElementById('activationScreen').style.display = 'block';
-            document.getElementById('mainAppContent').style.display = 'none';
-            document.getElementById('adminPanel').style.display = 'block';
+            if (activationScreen) activationScreen.style.display = 'block';
+            if (mainAppContent) mainAppContent.style.display = 'none';
+            if (adminPanel) adminPanel.style.display = 'block';
         }
     }
 
     function generateKey() {
-        let tgId = document.getElementById('adminTelegramId').value.trim();
-        let adminPass = document.getElementById('adminPasswordInput').value.trim();
+        let adminPassInput = document.getElementById('adminPasswordInput');
+        if (!adminPassInput) return;
+        let adminPass = adminPassInput.value.trim();
 
         if (adminPass !== "raja2026") {
             alert("Incorrect Admin Password!");
@@ -231,8 +275,9 @@
         let randomCode = 'RAJA-VIP-' + Math.random().toString(36).substring(2, 8).toUpperCase();
         latestGeneratedKey = randomCode;
         let display = document.getElementById('generatedKeyDisplay');
-        display.innerText = "Generated Key: " + randomCode;
-        document.getElementById('copyKeyBtn').style.display = 'block';
+        if (display) display.innerText = "Generated Key: " + randomCode;
+        let copyBtn = document.getElementById('copyKeyBtn');
+        if (copyBtn) copyBtn.style.display = 'block';
     }
 
     function copyGeneratedKey() {
@@ -240,10 +285,7 @@
         alert("License key copied to clipboard!");
     }
 
-    // Initialize application route on load
     window.onload = function() {
         checkRoute();
     };
 </script>
-</body>
-</html>
