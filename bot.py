@@ -8,7 +8,6 @@ import yfinance as yf
 
 app = FastAPI()
 
-# index.html dashboard ko direct root URL par show karne ke liye
 @app.get("/", response_class=HTMLResponse)
 def read_root():
     if os.path.exists("index.html"):
@@ -42,7 +41,6 @@ def evaluate_strategy(candle):
     else:
         return "PUT (DOWN)"
 
-# Jab bhi koi /get-signals link par click karega, tab yeh function chalega
 @app.get("/get-signals")
 async def get_signals():
     market_data = {}
