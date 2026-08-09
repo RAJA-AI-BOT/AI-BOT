@@ -1,8 +1,10 @@
 import asyncio
 from http.server import HTTPServer, SimpleHTTPRequestHandler
+import os
 import threading
 import time
 from fastapi import FastAPI
+import uvicorn
 import yfinance as yf
 
 # ----------------- RENDER WEB SERVER SETUP -----------------
@@ -116,11 +118,8 @@ async def get_signals():
 
 # ----------------- MAIN PROGRAM EXECUTION -----------------
 if __name__ == "__main__":
-  # 1. Render simple HTTP server thread start karein taake port 10000 active rahe[cite: 14]
-  server_thread = threading.Thread(target=run_http_server, daemon=True)
-  server_thread.start()
+  # Render ke diye gaye PORT ko automatically uthana (default 10000)
+  port = int(os.environ.get("PORT", 10000))
 
-  import uvicorn
-
-  # 2. FastAPI server ko uvicorn ke zariye chalana
-  uvicorn.run(app, host="0.0.0.0", port=8000)
+  # FastAPI server ko Uvicorn ke zariye directly Render port par chalana
+  uvicorn.run(app, host="0.0.0.0", port=port)
