@@ -231,6 +231,8 @@
                         <div class="inline-item"><span>Multi-TF Confirmation:</span> <span style="color:#00ff87;">4 of 6 Strong</span></div>
                         <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
                         <div class="inline-item"><span>Duplicate Protection:</span> <span style="color:#00ff87;">ON ✔</span></div>
+                        <div class="inline-item"><span>Auto WIN/LOSS:</span> <span style="color:#00ff87;">1m+ Yahoo ✔</span></div>
+                        <div class="inline-item"><span>Entry Rule:</span> <span style="color:#00ff87;">Next 1m Candle Open ✔</span></div>
                     </div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
                 </div>
@@ -265,9 +267,9 @@
             </div>
 
             <div class="timer-section">
-                <div class="candle-info" id="candleStatusText">Present Candle Running (Take trade after close):</div>
+                <div class="candle-info" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE:</div>
                 <div id="candleTimer" class="timer-display">00:15</div>
-                <div id="tradeAlert" class="trade-alert">⚠️ TRADE NOW! (Last 3 Seconds)</div>
+                <div id="tradeAlert" class="trade-alert">⏳ WAIT FOR CANDLE CLOSE</div>
             </div>
 
             <div class="selection-card">
@@ -342,6 +344,9 @@
         let audioCtx = null;
         let dynamicHistory = JSON.parse(localStorage.getItem('raja_signal_history')) || [];
         let soundEnabled = true;
+        let activeSignalEntryEpochMs = null;
+        let activeTrackedSignalId = null;
+        let backendTrackedHistory = [];
 
         const deviceSessionId = localStorage.getItem('raja_device_uid') || ('dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
         localStorage.setItem('raja_device_uid', deviceSessionId);
@@ -658,20 +663,49 @@
             showDefaultView();
             document.getElementById('defaultView').style.display = "none";
             document.getElementById('historyInlineView').style.display = "block";
-            renderHistoryList();
+            refreshTrackedHistory();
         }
 
         function renderHistoryList() {
-            let listContainer = document.getElementById('historyListBox');
+            const listContainer = document.getElementById('historyListBox');
             if (!listContainer) return;
+
+            if (backendTrackedHistory.length > 0) {
+                let html = "";
+
+                backendTrackedHistory.forEach((item, index) => {
+                    const score = Number(item.score || 0).toFixed(1) + "%";
+                    const result = item.result || item.status || "PENDING";
+                    let resultColor = "#60efff";
+                    if (result === "WIN") resultColor = "#00ff87";
+                    if (result === "LOSS") resultColor = "#ff3366";
+                    if (result === "DRAW") resultColor = "#facc15";
+
+                    html += `<div class="inline-item">
+                        <span>${index + 1}. ${item.pair} (${item.signal}) · ${item.expiry} · <strong style="color:#60efff;">${score}</strong></span>
+                        <span style="color:${resultColor}; font-weight:900;">[${result}]</span>
+                    </div>`;
+                });
+
+                listContainer.innerHTML = html;
+                return;
+            }
+
             if (dynamicHistory.length === 0) {
                 listContainer.innerHTML = `<div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>`;
                 return;
             }
+
             let html = "";
             dynamicHistory.forEach((item, index) => {
-                let resultLabel = item.result ? `<span style="color:${item.result === 'WIN' ? '#00ff87':'#ff3366'}; font-weight:bold;">[${item.result}]</span>` : `<div class="action-result-btns"><button class="win-action-btn" onclick="markSignalResult(${index}, 'WIN')">WIN</button><button class="loss-action-btn" onclick="markSignalResult(${index}, 'LOSS')">LOSS</button></div>`;
-                html += `<div class="inline-item"><span>${index + 1}. ${item.pair} (${item.dir}) - <strong style="color:#60efff;">${item.acc}</strong></span> ${resultLabel}</div>`;
+                let resultLabel = item.result
+                    ? `<span style="color:${item.result === 'WIN' ? '#00ff87':'#ff3366'}; font-weight:bold;">[${item.result}]</span>`
+                    : `<span style="color:#94a3b8; font-weight:bold;">[LOCAL]</span>`;
+
+                html += `<div class="inline-item">
+                    <span>${index + 1}. ${item.pair} (${item.dir}) - <strong style="color:#60efff;">${item.acc}</strong></span>
+                    ${resultLabel}
+                </div>`;
             });
             listContainer.innerHTML = html;
         }
@@ -843,38 +877,60 @@
 
         function startTimer() {
             clearInterval(timerInterval);
-            function calculateTimeLeft() {
-                let now = new Date();
-                let totalSec = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-                let expirySec = getExpirySeconds(selectedExpiry);
-                let remainder = totalSec % expirySec;
-                return Math.max(0, remainder === 0 ? 0 : expirySec - remainder);
+
+            function tickEntryTimer() {
+                const nowMs = Date.now();
+                const nowSec = Math.floor(nowMs / 1000);
+                const secIntoMinute = nowSec % 60;
+                const secondsToClose = secIntoMinute === 0 ? 60 : 60 - secIntoMinute;
+
+                updateTimerDisplay(secondsToClose);
+
+                const tradeAlert = document.getElementById('tradeAlert');
+                const candleStatus = document.getElementById('candleStatusText');
+
+                if (!tradeAlert || !candleStatus) return;
+
+                if (activeSignalEntryEpochMs) {
+                    const deltaMs = nowMs - activeSignalEntryEpochMs;
+
+                    if (deltaMs < 0) {
+                        candleStatus.innerText = "SIGNAL CONFIRMED — WAIT FOR CURRENT 1M CANDLE TO CLOSE:";
+                        tradeAlert.innerText = "⏳ WAIT — ENTER ON NEXT CANDLE OPEN";
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#60efff";
+                    } else if (deltaMs <= 4000) {
+                        candleStatus.innerText = "NEW 1M CANDLE OPENED:";
+                        tradeAlert.innerText = "✅ ENTER NOW — NEW CANDLE";
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#00ff87";
+                    } else {
+                        candleStatus.innerText = "ENTRY WINDOW PASSED:";
+                        tradeAlert.innerText = "⚠️ ENTRY MISSED — RESCAN FOR A FRESH SIGNAL";
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#ff3366";
+                    }
+                } else {
+                    candleStatus.innerText = "CURRENT 1M CANDLE — WAIT FOR CLOSE:";
+                    tradeAlert.style.display = "none";
+                }
             }
-            let timeLeft = calculateTimeLeft();
-            updateTimerDisplay(timeLeft);
-            
-            timerInterval = setInterval(() => {
-                if (timeLeft > 0) {
-                    timeLeft--;
-                    updateTimerDisplay(timeLeft);
-                }
-                let tradeAlert = document.getElementById('tradeAlert');
-                if(tradeAlert) {
-                    tradeAlert.style.display = (timeLeft <= 3 && timeLeft > 0) ? "block" : "none";
-                }
-                if (timeLeft === 0) {
-                    clearInterval(timerInterval);
-                }
-            }, 1000);
+
+            tickEntryTimer();
+            timerInterval = setInterval(tickEntryTimer, 250);
         }
 
         function updateTimerDisplay(seconds) {
-            let m = Math.floor(seconds / 60);
-            let s = seconds % 60;
-            let displayStr = (m < 10 ? "0" + m : m) + ":" + (s < 10 ? "0" + s : s);
-            let timerEl = document.getElementById('candleTimer');
-            if(timerEl) timerEl.innerText = displayStr;
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            const displayStr =
+                (m < 10 ? "0" + m : m) + ":" +
+                (s < 10 ? "0" + s : s);
+
+            const timerEl = document.getElementById('candleTimer');
+            if (timerEl) timerEl.innerText = displayStr;
         }
+
 
         // ==========================================
         // REAL BACKEND SCAN ENGINE
@@ -928,6 +984,10 @@
             let broker = document.getElementById('brokerSelect').value;
             let market = document.getElementById('marketType').value;
             let selectedPair = document.getElementById('pairSelect').value;
+
+            activeSignalEntryEpochMs = null;
+            activeTrackedSignalId = null;
+            startTimer();
 
             let pairsToScan = [];
             if (selectedPair.includes('Auto Scan') || selectedPair === '') {
@@ -994,6 +1054,55 @@
         }
 
 
+
+        async function registerSignalForTracking(signalData) {
+            const direction = signalData.dir.includes("CALL") ? "CALL" : "PUT";
+
+            // Predict next minute immediately for the entry UI; backend returns authoritative epoch.
+            activeSignalEntryEpochMs = (Math.floor(Date.now() / 60000) + 1) * 60000;
+            startTimer();
+
+            try {
+                const response = await fetch('/track-signal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pair: signalData.pair,
+                        signal: direction,
+                        score: signalData.confluence,
+                        expiry: selectedExpiry,
+                        timeframe_summary: signalData.timeframeSummary || {}
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result && result.status === 'success' && result.auto_tracking) {
+                    activeTrackedSignalId = result.signal_id;
+                    activeSignalEntryEpochMs = Number(result.entry_epoch) * 1000;
+                    startTimer();
+                } else if (result && result.status === 'success' && !result.auto_tracking) {
+                    activeTrackedSignalId = null;
+                }
+            } catch (error) {
+                console.error("Signal tracking error:", error);
+            }
+        }
+
+        async function refreshTrackedHistory() {
+            try {
+                const response = await fetch('/signals/history?limit=20');
+                const result = await response.json();
+
+                if (response.ok && result && result.status === 'success') {
+                    backendTrackedHistory = Array.isArray(result.data) ? result.data : [];
+                    renderHistoryList();
+                }
+            } catch (error) {
+                console.error("History refresh error:", error);
+            }
+        }
+
         function renderTimeframeBreakdown(signalData) {
             const box = document.getElementById('tfBreakdown');
             const line = document.getElementById('tfSummaryLine');
@@ -1042,6 +1151,7 @@
             
             // Render actual backend multi-timeframe breakdown.
             renderTimeframeBreakdown(signalData);
+            registerSignalForTracking(signalData);
 let isBuy = signalData.dir.includes("CALL");
             let confluenceString = Number(signalData.confluence).toFixed(1) + "%";
 
