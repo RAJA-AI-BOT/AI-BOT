@@ -940,6 +940,11 @@
             document.getElementById('defaultView').style.display = 'none';
             document.getElementById('scanView').style.display = 'block';
 
+        const tfBoxReset = document.getElementById('tfBreakdown');
+        const tfLineReset = document.getElementById('tfSummaryLine');
+        if (tfBoxReset) tfBoxReset.innerHTML = '';
+        if (tfLineReset) tfLineReset.innerText = 'Multi-TF: scanning backend timeframes...';
+
             let scanConsole = document.getElementById('liveScanConsole');
             scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 RAJA AI BOT DEEP SCAN: ${pairsToScan.length} ASSETS...</div>`;
 
@@ -1034,7 +1039,10 @@
             resAsset.innerText = signalData.pair;
             targetPairDisplay.innerText = signalData.pair;
             
-            let isBuy = signalData.dir.includes("CALL");
+            
+            // Render actual backend multi-timeframe breakdown.
+            renderTimeframeBreakdown(signalData);
+let isBuy = signalData.dir.includes("CALL");
             let confluenceString = Number(signalData.confluence).toFixed(1) + "%";
 
             dynamicHistory.unshift({
