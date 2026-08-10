@@ -73,6 +73,13 @@
         .dir-up { color: #00ff87; text-shadow: 0 0 14px rgba(0, 255, 135, 0.8); }
         .dir-down { color: #ff3366; text-shadow: 0 0 14px rgba(255, 51, 102, 0.8); }
         .signal-meta { font-size: 9px; color: #cbd5e1; margin-bottom: 2px; font-weight: 600; }
+        .tf-breakdown { width:100%; margin-top:5px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px; }
+        .tf-chip { font-size:7.5px; font-weight:800; padding:3px 5px; border-radius:4px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); }
+        .tf-call { color:#00ff87; border-color:rgba(0,255,135,.45); }
+        .tf-put { color:#ff3366; border-color:rgba(255,51,102,.45); }
+        .tf-none { color:#94a3b8; border-color:rgba(148,163,184,.25); }
+        .tf-summary-line { font-size:8px; color:#60efff; font-weight:800; margin-top:4px; }
+
         .advanced-filters { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 5px; padding: 3px 6px; margin-top: 4px; font-size: 7.5px; color: #60efff; display: flex; justify-content: center; gap: 3px; font-weight: bold; flex-wrap: wrap; }
         
         .selected-pair-box { background: linear-gradient(135deg, rgba(0, 242, 254, 0.12), rgba(0, 255, 135, 0.08)); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
@@ -199,6 +206,8 @@
                     <div id="advancedFiltersInfo" class="advanced-filters">
                         <span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span>
                     </div>
+                    <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div>
+                    <div id="tfBreakdown" class="tf-breakdown"></div>
                 </div>
 
                 <div id="noSignalView" class="no-signal-view">
@@ -219,8 +228,9 @@
                     <div class="inline-title">⚙️ AI 8-Indicator Settings</div>
                     <div class="inline-list-box">
                         <div class="inline-item"><span>Active Indicators:</span> <span style="color:#00ff87;">8 Layers Active ✔</span></div>
-                        <div class="inline-item"><span>Signal Threshold:</span> <span style="color:#00ff87;">Backend Confluence</span></div>
+                        <div class="inline-item"><span>Multi-TF Confirmation:</span> <span style="color:#00ff87;">4 of 6 Strong</span></div>
                         <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
+                        <div class="inline-item"><span>Duplicate Protection:</span> <span style="color:#00ff87;">ON ✔</span></div>
                     </div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
                 </div>
@@ -900,7 +910,13 @@
                     rsi: data.rsi,
                     bullishPoints: data.bullish_points,
                     bearishPoints: data.bearish_points,
-                    dataAge: data.data_age
+                    dataAge: data.data_age,
+                    timeframeSummary: data.timeframe_summary || {},
+                    alignedTimeframes: data.aligned_timeframes || [],
+                    opposingTimeframes: data.opposing_timeframes || [],
+                    multiTfAgreement: data.multi_tf_agreement,
+                    confirmationMode: data.confirmation_mode || '4-of-6 Strong',
+                    duplicateProtection: Boolean(data.duplicate_protection)
                 };
             } catch (error) {
                 console.error('Scan error for', pair, error);
@@ -970,6 +986,30 @@
                     document.getElementById('noSignalDesc').innerText = 'Yahoo live data was scanned, but the indicators did not reach the required confluence.';
                 }
             }, 300);
+        }
+
+
+        function renderTimeframeBreakdown(signalData) {
+            const box = document.getElementById('tfBreakdown');
+            const line = document.getElementById('tfSummaryLine');
+            if (!box || !line) return;
+
+            const summary = signalData.timeframeSummary || {};
+            const order = ['1m', '2m', '5m', '10m', '15m', '30m'];
+
+            box.innerHTML = order.map(tf => {
+                const item = summary[tf] || {};
+                const sig = item.signal || 'NO SIGNAL';
+                const score = Number(item.score || 0);
+                const cls = sig === 'CALL' ? 'tf-call' : (sig === 'PUT' ? 'tf-put' : 'tf-none');
+                const label = sig === 'CALL' ? 'CALL' : (sig === 'PUT' ? 'PUT' : 'NO');
+                const scoreText = score > 0 ? ` ${score.toFixed(0)}` : '';
+                return `<span class="tf-chip ${cls}">${tf}: ${label}${scoreText}</span>`;
+            }).join('');
+
+            const agreement = Number(signalData.multiTfAgreement);
+            const agreementText = Number.isFinite(agreement) ? agreement.toFixed(1) + '%' : '--';
+            line.innerText = `Multi-TF Agreement: ${agreementText} | Mode: ${signalData.confirmationMode || '4-of-6 Strong'}`;
         }
 
         function displaySignalResult(signalData) {
