@@ -1,3 +1,6 @@
+
+
+
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import yfinance as yf
@@ -11,75 +14,13 @@ CORS(app)  # Frontend se connection error hatane ke liye zaroori hai
 
 # Live Yahoo Finance supported pairs mapping
 YAHOO_SYMBOLS = {
-    'BTC-USD': 'BTC-USD',
-    'ETH-USD': 'ETH-USD',
-    'SOL-USD': 'SOL-USD',
-    'LTC-USD': 'LTC-USD',
-    'XRP-USD': 'XRP-USD',
-    'ADA-USD': 'ADA-USD',
-    'DOGE-USD': 'DOGE-USD',
-    'Bitcoin (OTC)': 'BTC-USD',
-    'Ethereum (OTC)': 'ETH-USD',
-    'Litecoin (OTC)': 'LTC-USD',
-    'Ripple (OTC)': 'XRP-USD',
-    'Solana (OTC)': 'SOL-USD',
-    'Toncoin (OTC)': 'TON-USD',
-    'Ethereum Classic (OTC)': 'ETC-USD',
-    'Axie Infinity (OTC)': 'AXS-USD',
-    'Binance Coin (OTC)': 'BNB-USD',
-    'Trump (OTC)': 'TRUMP-USD',
-    'Polkadot (OTC)': 'DOT-USD',
-    'Avalanche (OTC)': 'AVAX-USD',
-    'Chainlink (OTC)': 'LINK-USD',
-    'Bitcoin Cash (OTC)': 'BCH-USD',
-    'Zcash (OTC)': 'ZEC-USD',
-    'Cosmos (OTC)': 'ATOM-USD',
-    'EUR/USD': 'EURUSD=X',
-    'GBP/USD': 'GBPUSD=X',
-    'USD/JPY': 'USDJPY=X',
-    'AUD/USD': 'AUDUSD=X',
-    'USD/CAD': 'USDCAD=X',
-    'USD/CHF': 'USDCHF=X',
-    'NZD/USD': 'NZDUSD=X',
-    'EUR/GBP': 'EURGBP=X',
-    'EUR/JPY': 'EURJPY=X',
-    'GBP/JPY': 'GBPJPY=X',
-    'AUD/JPY': 'AUDJPY=X',
-    'EUR/AUD': 'EURAUD=X',
-    'GBP/AUD': 'GBPAUD=X',
-    'CAD/JPY': 'CADJPY=X',
-    'EUR/CAD': 'EURCAD=X',
-    'GBP/CAD': 'GBPCAD=X',
-    'NZD/JPY': 'NZDJPY=X',
-    'AUD/NZD': 'AUDNZD=X',
-    'EUR/CHF': 'EURCHF=X',
-    'GBP/CHF': 'GBPCHF=X',
-    'XAUUSD': 'XAUUSD=X',
-    'EUR/USD (OTC)': 'EURUSD=X',
-    'GBP/USD (OTC)': 'GBPUSD=X',
-    'USD/JPY (OTC)': 'USDJPY=X',
-    'AUD/USD (OTC)': 'AUDUSD=X',
-    'USD/CAD (OTC)': 'USDCAD=X',
-    'USD/CHF (OTC)': 'USDCHF=X',
-    'NZD/USD (OTC)': 'NZDUSD=X',
-    'EUR/GBP (OTC)': 'EURGBP=X',
-    'EUR/JPY (OTC)': 'EURJPY=X',
-    'GBP/JPY (OTC)': 'GBPJPY=X',
-    'AUD/JPY (OTC)': 'AUDJPY=X',
-    'EUR/AUD (OTC)': 'EURAUD=X',
-    'GBP/AUD (OTC)': 'GBPAUD=X',
-    'CAD/JPY (OTC)': 'CADJPY=X',
-    'EUR/CAD (OTC)': 'EURCAD=X',
-    'GBP/CAD (OTC)': 'GBPCAD=X',
-    'NZD/JPY (OTC)': 'NZDJPY=X',
-    'AUD/NZD (OTC)': 'AUDNZD=X',
-    'EUR/CHF (OTC)': 'EURCHF=X',
-    'GBP/CHF (OTC)': 'GBPCHF=X',
-    'NZD/CAD (OTC)': 'NZDCAD=X',
-    'NZD/CHF (OTC)': 'NZDCHF=X',
-    'USD/BRL (OTC)': 'USDBRL=X',
-    'USD/ARS (OTC)': 'USDARS=X',
-    'USD/INR (OTC)': 'USDINR=X',
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "AUD/USD": "AUDUSD=X",
+    "USD/JPY": "USDJPY=X",
+    "EUR/GBP": "EURGBP=X",
+    "NZD/CAD": "NZDCAD=X",
+    "BTC/USD": "BTC-USD"
 }
 
 # Saare pairs ki list jo scan honge
@@ -297,10 +238,6 @@ def calculate_live_8_indicators_cached(pair):
     cached_data = market_cache.get(pair)
 
     if not cached_data:
-        return 0, "NO SIGNAL"
-
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
         return 0, "NO SIGNAL"
 
     data_age = time.time() - cached_data["timestamp"]
