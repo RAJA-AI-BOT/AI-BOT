@@ -12,10 +12,13 @@ app = Flask(__name__, static_folder=".", template_folder=".")
 CORS(app)
 
 # =========================================================
-# RAJA AI BACKEND
-# Yahoo Finance = live/reference underlying market source.
-# IMPORTANT: "(OTC)" instruments are NOT Quotex OTC quotes.
-# They use the corresponding Yahoo underlying-market proxy.
+# RAJA AI MULTI-TIMEFRAME BACKEND
+# Yahoo Finance 1-minute OHLCV is the base/reference feed.
+# 2m, 5m, 10m, 15m and 30m are built from the same Yahoo
+# 1-minute candles so every timeframe stays synchronized.
+#
+# IMPORTANT: "(OTC)" assets are underlying-market proxies.
+# They are NOT exact Quotex OTC quotes.
 # =========================================================
 
 YAHOO_SYMBOLS = {
@@ -100,10 +103,18 @@ YAHOO_SYMBOLS = {
 ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
 UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
 
-# 1-minute Yahoo candles update around minute boundaries, so a cache window
-# slightly above one minute avoids unnecessary repeated downloads.
+TIMEFRAMES = {
+    "1m": 1,
+    "2m": 2,
+    "5m": 5,
+    "10m": 10,
+    "15m": 15,
+    "30m": 30,
+}
+
+# One Yahoo 1m download per unique symbol; all higher TFs are resampled.
 CACHE_DURATION = 90
-market_cache = {}          # keyed by Yahoo symbol
+market_cache = {}
 cache_lock = threading.Lock()
 
 # =========================================================
@@ -135,14 +146,14 @@ def load_licenses():
                 json.dumps(DEFAULT_LICENSES, indent=2),
                 encoding="utf-8",
             )
-            return dict(DEFAULT_LICENSES)
+            return {k: dict(v) for k, v in DEFAULT_LICENSES.items()}
 
         try:
             data = json.loads(LICENSE_FILE.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("Invalid license database")
         except Exception:
-            data = dict(DEFAULT_LICENSES)
+            data = {k: dict(v) for k, v in DEFAULT_LICENSES.items()}
 
         changed = False
         for key, value in DEFAULT_LICENSES.items():
@@ -166,11 +177,11 @@ def save_licenses(data):
 
 
 # =========================================================
-# MARKET DATA
+# YAHOO MARKET DATA
 # =========================================================
 
-def fetch_yahoo_data(symbol):
-    """Fetch 1-minute OHLCV candles from Yahoo Finance."""
+def fetch_yahoo_1m(symbol):
+    """Fetch Yahoo Finance 1-minute OHLCV candles."""
     ticker = yf.Ticker(symbol)
     df = ticker.history(
         period="5d",
@@ -187,7 +198,7 @@ def fetch_yahoo_data(symbol):
         return None
 
     df = df.dropna(subset=required)
-    if len(df) < 60:
+    if len(df) < 120:
         return None
 
     return df
@@ -195,7 +206,7 @@ def fetch_yahoo_data(symbol):
 
 def update_symbol_cache(symbol):
     try:
-        df = fetch_yahoo_data(symbol)
+        df = fetch_yahoo_1m(symbol)
         if df is None:
             return False
 
@@ -205,6 +216,7 @@ def update_symbol_cache(symbol):
                 "timestamp": time.time(),
             }
         return True
+
     except Exception as e:
         print(f"Yahoo fetch error for {symbol}: {e}")
         return False
@@ -216,7 +228,6 @@ def get_market_data(pair):
         return None, None, None
 
     now = time.time()
-
     with cache_lock:
         cached = market_cache.get(symbol)
 
@@ -225,7 +236,6 @@ def get_market_data(pair):
         if age <= CACHE_DURATION:
             return cached["data"].copy(), age, symbol
 
-    # On-demand refresh prevents a pair from silently using stale/wrong data.
     update_symbol_cache(symbol)
 
     with cache_lock:
@@ -239,16 +249,61 @@ def get_market_data(pair):
 
 
 def background_market_poller():
-    """Continuously pre-warm unique Yahoo symbols.
-
-    OTC/live aliases sharing the same Yahoo symbol reuse one cached DataFrame.
-    """
+    """Pre-warm each unique Yahoo symbol without six separate TF requests."""
     while True:
         for symbol in UNIQUE_YAHOO_SYMBOLS:
             update_symbol_cache(symbol)
             time.sleep(0.75)
-
         time.sleep(5)
+
+
+def build_timeframe(base_df, minutes):
+    """Create a CLOSED-candle timeframe from Yahoo 1m OHLCV."""
+    if base_df is None or base_df.empty:
+        return None
+
+    df = base_df.copy()
+
+    if minutes == 1:
+        # Last Yahoo minute may still be forming; analyze only closed candles.
+        if len(df) > 1:
+            df = df.iloc[:-1]
+        return df
+
+    rule = f"{minutes}min"
+
+    agg = {
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Close": "last",
+    }
+
+    if "Volume" in df.columns:
+        agg["Volume"] = "sum"
+
+    try:
+        tf = df.resample(
+            rule,
+            label="left",
+            closed="left",
+            origin="start_day",
+        ).agg(agg)
+    except TypeError:
+        # Compatibility fallback for older pandas versions.
+        tf = df.resample(
+            rule,
+            label="left",
+            closed="left",
+        ).agg(agg)
+
+    tf = tf.dropna(subset=["Open", "High", "Low", "Close"])
+
+    # The last resampled bucket can still be forming.
+    if len(tf) > 1:
+        tf = tf.iloc[:-1]
+
+    return tf
 
 
 # =========================================================
@@ -309,8 +364,6 @@ def calculate_true_range(df):
     high_low = df["High"] - df["Low"]
     high_close = (df["High"] - previous_close).abs()
     low_close = (df["Low"] - previous_close).abs()
-
-    # Avoid a direct pandas import; Series.combine is sufficient here.
     return high_low.combine(high_close, max).combine(low_close, max)
 
 
@@ -334,14 +387,12 @@ def calculate_adx_components(df, period=14):
         (up_move > down_move) & (up_move > 0),
         0.0,
     )
-
     minus_dm = down_move.where(
         (down_move > up_move) & (down_move > 0),
         0.0,
     )
 
     tr = calculate_true_range(df)
-
     atr = tr.ewm(
         alpha=1 / period,
         adjust=False,
@@ -386,14 +437,228 @@ def calculate_adx_components(df, period=14):
 def safe_float(value, default=None):
     try:
         value = float(value)
-        if value != value:  # NaN
+        if value != value:
             return default
         return value
     except Exception:
         return default
 
 
-def no_signal_result(pair, reason, symbol=None, data_age=None):
+def analyze_timeframe(df, timeframe):
+    """Analyze one CLOSED timeframe. No random values are used."""
+    if df is None or df.empty or len(df) < 60:
+        return {
+            "timeframe": timeframe,
+            "signal": "NO SIGNAL",
+            "score": 0,
+            "reason": "Insufficient closed candles",
+        }
+
+    required = {"Open", "High", "Low", "Close"}
+    if not required.issubset(df.columns):
+        return {
+            "timeframe": timeframe,
+            "signal": "NO SIGNAL",
+            "score": 0,
+            "reason": "Missing OHLC columns",
+        }
+
+    df = df.copy().dropna(subset=list(required))
+    if len(df) < 60:
+        return {
+            "timeframe": timeframe,
+            "signal": "NO SIGNAL",
+            "score": 0,
+            "reason": "Insufficient clean candles",
+        }
+
+    close = df["Close"]
+
+    rsi = safe_float(calculate_rsi(close, 14).iloc[-1])
+    ema9 = safe_float(calculate_ema(close, 9).iloc[-1])
+    ema21 = safe_float(calculate_ema(close, 21).iloc[-1])
+    ema50 = safe_float(calculate_ema(close, 50).iloc[-1])
+
+    macd, macd_signal = calculate_macd(close)
+    macd_now = safe_float(macd.iloc[-1])
+    macd_sig_now = safe_float(macd_signal.iloc[-1])
+
+    bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
+    bb_mid = safe_float(bb_middle.iloc[-1])
+
+    atr = safe_float(calculate_atr(df, 14).iloc[-1])
+
+    adx, plus_di, minus_di = calculate_adx_components(df, 14)
+    adx_now = safe_float(adx.iloc[-1])
+    plus_di_now = safe_float(plus_di.iloc[-1])
+    minus_di_now = safe_float(minus_di.iloc[-1])
+
+    price = safe_float(close.iloc[-1])
+    previous_close = safe_float(close.iloc[-2])
+
+    values = [
+        rsi, ema9, ema21, ema50,
+        macd_now, macd_sig_now, bb_mid,
+        atr, adx_now, plus_di_now, minus_di_now,
+        price, previous_close,
+    ]
+
+    if any(v is None for v in values) or atr <= 0:
+        return {
+            "timeframe": timeframe,
+            "signal": "NO SIGNAL",
+            "score": 0,
+            "reason": "Indicators not ready",
+        }
+
+    ema_bullish = price > ema9 > ema21 > ema50
+    ema_bearish = price < ema9 < ema21 < ema50
+
+    macd_bullish = macd_now > macd_sig_now
+    macd_bearish = macd_now < macd_sig_now
+
+    bb_bullish = price > bb_mid
+    bb_bearish = price < bb_mid
+
+    adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
+    adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
+
+    momentum_bullish = price > previous_close
+    momentum_bearish = price < previous_close
+
+    last = df.iloc[-1]
+    candle_open = safe_float(last["Open"])
+    candle_high = safe_float(last["High"])
+    candle_low = safe_float(last["Low"])
+    candle_close = safe_float(last["Close"])
+
+    if None in (candle_open, candle_high, candle_low, candle_close):
+        return {
+            "timeframe": timeframe,
+            "signal": "NO SIGNAL",
+            "score": 0,
+            "reason": "Latest candle incomplete",
+        }
+
+    candle_range = candle_high - candle_low
+    if candle_range <= 0:
+        return {
+            "timeframe": timeframe,
+            "signal": "NO SIGNAL",
+            "score": 0,
+            "reason": "Invalid candle range",
+        }
+
+    bullish_candle = candle_close > candle_open
+    bearish_candle = candle_close < candle_open
+
+    upper_wick = candle_high - max(candle_open, candle_close)
+    lower_wick = min(candle_open, candle_close) - candle_low
+
+    bullish_rejection = (
+        lower_wick / candle_range >= 0.25
+        and bullish_candle
+    )
+    bearish_rejection = (
+        upper_wick / candle_range >= 0.25
+        and bearish_candle
+    )
+
+    volume_bullish = False
+    volume_bearish = False
+    if "Volume" in df.columns:
+        volume = df["Volume"].fillna(0)
+        current_volume = safe_float(volume.iloc[-1], 0.0)
+        avg_volume = safe_float(volume.rolling(20).mean().iloc[-1], 0.0)
+        if current_volume > 0 and avg_volume > 0:
+            volume_bullish = bullish_candle and current_volume > avg_volume
+            volume_bearish = bearish_candle and current_volume > avg_volume
+
+    bullish_points = 0.0
+    bearish_points = 0.0
+
+    if 52 <= rsi <= 70:
+        bullish_points += 1.0
+    elif 30 <= rsi <= 48:
+        bearish_points += 1.0
+
+    if ema_bullish:
+        bullish_points += 2.0
+    elif ema_bearish:
+        bearish_points += 2.0
+
+    if macd_bullish:
+        bullish_points += 1.0
+    elif macd_bearish:
+        bearish_points += 1.0
+
+    if bb_bullish:
+        bullish_points += 1.0
+    elif bb_bearish:
+        bearish_points += 1.0
+
+    if adx_bullish:
+        bullish_points += 1.5
+    elif adx_bearish:
+        bearish_points += 1.5
+
+    if momentum_bullish:
+        bullish_points += 1.0
+    elif momentum_bearish:
+        bearish_points += 1.0
+
+    if bullish_rejection:
+        bullish_points += 1.0
+    elif bearish_rejection:
+        bearish_points += 1.0
+    elif bullish_candle:
+        bullish_points += 0.5
+    elif bearish_candle:
+        bearish_points += 0.5
+
+    if volume_bullish:
+        bullish_points += 1.0
+    elif volume_bearish:
+        bearish_points += 1.0
+
+    difference = abs(bullish_points - bearish_points)
+    winning_points = max(bullish_points, bearish_points)
+
+    # Slightly relaxed per-TF gate because final decision also requires
+    # multi-timeframe agreement.
+    if difference < 1.5 or winning_points < 3.5:
+        return {
+            "timeframe": timeframe,
+            "signal": "NO SIGNAL",
+            "score": 0,
+            "reason": "Weak/conflicting timeframe",
+            "rsi": round(rsi, 2),
+            "adx": round(adx_now, 2),
+            "bullish_points": round(bullish_points, 2),
+            "bearish_points": round(bearish_points, 2),
+        }
+
+    signal = "CALL" if bullish_points > bearish_points else "PUT"
+
+    score = 50 + difference * 6
+    if adx_now >= 20:
+        score += min(adx_now - 20, 15) * 0.5
+    score = max(50, min(95, score))
+
+    return {
+        "timeframe": timeframe,
+        "signal": signal,
+        "score": round(score, 2),
+        "rsi": round(rsi, 2),
+        "adx": round(adx_now, 2),
+        "atr": round(atr, 8),
+        "price": round(price, 8),
+        "bullish_points": round(bullish_points, 2),
+        "bearish_points": round(bearish_points, 2),
+    }
+
+
+def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
     return {
         "pair": pair,
         "score": 0,
@@ -407,24 +672,25 @@ def no_signal_result(pair, reason, symbol=None, data_age=None):
         "bearish_points": 0,
         "data_age": round(data_age, 2) if data_age is not None else None,
         "source": "Yahoo Finance",
-        "source_mode": (
-            "underlying_proxy" if "(OTC)" in pair else "live_reference"
-        ),
+        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
         "otc_proxy_warning": "(OTC)" in pair,
         "yahoo_symbol": symbol,
+        "timeframe_summary": timeframes or {},
+        "timeframes_scanned": list(TIMEFRAMES.keys()),
     }
 
 
 def calculate_live_indicators(pair):
+    """Scan 1m,2m,5m,10m,15m,30m and combine direction/confluence."""
     if pair not in YAHOO_SYMBOLS:
         return no_signal_result(
             pair,
             "Pair is not configured in Yahoo mapping.",
         )
 
-    df, data_age, symbol = get_market_data(pair)
+    base_df, data_age, symbol = get_market_data(pair)
 
-    if df is None or df.empty:
+    if base_df is None or base_df.empty:
         return no_signal_result(
             pair,
             "Yahoo market data unavailable.",
@@ -432,295 +698,126 @@ def calculate_live_indicators(pair):
             data_age=data_age,
         )
 
-    if data_age is not None and data_age > CACHE_DURATION * 2:
-        return no_signal_result(
-            pair,
-            "Yahoo market data is stale.",
-            symbol=symbol,
-            data_age=data_age,
-        )
+    results = {}
+    for tf_name, minutes in TIMEFRAMES.items():
+        tf_df = build_timeframe(base_df, minutes)
+        results[tf_name] = analyze_timeframe(tf_df, tf_name)
 
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(df.columns) or len(df) < 60:
-        return no_signal_result(
-            pair,
-            "Insufficient OHLC candle history.",
-            symbol=symbol,
-            data_age=data_age,
-        )
-
-    df = df.copy().dropna(subset=list(required))
-    if len(df) < 60:
-        return no_signal_result(
-            pair,
-            "Insufficient clean candle history.",
-            symbol=symbol,
-            data_age=data_age,
-        )
-
-    close = df["Close"]
-
-    # 1) RSI
-    rsi_series = calculate_rsi(close, 14)
-    current_rsi = safe_float(rsi_series.iloc[-1])
-
-    # 2) EMA trend
-    ema9 = calculate_ema(close, 9)
-    ema21 = calculate_ema(close, 21)
-    ema50 = calculate_ema(close, 50)
-
-    current_price = safe_float(close.iloc[-1])
-    e9 = safe_float(ema9.iloc[-1])
-    e21 = safe_float(ema21.iloc[-1])
-    e50 = safe_float(ema50.iloc[-1])
-
-    # 3) MACD
-    macd, macd_signal = calculate_macd(close)
-    current_macd = safe_float(macd.iloc[-1])
-    current_macd_signal = safe_float(macd_signal.iloc[-1])
-
-    # 4) Bollinger Bands
-    bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
-    current_upper = safe_float(bb_upper.iloc[-1])
-    current_middle = safe_float(bb_middle.iloc[-1])
-    current_lower = safe_float(bb_lower.iloc[-1])
-
-    # 5) ATR
-    atr_series = calculate_atr(df, 14)
-    current_atr = safe_float(atr_series.iloc[-1])
-
-    # 6) ADX + DI direction
-    adx_series, plus_di_series, minus_di_series = calculate_adx_components(df, 14)
-    current_adx = safe_float(adx_series.iloc[-1])
-    current_plus_di = safe_float(plus_di_series.iloc[-1])
-    current_minus_di = safe_float(minus_di_series.iloc[-1])
-
-    required_values = [
-        current_rsi, current_price, e9, e21, e50,
-        current_macd, current_macd_signal,
-        current_upper, current_middle, current_lower,
-        current_atr, current_adx,
-        current_plus_di, current_minus_di,
+    call_results = [
+        r for r in results.values()
+        if r.get("signal") == "CALL"
+    ]
+    put_results = [
+        r for r in results.values()
+        if r.get("signal") == "PUT"
     ]
 
-    if any(v is None for v in required_values):
+    valid_count = len(call_results) + len(put_results)
+
+    summary = {
+        tf: {
+            "signal": r.get("signal"),
+            "score": r.get("score", 0),
+            "rsi": r.get("rsi"),
+            "adx": r.get("adx"),
+        }
+        for tf, r in results.items()
+    }
+
+    # Require at least 3 directional timeframes out of 6.
+    if valid_count < 3:
         return no_signal_result(
             pair,
-            "Indicator values are not ready yet.",
+            "Fewer than 3 timeframes reached valid confluence.",
             symbol=symbol,
             data_age=data_age,
+            timeframes=summary,
         )
 
-    if current_atr <= 0:
-        return no_signal_result(
-            pair,
-            "Invalid volatility data.",
-            symbol=symbol,
-            data_age=data_age,
-        )
-
-    ema_bullish = current_price > e9 > e21 > e50
-    ema_bearish = current_price < e9 < e21 < e50
-
-    macd_bullish = current_macd > current_macd_signal
-    macd_bearish = current_macd < current_macd_signal
-
-    bb_bullish = current_price > current_middle
-    bb_bearish = current_price < current_middle
-
-    adx_bullish = current_adx >= 20 and current_plus_di > current_minus_di
-    adx_bearish = current_adx >= 20 and current_minus_di > current_plus_di
-
-    # 7) Momentum + candle/wicks
-    previous_close = safe_float(close.iloc[-2])
-    last = df.iloc[-1]
-
-    candle_open = safe_float(last["Open"])
-    candle_high = safe_float(last["High"])
-    candle_low = safe_float(last["Low"])
-    candle_close = safe_float(last["Close"])
-
-    if None in (
-        previous_close, candle_open, candle_high,
-        candle_low, candle_close
-    ):
-        return no_signal_result(
-            pair,
-            "Latest candle is incomplete.",
-            symbol=symbol,
-            data_age=data_age,
-        )
-
-    momentum_bullish = current_price > previous_close
-    momentum_bearish = current_price < previous_close
-
-    candle_range = candle_high - candle_low
-    if candle_range <= 0:
-        return no_signal_result(
-            pair,
-            "Latest candle has invalid range.",
-            symbol=symbol,
-            data_age=data_age,
-        )
-
-    bullish_candle = candle_close > candle_open
-    bearish_candle = candle_close < candle_open
-
-    upper_wick = candle_high - max(candle_open, candle_close)
-    lower_wick = min(candle_open, candle_close) - candle_low
-
-    bullish_rejection = (
-        lower_wick / candle_range >= 0.25
-        and bullish_candle
-    )
-
-    bearish_rejection = (
-        upper_wick / candle_range >= 0.25
-        and bearish_candle
-    )
-
-    # 8) Volume confirmation when Yahoo supplies usable volume.
-    volume_bullish = False
-    volume_bearish = False
-
-    if "Volume" in df.columns:
-        volume = df["Volume"].fillna(0)
-        current_volume = safe_float(volume.iloc[-1], 0.0)
-        avg_volume = safe_float(volume.rolling(20).mean().iloc[-1], 0.0)
-
-        if current_volume > 0 and avg_volume > 0:
-            volume_bullish = bullish_candle and current_volume > avg_volume
-            volume_bearish = bearish_candle and current_volume > avg_volume
-
-    bullish_points = 0.0
-    bearish_points = 0.0
-    reasons_bull = []
-    reasons_bear = []
-
-    # RSI is used as momentum context, not a guaranteed reversal signal.
-    if 52 <= current_rsi <= 70:
-        bullish_points += 1.0
-        reasons_bull.append("RSI bullish momentum")
-    elif 30 <= current_rsi <= 48:
-        bearish_points += 1.0
-        reasons_bear.append("RSI bearish momentum")
-
-    if ema_bullish:
-        bullish_points += 2.0
-        reasons_bull.append("EMA bullish alignment")
-    elif ema_bearish:
-        bearish_points += 2.0
-        reasons_bear.append("EMA bearish alignment")
-
-    if macd_bullish:
-        bullish_points += 1.0
-        reasons_bull.append("MACD bullish")
-    elif macd_bearish:
-        bearish_points += 1.0
-        reasons_bear.append("MACD bearish")
-
-    if bb_bullish:
-        bullish_points += 1.0
-    elif bb_bearish:
-        bearish_points += 1.0
-
-    if adx_bullish:
-        bullish_points += 1.5
-        reasons_bull.append("ADX/+DI trend")
-    elif adx_bearish:
-        bearish_points += 1.5
-        reasons_bear.append("ADX/-DI trend")
-
-    if momentum_bullish:
-        bullish_points += 1.0
-    elif momentum_bearish:
-        bearish_points += 1.0
-
-    if bullish_rejection:
-        bullish_points += 1.0
-        reasons_bull.append("bullish wick rejection")
-    elif bearish_rejection:
-        bearish_points += 1.0
-        reasons_bear.append("bearish wick rejection")
-    elif bullish_candle:
-        bullish_points += 0.5
-    elif bearish_candle:
-        bearish_points += 0.5
-
-    if volume_bullish:
-        bullish_points += 1.0
-        reasons_bull.append("volume confirmation")
-    elif volume_bearish:
-        bearish_points += 1.0
-        reasons_bear.append("volume confirmation")
-
-    point_difference = abs(bullish_points - bearish_points)
-    winning_points = max(bullish_points, bearish_points)
-
-    # Strict no-trade filter.
-    if point_difference < 2.0 or winning_points < 4.0:
-        result = no_signal_result(
-            pair,
-            "Indicators are conflicting or confluence is too weak.",
-            symbol=symbol,
-            data_age=data_age,
-        )
-        result.update({
-            "rsi": round(current_rsi, 2),
-            "adx": round(current_adx, 2),
-            "atr": round(current_atr, 8),
-            "price": round(current_price, 8),
-            "bullish_points": round(bullish_points, 2),
-            "bearish_points": round(bearish_points, 2),
-        })
-        return result
-
-    if bullish_points > bearish_points:
+    if len(call_results) > len(put_results):
         signal = "CALL"
-        reason_parts = reasons_bull[:4]
-    else:
+        supporters = call_results
+        opponents = put_results
+    elif len(put_results) > len(call_results):
         signal = "PUT"
-        reason_parts = reasons_bear[:4]
+        supporters = put_results
+        opponents = call_results
+    else:
+        return no_signal_result(
+            pair,
+            "Multi-timeframe direction is tied.",
+            symbol=symbol,
+            data_age=data_age,
+            timeframes=summary,
+        )
 
-    # Technical confluence score — NOT historical win-rate/accuracy.
-    score = 50 + (point_difference * 6)
+    # At least 3 timeframes must agree with the final direction.
+    if len(supporters) < 3:
+        return no_signal_result(
+            pair,
+            "Not enough timeframe agreement.",
+            symbol=symbol,
+            data_age=data_age,
+            timeframes=summary,
+        )
 
-    if current_adx >= 20:
-        score += min(current_adx - 20, 15) * 0.5
+    agreement_ratio = len(supporters) / valid_count
 
-    score = max(50, min(95, score))
+    # If several valid TFs actively oppose, require 60%+ directional agreement.
+    if agreement_ratio < 0.60:
+        return no_signal_result(
+            pair,
+            "Multi-timeframe agreement below 60%.",
+            symbol=symbol,
+            data_age=data_age,
+            timeframes=summary,
+        )
 
-    if current_adx < 15:
-        score = min(score, 68)
+    avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
 
-    source_mode = "underlying_proxy" if "(OTC)" in pair else "live_reference"
+    # Reward agreement without pretending this is a win probability.
+    multi_tf_score = avg_support_score + ((agreement_ratio - 0.5) * 12)
+    multi_tf_score = max(50, min(95, multi_tf_score))
+
+    # Prefer representative diagnostics from 5m, then 2m, then 1m,
+    # otherwise use the strongest supporting timeframe.
+    representative = None
+    for preferred in ("5m", "2m", "1m", "10m", "15m", "30m"):
+        r = results.get(preferred)
+        if r and r.get("signal") == signal:
+            representative = r
+            break
+
+    if representative is None:
+        representative = max(supporters, key=lambda x: x.get("score", 0))
+
+    aligned_tfs = [r["timeframe"] for r in supporters]
+    opposing_tfs = [r["timeframe"] for r in opponents]
 
     return {
         "pair": pair,
-        "score": round(score, 2),
+        "score": round(multi_tf_score, 2),
         "signal": signal,
-        "reason": ", ".join(reason_parts) if reason_parts else "Technical confluence",
-        "rsi": round(current_rsi, 2),
-        "ema9": round(e9, 8),
-        "ema21": round(e21, 8),
-        "ema50": round(e50, 8),
-        "macd": round(current_macd, 8),
-        "macd_signal": round(current_macd_signal, 8),
-        "bb_upper": round(current_upper, 8),
-        "bb_middle": round(current_middle, 8),
-        "bb_lower": round(current_lower, 8),
-        "adx": round(current_adx, 2),
-        "plus_di": round(current_plus_di, 2),
-        "minus_di": round(current_minus_di, 2),
-        "atr": round(current_atr, 8),
-        "price": round(current_price, 8),
-        "bullish_points": round(bullish_points, 2),
-        "bearish_points": round(bearish_points, 2),
+        "reason": (
+            f"Multi-TF agreement: {len(supporters)}/{valid_count} valid "
+            f"timeframes -> {signal}"
+        ),
+        "rsi": representative.get("rsi"),
+        "adx": representative.get("adx"),
+        "atr": representative.get("atr"),
+        "price": representative.get("price"),
+        "bullish_points": representative.get("bullish_points", 0),
+        "bearish_points": representative.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
         "source": "Yahoo Finance",
-        "source_mode": source_mode,
+        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
         "otc_proxy_warning": "(OTC)" in pair,
         "yahoo_symbol": symbol,
+        "timeframes_scanned": list(TIMEFRAMES.keys()),
+        "aligned_timeframes": aligned_tfs,
+        "opposing_timeframes": opposing_tfs,
+        "timeframe_summary": summary,
+        "multi_tf_agreement": round(agreement_ratio * 100, 1),
     }
 
 
@@ -732,7 +829,6 @@ def calculate_live_indicators(pair):
 def home():
     if os.path.exists(BASE_DIR / "index.html"):
         return send_from_directory(str(BASE_DIR), "index.html")
-
     return (
         "RAJA AI backend is running. "
         "Place index.html in the same folder as bot.py."
@@ -746,10 +842,12 @@ def health():
 
     return jsonify({
         "status": "success",
-        "service": "RAJA AI backend",
+        "service": "RAJA AI multi-timeframe backend",
         "yahoo_pairs": len(YAHOO_SYMBOLS),
         "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
         "cached_symbols": cached_symbols,
+        "base_interval": "1m",
+        "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
     })
 
@@ -838,7 +936,6 @@ def admin_generate_key():
         "device": None,
         "created_at": int(time.time()),
     }
-
     save_licenses(licenses)
 
     return jsonify({
@@ -886,20 +983,14 @@ def scan_markets():
     data = request.get_json(silent=True) or {}
     selected_pair = str(data.get("pair", "")).strip()
 
-    # The current frontend normally scans each pair itself.
-    # This branch is retained for direct API use.
-    if (
-        not selected_pair
-        or "Auto Scan Best Pair" in selected_pair
-    ):
+    if not selected_pair or "Auto Scan Best Pair" in selected_pair:
         best = None
 
         for pair in ALL_PAIRS:
             result = calculate_live_indicators(pair)
-            if result["signal"] == "NO SIGNAL":
+            if result.get("signal") == "NO SIGNAL":
                 continue
-
-            if best is None or result["score"] > best["score"]:
+            if best is None or result.get("score", 0) > best.get("score", 0):
                 best = result
 
         if best is None:
@@ -909,14 +1000,12 @@ def scan_markets():
                     "pair": None,
                     "score": 0,
                     "signal": "NO SIGNAL",
-                    "reason": "No configured pair reached valid confluence.",
+                    "reason": "No configured pair reached multi-timeframe confluence.",
+                    "timeframes_scanned": list(TIMEFRAMES.keys()),
                 },
             })
 
-        return jsonify({
-            "status": "success",
-            "data": best,
-        })
+        return jsonify({"status": "success", "data": best})
 
     if selected_pair not in YAHOO_SYMBOLS:
         return jsonify({
@@ -929,14 +1018,9 @@ def scan_markets():
         }), 400
 
     result = calculate_live_indicators(selected_pair)
-
-    return jsonify({
-        "status": "success",
-        "data": result,
-    })
+    return jsonify({"status": "success", "data": result})
 
 
-# Start background cache warmer only after all functions/routes exist.
 poller_thread = threading.Thread(
     target=background_market_poller,
     daemon=True,
