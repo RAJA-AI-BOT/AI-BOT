@@ -162,7 +162,7 @@
                     <div class="vortex-container">
                         <div class="vortex-icon"></div>
                     </div>
-                    <div style="font-size: 9.5px; color: #60efff; font-weight: 900; letter-spacing: 1px;">8-INDICATOR QUANTUM ENGINE (95%+)</div>
+                    <div style="font-size: 9.5px; color: #60efff; font-weight: 900; letter-spacing: 1px;">8-INDICATOR LIVE ENGINE</div>
                     <div class="hud-stats">
                         <span>FILTERS: <strong style="color:#00ff87;">RSI+EMA+BB+MACD+CANDLE+MULTI-TF+WICKS+CIRCUIT</strong></span>
                     </div>
@@ -219,7 +219,7 @@
                     <div class="inline-title">⚙️ AI 8-Indicator Settings</div>
                     <div class="inline-list-box">
                         <div class="inline-item"><span>Active Indicators:</span> <span style="color:#00ff87;">8 Layers Active ✔</span></div>
-                        <div class="inline-item"><span>Accuracy Target:</span> <span style="color:#00ff87;">95%+ (Max Strict)</span></div>
+                        <div class="inline-item"><span>Signal Threshold:</span> <span style="color:#00ff87;">Backend Confluence</span></div>
                         <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
                     </div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
@@ -788,115 +788,109 @@
         }
 
         // ==========================================
-        // 8-INDICATOR + TREND FILTER + WICK REJECTION ENGINE
+        // REAL BACKEND SCAN ENGINE
+        // Yahoo/yfinance market data + backend indicators
         // ==========================================
-        function calculate8IndicatorCheck() {
-            // 1. RSI Simulation / Calculation Check
-            let rsiValue = Math.floor(Math.random() * 70) + 15; // 15 to 85
-            let rsiPass = (rsiValue < 35 || rsiValue > 65);
+        async function scanPairFromBackend(pair) {
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pair: pair })
+                });
 
-            // 2. EMA Trend Filter (Advanced Trend Alignment Check)
-            let marketTrendBias = Math.random() > 0.35; 
-            let emaBullish = marketTrendBias;
+                if (!response.ok) {
+                    throw new Error('Backend scan failed: ' + response.status);
+                }
 
-            // 3. Bollinger Bands Volatility Check
-            let bbBreakout = Math.random() > 0.4;
+                const result = await response.json();
+                if (!result || result.status !== 'success' || !result.data) {
+                    return null;
+                }
 
-            // 4. MACD Momentum Check
-            let macdCross = Math.random() > 0.4;
+                const data = result.data;
+                if (!data.signal || data.signal === 'NO SIGNAL' || Number(data.score || 0) <= 0) {
+                    return null;
+                }
 
-            // 5. Candlestick Pattern Strength
-            let patternStrong = Math.random() > 0.35;
-
-            // 6. Multi-Timeframe Confluence
-            let multiTfMatch = Math.random() > 0.3;
-
-            // 7. Strict Wick Rejection Validation (Rejecting unstable candles with massive wicks/noise)
-            let upperWickRatio = Math.random() * 0.4; // 0 to 40% wick
-            let lowerWickRatio = Math.random() * 0.4;
-            let wicksValid = (upperWickRatio < 0.28 && lowerWickRatio < 0.28); // Strict wick rejection filter
-
-            // 8. Circuit Breaker Safety Status
-            let circuitSafe = true;
-
-            // All 8 Layers including Trend Filter and Wick Rejection must pass for high accuracy
-            let allPassed = rsiPass && emaBullish && bbBreakout && macdCross && patternStrong && multiTfMatch && wicksValid && circuitSafe;
-            
-            let accuracy = allPassed ? (Math.floor(Math.random() * 4) + 95) : (Math.floor(Math.random() * 10) + 80);
-            let direction = (rsiValue < 35 || emaBullish) ? "CALL (UP)" : "PUT (DOWN)";
-
-            return {
-                passed: accuracy >= 95,
-                accuracy: accuracy,
-                dir: direction,
-                rsi: rsiValue
-            };
+                return {
+                    pair: data.pair || pair,
+                    accuracy: Number(data.score || 0),
+                    dir: data.signal === 'CALL' ? 'CALL (UP)' : 'PUT (DOWN)',
+                    reason: data.reason || '',
+                    rsi: data.rsi,
+                    bullishPoints: data.bullish_points,
+                    bearishPoints: data.bearish_points,
+                    dataAge: data.data_age
+                };
+            } catch (error) {
+                console.error('Scan error for', pair, error);
+                return null;
+            }
         }
 
-        function startDeepScan() {
+        async function startDeepScan() {
             let broker = document.getElementById('brokerSelect').value;
             let market = document.getElementById('marketType').value;
             let selectedPair = document.getElementById('pairSelect').value;
-            
+
             let pairsToScan = [];
-            if (selectedPair.includes("Auto Scan") || selectedPair === "") {
+            if (selectedPair.includes('Auto Scan') || selectedPair === '') {
                 pairsToScan = brokerData[broker][market].slice(1);
             } else {
                 pairsToScan = [selectedPair];
             }
 
             showDefaultView();
-            document.getElementById('defaultView').style.display = "none";
-            document.getElementById('scanView').style.display = "block";
-            
+            document.getElementById('defaultView').style.display = 'none';
+            document.getElementById('scanView').style.display = 'block';
+
             let scanConsole = document.getElementById('liveScanConsole');
-            scanConsole.innerHTML = `<div class="live-scan-row scanning">🛡️ Running 8-Indicator + Trend & Wick Filter Across ${pairsToScan.length} Assets...</div>`;
-            
+            scanConsole.innerHTML = `<div class="live-scan-row scanning">🛡️ LIVE BACKEND SCAN: ${pairsToScan.length} ASSETS...</div>`;
+
             let progressBar = document.getElementById('scanProgressBar');
             let scanStep = document.getElementById('scanStepText');
             let scanBtn = document.getElementById('scanBtn');
-            scanBtn.innerText = "▶ RUNNING ADVANCED SCAN...";
+            scanBtn.innerText = '▶ RUNNING LIVE YAHOO SCAN...';
             scanBtn.disabled = true;
 
-            let currentIndex = 0;
-            let totalPairs = pairsToScan.length;
             let bestSignalFound = null;
             let highestAccuracy = 0;
 
-            clearInterval(scanInterval);
-            scanInterval = setInterval(() => {
-                if (currentIndex < totalPairs) {
-                    let currentPair = pairsToScan[currentIndex];
-                    let progressPercent = Math.floor(((currentIndex + 1) / totalPairs) * 100);
-                    progressBar.style.width = progressPercent + "%";
-                    scanStep.innerText = `Analyzing Trend & Wicks: ${currentPair} (${currentIndex + 1}/${totalPairs})`;
+            for (let currentIndex = 0; currentIndex < pairsToScan.length; currentIndex++) {
+                let currentPair = pairsToScan[currentIndex];
+                let progressPercent = Math.floor(((currentIndex + 1) / pairsToScan.length) * 100);
+                progressBar.style.width = progressPercent + '%';
+                scanStep.innerText = `Yahoo Live Data + Indicators: ${currentPair} (${currentIndex + 1}/${pairsToScan.length})`;
 
-                    let indicatorResult = calculate8IndicatorCheck();
-                    
-                    if (indicatorResult.passed && indicatorResult.accuracy > highestAccuracy) {
-                        highestAccuracy = indicatorResult.accuracy;
-                        bestSignalFound = { pair: currentPair, accuracy: indicatorResult.accuracy, dir: indicatorResult.dir };
-                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.accuracy}% - Trend/Wick Verified</span></div>`;
-                    } else {
-                        scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>Filtered (Trend/Wick Noise)</span></div>`;
-                    }
-                    scanConsole.scrollTop = scanConsole.scrollHeight;
-                    currentIndex++;
+                let indicatorResult = await scanPairFromBackend(currentPair);
+
+                if (indicatorResult && indicatorResult.accuracy > highestAccuracy) {
+                    highestAccuracy = indicatorResult.accuracy;
+                    bestSignalFound = indicatorResult;
+                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.accuracy}% - LIVE VERIFIED</span></div>`;
+                } else if (indicatorResult) {
+                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.accuracy}%</span></div>`;
                 } else {
-                    clearInterval(scanInterval);
-                    scanBtn.innerText = "▶ START 8-INDICATOR QUANTUM SCAN";
-                    scanBtn.disabled = false;
-
-                    setTimeout(() => {
-                        if (bestSignalFound) {
-                            displaySignalResult(bestSignalFound);
-                        } else {
-                            document.getElementById('scanView').style.display = "none";
-                            document.getElementById('noSignalView').style.display = "flex";
-                        }
-                    }, 500);
+                    scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>No valid confluence</span></div>`;
                 }
-            }, 70);
+
+                scanConsole.scrollTop = scanConsole.scrollHeight;
+            }
+
+            scanBtn.innerText = '▶ START 8-INDICATOR QUANTUM SCAN';
+            scanBtn.disabled = false;
+
+            setTimeout(() => {
+                if (bestSignalFound) {
+                    displaySignalResult(bestSignalFound);
+                } else {
+                    document.getElementById('scanView').style.display = 'none';
+                    document.getElementById('noSignalView').style.display = 'flex';
+                    document.getElementById('noSignalTitle').innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                    document.getElementById('noSignalDesc').innerText = 'Yahoo live data was scanned, but the indicators did not reach the required confluence.';
+                }
+            }, 300);
         }
 
         function displaySignalResult(signalData) {
@@ -922,7 +916,7 @@
             targetPairDisplay.innerText = signalData.pair;
             
             let isBuy = signalData.dir.includes("CALL");
-            let accString = signalData.accuracy + ".5%";
+            let accString = Number(signalData.accuracy).toFixed(1) + "%";
 
             dynamicHistory.unshift({
                 pair: signalData.pair,
