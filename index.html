@@ -195,20 +195,20 @@
                     </div>
 
                     <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
-                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Accuracy: 96.5% | TF: 15s</div>
+                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Technical Confluence: -- | TF: 15s</div>
                     <div id="advancedFiltersInfo" class="advanced-filters">
                         <span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span>
                     </div>
                 </div>
 
                 <div id="noSignalView" class="no-signal-view">
-                    <div style="font-size: 12px; color: #ff3366; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;" id="noSignalTitle">⚠️ NO 95%+ SIGNAL FOUND</div>
+                    <div style="font-size: 12px; color: #ff3366; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
                     <div style="font-size: 9.5px; color: #cbd5e1; margin-bottom: 8px;" id="noSignalDesc">All 8 indicators did not converge safely. Try scanning again!</div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🔄 Try Scanning Again</button>
                 </div>
 
                 <div id="historyInlineView" class="inline-content-view">
-                    <div class="inline-title">📊 8-Indicator Signal History</div>
+                    <div class="inline-title">📊 Live Signal History</div>
                     <div id="historyListBox" class="inline-list-box">
                         <div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>
                     </div>
@@ -446,11 +446,12 @@
         window.addEventListener('load', checkRoute);
         window.addEventListener('hashchange', checkRoute);
 
-        function verifyAccess() {
+        async function verifyAccess() {
             playClickSound();
-            let uInput = document.getElementById('verifyUserInput').value.trim();
-            let key = document.getElementById('verifyLicenseKey').value.trim();
-            let msgBox = document.getElementById('verifyMessage');
+
+            const uInput = document.getElementById('verifyUserInput').value.trim();
+            const key = document.getElementById('verifyLicenseKey').value.trim();
+            const msgBox = document.getElementById('verifyMessage');
 
             if (!uInput || !key) {
                 msgBox.style.color = "#fff";
@@ -460,51 +461,100 @@
                 return;
             }
 
-            if (key.startsWith("RAJA-VIP-") && key.length >= 15) {
+            msgBox.style.display = "block";
+            msgBox.style.color = "#030712";
+            msgBox.style.background = "#60efff";
+            msgBox.innerText = "🔄 Verifying license with secure backend...";
+
+            try {
+                const response = await fetch('/verify-license', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        key: key,
+                        user: uInput,
+                        device: deviceSessionId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'License verification failed.');
+                }
+
                 localStorage.setItem('raja_active_key', key);
+                localStorage.setItem('raja_active_user', uInput);
                 localStorage.setItem('raja_session_' + key, deviceSessionId);
-                
+
                 let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
-                allActiveUsers[key] = { user: uInput, device: deviceSessionId, time: new Date().toLocaleTimeString() };
+                allActiveUsers[key] = {
+                    user: uInput,
+                    device: deviceSessionId,
+                    time: new Date().toLocaleTimeString()
+                };
                 localStorage.setItem('raja_active_users_list', JSON.stringify(allActiveUsers));
 
                 msgBox.style.color = "#030712";
                 msgBox.style.background = "#00ff87";
-                msgBox.innerText = "✅ Device Verified & Secured! Loading Ultra Pro...";
-                msgBox.style.display = "block";
-                
-                setTimeout(() => {
-                    isUserVerified = true;
-                    checkRoute();
-                    startTimer();
-                }, 1200);
-            } else {
+                msgBox.innerText = "✅ License verified by backend & device bound.";
+
+                isUserVerified = true;
+                checkRoute();
+                startTimer();
+
+            } catch (error) {
+                localStorage.removeItem('raja_active_key');
+                localStorage.removeItem('raja_session_' + key);
+
                 msgBox.style.color = "#fff";
                 msgBox.style.background = "#ff3366";
-                msgBox.innerText = "❌ Invalid License Key Structure!";
+                msgBox.innerText = "❌ " + error.message;
                 msgBox.style.display = "block";
             }
         }
 
-        function generateKey() {
-            let tId = document.getElementById('adminTelegramId').value.trim();
-            let pass = document.getElementById('adminPasswordInput').value;
-            let display = document.getElementById('generatedKeyDisplay');
-            let copyBtn = document.getElementById('copyKeyBtn');
+        async function generateKey() {
+            const tId = document.getElementById('adminTelegramId').value.trim();
+            const pass = document.getElementById('adminPasswordInput').value;
+            const display = document.getElementById('generatedKeyDisplay');
+            const copyBtn = document.getElementById('copyKeyBtn');
 
-            if (pass === "786") {
-                if (!tId) { 
-                    display.innerText = "❌ Enter User Telegram ID / UID!"; 
-                    display.style.color = "#ff3366"; 
-                    copyBtn.style.display = "none";
-                    return; 
+            if (!tId || !pass) {
+                display.innerText = "❌ Enter User Telegram ID / UID and admin password.";
+                display.style.color = "#ff3366";
+                copyBtn.style.display = "none";
+                return;
+            }
+
+            display.innerText = "🔄 Creating key through backend...";
+            display.style.color = "#60efff";
+            copyBtn.style.display = "none";
+
+            try {
+                const response = await fetch('/admin/generate-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        password: pass,
+                        user: tId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to generate license.');
                 }
-                latestGeneratedKey = "RAJA-VIP-" + Math.random().toString(36).substring(2, 10).toUpperCase() + "-2026";
-                display.innerHTML = "User: " + tId + "<br>Key: " + latestGeneratedKey;
+
+                latestGeneratedKey = result.key;
+                display.innerHTML = "User: " + result.user + "<br>Key: " + result.key;
                 display.style.color = "#00ff87";
                 copyBtn.style.display = "block";
-            } else {
-                display.innerText = "❌ Incorrect Admin Password!";
+
+            } catch (error) {
+                latestGeneratedKey = "";
+                display.innerText = "❌ " + error.message;
                 display.style.color = "#ff3366";
                 copyBtn.style.display = "none";
             }
@@ -539,19 +589,46 @@
             listContainer.innerHTML = html;
         }
 
-        function removeUserAccess(key) {
-            if (confirm("Are you sure you want to remove/revoke access for this user/key?")) {
+        async function removeUserAccess(key) {
+            if (!confirm("Are you sure you want to revoke this license?")) return;
+
+            const pass = document.getElementById('adminPasswordInput').value;
+
+            if (!pass) {
+                alert("Enter admin password first.");
+                return;
+            }
+
+            try {
+                const response = await fetch('/admin/revoke-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        password: pass,
+                        key: key
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to revoke license.');
+                }
+
                 let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
                 delete allActiveUsers[key];
                 localStorage.setItem('raja_active_users_list', JSON.stringify(allActiveUsers));
-                
+
                 if (localStorage.getItem('raja_active_key') === key) {
                     localStorage.removeItem('raja_active_key');
                 }
                 localStorage.removeItem('raja_session_' + key);
-                
+
                 renderAdminUsersList();
-                alert("✅ User access successfully removed!");
+                alert("✅ License revoked by backend.");
+
+            } catch (error) {
+                alert("❌ " + error.message);
             }
         }
 
@@ -815,7 +892,7 @@
 
                 return {
                     pair: data.pair || pair,
-                    accuracy: Number(data.score || 0),
+                    confluence: Number(data.score || 0),
                     dir: data.signal === 'CALL' ? 'CALL (UP)' : 'PUT (DOWN)',
                     reason: data.reason || '',
                     rsi: data.rsi,
@@ -855,7 +932,7 @@
             scanBtn.disabled = true;
 
             let bestSignalFound = null;
-            let highestAccuracy = 0;
+            let highestConfluence = 0;
 
             for (let currentIndex = 0; currentIndex < pairsToScan.length; currentIndex++) {
                 let currentPair = pairsToScan[currentIndex];
@@ -865,12 +942,12 @@
 
                 let indicatorResult = await scanPairFromBackend(currentPair);
 
-                if (indicatorResult && indicatorResult.accuracy > highestAccuracy) {
-                    highestAccuracy = indicatorResult.accuracy;
+                if (indicatorResult && indicatorResult.confluence > highestConfluence) {
+                    highestConfluence = indicatorResult.confluence;
                     bestSignalFound = indicatorResult;
-                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.accuracy}% - LIVE VERIFIED</span></div>`;
+                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}% - LIVE DATA</span></div>`;
                 } else if (indicatorResult) {
-                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.accuracy}%</span></div>`;
+                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
                 } else {
                     scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>No valid confluence</span></div>`;
                 }
@@ -916,12 +993,12 @@
             targetPairDisplay.innerText = signalData.pair;
             
             let isBuy = signalData.dir.includes("CALL");
-            let accString = Number(signalData.accuracy).toFixed(1) + "%";
+            let confluenceString = Number(signalData.confluence).toFixed(1) + "%";
 
             dynamicHistory.unshift({
                 pair: signalData.pair,
                 dir: isBuy ? "UP (BUY)" : "DOWN (SELL)",
-                acc: accString,
+                acc: confluenceString,
                 result: null
             });
             if (dynamicHistory.length > 10) dynamicHistory.pop();
@@ -933,7 +1010,7 @@
                 targetPairDisplay.style.color = "#00ff87";
                 resDir.className = "signal-direction dir-up";
                 resDir.innerHTML = "⬆ UP (BUY)";
-                resMeta.innerHTML = `CALL 🔺 | Accuracy: ${accString} | TF: ${selectedExpiry}`;
+                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | TF: ${selectedExpiry}`;
                 lightOverlay.className = "signal-light-overlay buy-active";
                 signalSvgPath.setAttribute("stroke", "#00ff87");
                 signalSvgPath.setAttribute("d", "M0,60 Q50,20 100,40 T200,15 T300,10");
@@ -943,7 +1020,7 @@
                 targetPairDisplay.style.color = "#ff3366";
                 resDir.className = "signal-direction dir-down";
                 resDir.innerHTML = "⬇ DOWN (SELL)";
-                resMeta.innerHTML = `PUT 🔻 | Accuracy: ${accString} | TF: ${selectedExpiry}`;
+                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | TF: ${selectedExpiry}`;
                 lightOverlay.className = "signal-light-overlay sell-active";
                 signalSvgPath.setAttribute("stroke", "#ff3366");
                 signalSvgPath.setAttribute("d", "M0,20 Q50,50 100,30 T200,70 T300,80");
