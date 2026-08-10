@@ -1,1088 +1,1192 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-import yfinance as yf
-import os
-import time
-import json
-import secrets
-import threading
-from pathlib import Path
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RAJA AI PREMIUM - VIP QUANTUM (ULTRA PRO UPGRADED)</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
+        .container { width: 100%; max-width: 440px; background: linear-gradient(135deg, rgba(13, 20, 38, 0.95) 0%, rgba(4, 7, 15, 0.98) 100%); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 16px; padding: 12px; box-shadow: 0 0 40px rgba(0, 242, 254, 0.12); backdrop-filter: blur(12px); margin-top: 4px; margin-bottom: 10px; transition: all 0.3s ease; }
+        h2 { text-align: center; font-size: 16px; background: linear-gradient(135deg, #00ff87 0%, #60efff 50%, #ff3366 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px; letter-spacing: 1px; font-weight: 900; text-transform: uppercase; }
+        
+        .market-notice { background: rgba(0, 242, 254, 0.08); border: 1px dashed rgba(0, 242, 254, 0.3); border-radius: 6px; padding: 5px; text-align: center; font-size: 9.5px; color: #60efff; font-weight: 700; margin-bottom: 8px; }
 
-app = Flask(__name__, static_folder=".", template_folder=".")
-CORS(app)
+        @keyframes screenFlash {
+            0% { box-shadow: 0 0 5px rgba(0, 255, 135, 0.2); }
+            50% { box-shadow: 0 0 50px rgba(0, 255, 135, 0.8), inset 0 0 30px rgba(0, 255, 135, 0.5); }
+            100% { box-shadow: 0 0 20px rgba(0, 255, 135, 0.3); }
+        }
+        .alert-flash { animation: screenFlash 0.6s ease-in-out 2; }
 
-# =========================================================
-# RAJA AI MULTI-TIMEFRAME BACKEND
-# Yahoo Finance 1-minute OHLCV is the base/reference feed.
-# 2m, 5m, 10m, 15m and 30m are built from the same Yahoo
-# 1-minute candles so every timeframe stays synchronized.
-#
-# IMPORTANT: "(OTC)" assets are underlying-market proxies.
-# They are NOT exact Quotex OTC quotes.
-# =========================================================
+        .instruction-box { background: rgba(13, 20, 36, 0.75); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 10px; padding: 10px; font-size: 11px; line-height: 1.5; margin-bottom: 10px; text-align: left; }
+        .step-title { color: #00ff87; font-weight: 900; margin-top: 6px; font-size: 12px; }
+        .step-title:first-child { margin-top: 0; }
+        .link-text { color: #60efff; text-decoration: underline; word-break: break-all; font-weight: 600; }
+        .label-text { display: block; color: #60efff; font-size: 10px; font-weight: 800; margin: 6px 0 2px 0; text-transform: uppercase; text-align: left; }
+        
+        .ai-hud-box { position: relative; background: linear-gradient(180deg, rgba(6, 10, 20, 0.95) 0%, rgba(11, 17, 32, 0.95) 100%); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 12px; padding: 10px 8px; margin-bottom: 8px; text-align: center; overflow: hidden; display: flex; flex-direction: column; align-items: center; min-height: 150px; justify-content: center; transition: all 0.3s ease; }
+        .ai-hud-box.glow-buy { border-color: #00ff87; box-shadow: inset 0 0 25px rgba(0, 255, 135, 0.35), 0 0 25px rgba(0, 255, 135, 0.4); }
+        .ai-hud-box.glow-sell { border-color: #ff3366; box-shadow: inset 0 0 25px rgba(255, 51, 102, 0.35), 0 0 25px rgba(255, 51, 102, 0.4); }
+        
+        .vortex-container { position: relative; width: 52px; height: 52px; margin: 0 auto 4px auto; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle, rgba(0, 242, 254, 0.15) 0%, rgba(0, 0, 0, 0) 70%); }
+        .vortex-icon { width: 40px; height: 40px; border-radius: 50%; background-color: #00f2fe; background-size: cover; background-position: center; border: 1.5px solid rgba(0, 255, 135, 0.6); animation: spinVortex 6s linear infinite; }
+        @keyframes spinVortex { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(180deg) scale(1.05); } 100% { transform: rotate(360deg) scale(1); } }
+        
+        .hud-stats { display: flex; justify-content: center; width: 100%; padding: 4px 8px 0 8px; border-top: 1px solid rgba(0, 242, 254, 0.15); margin-top: 6px; font-size: 9px; font-weight: 700; }
+        .hud-stats span:nth-child(1) { color: #00ff87; }
+        .scan-view, .signal-view, .inline-content-view, .no-signal-view { display: none; width: 100%; text-align: center; }
+        .default-view { display: flex; flex-direction: column; align-items: center; width: 100%; }
+        
+        .inline-title { font-size: 11px; color: #60efff; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .inline-list-box { background: rgba(4, 8, 18, 0.9); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 6px; padding: 6px; max-height: 110px; overflow-y: auto; text-align: left; font-size: 10px; color: #cbd5e1; margin-bottom: 6px; width: 100%; }
+        .inline-item { padding: 3px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; align-items: center; }
+        .inline-item:last-child { border-bottom: none; }
+        .win-tag { color: #00ff87; font-weight: 800; }
+        
+        .action-result-btns { display: flex; gap: 4px; }
+        .win-action-btn { background: rgba(0, 255, 135, 0.2); border: 1px solid #00ff87; color: #00ff87; font-size: 8px; padding: 2px 5px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .loss-action-btn { background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff3366; font-size: 8px; padding: 2px 5px; border-radius: 3px; cursor: pointer; font-weight: bold; }
 
-YAHOO_SYMBOLS = {
-    # ---------------- Crypto Live ----------------
-    "BTC-USD": "BTC-USD",
-    "ETH-USD": "ETH-USD",
-    "SOL-USD": "SOL-USD",
-    "LTC-USD": "LTC-USD",
-    "XRP-USD": "XRP-USD",
-    "ADA-USD": "ADA-USD",
-    "DOGE-USD": "DOGE-USD",
+        .menu-back-btn { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #030712; font-size: 9.5px; font-weight: 900; padding: 5px 12px; border: none; border-radius: 5px; cursor: pointer; text-transform: uppercase; margin-top: 2px; }
+        
+        .live-scan-console { background: linear-gradient(180deg, #03060c 0%, #060a16 100%); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 8px; padding: 8px; margin: 6px 0; max-height: 100px; overflow-y: auto; text-align: left; font-size: 9.5px; width: 100%; font-family: 'Courier New', Courier, monospace; box-shadow: inset 0 0 10px rgba(0, 242, 254, 0.1); }
+        .live-scan-row { display: flex; justify-content: space-between; padding: 3px 6px; margin-bottom: 2px; border-radius: 4px; background: rgba(255, 255, 255, 0.02); color: #94a3b8; }
+        .live-scan-row.scanning { color: #60efff; background: rgba(0, 242, 254, 0.08); font-weight: bold; border-left: 2px solid #60efff; }
+        .live-scan-row.passed { color: #00ff87; background: rgba(0, 255, 135, 0.08); font-weight: bold; border-left: 2px solid #00ff87; }
+        .live-scan-row.rejected { color: #ff3366; background: rgba(255, 51, 102, 0.05); opacity: 0.7; border-left: 2px solid #ff3366; }
 
-    # ---------------- Crypto OTC proxies ----------------
-    "Bitcoin (OTC)": "BTC-USD",
-    "Ethereum (OTC)": "ETH-USD",
-    "Litecoin (OTC)": "LTC-USD",
-    "Ripple (OTC)": "XRP-USD",
-    "Solana (OTC)": "SOL-USD",
-    "Toncoin (OTC)": "TON-USD",
-    "Ethereum Classic (OTC)": "ETC-USD",
-    "Axie Infinity (OTC)": "AXS-USD",
-    "Binance Coin (OTC)": "BNB-USD",
-    "Trump (OTC)": "TRUMP-USD",
-    "Polkadot (OTC)": "DOT-USD",
-    "Avalanche (OTC)": "AVAX-USD",
-    "Chainlink (OTC)": "LINK-USD",
-    "Bitcoin Cash (OTC)": "BCH-USD",
-    "Zcash (OTC)": "ZEC-USD",
-    "Cosmos (OTC)": "ATOM-USD",
+        .scan-graph { width: 100%; height: 45px; background: #040812; border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 6px; margin: 4px 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .graph-line { width: 100%; height: 100%; background-image: linear-gradient(to right, rgba(0, 242, 254, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 242, 254, 0.05) 1px, transparent 1px); background-size: 10px 10px; position: relative; }
+        .graph-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        .signal-light-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
+        .signal-light-overlay.buy-active { display: block; background: linear-gradient(0deg, rgba(0, 255, 135, 0) 0%, rgba(0, 255, 135, 0.3) 50%, rgba(0, 255, 135, 0) 100%); animation: moveLightUp 1.2s ease-in-out infinite; }
+        @keyframes moveLightUp { 0% { transform: translateY(100%); opacity: 0.2; } 50% { opacity: 0.8; } 100% { transform: translateY(-100%); opacity: 0.2; } }
+        .signal-light-overlay.sell-active { display: block; background: linear-gradient(180deg, rgba(255, 51, 102, 0) 0%, rgba(255, 51, 102, 0.3) 50%, rgba(255, 51, 102, 0) 100%); animation: moveLightDown 1.2s ease-in-out infinite; }
+        @keyframes moveLightDown { 0% { transform: translateY(-100%); opacity: 0.2; } 50% { opacity: 0.9; } 100% { transform: translateY(100%); opacity: 0.2; } }
+        
+        .scan-progress-container { width: 100%; background: rgba(255, 255, 255, 0.08); border-radius: 6px; height: 6px; margin: 4px 0; overflow: hidden; position: relative; border: 1px solid rgba(0, 242, 254, 0.2); }
+        .scan-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #00ff87, #00f2fe); border-radius: 6px; transition: width 0.1s linear; box-shadow: 0 0 10px #00ff87; }
+        
+        .signal-direction { font-size: 20px; font-weight: 900; letter-spacing: 1px; margin: 2px 0; text-transform: uppercase; }
+        .dir-up { color: #00ff87; text-shadow: 0 0 14px rgba(0, 255, 135, 0.8); }
+        .dir-down { color: #ff3366; text-shadow: 0 0 14px rgba(255, 51, 102, 0.8); }
+        .signal-meta { font-size: 9px; color: #cbd5e1; margin-bottom: 2px; font-weight: 600; }
+        .tf-breakdown { width:100%; margin-top:5px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px; }
+        .tf-chip { font-size:7.5px; font-weight:800; padding:3px 5px; border-radius:4px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); }
+        .tf-call { color:#00ff87; border-color:rgba(0,255,135,.45); }
+        .tf-put { color:#ff3366; border-color:rgba(255,51,102,.45); }
+        .tf-none { color:#94a3b8; border-color:rgba(148,163,184,.25); }
+        .tf-summary-line { font-size:8px; color:#60efff; font-weight:800; margin-top:4px; }
 
-    # ---------------- Forex Live ----------------
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "USDJPY=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "USDCAD=X",
-    "USD/CHF": "USDCHF=X",
-    "NZD/USD": "NZDUSD=X",
-    "EUR/GBP": "EURGBP=X",
-    "EUR/JPY": "EURJPY=X",
-    "GBP/JPY": "GBPJPY=X",
-    "AUD/JPY": "AUDJPY=X",
-    "EUR/AUD": "EURAUD=X",
-    "GBP/AUD": "GBPAUD=X",
-    "CAD/JPY": "CADJPY=X",
-    "EUR/CAD": "EURCAD=X",
-    "GBP/CAD": "GBPCAD=X",
-    "NZD/JPY": "NZDJPY=X",
-    "AUD/NZD": "AUDNZD=X",
-    "EUR/CHF": "EURCHF=X",
-    "GBP/CHF": "GBPCHF=X",
-    "XAUUSD": "XAUUSD=X",
+        .advanced-filters { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 5px; padding: 3px 6px; margin-top: 4px; font-size: 7.5px; color: #60efff; display: flex; justify-content: center; gap: 3px; font-weight: bold; flex-wrap: wrap; }
+        
+        .selected-pair-box { background: linear-gradient(135deg, rgba(0, 242, 254, 0.12), rgba(0, 255, 135, 0.08)); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .selected-pair-box.pair-glow-buy { border-color: #00ff87; box-shadow: 0 0 15px rgba(0, 255, 135, 0.3); }
+        .selected-pair-box.pair-glow-sell { border-color: #ff3366; box-shadow: 0 0 15px rgba(255, 51, 102, 0.3); }
+        .selected-pair-label { font-size: 9px; color: #60efff; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1px; }
+        .selected-pair-name { font-size: 12px; color: #00ff87; font-weight: 900; letter-spacing: 0.5px; }
+        
+        .timer-section { background: rgba(8, 13, 24, 0.95); border-radius: 8px; padding: 8px; text-align: center; border: 1px solid rgba(0, 242, 254, 0.2); margin-bottom: 8px; }
+        .candle-info { font-size: 9.5px; color: #60efff; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; }
+        .timer-display { font-size: 20px; color: #00ff87; font-weight: 900; letter-spacing: 1px; }
+        .trade-alert { font-size: 10px; color: #ff3366; font-weight: 800; margin-top: 2px; display: none; text-transform: uppercase; }
+        
+        .selection-card { background: rgba(13, 20, 36, 0.75); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+        .selection-card label { display: block; color: #60efff; font-size: 9.5px; font-weight: 700; margin-bottom: 3px; text-transform: uppercase; }
+        select { width: 100%; padding: 8px; background: #050811; color: #fff; border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 6px; font-size: 11px; font-weight: 600; outline: none; cursor: pointer; }
+        
+        .expiry-container { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 3px; }
+        .expiry-btn { background: rgba(18, 27, 48, 0.9); color: #fff; border: 1px solid rgba(255, 255, 255, 0.1); padding: 6px 0; border-radius: 5px; font-size: 9.5px; font-weight: 700; cursor: pointer; }
+        .expiry-btn.active { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #030712; border-color: transparent; }
+        
+        .utility-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 8px; }
+        .utility-btn { background: rgba(16, 24, 43, 0.9); border: 1px solid rgba(0, 242, 254, 0.3); color: #60efff; padding: 7px 4px; border-radius: 5px; font-size: 8.5px; font-weight: 800; cursor: pointer; text-transform: uppercase; text-align: center; }
+        
+        .scan-btn { background: linear-gradient(135deg, #00ff87 0%, #60efff 100%); color: #030712; font-size: 12px; font-weight: 900; padding: 10px; border: none; border-radius: 8px; cursor: pointer; width: 100%; text-transform: uppercase; box-shadow: 0 4px 15px rgba(0, 255, 135, 0.4); letter-spacing: 0.5px; }
+        .input-field { padding: 8px; width: 100%; background: #050811; border: 1px solid rgba(0, 242, 254, 0.4); color: #fff; border-radius: 6px; outline: none; font-size: 11px; font-weight: bold; margin-top: 3px; }
+        .panel-box { background: #0d1426; border: 1px dashed #60efff; border-radius: 8px; padding: 12px; margin-top: 8px; display: none; }
+        .action-btn { background: #ff3366; color: #fff; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 800; width: 100%; margin-top: 8px; text-transform: uppercase; font-size: 11px; }
+        .copy-key-btn { background: #00ff87; color: #030712; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 900; width: 100%; margin-top: 6px; text-transform: uppercase; font-size: 10px; display: none; }
+        
+        .admin-users-box { margin-top: 12px; background: rgba(4, 8, 18, 0.95); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 8px; padding: 8px; max-height: 180px; overflow-y: auto; text-align: left; }
+        .admin-user-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 10px; }
+        .admin-user-row:last-child { border-bottom: none; }
+        .remove-user-btn { background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff3366; font-size: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    </style>
+</head>
+<body>
 
-    # ---------------- Forex OTC proxies ----------------
-    "EUR/USD (OTC)": "EURUSD=X",
-    "GBP/USD (OTC)": "GBPUSD=X",
-    "USD/JPY (OTC)": "USDJPY=X",
-    "AUD/USD (OTC)": "AUDUSD=X",
-    "USD/CAD (OTC)": "USDCAD=X",
-    "USD/CHF (OTC)": "USDCHF=X",
-    "NZD/USD (OTC)": "NZDUSD=X",
-    "EUR/GBP (OTC)": "EURGBP=X",
-    "EUR/JPY (OTC)": "EURJPY=X",
-    "GBP/JPY (OTC)": "GBPJPY=X",
-    "AUD/JPY (OTC)": "AUDJPY=X",
-    "EUR/AUD (OTC)": "EURAUD=X",
-    "GBP/AUD (OTC)": "GBPAUD=X",
-    "CAD/JPY (OTC)": "CADJPY=X",
-    "EUR/CAD (OTC)": "EURCAD=X",
-    "GBP/CAD (OTC)": "GBPCAD=X",
-    "NZD/JPY (OTC)": "NZDJPY=X",
-    "AUD/NZD (OTC)": "AUDNZD=X",
-    "EUR/CHF (OTC)": "EURCHF=X",
-    "GBP/CHF (OTC)": "GBPCHF=X",
-    "NZD/CAD (OTC)": "NZDCAD=X",
-    "NZD/CHF (OTC)": "NZDCHF=X",
-    "USD/BRL (OTC)": "USDBRL=X",
-    "USD/ARS (OTC)": "USDARS=X",
-    "USD/INR (OTC)": "USDINR=X",
-}
+    <div class="container">
+        <h2>RAJA AI PREMIUM - ULTRA PRO (UPGRADED)</h2>
+        
+        <div class="market-notice">
+            💡 Market stays stable & optimal from 9:00 AM to 5:00 PM
+        </div>
 
-ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
-UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
+        <div id="activationScreen" style="display: block; text-align: center;">
+            <h3 style="color: #fff; font-size: 13px; margin-bottom: 10px; font-weight: 800;">Welcome to Multi-Broker AI Service.</h3>
+            
+            <div class="instruction-box">
+                <div class="step-title">Step 1:</div>
+                <div style="color: #cbd5e1;">Create your Broker account (Quotex):</div>
+                <a class="link-text" href="https://broker-qx.pro/sign-up/?lid=2209395" target="_blank">Quotex Partner Link</a>
 
-TIMEFRAMES = {
-    "1m": 1,
-    "2m": 2,
-    "5m": 5,
-    "10m": 10,
-    "15m": 15,
-    "30m": 30,
-}
+                <div class="step-title">Step 2:</div>
+                <div style="color: #cbd5e1;">Deposit minimum $50</div>
 
-# One Yahoo 1m download per unique symbol; all higher TFs are resampled.
-CACHE_DURATION = 90
-market_cache = {}
-cache_lock = threading.Lock()
+                <div class="step-title">Step 3:</div>
+                <div style="color: #cbd5e1;">Send your Telegram ID or UID.</div>
 
-# Duplicate-signal protection.
-# Prevents the same pair/direction from being re-issued from the same
-# multi-timeframe candle context within a short lock window.
-recent_signal_lock = threading.Lock()
-recent_signals = {}
-DUPLICATE_SIGNAL_COOLDOWN = 120  # seconds
+                <div style="margin-top: 8px; color: #ff3366; font-weight: 800; font-size: 10px;">
+                    After verification your access will be activated. Note: Single device allowed per key! (Secured with Device-Binding)
+                </div>
+                <div style="margin-top: 6px; color: #cbd5e1; font-weight: bold; font-size: 11px;">
+                    Official Telegram: <a href="https://t.me/RAJASIGNALAIPREMIUM" class="link-text" target="_blank">@RAJASIGNALAIPREMIUM</a>
+                </div>
+            </div>
 
-# =========================================================
-# LICENSE STORE
-# =========================================================
+            <label class="label-text">Enter Telegram ID or UID:</label>
+            <input type="text" id="verifyUserInput" class="input-field" placeholder="@username or 12345678">
 
-BASE_DIR = Path(__file__).resolve().parent
-LICENSE_FILE = BASE_DIR / "licenses.json"
-license_lock = threading.Lock()
-ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
+            <label class="label-text" style="color: #00ff87; margin-top: 8px;">Enter VIP License Key:</label>
+            <input type="password" id="verifyLicenseKey" class="input-field" placeholder="RAJA-VIP-XXXXXX" style="border-color: #00ff87;">
 
-DEFAULT_LICENSES = {
-    "RAJA-VIP-2026-X99": {
-        "active": True, "user": None, "device": None, "created_at": None
-    },
-    "RAJA-VIP-PRO-777": {
-        "active": True, "user": None, "device": None, "created_at": None
-    },
-    "RAJA-AI-MASTERKEY": {
-        "active": True, "user": None, "device": None, "created_at": None
-    },
-}
+            <button class="scan-btn" style="margin-top: 12px;" onclick="verifyAccess()">🔓 VERIFY & UNLOCK AI</button>
+            <div id="verifyMessage" style="font-size: 11px; font-weight: 900; margin-top: 8px; display: none; padding: 6px; border-radius: 5px;"></div>
+        </div>
 
+        <div id="mainAppContent" style="display: none;">
+            
+            <div style="display: flex; justify-content: flex-end; gap: 5px; margin-bottom: 4px;">
+                <button id="soundToggleBtn" onclick="toggleSound()" style="background: rgba(0, 242, 254, 0.15); border: 1px solid rgba(0, 242, 254, 0.4); color: #00ff87; font-size: 9px; font-weight: 800; padding: 3px 8px; border-radius: 4px; cursor: pointer;">🔊 SOUND: ON</button>
+                <button onclick="logoutSession()" style="background: rgba(255, 51, 102, 0.15); border: 1px solid rgba(255, 51, 102, 0.4); color: #ff3366; font-size: 9px; font-weight: 800; padding: 3px 8px; border-radius: 4px; cursor: pointer;">🚪 LOGOUT</button>
+            </div>
 
-def load_licenses():
-    with license_lock:
-        if not LICENSE_FILE.exists():
-            LICENSE_FILE.write_text(
-                json.dumps(DEFAULT_LICENSES, indent=2),
-                encoding="utf-8",
-            )
-            return {k: dict(v) for k, v in DEFAULT_LICENSES.items()}
+            <div id="hudBoxContainer" class="ai-hud-box">
+                <div id="defaultView" class="default-view">
+                    <div class="vortex-container">
+                        <div class="vortex-icon"></div>
+                    </div>
+                    <div style="font-size: 9.5px; color: #60efff; font-weight: 900; letter-spacing: 1px;">8-INDICATOR LIVE ENGINE</div>
+                    <div class="hud-stats">
+                        <span>FILTERS: <strong style="color:#00ff87;">RSI+EMA+BB+MACD+CANDLE+MULTI-TF+WICKS+CIRCUIT</strong></span>
+                    </div>
+                </div>
 
-        try:
-            data = json.loads(LICENSE_FILE.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise ValueError("Invalid license database")
-        except Exception:
-            data = {k: dict(v) for k, v in DEFAULT_LICENSES.items()}
+                <div id="scanView" class="scan-view">
+                    <div style="font-size: 10px; color: #60efff; font-weight: 900; text-transform: uppercase; margin-bottom: 2px;">⚡ RUNNING 8-LAYER DEEP SCAN ✨</div>
+                    
+                    <div id="liveScanConsole" class="live-scan-console">
+                        <div class="live-scan-row scanning">Analyzing RSI, EMA, Bollinger & MACD layers...</div>
+                    </div>
 
-        changed = False
-        for key, value in DEFAULT_LICENSES.items():
-            if key not in data:
-                data[key] = dict(value)
-                changed = True
+                    <div class="scan-progress-container">
+                        <div id="scanProgressBar" class="scan-progress-bar"></div>
+                    </div>
+                    
+                    <div style="font-size: 8.5px; color: #00ff87; font-weight: 700; margin-top: 2px;" id="scanStepText">Executing Multi-Indicator Convergence...</div>
+                </div>
 
-        if changed:
-            LICENSE_FILE.write_text(
-                json.dumps(data, indent=2),
-                encoding="utf-8",
-            )
-        return data
+                <div id="signalView" class="signal-view">
+                    <div style="font-size: 9.5px; color: #60efff; font-weight: 800; text-transform: uppercase;">✨ 8-INDICATOR CONFIRMED SIGNAL ✨</div>
+                    <div id="resModalAsset" style="font-size: 10.5px; color: #fff; font-weight: 800; margin: 1px 0;">EUR/USD (OTC)</div>
+                    
+                    <div class="scan-graph" style="margin: 2px 0; height: 38px;">
+                        <div class="graph-line"></div>
+                        <div id="lightOverlay" class="signal-light-overlay"></div>
+                        <svg class="graph-svg" viewBox="0 0 300 90" preserveAspectRatio="none">
+                            <path id="signalSvgPath" d="M0,45 Q40,15 80,50 T160,25 T240,55 T300,30" fill="none" stroke="#00ff87" stroke-width="2.2"/>
+                        </svg>
+                    </div>
 
+                    <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
+                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Technical Confluence: -- | TF: 15s</div>
+                    <div id="advancedFiltersInfo" class="advanced-filters">
+                        <span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span>
+                    </div>
+                    <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div>
+                    <div id="tfBreakdown" class="tf-breakdown"></div>
+                </div>
 
-def save_licenses(data):
-    with license_lock:
-        temp = LICENSE_FILE.with_suffix(".tmp")
-        temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        temp.replace(LICENSE_FILE)
+                <div id="noSignalView" class="no-signal-view">
+                    <div style="font-size: 12px; color: #ff3366; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
+                    <div style="font-size: 9.5px; color: #cbd5e1; margin-bottom: 8px;" id="noSignalDesc">All 8 indicators did not converge safely. Try scanning again!</div>
+                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🔄 Try Scanning Again</button>
+                </div>
 
+                <div id="historyInlineView" class="inline-content-view">
+                    <div class="inline-title">📊 Live Signal History</div>
+                    <div id="historyListBox" class="inline-list-box">
+                        <div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>
+                    </div>
+                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
+                </div>
 
-# =========================================================
-# YAHOO MARKET DATA
-# =========================================================
+                <div id="settingsInlineView" class="inline-content-view">
+                    <div class="inline-title">⚙️ AI 8-Indicator Settings</div>
+                    <div class="inline-list-box">
+                        <div class="inline-item"><span>Active Indicators:</span> <span style="color:#00ff87;">8 Layers Active ✔</span></div>
+                        <div class="inline-item"><span>Multi-TF Confirmation:</span> <span style="color:#00ff87;">4 of 6 Strong</span></div>
+                        <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
+                        <div class="inline-item"><span>Duplicate Protection:</span> <span style="color:#00ff87;">ON ✔</span></div>
+                        <div class="inline-item"><span>Auto WIN/LOSS:</span> <span style="color:#00ff87;">1m+ Yahoo ✔</span></div>
+                        <div class="inline-item"><span>Entry Rule:</span> <span style="color:#00ff87;">Next 1m Candle Open ✔</span></div>
+                    </div>
+                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
+                </div>
 
-def fetch_yahoo_1m(symbol):
-    """Fetch Yahoo Finance 1-minute OHLCV candles."""
-    ticker = yf.Ticker(symbol)
-    df = ticker.history(
-        period="5d",
-        interval="1m",
-        auto_adjust=False,
-        actions=False,
-    )
+                <div id="newsInlineView" class="inline-content-view">
+                    <div class="inline-title">📰 Market News & Sessions</div>
+                    <div class="inline-list-box">
+                        <div class="inline-item"><span>Session Volatility:</span> <span style="color:#00ff87;">Optimal Overlap</span></div>
+                        <div class="inline-item"><span>Circuit Status:</span> <span class="win-tag">Ready to Trade</span></div>
+                    </div>
+                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
+                </div>
 
-    if df is None or df.empty:
-        return None
+                <div id="riskInlineView" class="inline-content-view">
+                    <div class="inline-title">🛡️ Risk & Recovery (Safe Mode)</div>
+                    <div style="font-size: 9px; color: #cbd5e1; text-align: left; margin-bottom: 2px;">Enter Initial Trade Amount ($):</div>
+                    <input type="number" id="baseStakeInput" class="input-field" placeholder="Base Stake e.g. 10" value="10" oninput="calculateRisk()" style="margin-bottom: 4px; padding: 5px;">
+                    
+                    <div class="inline-list-box" style="max-height: 75px; margin-bottom: 4px; font-size: 9.5px;">
+                        <div class="inline-item"><span>Step 1 (Base Stake):</span> <span class="win-tag" id="step1Display">$10.00</span></div>
+                        <div class="inline-item" style="color:#ff3366;"><span>Step 2 (Risk Level 1):</span> <strong id="step2Display" style="color:#ff3366;">$22.00</strong></div>
+                        <div class="inline-item" style="color:#ff3366;"><span>Step 3 (High Risk):</span> <strong id="step3Display" style="color:#ff3366;">$48.00</strong></div>
+                    </div>
+                    <div style="font-size: 7.5px; color: #ff3366; text-align: left; margin-bottom: 4px;">⚠️ Auto-Pause triggers if consecutive risk steps hit limits.</div>
+                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
+                </div>
+            </div>
 
-    required = ["Open", "High", "Low", "Close"]
-    if not all(col in df.columns for col in required):
-        return None
+            <div id="targetPairBoxContainer" class="selected-pair-box">
+                <span class="selected-pair-label">🎯 SELECTED TARGET PAIR:</span>
+                <span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span>
+            </div>
 
-    df = df.dropna(subset=required)
-    if len(df) < 120:
-        return None
+            <div class="timer-section">
+                <div class="candle-info" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE:</div>
+                <div id="candleTimer" class="timer-display">00:15</div>
+                <div id="tradeAlert" class="trade-alert">⏳ WAIT FOR CANDLE CLOSE</div>
+            </div>
 
-    return df
+            <div class="selection-card">
+                <label>1. Select Broker Platform</label>
+                <select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();">
+                    <option value="Quotex">⚡ Quotex (Broker)</option>
+                </select>
 
+                <label style="margin-top: 6px;">2. Select Market Type</label>
+                <select id="marketType" onchange="playClickSound(); updatePairs();">
+                    <option value="CryptoLive">🪙 Crypto Live Market</option>
+                    <option value="CryptoOTC">🪙 Crypto OTC Market</option>
+                    <option value="ForexLive">🟢 Forex Live Market</option>
+                    <option value="ForexOTC">⚡ Forex OTC Market</option>
+                </select>
 
-def update_symbol_cache(symbol):
-    try:
-        df = fetch_yahoo_1m(symbol)
-        if df is None:
-            return False
+                <label style="margin-top: 6px;">3. Select Pair / Asset</label>
+                <select id="pairSelect" onchange="playClickSound()"></select>
 
-        with cache_lock:
-            market_cache[symbol] = {
-                "data": df.copy(),
-                "timestamp": time.time(),
+                <label style="margin-top: 6px;">4. Trade Expiry Time</label>
+                <div class="expiry-container">
+                    <button class="expiry-btn active" data-time="15s" onclick="playClickSound(); setExpiry(this, '15s')">15s</button>
+                    <button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this, '30s')">30s</button>
+                    <button class="expiry-btn" data-time="1m" onclick="playClickSound(); setExpiry(this, '1m')">1m</button>
+                    <button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this, '2m')">2m</button>
+                    <button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this, '5m')">5m</button>
+                    <button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this, '15m')">15m</button>
+                    <button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this, '30m')">30m</button>
+                </div>
+
+                <div class="utility-grid">
+                    <button class="utility-btn" onclick="playClickSound(); openHistoryInline()">📊 History</button>
+                    <button class="utility-btn" onclick="playClickSound(); openSettingsInline()">⚙️ Settings</button>
+                    <button class="utility-btn" onclick="playClickSound(); openNewsInline()">📰 News</button>
+                    <button class="utility-btn" onclick="playClickSound(); openRiskInline()">🛡️ Risk & Recovery</button>
+                </div>
+            </div>
+
+            <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START RAJA AI BOT DEEP SCAN</button>
+        </div>
+
+        <div id="adminPanel" class="panel-box">
+            <h3 style="color: #60efff; margin-bottom: 6px; font-size: 13px; text-align: center;">🔑 VIP KEY GENERATOR (ADMIN)</h3>
+            <input type="text" id="adminTelegramId" class="input-field" placeholder="User Telegram ID / UID" style="margin-bottom: 6px;">
+            <input type="password" id="adminPasswordInput" class="input-field" placeholder="Admin Password">
+            <button class="action-btn" onclick="generateKey()">GENERATE LICENSE KEY</button>
+            <p id="generatedKeyDisplay" style="margin-top: 10px; font-weight: bold; text-align: center; font-size: 11px; color: #00ff87; word-break: break-all;"></p>
+            <button id="copyKeyBtn" class="copy-key-btn" onclick="copyGeneratedKey()">📋 COPY LICENSE KEY</button>
+
+            <div style="margin-top: 14px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
+                <h4 style="color: #00ff87; font-size: 11px; margin-bottom: 6px; text-transform: uppercase;">👥 Active Logged-In Users & Keys</h4>
+                <div id="adminUsersList" class="admin-users-box">
+                    <div style="color: #94a3b8; text-align: center; padding: 4px;">No active users logged in yet.</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const KEY_VERSION = "v2";
+
+        if (localStorage.getItem('raja_key_version') !== KEY_VERSION) {
+            localStorage.clear();
+            localStorage.setItem('raja_key_version', KEY_VERSION);
+        }
+
+        let isUserVerified = false; 
+        let selectedExpiry = "15s";
+        let timerInterval = null;
+        let scanInterval = null;
+        let latestGeneratedKey = "";
+        let audioCtx = null;
+        let dynamicHistory = JSON.parse(localStorage.getItem('raja_signal_history')) || [];
+        let soundEnabled = true;
+        let activeSignalEntryEpochMs = null;
+        let activeTrackedSignalId = null;
+        let backendTrackedHistory = [];
+
+        const deviceSessionId = localStorage.getItem('raja_device_uid') || ('dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+        localStorage.setItem('raja_device_uid', deviceSessionId);
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            let btn = document.getElementById('soundToggleBtn');
+            if (soundEnabled) {
+                btn.innerText = "🔊 SOUND: ON";
+                btn.style.color = "#00ff87";
+                btn.style.borderColor = "rgba(0, 242, 254, 0.4)";
+                playClickSound();
+            } else {
+                btn.innerText = "🔇 SOUND: OFF";
+                btn.style.color = "#ff3366";
+                btn.style.borderColor = "rgba(255, 51, 102, 0.4)";
             }
-        return True
-
-    except Exception as e:
-        print(f"Yahoo fetch error for {symbol}: {e}")
-        return False
-
-
-def get_market_data(pair):
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
-        return None, None, None
-
-    now = time.time()
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if cached:
-        age = now - cached["timestamp"]
-        if age <= CACHE_DURATION:
-            return cached["data"].copy(), age, symbol
-
-    update_symbol_cache(symbol)
-
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if not cached:
-        return None, None, symbol
-
-    age = time.time() - cached["timestamp"]
-    return cached["data"].copy(), age, symbol
-
-
-def background_market_poller():
-    """Pre-warm each unique Yahoo symbol without six separate TF requests."""
-    while True:
-        for symbol in UNIQUE_YAHOO_SYMBOLS:
-            update_symbol_cache(symbol)
-            time.sleep(0.75)
-        time.sleep(5)
-
-
-def build_timeframe(base_df, minutes):
-    """Create a CLOSED-candle timeframe from Yahoo 1m OHLCV."""
-    if base_df is None or base_df.empty:
-        return None
-
-    df = base_df.copy()
-
-    if minutes == 1:
-        # Last Yahoo minute may still be forming; analyze only closed candles.
-        if len(df) > 1:
-            df = df.iloc[:-1]
-        return df
-
-    rule = f"{minutes}min"
-
-    agg = {
-        "Open": "first",
-        "High": "max",
-        "Low": "min",
-        "Close": "last",
-    }
-
-    if "Volume" in df.columns:
-        agg["Volume"] = "sum"
-
-    try:
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-            origin="start_day",
-        ).agg(agg)
-    except TypeError:
-        # Compatibility fallback for older pandas versions.
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-        ).agg(agg)
-
-    tf = tf.dropna(subset=["Open", "High", "Low", "Close"])
-
-    # The last resampled bucket can still be forming.
-    if len(tf) > 1:
-        tf = tf.iloc[:-1]
-
-    return tf
-
-
-# =========================================================
-# INDICATORS
-# =========================================================
-
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    avg_loss = loss.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    rs = avg_gain / avg_loss.replace(0, 1e-12)
-    return 100 - (100 / (1 + rs))
-
-
-def calculate_ema(series, period):
-    return series.ewm(
-        span=period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_macd(series):
-    ema12 = calculate_ema(series, 12)
-    ema26 = calculate_ema(series, 26)
-    macd = ema12 - ema26
-    signal = macd.ewm(
-        span=9,
-        adjust=False,
-        min_periods=9,
-    ).mean()
-    return macd, signal
-
-
-def calculate_bollinger_bands(series, period=20, std_dev=2):
-    middle = series.rolling(period).mean()
-    std = series.rolling(period).std()
-    upper = middle + (std_dev * std)
-    lower = middle - (std_dev * std)
-    return upper, middle, lower
-
-
-def calculate_true_range(df):
-    previous_close = df["Close"].shift(1)
-    high_low = df["High"] - df["Low"]
-    high_close = (df["High"] - previous_close).abs()
-    low_close = (df["Low"] - previous_close).abs()
-    return high_low.combine(high_close, max).combine(low_close, max)
-
-
-def calculate_atr(df, period=14):
-    tr = calculate_true_range(df)
-    return tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_adx_components(df, period=14):
-    high = df["High"]
-    low = df["Low"]
-
-    up_move = high.diff()
-    down_move = -low.diff()
-
-    plus_dm = up_move.where(
-        (up_move > down_move) & (up_move > 0),
-        0.0,
-    )
-    minus_dm = down_move.where(
-        (down_move > up_move) & (down_move > 0),
-        0.0,
-    )
-
-    tr = calculate_true_range(df)
-    atr = tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    plus_di = (
-        100
-        * plus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    minus_di = (
-        100
-        * minus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    dx = (
-        100
-        * (plus_di - minus_di).abs()
-        / (plus_di + minus_di).replace(0, 1e-12)
-    )
-
-    adx = dx.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    return adx, plus_di, minus_di
-
-
-def safe_float(value, default=None):
-    try:
-        value = float(value)
-        if value != value:
-            return default
-        return value
-    except Exception:
-        return default
-
-
-def analyze_timeframe(df, timeframe):
-    """Analyze one CLOSED timeframe. No random values are used."""
-    if df is None or df.empty or len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient closed candles",
         }
 
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(df.columns):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Missing OHLC columns",
+        function logoutSession() {
+            playClickSound();
+            if (confirm("Are you sure you want to logout?")) {
+                let activeKey = localStorage.getItem('raja_active_key');
+                if (activeKey) {
+                    localStorage.removeItem('raja_session_' + activeKey);
+                }
+                localStorage.removeItem('raja_active_key');
+                isUserVerified = false;
+                checkRoute();
+            }
         }
 
-    df = df.copy().dropna(subset=list(required))
-    if len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient clean candles",
+        function playClickSound() {
+            if (!soundEnabled) return;
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                let osc = audioCtx.createOscillator();
+                let gainNode = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.04);
+                gainNode.gain.setValueAtTime(0.25, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.04);
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.04);
+            } catch(e) {}
         }
 
-    close = df["Close"]
-
-    rsi = safe_float(calculate_rsi(close, 14).iloc[-1])
-    ema9 = safe_float(calculate_ema(close, 9).iloc[-1])
-    ema21 = safe_float(calculate_ema(close, 21).iloc[-1])
-    ema50 = safe_float(calculate_ema(close, 50).iloc[-1])
-
-    macd, macd_signal = calculate_macd(close)
-    macd_now = safe_float(macd.iloc[-1])
-    macd_sig_now = safe_float(macd_signal.iloc[-1])
-
-    bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
-    bb_mid = safe_float(bb_middle.iloc[-1])
-
-    atr = safe_float(calculate_atr(df, 14).iloc[-1])
-
-    adx, plus_di, minus_di = calculate_adx_components(df, 14)
-    adx_now = safe_float(adx.iloc[-1])
-    plus_di_now = safe_float(plus_di.iloc[-1])
-    minus_di_now = safe_float(minus_di.iloc[-1])
-
-    price = safe_float(close.iloc[-1])
-    previous_close = safe_float(close.iloc[-2])
-
-    values = [
-        rsi, ema9, ema21, ema50,
-        macd_now, macd_sig_now, bb_mid,
-        atr, adx_now, plus_di_now, minus_di_now,
-        price, previous_close,
-    ]
-
-    if any(v is None for v in values) or atr <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Indicators not ready",
+        function playSignalAlertSound() {
+            if (!soundEnabled) return;
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                let now = audioCtx.currentTime;
+                let osc = audioCtx.createOscillator();
+                let gainNode = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(880, now);
+                osc.frequency.setValueAtTime(1760, now + 0.15);
+                gainNode.gain.setValueAtTime(0.4, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } catch(e) {}
         }
 
-    ema_bullish = price > ema9 > ema21 > ema50
-    ema_bearish = price < ema9 < ema21 < ema50
+        setInterval(() => {
+            let activeKey = localStorage.getItem('raja_active_key');
+            if (activeKey) {
+                let boundDevice = localStorage.getItem('raja_session_' + activeKey);
+                if (boundDevice && boundDevice !== deviceSessionId) {
+                    isUserVerified = false;
+                    localStorage.removeItem('raja_active_key');
+                    checkRoute();
+                    let msgBox = document.getElementById('verifyMessage');
+                    if (msgBox) {
+                        msgBox.style.color = "#fff";
+                        msgBox.style.background = "#ff3366";
+                        msgBox.innerText = "⚠️ Security Alert: Key locked to another active device session!";
+                        msgBox.style.display = "block";
+                    }
+                }
+            }
+        }, 1500);
 
-    macd_bullish = macd_now > macd_sig_now
-    macd_bearish = macd_now < macd_sig_now
+        function checkRoute() {
+            if (window.location.hash === "#admin") {
+                document.getElementById('adminPanel').style.display = "block";
+                document.getElementById('mainAppContent').style.display = "none";
+                document.getElementById('activationScreen').style.display = "none";
+                renderAdminUsersList();
+            } else {
+                document.getElementById('adminPanel').style.display = "none";
+                let savedKey = localStorage.getItem('raja_active_key');
+                if (savedKey && localStorage.getItem('raja_session_' + savedKey) === deviceSessionId) {
+                    isUserVerified = true;
+                }
+                if (isUserVerified) {
+                    document.getElementById('mainAppContent').style.display = "block";
+                    document.getElementById('activationScreen').style.display = "none";
+                    updateBrokerAssets();
+                } else {
+                    document.getElementById('mainAppContent').style.display = "none";
+                    document.getElementById('activationScreen').style.display = "block";
+                }
+            }
+        }
+        window.addEventListener('load', checkRoute);
+        window.addEventListener('hashchange', checkRoute);
 
-    bb_bullish = price > bb_mid
-    bb_bearish = price < bb_mid
+        async function verifyAccess() {
+            playClickSound();
 
-    adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
-    adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
+            const uInput = document.getElementById('verifyUserInput').value.trim();
+            const key = document.getElementById('verifyLicenseKey').value.trim();
+            const msgBox = document.getElementById('verifyMessage');
 
-    momentum_bullish = price > previous_close
-    momentum_bearish = price < previous_close
+            if (!uInput || !key) {
+                msgBox.style.color = "#fff";
+                msgBox.style.background = "#ff3366";
+                msgBox.innerText = "❌ Please enter Telegram ID & License Key.";
+                msgBox.style.display = "block";
+                return;
+            }
 
-    last = df.iloc[-1]
-    candle_open = safe_float(last["Open"])
-    candle_high = safe_float(last["High"])
-    candle_low = safe_float(last["Low"])
-    candle_close = safe_float(last["Close"])
+            msgBox.style.display = "block";
+            msgBox.style.color = "#030712";
+            msgBox.style.background = "#60efff";
+            msgBox.innerText = "🔄 Verifying license with secure backend...";
 
-    if None in (candle_open, candle_high, candle_low, candle_close):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Latest candle incomplete",
+            try {
+                const response = await fetch('/verify-license', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        key: key,
+                        user: uInput,
+                        device: deviceSessionId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'License verification failed.');
+                }
+
+                localStorage.setItem('raja_active_key', key);
+                localStorage.setItem('raja_active_user', uInput);
+                localStorage.setItem('raja_session_' + key, deviceSessionId);
+
+                let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
+                allActiveUsers[key] = {
+                    user: uInput,
+                    device: deviceSessionId,
+                    time: new Date().toLocaleTimeString()
+                };
+                localStorage.setItem('raja_active_users_list', JSON.stringify(allActiveUsers));
+
+                msgBox.style.color = "#030712";
+                msgBox.style.background = "#00ff87";
+                msgBox.innerText = "✅ License verified by backend & device bound.";
+
+                isUserVerified = true;
+                checkRoute();
+                startTimer();
+
+            } catch (error) {
+                localStorage.removeItem('raja_active_key');
+                localStorage.removeItem('raja_session_' + key);
+
+                msgBox.style.color = "#fff";
+                msgBox.style.background = "#ff3366";
+                msgBox.innerText = "❌ " + error.message;
+                msgBox.style.display = "block";
+            }
         }
 
-    candle_range = candle_high - candle_low
-    if candle_range <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Invalid candle range",
+        async function generateKey() {
+            const tId = document.getElementById('adminTelegramId').value.trim();
+            const pass = document.getElementById('adminPasswordInput').value;
+            const display = document.getElementById('generatedKeyDisplay');
+            const copyBtn = document.getElementById('copyKeyBtn');
+
+            if (!tId || !pass) {
+                display.innerText = "❌ Enter User Telegram ID / UID and admin password.";
+                display.style.color = "#ff3366";
+                copyBtn.style.display = "none";
+                return;
+            }
+
+            display.innerText = "🔄 Creating key through backend...";
+            display.style.color = "#60efff";
+            copyBtn.style.display = "none";
+
+            try {
+                const response = await fetch('/admin/generate-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        password: pass,
+                        user: tId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to generate license.');
+                }
+
+                latestGeneratedKey = result.key;
+                display.innerHTML = "User: " + result.user + "<br>Key: " + result.key;
+                display.style.color = "#00ff87";
+                copyBtn.style.display = "block";
+
+            } catch (error) {
+                latestGeneratedKey = "";
+                display.innerText = "❌ " + error.message;
+                display.style.color = "#ff3366";
+                copyBtn.style.display = "none";
+            }
         }
 
-    bullish_candle = candle_close > candle_open
-    bearish_candle = candle_close < candle_open
-
-    upper_wick = candle_high - max(candle_open, candle_close)
-    lower_wick = min(candle_open, candle_close) - candle_low
-
-    bullish_rejection = (
-        lower_wick / candle_range >= 0.25
-        and bullish_candle
-    )
-    bearish_rejection = (
-        upper_wick / candle_range >= 0.25
-        and bearish_candle
-    )
-
-    volume_bullish = False
-    volume_bearish = False
-    if "Volume" in df.columns:
-        volume = df["Volume"].fillna(0)
-        current_volume = safe_float(volume.iloc[-1], 0.0)
-        avg_volume = safe_float(volume.rolling(20).mean().iloc[-1], 0.0)
-        if current_volume > 0 and avg_volume > 0:
-            volume_bullish = bullish_candle and current_volume > avg_volume
-            volume_bearish = bearish_candle and current_volume > avg_volume
-
-    bullish_points = 0.0
-    bearish_points = 0.0
-
-    if 52 <= rsi <= 70:
-        bullish_points += 1.0
-    elif 30 <= rsi <= 48:
-        bearish_points += 1.0
-
-    if ema_bullish:
-        bullish_points += 2.0
-    elif ema_bearish:
-        bearish_points += 2.0
-
-    if macd_bullish:
-        bullish_points += 1.0
-    elif macd_bearish:
-        bearish_points += 1.0
-
-    if bb_bullish:
-        bullish_points += 1.0
-    elif bb_bearish:
-        bearish_points += 1.0
-
-    if adx_bullish:
-        bullish_points += 1.5
-    elif adx_bearish:
-        bearish_points += 1.5
-
-    if momentum_bullish:
-        bullish_points += 1.0
-    elif momentum_bearish:
-        bearish_points += 1.0
-
-    if bullish_rejection:
-        bullish_points += 1.0
-    elif bearish_rejection:
-        bearish_points += 1.0
-    elif bullish_candle:
-        bullish_points += 0.5
-    elif bearish_candle:
-        bearish_points += 0.5
-
-    if volume_bullish:
-        bullish_points += 1.0
-    elif volume_bearish:
-        bearish_points += 1.0
-
-    difference = abs(bullish_points - bearish_points)
-    winning_points = max(bullish_points, bearish_points)
-
-    # Slightly relaxed per-TF gate because final decision also requires
-    # multi-timeframe agreement.
-    if difference < 1.5 or winning_points < 3.5:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Weak/conflicting timeframe",
-            "rsi": round(rsi, 2),
-            "adx": round(adx_now, 2),
-            "bullish_points": round(bullish_points, 2),
-            "bearish_points": round(bearish_points, 2),
+        function copyGeneratedKey() {
+            if (latestGeneratedKey) {
+                navigator.clipboard.writeText(latestGeneratedKey);
+                alert("📋 License Key Copied Successfully!");
+            }
         }
 
-    signal = "CALL" if bullish_points > bearish_points else "PUT"
+        function renderAdminUsersList() {
+            let listContainer = document.getElementById('adminUsersList');
+            if (!listContainer) return;
+            let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
+            let keys = Object.keys(allActiveUsers);
 
-    score = 50 + difference * 6
-    if adx_now >= 20:
-        score += min(adx_now - 20, 15) * 0.5
-    score = max(50, min(95, score))
+            if (keys.length === 0) {
+                listContainer.innerHTML = `<div style="color: #94a3b8; text-align: center; padding: 4px; font-size:10px;">No active users logged in yet.</div>`;
+                return;
+            }
 
-    return {
-        "timeframe": timeframe,
-        "signal": signal,
-        "score": round(score, 2),
-        "rsi": round(rsi, 2),
-        "adx": round(adx_now, 2),
-        "atr": round(atr, 8),
-        "price": round(price, 8),
-        "bullish_points": round(bullish_points, 2),
-        "bearish_points": round(bearish_points, 2),
-    }
-
-
-
-def should_suppress_duplicate(pair, signal, timeframe_summary):
-    """Suppress same pair+direction when the analyzed TF context has not changed."""
-    context = tuple(
-        (tf, details.get("signal"), details.get("score"))
-        for tf, details in sorted((timeframe_summary or {}).items())
-    )
-    fingerprint = (pair, signal, context)
-    now = time.time()
-
-    with recent_signal_lock:
-        existing = recent_signals.get(pair)
-
-        if existing:
-            same_signal = existing.get("signal") == signal
-            same_context = existing.get("fingerprint") == fingerprint
-            still_locked = (now - existing.get("timestamp", 0)) < DUPLICATE_SIGNAL_COOLDOWN
-
-            if same_signal and same_context and still_locked:
-                return True
-
-        recent_signals[pair] = {
-            "signal": signal,
-            "fingerprint": fingerprint,
-            "timestamp": now,
+            let html = "";
+            keys.forEach(key => {
+                let data = allActiveUsers[key];
+                html += `<div class="admin-user-row">
+                    <div><strong>${data.user}</strong><br><span style="color:#60efff; font-size:8.5px;">${key}</span></div>
+                    <button class="remove-user-btn" onclick="removeUserAccess('${key}')">REMOVE</button>
+                </div>`;
+            });
+            listContainer.innerHTML = html;
         }
 
-    return False
+        async function removeUserAccess(key) {
+            if (!confirm("Are you sure you want to revoke this license?")) return;
 
+            const pass = document.getElementById('adminPasswordInput').value;
 
-def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
-    return {
-        "pair": pair,
-        "score": 0,
-        "signal": "NO SIGNAL",
-        "reason": reason,
-        "rsi": None,
-        "adx": None,
-        "atr": None,
-        "price": None,
-        "bullish_points": 0,
-        "bearish_points": 0,
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "otc_proxy_warning": "(OTC)" in pair,
-        "yahoo_symbol": symbol,
-        "timeframe_summary": timeframes or {},
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-    }
+            if (!pass) {
+                alert("Enter admin password first.");
+                return;
+            }
 
+            try {
+                const response = await fetch('/admin/revoke-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        password: pass,
+                        key: key
+                    })
+                });
 
-def calculate_live_indicators(pair):
-    """Scan 1m,2m,5m,10m,15m,30m and combine direction/confluence."""
-    if pair not in YAHOO_SYMBOLS:
-        return no_signal_result(
-            pair,
-            "Pair is not configured in Yahoo mapping.",
-        )
+                const result = await response.json();
 
-    base_df, data_age, symbol = get_market_data(pair)
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to revoke license.');
+                }
 
-    if base_df is None or base_df.empty:
-        return no_signal_result(
-            pair,
-            "Yahoo market data unavailable.",
-            symbol=symbol,
-            data_age=data_age,
-        )
+                let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
+                delete allActiveUsers[key];
+                localStorage.setItem('raja_active_users_list', JSON.stringify(allActiveUsers));
 
-    results = {}
-    for tf_name, minutes in TIMEFRAMES.items():
-        tf_df = build_timeframe(base_df, minutes)
-        results[tf_name] = analyze_timeframe(tf_df, tf_name)
+                if (localStorage.getItem('raja_active_key') === key) {
+                    localStorage.removeItem('raja_active_key');
+                }
+                localStorage.removeItem('raja_session_' + key);
 
-    call_results = [
-        r for r in results.values()
-        if r.get("signal") == "CALL"
-    ]
-    put_results = [
-        r for r in results.values()
-        if r.get("signal") == "PUT"
-    ]
+                renderAdminUsersList();
+                alert("✅ License revoked by backend.");
 
-    valid_count = len(call_results) + len(put_results)
-
-    summary = {
-        tf: {
-            "signal": r.get("signal"),
-            "score": r.get("score", 0),
-            "rsi": r.get("rsi"),
-            "adx": r.get("adx"),
+            } catch (error) {
+                alert("❌ " + error.message);
+            }
         }
-        for tf, r in results.items()
-    }
 
-    # Require at least 4 directional timeframes out of 6.
-    if valid_count < 4:
-        return no_signal_result(
-            pair,
-            "Fewer than 4 timeframes reached valid confluence.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+        function showDefaultView() {
+            document.getElementById('historyInlineView').style.display = "none";
+            document.getElementById('settingsInlineView').style.display = "none";
+            document.getElementById('newsInlineView').style.display = "none";
+            document.getElementById('riskInlineView').style.display = "none";
+            document.getElementById('scanView').style.display = "none";
+            document.getElementById('signalView').style.display = "none";
+            document.getElementById('noSignalView').style.display = "none";
+            document.getElementById('defaultView').style.display = "flex";
+        }
 
-    if len(call_results) > len(put_results):
-        signal = "CALL"
-        supporters = call_results
-        opponents = put_results
-    elif len(put_results) > len(call_results):
-        signal = "PUT"
-        supporters = put_results
-        opponents = call_results
-    else:
-        return no_signal_result(
-            pair,
-            "Multi-timeframe direction is tied.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+        function openHistoryInline() {
+            showDefaultView();
+            document.getElementById('defaultView').style.display = "none";
+            document.getElementById('historyInlineView').style.display = "block";
+            refreshTrackedHistory();
+        }
 
-    # At least 4 timeframes must agree with the final direction.
-    if len(supporters) < 4:
-        return no_signal_result(
-            pair,
-            "Fewer than 4 timeframes agree with the final direction.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+        function renderHistoryList() {
+            const listContainer = document.getElementById('historyListBox');
+            if (!listContainer) return;
 
-    agreement_ratio = len(supporters) / valid_count
+            if (backendTrackedHistory.length > 0) {
+                let html = "";
 
-    # Require at least two-thirds directional agreement among valid TFs.
-    if agreement_ratio < (2 / 3):
-        return no_signal_result(
-            pair,
-            "Multi-timeframe agreement below 66.7%.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+                backendTrackedHistory.forEach((item, index) => {
+                    const score = Number(item.score || 0).toFixed(1) + "%";
+                    const result = item.result || item.status || "PENDING";
+                    let resultColor = "#60efff";
+                    if (result === "WIN") resultColor = "#00ff87";
+                    if (result === "LOSS") resultColor = "#ff3366";
+                    if (result === "DRAW") resultColor = "#facc15";
 
-    avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
+                    html += `<div class="inline-item">
+                        <span>${index + 1}. ${item.pair} (${item.signal}) · ${item.expiry} · <strong style="color:#60efff;">${score}</strong></span>
+                        <span style="color:${resultColor}; font-weight:900;">[${result}]</span>
+                    </div>`;
+                });
 
-    # Reward agreement without pretending this is a win probability.
-    multi_tf_score = avg_support_score + ((agreement_ratio - 0.5) * 12)
-    multi_tf_score = max(50, min(95, multi_tf_score))
+                listContainer.innerHTML = html;
+                return;
+            }
 
-    # Prefer representative diagnostics from 5m, then 2m, then 1m,
-    # otherwise use the strongest supporting timeframe.
-    representative = None
-    for preferred in ("5m", "2m", "1m", "10m", "15m", "30m"):
-        r = results.get(preferred)
-        if r and r.get("signal") == signal:
-            representative = r
-            break
+            if (dynamicHistory.length === 0) {
+                listContainer.innerHTML = `<div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>`;
+                return;
+            }
 
-    if representative is None:
-        representative = max(supporters, key=lambda x: x.get("score", 0))
+            let html = "";
+            dynamicHistory.forEach((item, index) => {
+                let resultLabel = item.result
+                    ? `<span style="color:${item.result === 'WIN' ? '#00ff87':'#ff3366'}; font-weight:bold;">[${item.result}]</span>`
+                    : `<span style="color:#94a3b8; font-weight:bold;">[LOCAL]</span>`;
 
-    aligned_tfs = [r["timeframe"] for r in supporters]
-    opposing_tfs = [r["timeframe"] for r in opponents]
+                html += `<div class="inline-item">
+                    <span>${index + 1}. ${item.pair} (${item.dir}) - <strong style="color:#60efff;">${item.acc}</strong></span>
+                    ${resultLabel}
+                </div>`;
+            });
+            listContainer.innerHTML = html;
+        }
 
-    if should_suppress_duplicate(pair, signal, summary):
-        return no_signal_result(
-            pair,
-            "Duplicate signal suppressed; wait for a fresh timeframe context.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+        function markSignalResult(index, outcome) {
+            playClickSound();
+            if (dynamicHistory[index]) {
+                dynamicHistory[index].result = outcome;
+                localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+                renderHistoryList();
+            }
+        }
 
-    return {
-        "pair": pair,
-        "score": round(multi_tf_score, 2),
-        "signal": signal,
-        "reason": (
-            f"Multi-TF agreement: {len(supporters)}/{valid_count} valid "
-            f"timeframes -> {signal}"
-        ),
-        "rsi": representative.get("rsi"),
-        "adx": representative.get("adx"),
-        "atr": representative.get("atr"),
-        "price": representative.get("price"),
-        "bullish_points": representative.get("bullish_points", 0),
-        "bearish_points": representative.get("bearish_points", 0),
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "otc_proxy_warning": "(OTC)" in pair,
-        "yahoo_symbol": symbol,
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "aligned_timeframes": aligned_tfs,
-        "opposing_timeframes": opposing_tfs,
-        "timeframe_summary": summary,
-        "multi_tf_agreement": round(agreement_ratio * 100, 1),
-        "confirmation_mode": "4-of-6 Strong",
-        "duplicate_protection": True,
-    }
+        function openSettingsInline() {
+            showDefaultView();
+            document.getElementById('defaultView').style.display = "none";
+            document.getElementById('settingsInlineView').style.display = "block";
+        }
 
+        function openNewsInline() {
+            showDefaultView();
+            document.getElementById('defaultView').style.display = "none";
+            document.getElementById('newsInlineView').style.display = "block";
+        }
 
-# =========================================================
-# ROUTES
-# =========================================================
+        function openRiskInline() {
+            showDefaultView();
+            document.getElementById('defaultView').style.display = "none";
+            document.getElementById('riskInlineView').style.display = "block";
+            calculateRisk();
+        }
 
-@app.route("/")
-def home():
-    if os.path.exists(BASE_DIR / "index.html"):
-        return send_from_directory(str(BASE_DIR), "index.html")
-    return (
-        "RAJA AI backend is running. "
-        "Place index.html in the same folder as bot.py."
-    )
+        function calculateRisk() {
+            let base = parseFloat(document.getElementById('baseStakeInput').value) || 0;
+            let step1 = base;
+            let step2 = (base * 2.2).toFixed(2);
+            let step3 = (base * 4.8).toFixed(2);
+            let d1 = document.getElementById('step1Display');
+            let d2 = document.getElementById('step2Display');
+            let d3 = document.getElementById('step3Display');
+            if(d1) d1.innerText = "$" + step1.toFixed(2);
+            if(d2) d2.innerText = "$" + step2;
+            if(d3) d3.innerText = "$" + step3;
+        }
 
+        const brokerData = {
+            Quotex: {
+                CryptoLive: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "BTC-USD",
+                    "ETH-USD",
+                    "SOL-USD",
+                    "LTC-USD",
+                    "XRP-USD",
+                    "ADA-USD",
+                    "DOGE-USD"
+                ],
+                CryptoOTC: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "Bitcoin (OTC)",
+                    "Ethereum (OTC)",
+                    "Litecoin (OTC)",
+                    "Ripple (OTC)",
+                    "Solana (OTC)",
+                    "Toncoin (OTC)",
+                    "Ethereum Classic (OTC)",
+                    "Axie Infinity (OTC)",
+                    "Binance Coin (OTC)",
+                    "Trump (OTC)",
+                    "Polkadot (OTC)",
+                    "Avalanche (OTC)",
+                    "Chainlink (OTC)",
+                    "Bitcoin Cash (OTC)",
+                    "Zcash (OTC)",
+                    "Cosmos (OTC)"
+                ],
+                ForexLive: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "EUR/USD",
+                    "GBP/USD",
+                    "USD/JPY",
+                    "AUD/USD",
+                    "USD/CAD",
+                    "USD/CHF",
+                    "NZD/USD",
+                    "EUR/GBP",
+                    "EUR/JPY",
+                    "GBP/JPY",
+                    "AUD/JPY",
+                    "EUR/AUD",
+                    "GBP/AUD",
+                    "CAD/JPY",
+                    "EUR/CAD",
+                    "GBP/CAD",
+                    "NZD/JPY",
+                    "AUD/NZD",
+                    "EUR/CHF",
+                    "GBP/CHF",
+                    "XAUUSD"
+                ],
+                ForexOTC: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "EUR/USD (OTC)",
+                    "GBP/USD (OTC)",
+                    "USD/JPY (OTC)",
+                    "AUD/USD (OTC)",
+                    "USD/CAD (OTC)",
+                    "USD/CHF (OTC)",
+                    "NZD/USD (OTC)",
+                    "EUR/GBP (OTC)",
+                    "EUR/JPY (OTC)",
+                    "GBP/JPY (OTC)",
+                    "AUD/JPY (OTC)",
+                    "EUR/AUD (OTC)",
+                    "GBP/AUD (OTC)",
+                    "CAD/JPY (OTC)",
+                    "EUR/CAD (OTC)",
+                    "GBP/CAD (OTC)",
+                    "NZD/JPY (OTC)",
+                    "AUD/NZD (OTC)",
+                    "EUR/CHF (OTC)",
+                    "GBP/CHF (OTC)",
+                    "NZD/CAD (OTC)",
+                    "NZD/CHF (OTC)",
+                    "USD/BRL (OTC)",
+                    "USD/ARS (OTC)",
+                    "USD/INR (OTC)"
+                ]
+            }
+        };
 
-@app.route("/health", methods=["GET"])
-def health():
-    with cache_lock:
-        cached_symbols = len(market_cache)
+        function updateBrokerAssets() { updatePairs(); }
 
-    return jsonify({
-        "status": "success",
-        "service": "RAJA AI multi-timeframe backend",
-        "yahoo_pairs": len(YAHOO_SYMBOLS),
-        "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
-        "cached_symbols": cached_symbols,
-        "base_interval": "1m",
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "4-of-6 Strong",
-        "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
-    })
+        function updatePairs() {
+            let brokerEl = document.getElementById('brokerSelect');
+            let marketEl = document.getElementById('marketType');
+            let pairSelect = document.getElementById('pairSelect');
+            if(!brokerEl || !marketEl || !pairSelect) return;
+            let broker = brokerEl.value;
+            let market = marketEl.value;
+            pairSelect.innerHTML = ""; 
+            if (brokerData[broker] && brokerData[broker][market]) {
+                brokerData[broker][market].forEach(pair => {
+                    let option = document.createElement("option");
+                    option.value = pair;
+                    option.innerText = pair;
+                    pairSelect.appendChild(option);
+                });
+            }
+        }
 
+        function getExpirySeconds(expiryStr) {
+            if (expiryStr === "15s") return 15;
+            if (expiryStr === "30s") return 30;
+            if (expiryStr === "1m") return 60;
+            if (expiryStr === "2m") return 120;
+            if (expiryStr === "5m") return 300;
+            if (expiryStr === "15m") return 900;
+            if (expiryStr === "30m") return 1800;
+            return 60;
+        }
 
-@app.route("/verify-license", methods=["POST"])
-def verify_license():
-    data = request.get_json(silent=True) or {}
+        function setExpiry(button, time) {
+            document.querySelectorAll('.expiry-btn').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            selectedExpiry = time;
+            startTimer(); 
+        }
 
-    key = str(data.get("key", "")).strip()
-    user = str(data.get("user", "")).strip()
-    device = str(data.get("device", "")).strip()
+        function startTimer() {
+            clearInterval(timerInterval);
 
-    if not key or not user or not device:
-        return jsonify({
-            "status": "error",
-            "message": "Key, user and device are required.",
-        }), 400
+            function tickEntryTimer() {
+                const nowMs = Date.now();
+                const nowSec = Math.floor(nowMs / 1000);
+                const secIntoMinute = nowSec % 60;
+                const secondsToClose = secIntoMinute === 0 ? 60 : 60 - secIntoMinute;
 
-    licenses = load_licenses()
-    record = licenses.get(key)
+                updateTimerDisplay(secondsToClose);
 
-    if not record or not record.get("active", False):
-        return jsonify({
-            "status": "error",
-            "message": "Invalid or revoked license key.",
-        }), 401
+                const tradeAlert = document.getElementById('tradeAlert');
+                const candleStatus = document.getElementById('candleStatusText');
 
-    bound_device = record.get("device")
-    bound_user = record.get("user")
+                if (!tradeAlert || !candleStatus) return;
 
-    if bound_device and bound_device != device:
-        return jsonify({
-            "status": "error",
-            "message": "This key is already bound to another device.",
-        }), 403
+                if (activeSignalEntryEpochMs) {
+                    const deltaMs = nowMs - activeSignalEntryEpochMs;
 
-    if bound_user and bound_user != user:
-        return jsonify({
-            "status": "error",
-            "message": "This key is already assigned to another user.",
-        }), 403
+                    if (deltaMs < 0) {
+                        candleStatus.innerText = "SIGNAL CONFIRMED — WAIT FOR CURRENT 1M CANDLE TO CLOSE:";
+                        tradeAlert.innerText = "⏳ WAIT — ENTER ON NEXT CANDLE OPEN";
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#60efff";
+                    } else if (deltaMs <= 4000) {
+                        candleStatus.innerText = "NEW 1M CANDLE OPENED:";
+                        tradeAlert.innerText = "✅ ENTER NOW — NEW CANDLE";
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#00ff87";
+                    } else {
+                        candleStatus.innerText = "ENTRY WINDOW PASSED:";
+                        tradeAlert.innerText = "⚠️ ENTRY MISSED — RESCAN FOR A FRESH SIGNAL";
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#ff3366";
+                    }
+                } else {
+                    candleStatus.innerText = "CURRENT 1M CANDLE — WAIT FOR CLOSE:";
+                    tradeAlert.style.display = "none";
+                }
+            }
 
-    record["device"] = device
-    record["user"] = user
-    record["last_verified_at"] = int(time.time())
-    licenses[key] = record
-    save_licenses(licenses)
+            tickEntryTimer();
+            timerInterval = setInterval(tickEntryTimer, 250);
+        }
 
-    return jsonify({
-        "status": "success",
-        "message": "License verified successfully.",
-        "user": user,
-        "device_bound": True,
-    })
+        function updateTimerDisplay(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            const displayStr =
+                (m < 10 ? "0" + m : m) + ":" +
+                (s < 10 ? "0" + s : s);
 
-
-@app.route("/admin/generate-key", methods=["POST"])
-def admin_generate_key():
-    data = request.get_json(silent=True) or {}
-
-    password = str(data.get("password", ""))
-    user = str(data.get("user", "")).strip()
-
-    if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
-
-    if not user:
-        return jsonify({
-            "status": "error",
-            "message": "User Telegram ID / UID is required.",
-        }), 400
-
-    licenses = load_licenses()
-
-    while True:
-        key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
-        if key not in licenses:
-            break
-
-    licenses[key] = {
-        "active": True,
-        "user": user,
-        "device": None,
-        "created_at": int(time.time()),
-    }
-    save_licenses(licenses)
-
-    return jsonify({
-        "status": "success",
-        "message": "License created.",
-        "key": key,
-        "user": user,
-    })
-
-
-@app.route("/admin/revoke-key", methods=["POST"])
-def admin_revoke_key():
-    data = request.get_json(silent=True) or {}
-
-    password = str(data.get("password", ""))
-    key = str(data.get("key", "")).strip()
-
-    if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
-
-    licenses = load_licenses()
-
-    if key not in licenses:
-        return jsonify({
-            "status": "error",
-            "message": "License key not found.",
-        }), 404
-
-    licenses[key]["active"] = False
-    licenses[key]["revoked_at"] = int(time.time())
-    save_licenses(licenses)
-
-    return jsonify({
-        "status": "success",
-        "message": "License revoked.",
-        "key": key,
-    })
-
-
-@app.route("/scan", methods=["POST"])
-def scan_markets():
-    data = request.get_json(silent=True) or {}
-    selected_pair = str(data.get("pair", "")).strip()
-
-    if not selected_pair or "Auto Scan Best Pair" in selected_pair:
-        best = None
-
-        for pair in ALL_PAIRS:
-            result = calculate_live_indicators(pair)
-            if result.get("signal") == "NO SIGNAL":
-                continue
-            if best is None or result.get("score", 0) > best.get("score", 0):
-                best = result
-
-        if best is None:
-            return jsonify({
-                "status": "success",
-                "data": {
-                    "pair": None,
-                    "score": 0,
-                    "signal": "NO SIGNAL",
-                    "reason": "No configured pair reached multi-timeframe confluence.",
-                    "timeframes_scanned": list(TIMEFRAMES.keys()),
-                },
-            })
-
-        return jsonify({"status": "success", "data": best})
-
-    if selected_pair not in YAHOO_SYMBOLS:
-        return jsonify({
-            "status": "error",
-            "message": f"Unsupported pair: {selected_pair}",
-            "data": no_signal_result(
-                selected_pair,
-                "Pair is not configured in Yahoo mapping.",
-            ),
-        }), 400
-
-    result = calculate_live_indicators(selected_pair)
-    return jsonify({"status": "success", "data": result})
+            const timerEl = document.getElementById('candleTimer');
+            if (timerEl) timerEl.innerText = displayStr;
+        }
 
 
-poller_thread = threading.Thread(
-    target=background_market_poller,
-    daemon=True,
-)
-poller_thread.start()
+        // ==========================================
+        // REAL BACKEND SCAN ENGINE
+        // Yahoo/yfinance market data + backend indicators
+        // ==========================================
+        async function scanPairFromBackend(pair) {
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pair: pair })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Backend scan failed: ' + response.status);
+                }
+
+                const result = await response.json();
+                if (!result || result.status !== 'success' || !result.data) {
+                    return null;
+                }
+
+                const data = result.data;
+                if (!data.signal || data.signal === 'NO SIGNAL' || Number(data.score || 0) <= 0) {
+                    return null;
+                }
+
+                return {
+                    pair: data.pair || pair,
+                    confluence: Number(data.score || 0),
+                    dir: data.signal === 'CALL' ? 'CALL (UP)' : 'PUT (DOWN)',
+                    reason: data.reason || '',
+                    rsi: data.rsi,
+                    bullishPoints: data.bullish_points,
+                    bearishPoints: data.bearish_points,
+                    dataAge: data.data_age,
+                    timeframeSummary: data.timeframe_summary || {},
+                    alignedTimeframes: data.aligned_timeframes || [],
+                    opposingTimeframes: data.opposing_timeframes || [],
+                    multiTfAgreement: data.multi_tf_agreement,
+                    confirmationMode: data.confirmation_mode || '4-of-6 Strong',
+                    duplicateProtection: Boolean(data.duplicate_protection)
+                };
+            } catch (error) {
+                console.error('Scan error for', pair, error);
+                return null;
+            }
+        }
+
+        async function startDeepScan() {
+            let broker = document.getElementById('brokerSelect').value;
+            let market = document.getElementById('marketType').value;
+            let selectedPair = document.getElementById('pairSelect').value;
+
+            activeSignalEntryEpochMs = null;
+            activeTrackedSignalId = null;
+            startTimer();
+
+            let pairsToScan = [];
+            if (selectedPair.includes('Auto Scan') || selectedPair === '') {
+                pairsToScan = brokerData[broker][market].slice(1);
+            } else {
+                pairsToScan = [selectedPair];
+            }
+
+            showDefaultView();
+            document.getElementById('defaultView').style.display = 'none';
+            document.getElementById('scanView').style.display = 'block';
+
+        const tfBoxReset = document.getElementById('tfBreakdown');
+        const tfLineReset = document.getElementById('tfSummaryLine');
+        if (tfBoxReset) tfBoxReset.innerHTML = '';
+        if (tfLineReset) tfLineReset.innerText = 'Multi-TF: scanning backend timeframes...';
+
+            let scanConsole = document.getElementById('liveScanConsole');
+            scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 RAJA AI BOT DEEP SCAN: ${pairsToScan.length} ASSETS...</div>`;
+
+            let progressBar = document.getElementById('scanProgressBar');
+            let scanStep = document.getElementById('scanStepText');
+            let scanBtn = document.getElementById('scanBtn');
+            scanBtn.innerText = '▶ RAJA AI BOT DEEP SCAN...';
+            scanBtn.disabled = true;
+
+            let bestSignalFound = null;
+            let highestConfluence = 0;
+
+            for (let currentIndex = 0; currentIndex < pairsToScan.length; currentIndex++) {
+                let currentPair = pairsToScan[currentIndex];
+                let progressPercent = Math.floor(((currentIndex + 1) / pairsToScan.length) * 100);
+                progressBar.style.width = progressPercent + '%';
+                scanStep.innerText = `RAJA AI Multi-TF Scan: ${currentPair} (${currentIndex + 1}/${pairsToScan.length})`;
+
+                let indicatorResult = await scanPairFromBackend(currentPair);
+
+                if (indicatorResult && indicatorResult.confluence > highestConfluence) {
+                    highestConfluence = indicatorResult.confluence;
+                    bestSignalFound = indicatorResult;
+                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}% - LIVE DATA</span></div>`;
+                } else if (indicatorResult) {
+                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
+                } else {
+                    scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>No valid confluence</span></div>`;
+                }
+
+                scanConsole.scrollTop = scanConsole.scrollHeight;
+            }
+
+            scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
+            scanBtn.disabled = false;
+
+            setTimeout(() => {
+                if (bestSignalFound) {
+                    displaySignalResult(bestSignalFound);
+                } else {
+                    document.getElementById('scanView').style.display = 'none';
+                    document.getElementById('noSignalView').style.display = 'flex';
+                    document.getElementById('noSignalTitle').innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                    document.getElementById('noSignalDesc').innerText = 'Yahoo live data was scanned, but the indicators did not reach the required confluence.';
+                }
+            }, 300);
+        }
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        threaded=True,
-    )
+
+        async function registerSignalForTracking(signalData) {
+            const direction = signalData.dir.includes("CALL") ? "CALL" : "PUT";
+
+            // Predict next minute immediately for the entry UI; backend returns authoritative epoch.
+            activeSignalEntryEpochMs = (Math.floor(Date.now() / 60000) + 1) * 60000;
+            startTimer();
+
+            try {
+                const response = await fetch('/track-signal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pair: signalData.pair,
+                        signal: direction,
+                        score: signalData.confluence,
+                        expiry: selectedExpiry,
+                        timeframe_summary: signalData.timeframeSummary || {}
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result && result.status === 'success' && result.auto_tracking) {
+                    activeTrackedSignalId = result.signal_id;
+                    activeSignalEntryEpochMs = Number(result.entry_epoch) * 1000;
+                    startTimer();
+                } else if (result && result.status === 'success' && !result.auto_tracking) {
+                    activeTrackedSignalId = null;
+                }
+            } catch (error) {
+                console.error("Signal tracking error:", error);
+            }
+        }
+
+        async function refreshTrackedHistory() {
+            try {
+                const response = await fetch('/signals/history?limit=20');
+                const result = await response.json();
+
+                if (response.ok && result && result.status === 'success') {
+                    backendTrackedHistory = Array.isArray(result.data) ? result.data : [];
+                    renderHistoryList();
+                }
+            } catch (error) {
+                console.error("History refresh error:", error);
+            }
+        }
+
+        function renderTimeframeBreakdown(signalData) {
+            const box = document.getElementById('tfBreakdown');
+            const line = document.getElementById('tfSummaryLine');
+            if (!box || !line) return;
+
+            const summary = signalData.timeframeSummary || {};
+            const order = ['1m', '2m', '5m', '10m', '15m', '30m'];
+
+            box.innerHTML = order.map(tf => {
+                const item = summary[tf] || {};
+                const sig = item.signal || 'NO SIGNAL';
+                const score = Number(item.score || 0);
+                const cls = sig === 'CALL' ? 'tf-call' : (sig === 'PUT' ? 'tf-put' : 'tf-none');
+                const label = sig === 'CALL' ? 'CALL' : (sig === 'PUT' ? 'PUT' : 'NO');
+                const scoreText = score > 0 ? ` ${score.toFixed(0)}` : '';
+                return `<span class="tf-chip ${cls}">${tf}: ${label}${scoreText}</span>`;
+            }).join('');
+
+            const agreement = Number(signalData.multiTfAgreement);
+            const agreementText = Number.isFinite(agreement) ? agreement.toFixed(1) + '%' : '--';
+            line.innerText = `Multi-TF Agreement: ${agreementText} | Mode: ${signalData.confirmationMode || '4-of-6 Strong'}`;
+        }
+
+        function displaySignalResult(signalData) {
+            document.getElementById('scanView').style.display = "none";
+            let signalView = document.getElementById('signalView');
+            signalView.style.display = "block";
+
+            playSignalAlertSound();
+            let containerEl = document.querySelector('.container');
+            containerEl.classList.add('alert-flash');
+            setTimeout(() => { containerEl.classList.remove('alert-flash'); }, 1200);
+
+            let hudBox = document.getElementById('hudBoxContainer');
+            let targetPairBox = document.getElementById('targetPairBoxContainer');
+            let resAsset = document.getElementById('resModalAsset');
+            let resDir = document.getElementById('resModalDirection');
+            let resMeta = document.getElementById('resModalMeta');
+            let lightOverlay = document.getElementById('lightOverlay');
+            let signalSvgPath = document.getElementById('signalSvgPath');
+            let targetPairDisplay = document.getElementById('targetPairDisplay');
+
+            resAsset.innerText = signalData.pair;
+            targetPairDisplay.innerText = signalData.pair;
+            
+            
+            // Render actual backend multi-timeframe breakdown.
+            renderTimeframeBreakdown(signalData);
+            registerSignalForTracking(signalData);
+let isBuy = signalData.dir.includes("CALL");
+            let confluenceString = Number(signalData.confluence).toFixed(1) + "%";
+
+            dynamicHistory.unshift({
+                pair: signalData.pair,
+                dir: isBuy ? "UP (BUY)" : "DOWN (SELL)",
+                acc: confluenceString,
+                result: null
+            });
+            if (dynamicHistory.length > 10) dynamicHistory.pop();
+            localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+
+            if (isBuy) {
+                hudBox.className = "ai-hud-box glow-buy";
+                targetPairBox.className = "selected-pair-box pair-glow-buy";
+                targetPairDisplay.style.color = "#00ff87";
+                resDir.className = "signal-direction dir-up";
+                resDir.innerHTML = "⬆ UP (BUY)";
+                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | TF: ${selectedExpiry}`;
+                lightOverlay.className = "signal-light-overlay buy-active";
+                signalSvgPath.setAttribute("stroke", "#00ff87");
+                signalSvgPath.setAttribute("d", "M0,60 Q50,20 100,40 T200,15 T300,10");
+            } else {
+                hudBox.className = "ai-hud-box glow-sell";
+                targetPairBox.className = "selected-pair-box pair-glow-sell";
+                targetPairDisplay.style.color = "#ff3366";
+                resDir.className = "signal-direction dir-down";
+                resDir.innerHTML = "⬇ DOWN (SELL)";
+                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | TF: ${selectedExpiry}`;
+                lightOverlay.className = "signal-light-overlay sell-active";
+                signalSvgPath.setAttribute("stroke", "#ff3366");
+                signalSvgPath.setAttribute("d", "M0,20 Q50,50 100,30 T200,70 T300,80");
+            }
+            startTimer();
+        }
+    </script>
+</body>
+</html>
