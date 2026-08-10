@@ -117,6 +117,13 @@ CACHE_DURATION = 90
 market_cache = {}
 cache_lock = threading.Lock()
 
+# Duplicate-signal protection.
+# Prevents the same pair/direction from being re-issued from the same
+# multi-timeframe candle context within a short lock window.
+recent_signal_lock = threading.Lock()
+recent_signals = {}
+DUPLICATE_SIGNAL_COOLDOWN = 120  # seconds
+
 # =========================================================
 # LICENSE STORE
 # =========================================================
@@ -658,6 +665,36 @@ def analyze_timeframe(df, timeframe):
     }
 
 
+
+def should_suppress_duplicate(pair, signal, timeframe_summary):
+    """Suppress same pair+direction when the analyzed TF context has not changed."""
+    context = tuple(
+        (tf, details.get("signal"), details.get("score"))
+        for tf, details in sorted((timeframe_summary or {}).items())
+    )
+    fingerprint = (pair, signal, context)
+    now = time.time()
+
+    with recent_signal_lock:
+        existing = recent_signals.get(pair)
+
+        if existing:
+            same_signal = existing.get("signal") == signal
+            same_context = existing.get("fingerprint") == fingerprint
+            still_locked = (now - existing.get("timestamp", 0)) < DUPLICATE_SIGNAL_COOLDOWN
+
+            if same_signal and same_context and still_locked:
+                return True
+
+        recent_signals[pair] = {
+            "signal": signal,
+            "fingerprint": fingerprint,
+            "timestamp": now,
+        }
+
+    return False
+
+
 def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
     return {
         "pair": pair,
@@ -724,11 +761,11 @@ def calculate_live_indicators(pair):
         for tf, r in results.items()
     }
 
-    # Require at least 3 directional timeframes out of 6.
-    if valid_count < 3:
+    # Require at least 4 directional timeframes out of 6.
+    if valid_count < 4:
         return no_signal_result(
             pair,
-            "Fewer than 3 timeframes reached valid confluence.",
+            "Fewer than 4 timeframes reached valid confluence.",
             symbol=symbol,
             data_age=data_age,
             timeframes=summary,
@@ -751,11 +788,11 @@ def calculate_live_indicators(pair):
             timeframes=summary,
         )
 
-    # At least 3 timeframes must agree with the final direction.
-    if len(supporters) < 3:
+    # At least 4 timeframes must agree with the final direction.
+    if len(supporters) < 4:
         return no_signal_result(
             pair,
-            "Not enough timeframe agreement.",
+            "Fewer than 4 timeframes agree with the final direction.",
             symbol=symbol,
             data_age=data_age,
             timeframes=summary,
@@ -763,11 +800,11 @@ def calculate_live_indicators(pair):
 
     agreement_ratio = len(supporters) / valid_count
 
-    # If several valid TFs actively oppose, require 60%+ directional agreement.
-    if agreement_ratio < 0.60:
+    # Require at least two-thirds directional agreement among valid TFs.
+    if agreement_ratio < (2 / 3):
         return no_signal_result(
             pair,
-            "Multi-timeframe agreement below 60%.",
+            "Multi-timeframe agreement below 66.7%.",
             symbol=symbol,
             data_age=data_age,
             timeframes=summary,
@@ -794,6 +831,15 @@ def calculate_live_indicators(pair):
     aligned_tfs = [r["timeframe"] for r in supporters]
     opposing_tfs = [r["timeframe"] for r in opponents]
 
+    if should_suppress_duplicate(pair, signal, summary):
+        return no_signal_result(
+            pair,
+            "Duplicate signal suppressed; wait for a fresh timeframe context.",
+            symbol=symbol,
+            data_age=data_age,
+            timeframes=summary,
+        )
+
     return {
         "pair": pair,
         "score": round(multi_tf_score, 2),
@@ -818,6 +864,8 @@ def calculate_live_indicators(pair):
         "opposing_timeframes": opposing_tfs,
         "timeframe_summary": summary,
         "multi_tf_agreement": round(agreement_ratio * 100, 1),
+        "confirmation_mode": "4-of-6 Strong",
+        "duplicate_protection": True,
     }
 
 
@@ -849,6 +897,8 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
+        "confirmation_mode": "4-of-6 Strong",
+        "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
     })
 
 
