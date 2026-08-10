@@ -90,7 +90,7 @@
         .selection-card label { display: block; color: #60efff; font-size: 9.5px; font-weight: 700; margin-bottom: 3px; text-transform: uppercase; }
         select { width: 100%; padding: 8px; background: #050811; color: #fff; border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 6px; font-size: 11px; font-weight: 600; outline: none; cursor: pointer; }
         
-        .expiry-container { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; margin-top: 3px; }
+        .expiry-container { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 3px; }
         .expiry-btn { background: rgba(18, 27, 48, 0.9); color: #fff; border: 1px solid rgba(255, 255, 255, 0.1); padding: 6px 0; border-radius: 5px; font-size: 9.5px; font-weight: 700; cursor: pointer; }
         .expiry-btn.active { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #030712; border-color: transparent; }
         
@@ -285,6 +285,7 @@
                     <button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this, '2m')">2m</button>
                     <button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this, '5m')">5m</button>
                     <button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this, '15m')">15m</button>
+                    <button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this, '30m')">30m</button>
                 </div>
 
                 <div class="utility-grid">
@@ -295,7 +296,7 @@
                 </div>
             </div>
 
-            <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START 8-INDICATOR QUANTUM SCAN</button>
+            <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START RAJA AI BOT DEEP SCAN</button>
         </div>
 
         <div id="adminPanel" class="panel-box">
@@ -819,6 +820,7 @@
             if (expiryStr === "2m") return 120;
             if (expiryStr === "5m") return 300;
             if (expiryStr === "15m") return 900;
+            if (expiryStr === "30m") return 1800;
             return 60;
         }
 
@@ -923,12 +925,12 @@
             document.getElementById('scanView').style.display = 'block';
 
             let scanConsole = document.getElementById('liveScanConsole');
-            scanConsole.innerHTML = `<div class="live-scan-row scanning">🛡️ LIVE BACKEND SCAN: ${pairsToScan.length} ASSETS...</div>`;
+            scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 RAJA AI BOT DEEP SCAN: ${pairsToScan.length} ASSETS...</div>`;
 
             let progressBar = document.getElementById('scanProgressBar');
             let scanStep = document.getElementById('scanStepText');
             let scanBtn = document.getElementById('scanBtn');
-            scanBtn.innerText = '▶ RUNNING LIVE YAHOO SCAN...';
+            scanBtn.innerText = '▶ RAJA AI BOT DEEP SCAN...';
             scanBtn.disabled = true;
 
             let bestSignalFound = null;
@@ -938,7 +940,7 @@
                 let currentPair = pairsToScan[currentIndex];
                 let progressPercent = Math.floor(((currentIndex + 1) / pairsToScan.length) * 100);
                 progressBar.style.width = progressPercent + '%';
-                scanStep.innerText = `Yahoo Live Data + Indicators: ${currentPair} (${currentIndex + 1}/${pairsToScan.length})`;
+                scanStep.innerText = `RAJA AI Multi-TF Scan: ${currentPair} (${currentIndex + 1}/${pairsToScan.length})`;
 
                 let indicatorResult = await scanPairFromBackend(currentPair);
 
@@ -955,7 +957,7 @@
                 scanConsole.scrollTop = scanConsole.scrollHeight;
             }
 
-            scanBtn.innerText = '▶ START 8-INDICATOR QUANTUM SCAN';
+            scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
             scanBtn.disabled = false;
 
             setTimeout(() => {
