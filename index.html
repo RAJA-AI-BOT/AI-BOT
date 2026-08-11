@@ -730,6 +730,11 @@
                         resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
                         sourceLabel = "LIVE";
                         sourceColor = "#facc15";
+                    } else if (item.status === "DATA_UNAVAILABLE" || item.result_source === "yahoo_unavailable") {
+                        finalLabel = "[DATA N/A]";
+                        resultColor = "#94a3b8";
+                        sourceLabel = "YAHOO";
+                        sourceColor = "#94a3b8";
                     } else if (item.result) {
                         finalLabel = `[${item.result}]`;
                         resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
@@ -855,7 +860,6 @@
                     "Ethereum Classic (OTC)",
                     "Axie Infinity (OTC)",
                     "Binance Coin (OTC)",
-                    "Trump (OTC)",
                     "Polkadot (OTC)",
                     "Avalanche (OTC)",
                     "Chainlink (OTC)",
@@ -1073,7 +1077,7 @@
 
         async function scanPairsBatchFromBackend(pairs) {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 60000);
+            const timeoutId = setTimeout(() => controller.abort(), 90000);
             try {
                 const response = await fetch('/scan-batch', {
                     method: 'POST',
@@ -1091,7 +1095,7 @@
                     throw new Error('Invalid batch scan response.');
                 }
 
-                return { results: result.data, cacheHit: Boolean(result.cache_hit) };
+                return { results: result.data, cacheHit: Boolean(result.cache_hit), diagnostics: result.diagnostics || null };
             } catch (error) {
                 console.error('Batch scan error:', error);
                 return null;
@@ -1149,6 +1153,8 @@
 
             let bestSignalFound = null;
             let highestConfluence = 0;
+            let scanDiagnostics = null;
+            let scanFailureMessage = '';
 
             try {
                 if (isAutoScan) {
@@ -1158,11 +1164,12 @@
                     scanStep.innerText = 'Fetching shared market snapshot...';
                     progressBar.style.width = '25%';
 
-                    const batch = await scanPairsBatchFromBackend(allAutoPairs);
+                    const batch = await scanPairsBatchFromBackend(eligiblePairs);
                     if (!batch) {
                         throw new Error('Shared batch scan timed out or failed.');
                     }
 
+                    scanDiagnostics = batch.diagnostics || null;
                     const eligibleSet = new Set(eligiblePairs);
                     const rawResults = batch.results;
                     let processed = 0;
@@ -1205,7 +1212,8 @@
                 }
             } catch (error) {
                 console.error('Deep scan failed:', error);
-                scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>Scan failed</span><span>${error.message}</span></div>`;
+                scanFailureMessage = error && error.message ? error.message : 'Unknown scan error';
+                scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>Scan failed</span><span>${scanFailureMessage}</span></div>`;
             } finally {
                 scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
                 scanBtn.disabled = false;
@@ -1218,8 +1226,27 @@
                 } else {
                     document.getElementById('scanView').style.display = 'none';
                     document.getElementById('noSignalView').style.display = 'flex';
-                    document.getElementById('noSignalTitle').innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
-                    document.getElementById('noSignalDesc').innerText = 'The shared market snapshot was checked, but no pair reached the required selected-expiry confirmation.';
+                    const titleEl = document.getElementById('noSignalTitle');
+                    const descEl = document.getElementById('noSignalDesc');
+
+                    if (scanFailureMessage) {
+                        titleEl.innerText = '⚠️ SCAN REQUEST FAILED';
+                        descEl.innerText = scanFailureMessage;
+                    } else if (isAutoScan && scanDiagnostics) {
+                        const total = Number(scanDiagnostics.total_pairs || eligiblePairs.length || 0);
+                        const dataOk = Number(scanDiagnostics.data_available || 0);
+                        const dataBad = Number(scanDiagnostics.data_unavailable || 0);
+                        if (total > 0 && dataOk === 0) {
+                            titleEl.innerText = '⚠️ YAHOO DATA TEMPORARILY UNAVAILABLE';
+                            descEl.innerText = `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
+                        } else {
+                            titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${dataBad ? `; ${dataBad} unavailable` : ''}. None passed the 4-of-6 + ${selectedExpiry} confirmation on the current closed candles.`;
+                        }
+                    } else {
+                        titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                        descEl.innerText = `Current candles did not pass the 4-of-6 + ${selectedExpiry} confirmation.`;
+                    }
                 }
             }, 250);
         }
