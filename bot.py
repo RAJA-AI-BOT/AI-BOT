@@ -159,12 +159,16 @@ DUPLICATE_SIGNAL_COOLDOWN = 0
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
-LICENSE_FILE = BASE_DIR / "licenses.json"
+DATA_DIR = Path(os.environ.get("RAJA_DATA_DIR", str(BASE_DIR))).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+LICENSE_FILE = DATA_DIR / "licenses.json"
+LICENSE_META_FILE = DATA_DIR / "license_meta.json"
 license_lock = threading.RLock()
 
 ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
 
-SIGNALS_FILE = BASE_DIR / "signals.json"
+SIGNALS_FILE = DATA_DIR / "signals.json"
 signals_lock = threading.RLock()
 AUTO_TRACK_EXPIRIES = {
     "1m": 60,
@@ -174,47 +178,56 @@ AUTO_TRACK_EXPIRIES = {
     "30m": 1800,
 }
 
-DEFAULT_LICENSES = {
-    "RAJA-VIP-2026-X99": {
-        "active": True, "user": None, "device": None, "created_at": None
-    },
-    "RAJA-VIP-PRO-777": {
-        "active": True, "user": None, "device": None, "created_at": None
-    },
-    "RAJA-AI-MASTERKEY": {
-        "active": True, "user": None, "device": None, "created_at": None
-    },
-}
+# No built-in/customer license keys ship with the app anymore.
+DEFAULT_LICENSES = {}
+
+# One-time migration token. This deliberately clears all legacy/built-in keys
+# from older releases. Generated keys created after this migration are kept.
+LICENSE_RESET_TOKEN = os.environ.get(
+    "RAJA_LICENSE_RESET_TOKEN",
+    "raja-license-store-reset-2026-08-11-v1",
+)
+
+
+def initialize_license_store():
+    with license_lock:
+        current_token = None
+        if LICENSE_META_FILE.exists():
+            try:
+                meta = json.loads(LICENSE_META_FILE.read_text(encoding="utf-8"))
+                if isinstance(meta, dict):
+                    current_token = meta.get("reset_token")
+            except Exception:
+                current_token = None
+
+        if current_token != LICENSE_RESET_TOKEN:
+            # User requested a clean start: remove every legacy license once.
+            LICENSE_FILE.write_text("{}", encoding="utf-8")
+            LICENSE_META_FILE.write_text(
+                json.dumps({
+                    "reset_token": LICENSE_RESET_TOKEN,
+                    "reset_at": int(time.time()),
+                }, indent=2),
+                encoding="utf-8",
+            )
+        elif not LICENSE_FILE.exists():
+            LICENSE_FILE.write_text("{}", encoding="utf-8")
 
 
 def load_licenses():
     with license_lock:
         if not LICENSE_FILE.exists():
-            LICENSE_FILE.write_text(
-                json.dumps(DEFAULT_LICENSES, indent=2),
-                encoding="utf-8",
-            )
-            return {k: dict(v) for k, v in DEFAULT_LICENSES.items()}
+            LICENSE_FILE.write_text("{}", encoding="utf-8")
+            return {}
 
         try:
             data = json.loads(LICENSE_FILE.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("Invalid license database")
+            return data
         except Exception:
-            data = {k: dict(v) for k, v in DEFAULT_LICENSES.items()}
-
-        changed = False
-        for key, value in DEFAULT_LICENSES.items():
-            if key not in data:
-                data[key] = dict(value)
-                changed = True
-
-        if changed:
-            LICENSE_FILE.write_text(
-                json.dumps(data, indent=2),
-                encoding="utf-8",
-            )
-        return data
+            LICENSE_FILE.write_text("{}", encoding="utf-8")
+            return {}
 
 
 def save_licenses(data):
@@ -222,6 +235,9 @@ def save_licenses(data):
         temp = LICENSE_FILE.with_suffix(".tmp")
         temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         temp.replace(LICENSE_FILE)
+
+
+initialize_license_store()
 
 
 
@@ -1181,6 +1197,16 @@ def home():
     )
 
 
+@app.after_request
+def disable_html_cache(response):
+    # Prevent stale index.html/inline JS from surviving a new Render deploy.
+    if request.path == "/" or request.path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 @app.route("/health", methods=["GET"])
 def health():
     with cache_lock:
@@ -1300,12 +1326,10 @@ def admin_generate_key():
     })
 
 
-@app.route("/admin/revoke-key", methods=["POST"])
-def admin_revoke_key():
+@app.route("/admin/licenses", methods=["POST"])
+def admin_list_licenses():
     data = request.get_json(silent=True) or {}
-
     password = str(data.get("password", ""))
-    key = str(data.get("key", "")).strip()
 
     if password != ADMIN_PASSWORD:
         return jsonify({
@@ -1314,21 +1338,99 @@ def admin_revoke_key():
         }), 403
 
     licenses = load_licenses()
+    rows = []
+    for key, record in licenses.items():
+        record = record if isinstance(record, dict) else {}
+        rows.append({
+            "key": key,
+            "active": bool(record.get("active", False)),
+            "user": record.get("user"),
+            "device": record.get("device"),
+            "created_at": record.get("created_at"),
+            "last_verified_at": record.get("last_verified_at"),
+        })
 
-    if key not in licenses:
-        return jsonify({
-            "status": "error",
-            "message": "License key not found.",
-        }), 404
-
-    licenses[key]["active"] = False
-    licenses[key]["revoked_at"] = int(time.time())
-    save_licenses(licenses)
-
+    rows.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
     return jsonify({
         "status": "success",
-        "message": "License revoked.",
+        "data": rows,
+        "count": len(rows),
+    })
+
+
+def _delete_license_from_request(data):
+    password = str(data.get("password", ""))
+    key = str(data.get("key", "")).strip()
+
+    if password != ADMIN_PASSWORD:
+        return None, (jsonify({
+            "status": "error",
+            "message": "Incorrect admin password.",
+        }), 403)
+
+    if not key:
+        return None, (jsonify({
+            "status": "error",
+            "message": "License key is required.",
+        }), 400)
+
+    licenses = load_licenses()
+    if key not in licenses:
+        return None, (jsonify({
+            "status": "error",
+            "message": "License key not found.",
+        }), 404)
+
+    licenses.pop(key, None)
+    save_licenses(licenses)
+    return key, None
+
+
+@app.route("/admin/delete-key", methods=["POST"])
+def admin_delete_key():
+    data = request.get_json(silent=True) or {}
+    key, error = _delete_license_from_request(data)
+    if error:
+        return error
+    return jsonify({
+        "status": "success",
+        "message": "License removed permanently.",
         "key": key,
+    })
+
+
+@app.route("/admin/revoke-key", methods=["POST"])
+def admin_revoke_key():
+    # Backward-compatible alias: REMOVE now deletes the key completely.
+    data = request.get_json(silent=True) or {}
+    key, error = _delete_license_from_request(data)
+    if error:
+        return error
+    return jsonify({
+        "status": "success",
+        "message": "License removed permanently.",
+        "key": key,
+    })
+
+
+@app.route("/admin/clear-keys", methods=["POST"])
+def admin_clear_keys():
+    data = request.get_json(silent=True) or {}
+    password = str(data.get("password", ""))
+
+    if password != ADMIN_PASSWORD:
+        return jsonify({
+            "status": "error",
+            "message": "Incorrect admin password.",
+        }), 403
+
+    licenses = load_licenses()
+    removed = len(licenses)
+    save_licenses({})
+    return jsonify({
+        "status": "success",
+        "message": "All license keys removed.",
+        "removed": removed,
     })
 
 
