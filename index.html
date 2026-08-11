@@ -682,9 +682,20 @@
                     if (result === "LOSS") resultColor = "#ff3366";
                     if (result === "DRAW") resultColor = "#facc15";
 
-                    html += `<div class="inline-item">
-                        <span>${index + 1}. ${item.pair} (${item.signal}) · ${item.expiry} · <strong style="color:#60efff;">${score}</strong></span>
-                        <span style="color:${resultColor}; font-weight:900;">[${result}]</span>
+                    const sourceLabel = item.result_source === "quotex_manual" ? "QX" : (item.result_source === "yahoo_proxy" ? "YAHOO" : "");
+                    const sourceColor = item.result_source === "quotex_manual" ? "#00ff87" : "#facc15";
+                    const yahooNote = item.result_source === "quotex_manual" && item.yahoo_result && item.yahoo_result !== item.result
+                        ? `<span style="color:#94a3b8; font-size:7.5px;">Yahoo:${item.yahoo_result}</span>`
+                        : "";
+
+                    html += `<div class="inline-item" style="gap:5px;">
+                        <span style="flex:1;">${index + 1}. ${item.pair} (${item.signal}) · ${item.expiry} · <strong style="color:#60efff;">${score}</strong><br>${yahooNote}</span>
+                        <span style="display:flex; align-items:center; gap:3px; flex-wrap:wrap; justify-content:flex-end;">
+                            ${sourceLabel ? `<span style="color:${sourceColor};font-size:7px;font-weight:900;">${sourceLabel}</span>` : ""}
+                            <span style="color:${resultColor}; font-weight:900;">[${result}]</span>
+                            <button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button>
+                            <button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>
+                        </span>
                     </div>`;
                 });
 
@@ -709,6 +720,24 @@
                 </div>`;
             });
             listContainer.innerHTML = html;
+        }
+
+        async function markBackendSignalResult(signalId, outcome) {
+            playClickSound();
+            try {
+                const response = await fetch('/signals/result', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ signal_id: signalId, result: outcome })
+                });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to save Quotex result.');
+                }
+                await refreshTrackedHistory();
+            } catch (error) {
+                alert('❌ ' + error.message);
+            }
         }
 
         function markSignalResult(index, outcome) {
