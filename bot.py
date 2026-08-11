@@ -7,6 +7,7 @@ import json
 import secrets
 import threading
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = Flask(__name__, static_folder=".", template_folder=".")
 CORS(app)
@@ -32,6 +33,7 @@ YAHOO_SYMBOLS = {
     "DOGE-USD": "DOGE-USD",
 
     # ---------------- Crypto OTC proxies ----------------
+    # Yahoo underlying-market proxies; not exact Quotex OTC quotes.
     "Bitcoin (OTC)": "BTC-USD",
     "Ethereum (OTC)": "ETH-USD",
     "Litecoin (OTC)": "LTC-USD",
@@ -41,7 +43,6 @@ YAHOO_SYMBOLS = {
     "Ethereum Classic (OTC)": "ETC-USD",
     "Axie Infinity (OTC)": "AXS-USD",
     "Binance Coin (OTC)": "BNB-USD",
-    "Trump (OTC)": "TRUMP-USD",
     "Polkadot (OTC)": "DOT-USD",
     "Avalanche (OTC)": "AVAX-USD",
     "Chainlink (OTC)": "LINK-USD",
@@ -70,34 +71,32 @@ YAHOO_SYMBOLS = {
     "AUD/NZD": "AUDNZD=X",
     "EUR/CHF": "EURCHF=X",
     "GBP/CHF": "GBPCHF=X",
-    "XAUUSD": "XAUUSD=X",
+    # Gold live reference uses Yahoo gold futures because the old spot-style symbol returned 404.
+    "XAUUSD": "GC=F",
 
-    # ---------------- Forex OTC proxies ----------------
-    "EUR/USD (OTC)": "EURUSD=X",
-    "GBP/USD (OTC)": "GBPUSD=X",
-    "USD/JPY (OTC)": "USDJPY=X",
-    "AUD/USD (OTC)": "AUDUSD=X",
-    "USD/CAD (OTC)": "USDCAD=X",
-    "USD/CHF (OTC)": "USDCHF=X",
-    "NZD/USD (OTC)": "NZDUSD=X",
-    "EUR/GBP (OTC)": "EURGBP=X",
-    "EUR/JPY (OTC)": "EURJPY=X",
-    "GBP/JPY (OTC)": "GBPJPY=X",
-    "AUD/JPY (OTC)": "AUDJPY=X",
-    "EUR/AUD (OTC)": "EURAUD=X",
-    "GBP/AUD (OTC)": "GBPAUD=X",
-    "CAD/JPY (OTC)": "CADJPY=X",
-    "EUR/CAD (OTC)": "EURCAD=X",
-    "GBP/CAD (OTC)": "GBPCAD=X",
-    "NZD/JPY (OTC)": "NZDJPY=X",
-    "AUD/NZD (OTC)": "AUDNZD=X",
-    "EUR/CHF (OTC)": "EURCHF=X",
-    "GBP/CHF (OTC)": "GBPCHF=X",
-    "NZD/CAD (OTC)": "NZDCAD=X",
-    "NZD/CHF (OTC)": "NZDCHF=X",
+    # ---------------- Current Quotex Forex OTC list ----------------
+    # These are Yahoo underlying/FX proxies; exact Quotex OTC candles can differ.
     "USD/BRL (OTC)": "USDBRL=X",
-    "USD/ARS (OTC)": "USDARS=X",
+    "NZD/CHF (OTC)": "NZDCHF=X",
+    "NZD/JPY (OTC)": "NZDJPY=X",
+    "USD/COP (OTC)": "USDCOP=X",
+    "USD/MXN (OTC)": "USDMXN=X",
+    "AUD/NZD (OTC)": "AUDNZD=X",
+    "USD/BDT (OTC)": "USDBDT=X",
+    "USD/DZD (OTC)": "USDDZD=X",
+    "USD/NGN (OTC)": "USDNGN=X",
+    "USD/PHP (OTC)": "USDPHP=X",
+    "USD/PKR (OTC)": "USDPKR=X",
+    "USD/ZAR (OTC)": "USDZAR=X",
     "USD/INR (OTC)": "USDINR=X",
+    "USD/EGP (OTC)": "USDEGP=X",
+    "USD/IDR (OTC)": "USDIDR=X",
+    "USD/ARS (OTC)": "USDARS=X",
+    "GBP/NZD (OTC)": "GBPNZD=X",
+    "EUR/NZD (OTC)": "EURNZD=X",
+    "NZD/USD (OTC)": "NZDUSD=X",
+    "NZD/CAD (OTC)": "NZDCAD=X",
+    "CAD/CHF (OTC)": "CADCHF=X",
 }
 
 ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
@@ -123,16 +122,37 @@ EXPIRY_CONFIRMATION_TIMEFRAME = {
 }
 
 # One Yahoo 1m download per unique symbol; all higher TFs are resampled.
-CACHE_DURATION = 90
-market_cache = {}
-cache_lock = threading.Lock()
+CACHE_DURATION = int(os.environ.get("RAJA_CACHE_SECONDS", "90"))
+STALE_CACHE_MAX_AGE = int(os.environ.get("RAJA_STALE_CACHE_SECONDS", "180"))
+YAHOO_FAILURE_COOLDOWN = int(os.environ.get("RAJA_YAHOO_FAILURE_COOLDOWN", "180"))
+YAHOO_FETCH_CONCURRENCY = max(1, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "2")))
+YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
+BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
+BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
 
-# Duplicate-signal protection.
-# Prevents the same pair/direction from being re-issued from the same
-# multi-timeframe candle context within a short lock window.
+market_cache = {}
+cache_lock = threading.RLock()
+
+symbol_fetch_locks = {}
+symbol_fetch_locks_guard = threading.Lock()
+failed_symbol_until = {}
+failed_symbol_lock = threading.Lock()
+
+yahoo_fetch_semaphore = threading.BoundedSemaphore(YAHOO_FETCH_CONCURRENCY)
+yahoo_pace_lock = threading.Lock()
+last_yahoo_fetch_started = 0.0
+
+batch_cache = {}
+batch_cache_lock = threading.RLock()
+batch_key_locks = {}
+batch_key_locks_guard = threading.Lock()
+
+# Duplicate rotation is handled client-side per browser, so one customer's
+# scan never suppresses another customer's signal.
 recent_signal_lock = threading.Lock()
 recent_signals = {}
-DUPLICATE_SIGNAL_COOLDOWN = 120  # seconds
+DUPLICATE_SIGNAL_COOLDOWN = 0
+
 
 # =========================================================
 # LICENSE STORE
@@ -140,12 +160,12 @@ DUPLICATE_SIGNAL_COOLDOWN = 120  # seconds
 
 BASE_DIR = Path(__file__).resolve().parent
 LICENSE_FILE = BASE_DIR / "licenses.json"
-license_lock = threading.Lock()
+license_lock = threading.RLock()
 
 ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
 
 SIGNALS_FILE = BASE_DIR / "signals.json"
-signals_lock = threading.Lock()
+signals_lock = threading.RLock()
 AUTO_TRACK_EXPIRIES = {
     "1m": 60,
     "2m": 120,
@@ -308,6 +328,8 @@ def resolve_tracked_signal(item):
     item["entry_candle_epoch"] = entry_epoch_actual
     item["exit_candle_epoch"] = exit_epoch_actual
     item["result"] = result
+    item["yahoo_result"] = result
+    item["result_source"] = "yahoo_live"
     item["status"] = "COMPLETED"
     item["resolved_at"] = int(time.time())
     return True
@@ -316,25 +338,36 @@ def resolve_tracked_signal(item):
 def signal_outcome_worker():
     while True:
         try:
-            items = load_signals()
-            changed = False
-            now = int(time.time())
+            with signals_lock:
+                items = load_signals()
+                changed = False
+                now = int(time.time())
 
-            for item in items:
-                if item.get("status") != "PENDING":
-                    continue
+                for item in items:
+                    if item.get("status") != "PENDING":
+                        continue
 
-                expiry_epoch = int(item.get("expiry_epoch", 0))
+                    expiry_epoch = int(item.get("expiry_epoch", 0))
+                    if now < expiry_epoch + 8:
+                        continue
 
-                # Give Yahoo a few seconds after the expiry boundary.
-                if now < expiry_epoch + 8:
-                    continue
+                    pair = str(item.get("pair", ""))
 
-                if resolve_tracked_signal(item):
-                    changed = True
+                    # Yahoo is not the Quotex OTC price feed, so OTC outcomes
+                    # require the user's QX WIN / QX LOSS confirmation.
+                    if "(OTC)" in pair:
+                        item["status"] = "AWAITING_QX"
+                        item["result"] = None
+                        item["result_source"] = "awaiting_quotex"
+                        item["resolved_at"] = now
+                        changed = True
+                        continue
 
-            if changed:
-                save_signals(items)
+                    if resolve_tracked_signal(item):
+                        changed = True
+
+                if changed:
+                    save_signals(items)
 
         except Exception as e:
             print(f"Signal outcome worker error: {e}")
@@ -386,22 +419,99 @@ def fetch_yahoo_1m(symbol):
     return df
 
 
-def update_symbol_cache(symbol):
-    try:
-        df = fetch_yahoo_1m(symbol)
-        if df is None:
+def _get_symbol_fetch_lock(symbol):
+    with symbol_fetch_locks_guard:
+        lock = symbol_fetch_locks.get(symbol)
+        if lock is None:
+            lock = threading.Lock()
+            symbol_fetch_locks[symbol] = lock
+        return lock
+
+
+def _get_batch_key_lock(key):
+    with batch_key_locks_guard:
+        lock = batch_key_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            batch_key_locks[key] = lock
+        return lock
+
+
+def _pace_yahoo_request():
+    global last_yahoo_fetch_started
+    with yahoo_pace_lock:
+        now = time.time()
+        wait_for = YAHOO_MIN_GAP_SECONDS - (now - last_yahoo_fetch_started)
+        if wait_for > 0:
+            time.sleep(wait_for)
+        last_yahoo_fetch_started = time.time()
+
+
+def update_symbol_cache(symbol, force=False):
+    """Refresh one Yahoo symbol with single-flight, pacing and failure cooldown."""
+    now = time.time()
+
+    with cache_lock:
+        cached = market_cache.get(symbol)
+        if cached and not force and (now - cached["timestamp"]) <= CACHE_DURATION:
+            return True
+
+    with failed_symbol_lock:
+        blocked_until = failed_symbol_until.get(symbol, 0)
+
+    if not force and blocked_until > now:
+        with cache_lock:
+            cached = market_cache.get(symbol)
+            if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
+                return True
+        return False
+
+    symbol_lock = _get_symbol_fetch_lock(symbol)
+    with symbol_lock:
+        now = time.time()
+
+        # Another request may have refreshed this symbol while this caller waited.
+        with cache_lock:
+            cached = market_cache.get(symbol)
+            if cached and not force and (now - cached["timestamp"]) <= CACHE_DURATION:
+                return True
+
+        with failed_symbol_lock:
+            blocked_until = failed_symbol_until.get(symbol, 0)
+
+        if not force and blocked_until > now:
+            with cache_lock:
+                cached = market_cache.get(symbol)
+                if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
+                    return True
             return False
 
-        with cache_lock:
-            market_cache[symbol] = {
-                "data": df.copy(),
-                "timestamp": time.time(),
-            }
-        return True
+        try:
+            with yahoo_fetch_semaphore:
+                _pace_yahoo_request()
+                df = fetch_yahoo_1m(symbol)
 
-    except Exception as e:
-        print(f"Yahoo fetch error for {symbol}: {e}")
-        return False
+            if df is None:
+                with failed_symbol_lock:
+                    failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
+                return False
+
+            with cache_lock:
+                market_cache[symbol] = {
+                    "data": df.copy(),
+                    "timestamp": time.time(),
+                }
+
+            with failed_symbol_lock:
+                failed_symbol_until.pop(symbol, None)
+
+            return True
+
+        except Exception as e:
+            with failed_symbol_lock:
+                failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
+            print(f"Yahoo fetch error for {symbol}: {e}")
+            return False
 
 
 def get_market_data(pair):
@@ -418,25 +528,22 @@ def get_market_data(pair):
         if age <= CACHE_DURATION:
             return cached["data"].copy(), age, symbol
 
-    update_symbol_cache(symbol)
+    refreshed = update_symbol_cache(symbol)
 
     with cache_lock:
         cached = market_cache.get(symbol)
 
-    if not cached:
-        return None, None, symbol
+    if cached:
+        age = time.time() - cached["timestamp"]
+        if refreshed or age <= STALE_CACHE_MAX_AGE:
+            return cached["data"].copy(), age, symbol
 
-    age = time.time() - cached["timestamp"]
-    return cached["data"].copy(), age, symbol
+    return None, None, symbol
 
 
 def background_market_poller():
-    """Pre-warm each unique Yahoo symbol without six separate TF requests."""
-    while True:
-        for symbol in UNIQUE_YAHOO_SYMBOLS:
-            update_symbol_cache(symbol)
-            time.sleep(0.75)
-        time.sleep(5)
+    """Disabled intentionally: full-market polling caused Yahoo rate limits."""
+    return
 
 
 def build_timeframe(base_df, minutes):
@@ -1026,14 +1133,6 @@ def calculate_live_indicators(pair, selected_expiry=None):
     aligned_tfs = [r["timeframe"] for r in supporters]
     opposing_tfs = [r["timeframe"] for r in opponents]
 
-    if should_suppress_duplicate(pair, signal, summary):
-        return no_signal_result(
-            pair,
-            "Duplicate signal suppressed; wait for a fresh timeframe context.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
 
     return {
         "pair": pair,
@@ -1064,7 +1163,7 @@ def calculate_live_indicators(pair, selected_expiry=None):
         "confirmation_mode": (
             f"4-of-6 Strong + {required_tf} Required" if required_tf else "4-of-6 Strong"
         ),
-        "duplicate_protection": True,
+        "duplicate_protection": False,
     }
 
 
@@ -1098,6 +1197,10 @@ def health():
         "cache_duration_seconds": CACHE_DURATION,
         "confirmation_mode": "4-of-6 Strong",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
+        "background_full_market_poller": False,
+        "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
+        "yahoo_failure_cooldown_seconds": YAHOO_FAILURE_COOLDOWN,
+        "batch_cache_seconds": BATCH_CACHE_DURATION,
         "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
         "closed_candle_analysis": True,
     })
@@ -1239,20 +1342,14 @@ def track_signal():
     expiry = str(data.get("expiry", "")).strip()
     score = data.get("score")
     timeframe_summary = data.get("timeframe_summary") or {}
+    client_id = str(data.get("client_id", "")).strip()
 
     if pair not in YAHOO_SYMBOLS:
-        return jsonify({
-            "status": "error",
-            "message": "Unsupported pair.",
-        }), 400
+        return jsonify({"status": "error", "message": "Unsupported pair."}), 400
 
     if direction not in {"CALL", "PUT"}:
-        return jsonify({
-            "status": "error",
-            "message": "Signal must be CALL or PUT.",
-        }), 400
+        return jsonify({"status": "error", "message": "Signal must be CALL or PUT."}), 400
 
-    # Yahoo 1m cannot reliably verify 15s/30s outcomes.
     if expiry not in AUTO_TRACK_EXPIRIES:
         return jsonify({
             "status": "success",
@@ -1261,14 +1358,14 @@ def track_signal():
         })
 
     now = int(time.time())
-    entry_epoch = ((now // 60) + 1) * 60
     duration = AUTO_TRACK_EXPIRIES[expiry]
+    entry_epoch = ((now // duration) + 1) * duration
     expiry_epoch = entry_epoch + duration
 
     signal_id = "sig_" + secrets.token_hex(8)
-
     item = {
         "id": signal_id,
+        "client_id": client_id,
         "pair": pair,
         "signal": direction,
         "score": float(score or 0),
@@ -1280,15 +1377,17 @@ def track_signal():
         "exit_price": None,
         "result": None,
         "status": "PENDING",
+        "result_source": "pending",
         "source": "Yahoo Finance",
         "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
         "timeframe_summary": timeframe_summary,
     }
 
-    items = load_signals()
-    items.insert(0, item)
-    items = items[:500]
-    save_signals(items)
+    with signals_lock:
+        items = load_signals()
+        items.insert(0, item)
+        items = items[:1000]
+        save_signals(items)
 
     return jsonify({
         "status": "success",
@@ -1296,7 +1395,54 @@ def track_signal():
         "signal_id": signal_id,
         "entry_epoch": entry_epoch,
         "expiry_epoch": expiry_epoch,
-        "message": "Signal registered. Enter on the next 1-minute candle open.",
+        "message": f"Signal registered. Enter on the next {expiry} candle open.",
+    })
+
+
+@app.route("/signals/result", methods=["POST"])
+def set_signal_result():
+    data = request.get_json(silent=True) or {}
+    signal_id = str(data.get("signal_id", "")).strip()
+    result = str(data.get("result", "")).strip().upper()
+    client_id = str(data.get("client_id", "")).strip()
+
+    if not signal_id or result not in {"WIN", "LOSS", "DRAW"}:
+        return jsonify({
+            "status": "error",
+            "message": "Valid signal_id and WIN/LOSS/DRAW result are required.",
+        }), 400
+
+    with signals_lock:
+        items = load_signals()
+        target = next((x for x in items if x.get("id") == signal_id), None)
+
+        if target is None:
+            return jsonify({"status": "error", "message": "Signal not found."}), 404
+
+        saved_client = str(target.get("client_id", "")).strip()
+        if saved_client and client_id and saved_client != client_id:
+            return jsonify({
+                "status": "error",
+                "message": "This signal belongs to another device session.",
+            }), 403
+
+        if "(OTC)" not in str(target.get("pair", "")):
+            return jsonify({
+                "status": "error",
+                "message": "Manual Quotex result is only used for OTC signals.",
+            }), 400
+
+        target["result"] = result
+        target["status"] = "COMPLETED"
+        target["result_source"] = "quotex_manual"
+        target["resolved_at"] = int(time.time())
+        save_signals(items)
+
+    return jsonify({
+        "status": "success",
+        "signal_id": signal_id,
+        "result": result,
+        "result_source": "quotex_manual",
     })
 
 
@@ -1307,7 +1453,11 @@ def signals_history():
     except Exception:
         limit = 30
 
+    client_id = str(request.args.get("client_id", "")).strip()
     items = load_signals()
+    if client_id:
+        items = [x for x in items if str(x.get("client_id", "")).strip() == client_id]
+
     return jsonify({
         "status": "success",
         "data": items[:limit],
@@ -1324,6 +1474,102 @@ def signals_stats():
     })
 
 
+@app.route("/scan-batch", methods=["POST"])
+def scan_batch():
+    data = request.get_json(silent=True) or {}
+    requested_pairs = data.get("pairs") or []
+    selected_expiry = str(data.get("expiry", "")).strip()
+
+    if not isinstance(requested_pairs, list):
+        return jsonify({"status": "error", "message": "pairs must be an array."}), 400
+
+    pairs = []
+    seen = set()
+    for raw in requested_pairs[:40]:
+        pair = str(raw).strip()
+        if pair in YAHOO_SYMBOLS and pair not in seen:
+            pairs.append(pair)
+            seen.add(pair)
+
+    if not pairs:
+        return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
+
+    key = (selected_expiry, tuple(pairs))
+    now = time.time()
+
+    with batch_cache_lock:
+        cached = batch_cache.get(key)
+        if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
+            payload = cached["payload"]
+            return jsonify({
+                "status": "success",
+                "data": payload["data"],
+                "diagnostics": payload["diagnostics"],
+                "cache_hit": True,
+            })
+
+    key_lock = _get_batch_key_lock(key)
+    with key_lock:
+        now = time.time()
+        with batch_cache_lock:
+            cached = batch_cache.get(key)
+            if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
+                payload = cached["payload"]
+                return jsonify({
+                    "status": "success",
+                    "data": payload["data"],
+                    "diagnostics": payload["diagnostics"],
+                    "cache_hit": True,
+                })
+
+        results_by_pair = {}
+        workers = min(BATCH_SCAN_WORKERS, len(pairs))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            future_map = {
+                pool.submit(calculate_live_indicators, pair, selected_expiry): pair
+                for pair in pairs
+            }
+            for future in as_completed(future_map):
+                pair = future_map[future]
+                try:
+                    results_by_pair[pair] = future.result()
+                except Exception as exc:
+                    print(f"Batch scan error for {pair}: {exc}")
+                    results_by_pair[pair] = no_signal_result(
+                        pair,
+                        "Scan worker failed for this pair.",
+                        symbol=YAHOO_SYMBOLS.get(pair),
+                    )
+
+        results = [results_by_pair[pair] for pair in pairs]
+        data_available = sum(1 for r in results if r.get("data_age") is not None)
+        data_unavailable = len(results) - data_available
+        signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"})
+        diagnostics = {
+            "total_pairs": len(results),
+            "data_available": data_available,
+            "data_unavailable": data_unavailable,
+            "signals_found": signals_found,
+            "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
+            "batch_workers": workers,
+        }
+        payload = {"data": results, "diagnostics": diagnostics}
+
+        with batch_cache_lock:
+            batch_cache[key] = {"timestamp": time.time(), "payload": payload}
+            if len(batch_cache) > 40:
+                oldest = sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]
+                for old_key, _ in oldest:
+                    batch_cache.pop(old_key, None)
+
+        return jsonify({
+            "status": "success",
+            "data": results,
+            "diagnostics": diagnostics,
+            "cache_hit": False,
+        })
+
+
 @app.route("/scan", methods=["POST"])
 def scan_markets():
     data = request.get_json(silent=True) or {}
@@ -1331,28 +1577,10 @@ def scan_markets():
     selected_expiry = str(data.get("expiry", "")).strip()
 
     if not selected_pair or "Auto Scan Best Pair" in selected_pair:
-        best = None
-
-        for pair in ALL_PAIRS:
-            result = calculate_live_indicators(pair, selected_expiry)
-            if result.get("signal") == "NO SIGNAL":
-                continue
-            if best is None or result.get("score", 0) > best.get("score", 0):
-                best = result
-
-        if best is None:
-            return jsonify({
-                "status": "success",
-                "data": {
-                    "pair": None,
-                    "score": 0,
-                    "signal": "NO SIGNAL",
-                    "reason": "No configured pair reached multi-timeframe confluence.",
-                    "timeframes_scanned": list(TIMEFRAMES.keys()),
-                },
-            })
-
-        return jsonify({"status": "success", "data": best})
+        return jsonify({
+            "status": "error",
+            "message": "Auto Scan must use /scan-batch with the selected market pair list.",
+        }), 400
 
     if selected_pair not in YAHOO_SYMBOLS:
         return jsonify({
@@ -1368,11 +1596,6 @@ def scan_markets():
     return jsonify({"status": "success", "data": result})
 
 
-poller_thread = threading.Thread(
-    target=background_market_poller,
-    daemon=True,
-)
-poller_thread.start()
 
 signal_worker_thread = threading.Thread(
     target=signal_outcome_worker,
