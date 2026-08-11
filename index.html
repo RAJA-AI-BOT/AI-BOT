@@ -70,6 +70,7 @@
         .scan-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #00ff87, #00f2fe); border-radius: 6px; transition: width 0.1s linear; box-shadow: 0 0 10px #00ff87; }
         
         .signal-direction { font-size: 20px; font-weight: 900; letter-spacing: 1px; margin: 2px 0; text-transform: uppercase; }
+        .signal-expiry-badge { display:inline-block; margin-left:6px; padding:2px 6px; border:1px solid currentColor; border-radius:5px; font-size:10px; line-height:1.2; vertical-align:middle; letter-spacing:.4px; }
         .dir-up { color: #00ff87; text-shadow: 0 0 14px rgba(0, 255, 135, 0.8); }
         .dir-down { color: #ff3366; text-shadow: 0 0 14px rgba(255, 51, 102, 0.8); }
         .signal-meta { font-size: 9px; color: #cbd5e1; margin-bottom: 2px; font-weight: 600; }
@@ -202,7 +203,7 @@
                     </div>
 
                     <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
-                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Technical Confluence: -- | TF: 15s</div>
+                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
                     <div id="advancedFiltersInfo" class="advanced-filters">
                         <span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span>
                     </div>
@@ -228,7 +229,7 @@
                     <div class="inline-title">⚙️ AI 8-Indicator Settings</div>
                     <div class="inline-list-box">
                         <div class="inline-item"><span>Active Indicators:</span> <span style="color:#00ff87;">8 Layers Active ✔</span></div>
-                        <div class="inline-item"><span>Multi-TF Confirmation:</span> <span style="color:#00ff87;">4 of 6 Strong</span></div>
+                        <div class="inline-item"><span>Multi-TF Confirmation:</span> <span style="color:#00ff87;">4 of 6 + Selected Expiry ✔</span></div>
                         <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
                         <div class="inline-item"><span>Duplicate Protection:</span> <span style="color:#00ff87;">ON ✔</span></div>
                         <div class="inline-item"><span>Auto WIN/LOSS:</span> <span style="color:#00ff87;">1m+ Yahoo ✔</span></div>
@@ -291,9 +292,9 @@
 
                 <label style="margin-top: 6px;">4. Trade Expiry Time</label>
                 <div class="expiry-container">
-                    <button class="expiry-btn active" data-time="15s" onclick="playClickSound(); setExpiry(this, '15s')">15s</button>
+                    <button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this, '15s')">15s</button>
                     <button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this, '30s')">30s</button>
-                    <button class="expiry-btn" data-time="1m" onclick="playClickSound(); setExpiry(this, '1m')">1m</button>
+                    <button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this, '1m')">1m</button>
                     <button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this, '2m')">2m</button>
                     <button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this, '5m')">5m</button>
                     <button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this, '15m')">15m</button>
@@ -337,7 +338,7 @@
         }
 
         let isUserVerified = false; 
-        let selectedExpiry = "15s";
+        let selectedExpiry = "1m";
         let timerInterval = null;
         let scanInterval = null;
         let latestGeneratedKey = "";
@@ -808,31 +809,27 @@
                 ],
                 ForexOTC: [
                     "✨ Auto Scan Best Pair (AI) ✨",
-                    "EUR/USD (OTC)",
-                    "GBP/USD (OTC)",
-                    "USD/JPY (OTC)",
-                    "AUD/USD (OTC)",
-                    "USD/CAD (OTC)",
-                    "USD/CHF (OTC)",
-                    "NZD/USD (OTC)",
-                    "EUR/GBP (OTC)",
-                    "EUR/JPY (OTC)",
-                    "GBP/JPY (OTC)",
-                    "AUD/JPY (OTC)",
-                    "EUR/AUD (OTC)",
-                    "GBP/AUD (OTC)",
-                    "CAD/JPY (OTC)",
-                    "EUR/CAD (OTC)",
-                    "GBP/CAD (OTC)",
-                    "NZD/JPY (OTC)",
-                    "AUD/NZD (OTC)",
-                    "EUR/CHF (OTC)",
-                    "GBP/CHF (OTC)",
-                    "NZD/CAD (OTC)",
-                    "NZD/CHF (OTC)",
                     "USD/BRL (OTC)",
+                    "NZD/CHF (OTC)",
+                    "NZD/JPY (OTC)",
+                    "USD/COP (OTC)",
+                    "USD/MXN (OTC)",
+                    "AUD/NZD (OTC)",
+                    "USD/BDT (OTC)",
+                    "USD/DZD (OTC)",
+                    "USD/NGN (OTC)",
+                    "USD/PHP (OTC)",
+                    "USD/PKR (OTC)",
+                    "USD/ZAR (OTC)",
+                    "USD/INR (OTC)",
+                    "USD/EGP (OTC)",
+                    "USD/IDR (OTC)",
                     "USD/ARS (OTC)",
-                    "USD/INR (OTC)"
+                    "GBP/NZD (OTC)",
+                    "EUR/NZD (OTC)",
+                    "NZD/USD (OTC)",
+                    "NZD/CAD (OTC)",
+                    "CAD/CHF (OTC)"
                 ]
             }
         };
@@ -941,7 +938,7 @@
                 const response = await fetch('/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pair: pair })
+                    body: JSON.stringify({ pair: pair, expiry: selectedExpiry })
                 });
 
                 if (!response.ok) {
@@ -1017,26 +1014,44 @@
             let bestSignalFound = null;
             let highestConfluence = 0;
 
-            for (let currentIndex = 0; currentIndex < pairsToScan.length; currentIndex++) {
-                let currentPair = pairsToScan[currentIndex];
-                let progressPercent = Math.floor(((currentIndex + 1) / pairsToScan.length) * 100);
-                progressBar.style.width = progressPercent + '%';
-                scanStep.innerText = `RAJA AI Multi-TF Scan: ${currentPair} (${currentIndex + 1}/${pairsToScan.length})`;
+            // Controlled parallel scan: faster than one-by-one without hammering Yahoo.
+            // Keep this modest to reduce rate-limit/data-failure risk.
+            const scanConcurrency = Math.min(3, pairsToScan.length);
+            let nextPairIndex = 0;
+            let completedScans = 0;
 
-                let indicatorResult = await scanPairFromBackend(currentPair);
+            async function scanWorker() {
+                while (true) {
+                    const currentIndex = nextPairIndex++;
+                    if (currentIndex >= pairsToScan.length) return;
 
-                if (indicatorResult && indicatorResult.confluence > highestConfluence) {
-                    highestConfluence = indicatorResult.confluence;
-                    bestSignalFound = indicatorResult;
-                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}% - LIVE DATA</span></div>`;
-                } else if (indicatorResult) {
-                    scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
-                } else {
-                    scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>No valid confluence</span></div>`;
+                    const currentPair = pairsToScan[currentIndex];
+                    scanStep.innerText = `RAJA AI FAST Multi-TF Scan: ${currentPair}`;
+
+                    const indicatorResult = await scanPairFromBackend(currentPair);
+                    completedScans += 1;
+
+                    const progressPercent = Math.floor((completedScans / pairsToScan.length) * 100);
+                    progressBar.style.width = progressPercent + '%';
+                    scanStep.innerText = `RAJA AI FAST Multi-TF Scan: ${completedScans}/${pairsToScan.length} completed`;
+
+                    if (indicatorResult && indicatorResult.confluence > highestConfluence) {
+                        highestConfluence = indicatorResult.confluence;
+                        bestSignalFound = indicatorResult;
+                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}% - LIVE DATA</span></div>`;
+                    } else if (indicatorResult) {
+                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
+                    } else {
+                        scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>No valid confluence/data</span></div>`;
+                    }
+
+                    scanConsole.scrollTop = scanConsole.scrollHeight;
                 }
-
-                scanConsole.scrollTop = scanConsole.scrollHeight;
             }
+
+            await Promise.all(
+                Array.from({ length: scanConcurrency }, () => scanWorker())
+            );
 
             scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
             scanBtn.disabled = false;
@@ -1169,8 +1184,8 @@ let isBuy = signalData.dir.includes("CALL");
                 targetPairBox.className = "selected-pair-box pair-glow-buy";
                 targetPairDisplay.style.color = "#00ff87";
                 resDir.className = "signal-direction dir-up";
-                resDir.innerHTML = "⬆ UP (BUY)";
-                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | TF: ${selectedExpiry}`;
+                resDir.innerHTML = `⬆ UP (BUY) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
                 lightOverlay.className = "signal-light-overlay buy-active";
                 signalSvgPath.setAttribute("stroke", "#00ff87");
                 signalSvgPath.setAttribute("d", "M0,60 Q50,20 100,40 T200,15 T300,10");
@@ -1179,8 +1194,8 @@ let isBuy = signalData.dir.includes("CALL");
                 targetPairBox.className = "selected-pair-box pair-glow-sell";
                 targetPairDisplay.style.color = "#ff3366";
                 resDir.className = "signal-direction dir-down";
-                resDir.innerHTML = "⬇ DOWN (SELL)";
-                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | TF: ${selectedExpiry}`;
+                resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
                 lightOverlay.className = "signal-light-overlay sell-active";
                 signalSvgPath.setAttribute("stroke", "#ff3366");
                 signalSvgPath.setAttribute("d", "M0,20 Q50,50 100,30 T200,70 T300,80");
