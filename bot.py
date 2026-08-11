@@ -112,6 +112,16 @@ TIMEFRAMES = {
     "30m": 30,
 }
 
+# Selected trade expiry must be confirmed by the matching analysis timeframe.
+# 15s/30s are intentionally excluded because the base Yahoo feed is 1-minute.
+EXPIRY_CONFIRMATION_TIMEFRAME = {
+    "1m": "1m",
+    "2m": "2m",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+}
+
 # One Yahoo 1m download per unique symbol; all higher TFs are resampled.
 CACHE_DURATION = 90
 market_cache = {}
@@ -883,8 +893,8 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
     }
 
 
-def calculate_live_indicators(pair):
-    """Scan 1m,2m,5m,10m,15m,30m and combine direction/confluence."""
+def calculate_live_indicators(pair, selected_expiry=None):
+    """Scan 1m,2m,5m,10m,15m,30m and require selected-expiry confirmation."""
     if pair not in YAHOO_SYMBOLS:
         return no_signal_result(
             pair,
@@ -977,6 +987,24 @@ def calculate_live_indicators(pair):
             timeframes=summary,
         )
 
+    # The user's selected expiry is a hard confirmation gate.
+    # Example: 1m expiry requires the 1m analysis itself to confirm the final direction.
+    required_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip())
+    if required_tf:
+        required_result = results.get(required_tf) or {}
+        required_signal = required_result.get("signal")
+        if required_signal != signal:
+            return no_signal_result(
+                pair,
+                (
+                    f"Selected expiry {selected_expiry} requires {required_tf} confirmation; "
+                    f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
+                ),
+                symbol=symbol,
+                data_age=data_age,
+                timeframes=summary,
+            )
+
     avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
 
     # Reward agreement without pretending this is a win probability.
@@ -1031,7 +1059,11 @@ def calculate_live_indicators(pair):
         "opposing_timeframes": opposing_tfs,
         "timeframe_summary": summary,
         "multi_tf_agreement": round(agreement_ratio * 100, 1),
-        "confirmation_mode": "4-of-6 Strong",
+        "selected_expiry": selected_expiry,
+        "required_expiry_timeframe": required_tf,
+        "confirmation_mode": (
+            f"4-of-6 Strong + {required_tf} Required" if required_tf else "4-of-6 Strong"
+        ),
         "duplicate_protection": True,
     }
 
@@ -1296,12 +1328,13 @@ def signals_stats():
 def scan_markets():
     data = request.get_json(silent=True) or {}
     selected_pair = str(data.get("pair", "")).strip()
+    selected_expiry = str(data.get("expiry", "")).strip()
 
     if not selected_pair or "Auto Scan Best Pair" in selected_pair:
         best = None
 
         for pair in ALL_PAIRS:
-            result = calculate_live_indicators(pair)
+            result = calculate_live_indicators(pair, selected_expiry)
             if result.get("signal") == "NO SIGNAL":
                 continue
             if best is None or result.get("score", 0) > best.get("score", 0):
@@ -1331,7 +1364,7 @@ def scan_markets():
             ),
         }), 400
 
-    result = calculate_live_indicators(selected_pair)
+    result = calculate_live_indicators(selected_pair, selected_expiry)
     return jsonify({"status": "success", "data": result})
 
 
