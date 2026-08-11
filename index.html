@@ -232,8 +232,8 @@
                         <div class="inline-item"><span>Multi-TF Confirmation:</span> <span style="color:#00ff87;">4 of 6 + Selected Expiry ✔</span></div>
                         <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
                         <div class="inline-item"><span>Duplicate Protection:</span> <span style="color:#00ff87;">ON ✔</span></div>
-                        <div class="inline-item"><span>Auto WIN/LOSS:</span> <span style="color:#00ff87;">1m+ Yahoo ✔</span></div>
-                        <div class="inline-item"><span>Entry Rule:</span> <span style="color:#00ff87;">Next 1m Candle Open ✔</span></div>
+                        <div class="inline-item"><span>OTC Result:</span> <span style="color:#00ff87;">QX WIN/LOSS Required ✔</span></div>
+                        <div class="inline-item"><span>Entry Rule:</span> <span style="color:#00ff87;">Next Selected-TF Candle Open ✔</span></div>
                     </div>
                     <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
                 </div>
@@ -348,6 +348,36 @@
         let activeSignalEntryEpochMs = null;
         let activeTrackedSignalId = null;
         let backendTrackedHistory = [];
+
+        // Auto Scan pair rotation: avoid feeding the same pair repeatedly.
+        // A displayed Auto-Scan signal blocks that pair for 20 minutes, while
+        // manual pair selection remains unrestricted.
+        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 20 * 60 * 1000;
+        let autoPairCooldowns = JSON.parse(localStorage.getItem('raja_auto_pair_cooldowns') || '{}');
+
+        function cleanAutoPairCooldowns() {
+            const now = Date.now();
+            let changed = false;
+            Object.keys(autoPairCooldowns).forEach(pair => {
+                if (!Number(autoPairCooldowns[pair]) || now - Number(autoPairCooldowns[pair]) >= AUTO_PAIR_ROTATION_COOLDOWN_MS) {
+                    delete autoPairCooldowns[pair];
+                    changed = true;
+                }
+            });
+            if (changed) localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
+        }
+
+        function isAutoPairCoolingDown(pair) {
+            cleanAutoPairCooldowns();
+            const usedAt = Number(autoPairCooldowns[pair] || 0);
+            return usedAt > 0 && (Date.now() - usedAt) < AUTO_PAIR_ROTATION_COOLDOWN_MS;
+        }
+
+        function rememberAutoPair(pair) {
+            if (!pair) return;
+            autoPairCooldowns[pair] = Date.now();
+            localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
+        }
 
         const deviceSessionId = localStorage.getItem('raja_device_uid') || ('dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
         localStorage.setItem('raja_device_uid', deviceSessionId);
@@ -676,25 +706,46 @@
 
                 backendTrackedHistory.forEach((item, index) => {
                     const score = Number(item.score || 0).toFixed(1) + "%";
-                    const result = item.result || item.status || "PENDING";
-                    let resultColor = "#60efff";
-                    if (result === "WIN") resultColor = "#00ff87";
-                    if (result === "LOSS") resultColor = "#ff3366";
-                    if (result === "DRAW") resultColor = "#facc15";
+                    const isQxFinal = item.result_source === "quotex_manual";
+                    const isAwaitingQx = item.status === "AWAITING_QX" || item.result_source === "awaiting_quotex";
+                    const isYahooLive = item.result_source === "yahoo_live";
 
-                    const sourceLabel = item.result_source === "quotex_manual" ? "QX" : (item.result_source === "yahoo_proxy" ? "YAHOO" : "");
-                    const sourceColor = item.result_source === "quotex_manual" ? "#00ff87" : "#facc15";
-                    const yahooNote = item.result_source === "quotex_manual" && item.yahoo_result && item.yahoo_result !== item.result
-                        ? `<span style="color:#94a3b8; font-size:7.5px;">Yahoo:${item.yahoo_result}</span>`
+                    let finalLabel = "[PENDING]";
+                    let resultColor = "#60efff";
+                    let sourceLabel = "";
+                    let sourceColor = "#94a3b8";
+
+                    if (isQxFinal && item.result) {
+                        finalLabel = `[${item.result}]`;
+                        resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
+                        sourceLabel = "QX";
+                        sourceColor = "#00ff87";
+                    } else if (isAwaitingQx) {
+                        finalLabel = "[QX RESULT?]";
+                        resultColor = "#60efff";
+                        sourceLabel = "OTC";
+                        sourceColor = "#60efff";
+                    } else if (isYahooLive && item.result) {
+                        finalLabel = `[${item.result}]`;
+                        resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
+                        sourceLabel = "LIVE";
+                        sourceColor = "#facc15";
+                    } else if (item.result) {
+                        finalLabel = `[${item.result}]`;
+                        resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
+                    }
+
+                    const proxyNote = item.yahoo_result
+                        ? `<span style="color:#94a3b8; font-size:7.5px;">Yahoo proxy:${item.yahoo_result}</span>`
                         : "";
+                    const showQxButtons = String(item.pair || "").includes("(OTC)");
 
                     html += `<div class="inline-item" style="gap:5px;">
-                        <span style="flex:1;">${index + 1}. ${item.pair} (${item.signal}) · ${item.expiry} · <strong style="color:#60efff;">${score}</strong><br>${yahooNote}</span>
+                        <span style="flex:1;">${index + 1}. ${item.pair} (${item.signal}) · ${item.expiry} · <strong style="color:#60efff;">${score}</strong><br>${proxyNote}</span>
                         <span style="display:flex; align-items:center; gap:3px; flex-wrap:wrap; justify-content:flex-end;">
                             ${sourceLabel ? `<span style="color:${sourceColor};font-size:7px;font-weight:900;">${sourceLabel}</span>` : ""}
-                            <span style="color:${resultColor}; font-weight:900;">[${result}]</span>
-                            <button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button>
-                            <button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>
+                            <span style="color:${resultColor}; font-weight:900;">${finalLabel}</span>
+                            ${showQxButtons ? `<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>` : ""}
                         </span>
                     </div>`;
                 });
@@ -898,7 +949,13 @@
             document.querySelectorAll('.expiry-btn').forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
             selectedExpiry = time;
-            startTimer(); 
+
+            // Changing expiry means the old signal-entry window no longer applies.
+            // Show the live candle countdown for the newly selected timeframe and
+            // require a fresh scan before another entry instruction is displayed.
+            activeSignalEntryEpochMs = null;
+            activeTrackedSignalId = null;
+            startTimer();
         }
 
         function startTimer() {
@@ -907,8 +964,12 @@
             function tickEntryTimer() {
                 const nowMs = Date.now();
                 const nowSec = Math.floor(nowMs / 1000);
-                const secIntoMinute = nowSec % 60;
-                const secondsToClose = secIntoMinute === 0 ? 60 : 60 - secIntoMinute;
+                const candleSeconds = Math.max(1, getExpirySeconds(selectedExpiry));
+                const secIntoSelectedCandle = nowSec % candleSeconds;
+                const secondsToClose = secIntoSelectedCandle === 0
+                    ? candleSeconds
+                    : candleSeconds - secIntoSelectedCandle;
+                const tfLabel = selectedExpiry.toUpperCase();
 
                 updateTimerDisplay(secondsToClose);
 
@@ -921,13 +982,13 @@
                     const deltaMs = nowMs - activeSignalEntryEpochMs;
 
                     if (deltaMs < 0) {
-                        candleStatus.innerText = "SIGNAL CONFIRMED — WAIT FOR CURRENT 1M CANDLE TO CLOSE:";
-                        tradeAlert.innerText = "⏳ WAIT — ENTER ON NEXT CANDLE OPEN";
+                        candleStatus.innerText = `SIGNAL CONFIRMED — WAIT FOR CURRENT ${tfLabel} CANDLE TO CLOSE:`;
+                        tradeAlert.innerText = `⏳ WAIT — ENTER ON NEXT ${tfLabel} CANDLE OPEN`;
                         tradeAlert.style.display = "block";
                         tradeAlert.style.color = "#60efff";
                     } else if (deltaMs <= 4000) {
-                        candleStatus.innerText = "NEW 1M CANDLE OPENED:";
-                        tradeAlert.innerText = "✅ ENTER NOW — NEW CANDLE";
+                        candleStatus.innerText = `NEW ${tfLabel} CANDLE OPENED:`;
+                        tradeAlert.innerText = `✅ ENTER NOW — NEW ${tfLabel} CANDLE`;
                         tradeAlert.style.display = "block";
                         tradeAlert.style.color = "#00ff87";
                     } else {
@@ -937,7 +998,7 @@
                         tradeAlert.style.color = "#ff3366";
                     }
                 } else {
-                    candleStatus.innerText = "CURRENT 1M CANDLE — WAIT FOR CLOSE:";
+                    candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — WAIT FOR CLOSE:`;
                     tradeAlert.style.display = "none";
                 }
             }
@@ -1016,8 +1077,22 @@
             startTimer();
 
             let pairsToScan = [];
-            if (selectedPair.includes('Auto Scan') || selectedPair === '') {
-                pairsToScan = brokerData[broker][market].slice(1);
+            const isAutoScan = selectedPair.includes('Auto Scan') || selectedPair === '';
+            if (isAutoScan) {
+                const allAutoPairs = brokerData[broker][market].slice(1);
+                cleanAutoPairCooldowns();
+                pairsToScan = allAutoPairs.filter(pair => !isAutoPairCoolingDown(pair));
+
+                // If every pair is cooling down, do not silently repeat the same pair.
+                // The user can wait for the cooldown or manually select a pair.
+                if (pairsToScan.length === 0) {
+                    showDefaultView();
+                    document.getElementById('defaultView').style.display = 'none';
+                    document.getElementById('noSignalView').style.display = 'flex';
+                    document.getElementById('noSignalTitle').innerText = '⏳ AUTO PAIR ROTATION COOLDOWN';
+                    document.getElementById('noSignalDesc').innerText = 'Recently signaled OTC pairs are cooling down. Wait a little or choose a pair manually.';
+                    return;
+                }
             } else {
                 pairsToScan = [selectedPair];
             }
@@ -1032,7 +1107,8 @@
         if (tfLineReset) tfLineReset.innerText = 'Multi-TF: scanning backend timeframes...';
 
             let scanConsole = document.getElementById('liveScanConsole');
-            scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 RAJA AI BOT DEEP SCAN: ${pairsToScan.length} ASSETS...</div>`;
+            const rotationNote = isAutoScan ? ' · RECENT PAIRS ROTATED OUT' : '';
+            scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 RAJA AI BOT DEEP SCAN: ${pairsToScan.length} ASSETS${rotationNote}...</div>`;
 
             let progressBar = document.getElementById('scanProgressBar');
             let scanStep = document.getElementById('scanStepText');
@@ -1087,6 +1163,7 @@
 
             setTimeout(() => {
                 if (bestSignalFound) {
+                    if (isAutoScan) rememberAutoPair(bestSignalFound.pair);
                     displaySignalResult(bestSignalFound);
                 } else {
                     document.getElementById('scanView').style.display = 'none';
@@ -1102,8 +1179,10 @@
         async function registerSignalForTracking(signalData) {
             const direction = signalData.dir.includes("CALL") ? "CALL" : "PUT";
 
-            // Predict next minute immediately for the entry UI; backend returns authoritative epoch.
-            activeSignalEntryEpochMs = (Math.floor(Date.now() / 60000) + 1) * 60000;
+            // Predict the next selected-timeframe candle boundary immediately;
+            // backend returns the authoritative epoch for 1m+ tracking.
+            const selectedTfMs = getExpirySeconds(selectedExpiry) * 1000;
+            activeSignalEntryEpochMs = (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
             startTimer();
 
             try {
