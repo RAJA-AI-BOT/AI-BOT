@@ -313,28 +313,43 @@
         </div>
 
         <div id="adminPanel" class="panel-box">
-            <h3 style="color: #60efff; margin-bottom: 6px; font-size: 13px; text-align: center;">🔑 VIP KEY GENERATOR (ADMIN)</h3>
-            <input type="text" id="adminTelegramId" class="input-field" placeholder="User Telegram ID / UID" style="margin-bottom: 6px;">
-            <input type="password" id="adminPasswordInput" class="input-field" placeholder="Admin Password">
-            <button class="action-btn" onclick="generateKey()">GENERATE LICENSE KEY</button>
-            <p id="generatedKeyDisplay" style="margin-top: 10px; font-weight: bold; text-align: center; font-size: 11px; color: #00ff87; word-break: break-all;"></p>
-            <button id="copyKeyBtn" class="copy-key-btn" onclick="copyGeneratedKey()">📋 COPY LICENSE KEY</button>
+            <h3 style="color: #60efff; margin-bottom: 6px; font-size: 13px; text-align: center;">🔑 VIP LICENSE ADMIN</h3>
+            <input type="password" id="adminPasswordInput" class="input-field" placeholder="Admin Password" autocomplete="current-password">
+            <button class="utility-btn" style="width:100%; margin-top:6px;" onclick="refreshAdminLicenses()">🔄 LOAD / REFRESH LICENSES</button>
+
+            <div style="margin-top: 10px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
+                <input type="text" id="adminTelegramId" class="input-field" placeholder="User Telegram ID / UID">
+                <button class="action-btn" onclick="generateKey()">GENERATE NEW LICENSE KEY</button>
+                <p id="generatedKeyDisplay" style="margin-top: 10px; font-weight: bold; text-align: center; font-size: 11px; color: #00ff87; word-break: break-all;"></p>
+                <button id="copyKeyBtn" class="copy-key-btn" onclick="copyGeneratedKey()">📋 COPY LICENSE KEY</button>
+            </div>
 
             <div style="margin-top: 14px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
-                <h4 style="color: #00ff87; font-size: 11px; margin-bottom: 6px; text-transform: uppercase;">👥 Active Logged-In Users & Keys</h4>
+                <h4 style="color: #00ff87; font-size: 11px; margin-bottom: 6px; text-transform: uppercase;">👥 ALL GENERATED LICENSES</h4>
                 <div id="adminUsersList" class="admin-users-box">
-                    <div style="color: #94a3b8; text-align: center; padding: 4px;">No active users logged in yet.</div>
+                    <div style="color: #94a3b8; text-align: center; padding: 4px;">Enter admin password and click LOAD / REFRESH LICENSES.</div>
                 </div>
+                <button class="action-btn" style="margin-top:8px; background:#7f1d1d;" onclick="clearAllLicenses()">🗑 CLEAR ALL LICENSE KEYS</button>
             </div>
         </div>
     </div>
 
     <script>
-        const KEY_VERSION = "v2";
+        const KEY_VERSION = "v4-admin-reset";
 
         if (localStorage.getItem('raja_key_version') !== KEY_VERSION) {
             localStorage.clear();
             localStorage.setItem('raja_key_version', KEY_VERSION);
+        }
+
+        function safeJsonParse(value, fallback) {
+            try {
+                if (!value) return fallback;
+                const parsed = JSON.parse(value);
+                return parsed == null ? fallback : parsed;
+            } catch (e) {
+                return fallback;
+            }
         }
 
         let isUserVerified = false; 
@@ -343,7 +358,7 @@
         let scanInterval = null;
         let latestGeneratedKey = "";
         let audioCtx = null;
-        let dynamicHistory = JSON.parse(localStorage.getItem('raja_signal_history')) || [];
+        let dynamicHistory = safeJsonParse(localStorage.getItem('raja_signal_history'), []);
         let soundEnabled = true;
         let activeSignalEntryEpochMs = null;
         let activeTrackedSignalId = null;
@@ -353,7 +368,7 @@
         // A displayed Auto-Scan signal blocks that pair for 20 minutes, while
         // manual pair selection remains unrestricted.
         const AUTO_PAIR_ROTATION_COOLDOWN_MS = 20 * 60 * 1000;
-        let autoPairCooldowns = JSON.parse(localStorage.getItem('raja_auto_pair_cooldowns') || '{}');
+        let autoPairCooldowns = safeJsonParse(localStorage.getItem('raja_auto_pair_cooldowns'), {});
 
         function cleanAutoPairCooldowns() {
             const now = Date.now();
@@ -469,29 +484,44 @@
         }, 1500);
 
         function checkRoute() {
-            if (window.location.hash === "#admin") {
-                document.getElementById('adminPanel').style.display = "block";
-                document.getElementById('mainAppContent').style.display = "none";
-                document.getElementById('activationScreen').style.display = "none";
-                renderAdminUsersList();
+            const isAdminRoute = String(window.location.hash || '').trim().toLowerCase() === '#admin';
+            const adminPanel = document.getElementById('adminPanel');
+            const mainApp = document.getElementById('mainAppContent');
+            const activation = document.getElementById('activationScreen');
+
+            if (!adminPanel || !mainApp || !activation) return;
+
+            if (isAdminRoute) {
+                adminPanel.style.display = "block";
+                mainApp.style.display = "none";
+                activation.style.display = "none";
+                return;
+            }
+
+            adminPanel.style.display = "none";
+            const savedKey = localStorage.getItem('raja_active_key');
+            if (savedKey && localStorage.getItem('raja_session_' + savedKey) === deviceSessionId) {
+                isUserVerified = true;
+            }
+
+            if (isUserVerified) {
+                mainApp.style.display = "block";
+                activation.style.display = "none";
+                updateBrokerAssets();
+                startTimer();
             } else {
-                document.getElementById('adminPanel').style.display = "none";
-                let savedKey = localStorage.getItem('raja_active_key');
-                if (savedKey && localStorage.getItem('raja_session_' + savedKey) === deviceSessionId) {
-                    isUserVerified = true;
-                }
-                if (isUserVerified) {
-                    document.getElementById('mainAppContent').style.display = "block";
-                    document.getElementById('activationScreen').style.display = "none";
-                    updateBrokerAssets();
-                } else {
-                    document.getElementById('mainAppContent').style.display = "none";
-                    document.getElementById('activationScreen').style.display = "block";
-                }
+                mainApp.style.display = "none";
+                activation.style.display = "block";
             }
         }
-        window.addEventListener('load', checkRoute);
+
         window.addEventListener('hashchange', checkRoute);
+        window.addEventListener('pageshow', checkRoute);
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkRoute, { once: true });
+        } else {
+            checkRoute();
+        }
 
         async function verifyAccess() {
             playClickSound();
@@ -598,6 +628,7 @@
                 display.innerHTML = "User: " + result.user + "<br>Key: " + result.key;
                 display.style.color = "#00ff87";
                 copyBtn.style.display = "block";
+                await refreshAdminLicenses();
 
             } catch (error) {
                 latestGeneratedKey = "";
@@ -614,70 +645,124 @@
             }
         }
 
-        function renderAdminUsersList() {
-            let listContainer = document.getElementById('adminUsersList');
-            if (!listContainer) return;
-            let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
-            let keys = Object.keys(allActiveUsers);
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[ch]));
+        }
 
-            if (keys.length === 0) {
-                listContainer.innerHTML = `<div style="color: #94a3b8; text-align: center; padding: 4px; font-size:10px;">No active users logged in yet.</div>`;
+        async function refreshAdminLicenses() {
+            const listContainer = document.getElementById('adminUsersList');
+            const pass = document.getElementById('adminPasswordInput').value;
+            if (!listContainer) return;
+
+            if (!pass) {
+                listContainer.innerHTML = `<div style="color:#ff3366;text-align:center;padding:4px;">Enter admin password first.</div>`;
                 return;
             }
 
-            let html = "";
-            keys.forEach(key => {
-                let data = allActiveUsers[key];
-                html += `<div class="admin-user-row">
-                    <div><strong>${data.user}</strong><br><span style="color:#60efff; font-size:8.5px;">${key}</span></div>
-                    <button class="remove-user-btn" onclick="removeUserAccess('${key}')">REMOVE</button>
-                </div>`;
-            });
-            listContainer.innerHTML = html;
+            listContainer.innerHTML = `<div style="color:#60efff;text-align:center;padding:4px;">Loading licenses...</div>`;
+            try {
+                const response = await fetch('/admin/licenses', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pass })
+                });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to load licenses.');
+                }
+
+                const rows = Array.isArray(result.data) ? result.data : [];
+                if (!rows.length) {
+                    listContainer.innerHTML = `<div style="color:#94a3b8;text-align:center;padding:4px;">No license keys. Generate a new key.</div>`;
+                    return;
+                }
+
+                listContainer.innerHTML = rows.map(item => {
+                    const user = escapeHtml(item.user || 'Not assigned');
+                    const key = escapeHtml(item.key || '');
+                    const bound = item.device ? 'BOUND' : 'UNBOUND';
+                    const status = item.active ? 'ACTIVE' : 'INACTIVE';
+                    return `<div class="admin-user-row">
+                        <div style="min-width:0;overflow:hidden;">
+                            <strong>${user}</strong><br>
+                            <span style="color:#60efff;font-size:8.5px;word-break:break-all;">${key}</span><br>
+                            <span style="color:#94a3b8;font-size:8px;">${status} · ${bound}</span>
+                        </div>
+                        <button class="remove-user-btn" data-key="${key}" onclick="removeUserAccess(this.dataset.key)">REMOVE</button>
+                    </div>`;
+                }).join('');
+            } catch (error) {
+                listContainer.innerHTML = `<div style="color:#ff3366;text-align:center;padding:4px;">❌ ${escapeHtml(error.message)}</div>`;
+            }
         }
 
         async function removeUserAccess(key) {
-            if (!confirm("Are you sure you want to revoke this license?")) return;
-
+            if (!confirm("Remove this license permanently?")) return;
             const pass = document.getElementById('adminPasswordInput').value;
-
             if (!pass) {
                 alert("Enter admin password first.");
                 return;
             }
 
             try {
-                const response = await fetch('/admin/revoke-key', {
+                const response = await fetch('/admin/delete-key', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        password: pass,
-                        key: key
-                    })
+                    body: JSON.stringify({ password: pass, key: key })
                 });
-
                 const result = await response.json();
-
                 if (!response.ok || !result || result.status !== 'success') {
-                    throw new Error((result && result.message) || 'Unable to revoke license.');
+                    throw new Error((result && result.message) || 'Unable to remove license.');
                 }
-
-                let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
-                delete allActiveUsers[key];
-                localStorage.setItem('raja_active_users_list', JSON.stringify(allActiveUsers));
 
                 if (localStorage.getItem('raja_active_key') === key) {
                     localStorage.removeItem('raja_active_key');
+                    localStorage.removeItem('raja_active_user');
                 }
                 localStorage.removeItem('raja_session_' + key);
-
-                renderAdminUsersList();
-                alert("✅ License revoked by backend.");
-
+                await refreshAdminLicenses();
+                alert("✅ License removed permanently.");
             } catch (error) {
                 alert("❌ " + error.message);
             }
         }
+
+        async function clearAllLicenses() {
+            if (!confirm("WARNING: Remove ALL license keys? Every customer key will stop working.")) return;
+            const pass = document.getElementById('adminPasswordInput').value;
+            if (!pass) {
+                alert("Enter admin password first.");
+                return;
+            }
+            try {
+                const response = await fetch('/admin/clear-keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pass })
+                });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to clear licenses.');
+                }
+                localStorage.removeItem('raja_active_key');
+                localStorage.removeItem('raja_active_user');
+                await refreshAdminLicenses();
+                alert(`✅ Removed ${Number(result.removed || 0)} license key(s).`);
+            } catch (error) {
+                alert("❌ " + error.message);
+            }
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && String(window.location.hash || '').toLowerCase() === '#admin') {
+                const active = document.activeElement;
+                if (active && active.id === 'adminPasswordInput') {
+                    refreshAdminLicenses();
+                }
+            }
+        });
 
         function showDefaultView() {
             document.getElementById('historyInlineView').style.display = "none";
@@ -1146,3 +1231,254 @@
 
             showDefaultView();
             document.getElementById('defaultView').style.display = 'none';
+            document.getElementById('scanView').style.display = 'block';
+
+            const tfBoxReset = document.getElementById('tfBreakdown');
+            const tfLineReset = document.getElementById('tfSummaryLine');
+            if (tfBoxReset) tfBoxReset.innerHTML = '';
+            if (tfLineReset) tfLineReset.innerText = 'Multi-TF: scanning backend timeframes...';
+
+            let scanConsole = document.getElementById('liveScanConsole');
+            let progressBar = document.getElementById('scanProgressBar');
+            let scanStep = document.getElementById('scanStepText');
+            let scanBtn = document.getElementById('scanBtn');
+            scanBtn.innerText = '▶ RAJA AI BOT DEEP SCAN...';
+            scanBtn.disabled = true;
+            progressBar.style.width = '8%';
+
+            let bestSignalFound = null;
+            let highestConfluence = 0;
+            let scanDiagnostics = null;
+            let scanFailureMessage = '';
+
+            try {
+                if (isAutoScan) {
+                    // One shared batch request replaces 21 browser requests. The backend
+                    // caches this market snapshot so many users reuse the same scan.
+                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SHARED MULTI-USER SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
+                    scanStep.innerText = 'Fetching shared market snapshot...';
+                    progressBar.style.width = '25%';
+
+                    const batch = await scanPairsBatchFromBackend(eligiblePairs);
+
+                    scanDiagnostics = batch.diagnostics || null;
+                    const eligibleSet = new Set(eligiblePairs);
+                    const rawResults = batch.results;
+                    let processed = 0;
+
+                    rawResults.forEach(raw => {
+                        const pair = raw && raw.pair ? raw.pair : 'Unknown';
+                        if (!eligibleSet.has(pair)) return;
+                        processed += 1;
+                        const normalized = normalizeBackendSignal(raw, pair);
+
+                        if (normalized && normalized.confluence > highestConfluence) {
+                            highestConfluence = normalized.confluence;
+                            bestSignalFound = normalized;
+                        }
+
+                        if (normalized) {
+                            scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${pair}</span> <span>${normalized.confluence}%</span></div>`;
+                        } else {
+                            scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${pair}</span> <span>No valid confluence/data</span></div>`;
+                        }
+                    });
+
+                    scanStep.innerText = `Shared scan complete: ${processed}/${eligiblePairs.length} eligible${batch.cacheHit ? ' · CACHE HIT' : ''}`;
+                    progressBar.style.width = '100%';
+                    scanConsole.scrollTop = scanConsole.scrollHeight;
+                } else {
+                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SCANNING ${selectedPair}...</div>`;
+                    scanStep.innerText = `RAJA AI Multi-TF Scan: ${selectedPair}`;
+                    progressBar.style.width = '35%';
+
+                    const indicatorResult = await scanPairFromBackend(selectedPair);
+                    progressBar.style.width = '100%';
+                    if (indicatorResult) {
+                        bestSignalFound = indicatorResult;
+                        highestConfluence = indicatorResult.confluence;
+                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${selectedPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
+                    } else {
+                        scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${selectedPair}</span> <span>No valid confluence/data</span></div>`;
+                    }
+                }
+            } catch (error) {
+                console.error('Deep scan failed:', error);
+                scanFailureMessage = error && error.message ? error.message : 'Unknown scan error';
+                scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>Scan failed</span><span>${scanFailureMessage}</span></div>`;
+            } finally {
+                scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
+                scanBtn.disabled = false;
+            }
+
+            setTimeout(() => {
+                if (bestSignalFound) {
+                    if (isAutoScan) rememberAutoPair(bestSignalFound.pair);
+                    displaySignalResult(bestSignalFound);
+                } else {
+                    document.getElementById('scanView').style.display = 'none';
+                    document.getElementById('noSignalView').style.display = 'flex';
+                    const titleEl = document.getElementById('noSignalTitle');
+                    const descEl = document.getElementById('noSignalDesc');
+
+                    if (scanFailureMessage) {
+                        titleEl.innerText = '⚠️ SCAN REQUEST FAILED';
+                        descEl.innerText = scanFailureMessage;
+                    } else if (isAutoScan && scanDiagnostics) {
+                        const total = Number(scanDiagnostics.total_pairs || eligiblePairs.length || 0);
+                        const dataOk = Number(scanDiagnostics.data_available || 0);
+                        const dataBad = Number(scanDiagnostics.data_unavailable || 0);
+                        if (total > 0 && dataOk === 0) {
+                            titleEl.innerText = '⚠️ YAHOO DATA TEMPORARILY UNAVAILABLE';
+                            descEl.innerText = `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
+                        } else {
+                            titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${dataBad ? `; ${dataBad} unavailable` : ''}. None passed the 4-of-6 + ${selectedExpiry} confirmation on the current closed candles.`;
+                        }
+                    } else {
+                        titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                        descEl.innerText = `Current candles did not pass the 4-of-6 + ${selectedExpiry} confirmation.`;
+                    }
+                }
+            }, 250);
+        }
+
+
+        async function registerSignalForTracking(signalData) {
+            const direction = signalData.dir.includes("CALL") ? "CALL" : "PUT";
+
+            // Predict the next selected-timeframe candle boundary immediately;
+            // backend returns the authoritative epoch for 1m+ tracking.
+            const selectedTfMs = getExpirySeconds(selectedExpiry) * 1000;
+            activeSignalEntryEpochMs = (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
+            startTimer();
+
+            try {
+                const response = await fetch('/track-signal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pair: signalData.pair,
+                        signal: direction,
+                        score: signalData.confluence,
+                        expiry: selectedExpiry,
+                        timeframe_summary: signalData.timeframeSummary || {},
+                        client_id: deviceSessionId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result && result.status === 'success' && result.auto_tracking) {
+                    activeTrackedSignalId = result.signal_id;
+                    activeSignalEntryEpochMs = Number(result.entry_epoch) * 1000;
+                    startTimer();
+                } else if (result && result.status === 'success' && !result.auto_tracking) {
+                    activeTrackedSignalId = null;
+                }
+            } catch (error) {
+                console.error("Signal tracking error:", error);
+            }
+        }
+
+        async function refreshTrackedHistory() {
+            try {
+                const response = await fetch('/signals/history?limit=20&client_id=' + encodeURIComponent(deviceSessionId));
+                const result = await response.json();
+
+                if (response.ok && result && result.status === 'success') {
+                    backendTrackedHistory = Array.isArray(result.data) ? result.data : [];
+                    renderHistoryList();
+                }
+            } catch (error) {
+                console.error("History refresh error:", error);
+            }
+        }
+
+        function renderTimeframeBreakdown(signalData) {
+            const box = document.getElementById('tfBreakdown');
+            const line = document.getElementById('tfSummaryLine');
+            if (!box || !line) return;
+
+            const summary = signalData.timeframeSummary || {};
+            const order = ['1m', '2m', '5m', '10m', '15m', '30m'];
+
+            box.innerHTML = order.map(tf => {
+                const item = summary[tf] || {};
+                const sig = item.signal || 'NO SIGNAL';
+                const score = Number(item.score || 0);
+                const cls = sig === 'CALL' ? 'tf-call' : (sig === 'PUT' ? 'tf-put' : 'tf-none');
+                const label = sig === 'CALL' ? 'CALL' : (sig === 'PUT' ? 'PUT' : 'NO');
+                const scoreText = score > 0 ? ` ${score.toFixed(0)}` : '';
+                return `<span class="tf-chip ${cls}">${tf}: ${label}${scoreText}</span>`;
+            }).join('');
+
+            const agreement = Number(signalData.multiTfAgreement);
+            const agreementText = Number.isFinite(agreement) ? agreement.toFixed(1) + '%' : '--';
+            line.innerText = `Multi-TF Agreement: ${agreementText} | Mode: ${signalData.confirmationMode || '4-of-6 Strong'}`;
+        }
+
+        function displaySignalResult(signalData) {
+            document.getElementById('scanView').style.display = "none";
+            let signalView = document.getElementById('signalView');
+            signalView.style.display = "block";
+
+            playSignalAlertSound();
+            let containerEl = document.querySelector('.container');
+            containerEl.classList.add('alert-flash');
+            setTimeout(() => { containerEl.classList.remove('alert-flash'); }, 1200);
+
+            let hudBox = document.getElementById('hudBoxContainer');
+            let targetPairBox = document.getElementById('targetPairBoxContainer');
+            let resAsset = document.getElementById('resModalAsset');
+            let resDir = document.getElementById('resModalDirection');
+            let resMeta = document.getElementById('resModalMeta');
+            let lightOverlay = document.getElementById('lightOverlay');
+            let signalSvgPath = document.getElementById('signalSvgPath');
+            let targetPairDisplay = document.getElementById('targetPairDisplay');
+
+            resAsset.innerText = signalData.pair;
+            targetPairDisplay.innerText = signalData.pair;
+            
+            
+            // Render actual backend multi-timeframe breakdown.
+            renderTimeframeBreakdown(signalData);
+            registerSignalForTracking(signalData);
+let isBuy = signalData.dir.includes("CALL");
+            let confluenceString = Number(signalData.confluence).toFixed(1) + "%";
+
+            dynamicHistory.unshift({
+                pair: signalData.pair,
+                dir: isBuy ? "UP (BUY)" : "DOWN (SELL)",
+                acc: confluenceString,
+                result: null
+            });
+            if (dynamicHistory.length > 10) dynamicHistory.pop();
+            localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+
+            if (isBuy) {
+                hudBox.className = "ai-hud-box glow-buy";
+                targetPairBox.className = "selected-pair-box pair-glow-buy";
+                targetPairDisplay.style.color = "#00ff87";
+                resDir.className = "signal-direction dir-up";
+                resDir.innerHTML = `⬆ UP (BUY) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+                lightOverlay.className = "signal-light-overlay buy-active";
+                signalSvgPath.setAttribute("stroke", "#00ff87");
+                signalSvgPath.setAttribute("d", "M0,60 Q50,20 100,40 T200,15 T300,10");
+            } else {
+                hudBox.className = "ai-hud-box glow-sell";
+                targetPairBox.className = "selected-pair-box pair-glow-sell";
+                targetPairDisplay.style.color = "#ff3366";
+                resDir.className = "signal-direction dir-down";
+                resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+                lightOverlay.className = "signal-light-overlay sell-active";
+                signalSvgPath.setAttribute("stroke", "#ff3366");
+                signalSvgPath.setAttribute("d", "M0,20 Q50,50 100,30 T200,70 T300,80");
+            }
+            startTimer();
+        }
+    </script>
+</body>
+</html>
