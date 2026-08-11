@@ -779,7 +779,7 @@
                 const response = await fetch('/signals/result', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ signal_id: signalId, result: outcome })
+                    body: JSON.stringify({ signal_id: signalId, result: outcome, client_id: deviceSessionId })
                 });
                 const result = await response.json();
                 if (!response.ok || !result || result.status !== 'success') {
@@ -1023,12 +1023,37 @@
         // REAL BACKEND SCAN ENGINE
         // Yahoo/yfinance market data + backend indicators
         // ==========================================
+        function normalizeBackendSignal(data, fallbackPair) {
+            if (!data || !data.signal || data.signal === 'NO SIGNAL' || Number(data.score || 0) <= 0) {
+                return null;
+            }
+            return {
+                pair: data.pair || fallbackPair,
+                confluence: Number(data.score || 0),
+                dir: data.signal === 'CALL' ? 'CALL (UP)' : 'PUT (DOWN)',
+                reason: data.reason || '',
+                rsi: data.rsi,
+                bullishPoints: data.bullish_points,
+                bearishPoints: data.bearish_points,
+                dataAge: data.data_age,
+                timeframeSummary: data.timeframe_summary || {},
+                alignedTimeframes: data.aligned_timeframes || [],
+                opposingTimeframes: data.opposing_timeframes || [],
+                multiTfAgreement: data.multi_tf_agreement,
+                confirmationMode: data.confirmation_mode || '4-of-6 Strong',
+                duplicateProtection: Boolean(data.duplicate_protection)
+            };
+        }
+
         async function scanPairFromBackend(pair) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000);
             try {
                 const response = await fetch('/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pair: pair, expiry: selectedExpiry })
+                    body: JSON.stringify({ pair: pair, expiry: selectedExpiry, client_id: deviceSessionId }),
+                    signal: controller.signal
                 });
 
                 if (!response.ok) {
@@ -1036,34 +1061,42 @@
                 }
 
                 const result = await response.json();
-                if (!result || result.status !== 'success' || !result.data) {
-                    return null;
-                }
-
-                const data = result.data;
-                if (!data.signal || data.signal === 'NO SIGNAL' || Number(data.score || 0) <= 0) {
-                    return null;
-                }
-
-                return {
-                    pair: data.pair || pair,
-                    confluence: Number(data.score || 0),
-                    dir: data.signal === 'CALL' ? 'CALL (UP)' : 'PUT (DOWN)',
-                    reason: data.reason || '',
-                    rsi: data.rsi,
-                    bullishPoints: data.bullish_points,
-                    bearishPoints: data.bearish_points,
-                    dataAge: data.data_age,
-                    timeframeSummary: data.timeframe_summary || {},
-                    alignedTimeframes: data.aligned_timeframes || [],
-                    opposingTimeframes: data.opposing_timeframes || [],
-                    multiTfAgreement: data.multi_tf_agreement,
-                    confirmationMode: data.confirmation_mode || '4-of-6 Strong',
-                    duplicateProtection: Boolean(data.duplicate_protection)
-                };
+                if (!result || result.status !== 'success' || !result.data) return null;
+                return normalizeBackendSignal(result.data, pair);
             } catch (error) {
                 console.error('Scan error for', pair, error);
                 return null;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        async function scanPairsBatchFromBackend(pairs) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000);
+            try {
+                const response = await fetch('/scan-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId }),
+                    signal: controller.signal
+                });
+
+                if (!response.ok) {
+                    throw new Error('Batch scan failed: ' + response.status);
+                }
+
+                const result = await response.json();
+                if (!result || result.status !== 'success' || !Array.isArray(result.data)) {
+                    throw new Error('Invalid batch scan response.');
+                }
+
+                return { results: result.data, cacheHit: Boolean(result.cache_hit) };
+            } catch (error) {
+                console.error('Batch scan error:', error);
+                return null;
+            } finally {
+                clearTimeout(timeoutId);
             }
         }
 
@@ -1076,90 +1109,107 @@
             activeTrackedSignalId = null;
             startTimer();
 
-            let pairsToScan = [];
             const isAutoScan = selectedPair.includes('Auto Scan') || selectedPair === '';
-            if (isAutoScan) {
-                const allAutoPairs = brokerData[broker][market].slice(1);
-                cleanAutoPairCooldowns();
-                pairsToScan = allAutoPairs.filter(pair => !isAutoPairCoolingDown(pair));
+            let eligiblePairs = [];
+            let allAutoPairs = [];
 
-                // If every pair is cooling down, do not silently repeat the same pair.
-                // The user can wait for the cooldown or manually select a pair.
-                if (pairsToScan.length === 0) {
+            if (isAutoScan) {
+                allAutoPairs = brokerData[broker][market].slice(1);
+                cleanAutoPairCooldowns();
+                eligiblePairs = allAutoPairs.filter(pair => !isAutoPairCoolingDown(pair));
+
+                if (eligiblePairs.length === 0) {
                     showDefaultView();
                     document.getElementById('defaultView').style.display = 'none';
                     document.getElementById('noSignalView').style.display = 'flex';
                     document.getElementById('noSignalTitle').innerText = '⏳ AUTO PAIR ROTATION COOLDOWN';
-                    document.getElementById('noSignalDesc').innerText = 'Recently signaled OTC pairs are cooling down. Wait a little or choose a pair manually.';
+                    document.getElementById('noSignalDesc').innerText = 'Recently signaled pairs are cooling down. Wait a little or choose a pair manually.';
                     return;
                 }
             } else {
-                pairsToScan = [selectedPair];
+                eligiblePairs = [selectedPair];
             }
 
             showDefaultView();
             document.getElementById('defaultView').style.display = 'none';
             document.getElementById('scanView').style.display = 'block';
 
-        const tfBoxReset = document.getElementById('tfBreakdown');
-        const tfLineReset = document.getElementById('tfSummaryLine');
-        if (tfBoxReset) tfBoxReset.innerHTML = '';
-        if (tfLineReset) tfLineReset.innerText = 'Multi-TF: scanning backend timeframes...';
+            const tfBoxReset = document.getElementById('tfBreakdown');
+            const tfLineReset = document.getElementById('tfSummaryLine');
+            if (tfBoxReset) tfBoxReset.innerHTML = '';
+            if (tfLineReset) tfLineReset.innerText = 'Multi-TF: scanning backend timeframes...';
 
             let scanConsole = document.getElementById('liveScanConsole');
-            const rotationNote = isAutoScan ? ' · RECENT PAIRS ROTATED OUT' : '';
-            scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 RAJA AI BOT DEEP SCAN: ${pairsToScan.length} ASSETS${rotationNote}...</div>`;
-
             let progressBar = document.getElementById('scanProgressBar');
             let scanStep = document.getElementById('scanStepText');
             let scanBtn = document.getElementById('scanBtn');
             scanBtn.innerText = '▶ RAJA AI BOT DEEP SCAN...';
             scanBtn.disabled = true;
+            progressBar.style.width = '8%';
 
             let bestSignalFound = null;
             let highestConfluence = 0;
 
-            // Controlled parallel scan: faster than one-by-one without hammering Yahoo.
-            // Keep this modest to reduce rate-limit/data-failure risk.
-            const scanConcurrency = Math.min(3, pairsToScan.length);
-            let nextPairIndex = 0;
-            let completedScans = 0;
+            try {
+                if (isAutoScan) {
+                    // One shared batch request replaces 21 browser requests. The backend
+                    // caches this market snapshot so many users reuse the same scan.
+                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SHARED MULTI-USER SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
+                    scanStep.innerText = 'Fetching shared market snapshot...';
+                    progressBar.style.width = '25%';
 
-            async function scanWorker() {
-                while (true) {
-                    const currentIndex = nextPairIndex++;
-                    if (currentIndex >= pairsToScan.length) return;
-
-                    const currentPair = pairsToScan[currentIndex];
-                    scanStep.innerText = `RAJA AI FAST Multi-TF Scan: ${currentPair}`;
-
-                    const indicatorResult = await scanPairFromBackend(currentPair);
-                    completedScans += 1;
-
-                    const progressPercent = Math.floor((completedScans / pairsToScan.length) * 100);
-                    progressBar.style.width = progressPercent + '%';
-                    scanStep.innerText = `RAJA AI FAST Multi-TF Scan: ${completedScans}/${pairsToScan.length} completed`;
-
-                    if (indicatorResult && indicatorResult.confluence > highestConfluence) {
-                        highestConfluence = indicatorResult.confluence;
-                        bestSignalFound = indicatorResult;
-                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}% - LIVE DATA</span></div>`;
-                    } else if (indicatorResult) {
-                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${currentPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
-                    } else {
-                        scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${currentPair}</span> <span>No valid confluence/data</span></div>`;
+                    const batch = await scanPairsBatchFromBackend(allAutoPairs);
+                    if (!batch) {
+                        throw new Error('Shared batch scan timed out or failed.');
                     }
 
+                    const eligibleSet = new Set(eligiblePairs);
+                    const rawResults = batch.results;
+                    let processed = 0;
+
+                    rawResults.forEach(raw => {
+                        const pair = raw && raw.pair ? raw.pair : 'Unknown';
+                        if (!eligibleSet.has(pair)) return;
+                        processed += 1;
+                        const normalized = normalizeBackendSignal(raw, pair);
+
+                        if (normalized && normalized.confluence > highestConfluence) {
+                            highestConfluence = normalized.confluence;
+                            bestSignalFound = normalized;
+                        }
+
+                        if (normalized) {
+                            scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${pair}</span> <span>${normalized.confluence}%</span></div>`;
+                        } else {
+                            scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${pair}</span> <span>No valid confluence/data</span></div>`;
+                        }
+                    });
+
+                    scanStep.innerText = `Shared scan complete: ${processed}/${eligiblePairs.length} eligible${batch.cacheHit ? ' · CACHE HIT' : ''}`;
+                    progressBar.style.width = '100%';
                     scanConsole.scrollTop = scanConsole.scrollHeight;
+                } else {
+                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SCANNING ${selectedPair}...</div>`;
+                    scanStep.innerText = `RAJA AI Multi-TF Scan: ${selectedPair}`;
+                    progressBar.style.width = '35%';
+
+                    const indicatorResult = await scanPairFromBackend(selectedPair);
+                    progressBar.style.width = '100%';
+                    if (indicatorResult) {
+                        bestSignalFound = indicatorResult;
+                        highestConfluence = indicatorResult.confluence;
+                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${selectedPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
+                    } else {
+                        scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${selectedPair}</span> <span>No valid confluence/data</span></div>`;
+                    }
                 }
+            } catch (error) {
+                console.error('Deep scan failed:', error);
+                scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>Scan failed</span><span>${error.message}</span></div>`;
+            } finally {
+                scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
+                scanBtn.disabled = false;
             }
-
-            await Promise.all(
-                Array.from({ length: scanConcurrency }, () => scanWorker())
-            );
-
-            scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
-            scanBtn.disabled = false;
 
             setTimeout(() => {
                 if (bestSignalFound) {
@@ -1169,11 +1219,10 @@
                     document.getElementById('scanView').style.display = 'none';
                     document.getElementById('noSignalView').style.display = 'flex';
                     document.getElementById('noSignalTitle').innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
-                    document.getElementById('noSignalDesc').innerText = 'Yahoo live data was scanned, but the indicators did not reach the required confluence.';
+                    document.getElementById('noSignalDesc').innerText = 'The shared market snapshot was checked, but no pair reached the required selected-expiry confirmation.';
                 }
-            }, 300);
+            }, 250);
         }
-
 
 
         async function registerSignalForTracking(signalData) {
@@ -1194,7 +1243,8 @@
                         signal: direction,
                         score: signalData.confluence,
                         expiry: selectedExpiry,
-                        timeframe_summary: signalData.timeframeSummary || {}
+                        timeframe_summary: signalData.timeframeSummary || {},
+                        client_id: deviceSessionId
                     })
                 });
 
@@ -1214,7 +1264,7 @@
 
         async function refreshTrackedHistory() {
             try {
-                const response = await fetch('/signals/history?limit=20');
+                const response = await fetch('/signals/history?limit=20&client_id=' + encodeURIComponent(deviceSessionId));
                 const result = await response.json();
 
                 if (response.ok && result && result.status === 'success') {
