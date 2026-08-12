@@ -189,6 +189,10 @@ ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
 #   are ephemeral, so the fallback is for local development/testing only.
 DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("RAJA_DATABASE_URL") or "").strip()
 LICENSE_STORE_MODE = "postgres" if DATABASE_URL else "file"
+DEVICE_SESSION_TTL_SECONDS = max(120, int(os.environ.get("RAJA_DEVICE_SESSION_TTL", "300")))
+# User requested a one-time reset of all previously generated keys. This marker makes
+# the reset run only once per persistent database. Change/empty the env var to control it.
+LICENSE_RESET_VERSION = os.environ.get("RAJA_LICENSE_RESET_VERSION", "2026-08-12-v8-clean-slate").strip()
 
 SIGNALS_FILE = DATA_DIR / "signals.json"
 signals_lock = threading.RLock()
@@ -229,18 +233,47 @@ def initialize_license_store():
                         active BOOLEAN NOT NULL DEFAULT TRUE,
                         user_id TEXT,
                         device_id TEXT,
+                        device_label TEXT,
                         created_at BIGINT,
                         last_verified_at BIGINT
                     )
                 """)
+                cur.execute("ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS device_label TEXT")
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raja_meta (
+                        meta_key TEXT PRIMARY KEY,
+                        meta_value TEXT
+                    )
+                """)
+
+                # One-time clean slate requested by the admin. The version marker prevents
+                # Render restarts/redeploys from repeatedly deleting newly generated keys.
+                if LICENSE_RESET_VERSION:
+                    cur.execute("SELECT meta_value FROM raja_meta WHERE meta_key = %s", ("license_reset_version",))
+                    row = cur.fetchone()
+                    current_version = str(row[0]) if row and row[0] is not None else ""
+                    if current_version != LICENSE_RESET_VERSION:
+                        cur.execute("DELETE FROM raja_licenses")
+                        cur.execute("""
+                            INSERT INTO raja_meta (meta_key, meta_value)
+                            VALUES (%s, %s)
+                            ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value
+                        """, ("license_reset_version", LICENSE_RESET_VERSION))
+                        print(f"RAJA license reset applied once: {LICENSE_RESET_VERSION}")
         print("RAJA license store: PostgreSQL (persistent)")
         return
 
     with license_lock:
         if not LICENSE_FILE.exists():
             LICENSE_FILE.write_text("{}", encoding="utf-8")
+        if LICENSE_RESET_VERSION:
+            marker_file = DATA_DIR / ".raja_license_reset_version"
+            current_version = marker_file.read_text(encoding="utf-8").strip() if marker_file.exists() else ""
+            if current_version != LICENSE_RESET_VERSION:
+                LICENSE_FILE.write_text("{}", encoding="utf-8")
+                marker_file.write_text(LICENSE_RESET_VERSION, encoding="utf-8")
+                print(f"RAJA local license reset applied once: {LICENSE_RESET_VERSION}")
     print("WARNING: RAJA license store is using local file storage (not persistent on Render Free).")
-
 
 def load_licenses():
     with license_lock:
@@ -248,17 +281,18 @@ def load_licenses():
             with _db_connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT license_key, active, user_id, device_id, created_at, last_verified_at
+                        SELECT license_key, active, user_id, device_id, device_label, created_at, last_verified_at
                         FROM raja_licenses
                     """)
                     rows = cur.fetchall()
 
             data = {}
-            for key, active, user, device, created_at, last_verified_at in rows:
+            for key, active, user, device, device_label, created_at, last_verified_at in rows:
                 data[str(key)] = {
                     "active": bool(active),
                     "user": user,
                     "device": device,
+                    "device_label": device_label,
                     "created_at": created_at,
                     "last_verified_at": last_verified_at,
                 }
@@ -295,6 +329,7 @@ def save_licenses(data):
                     bool(record.get("active", False)),
                     record.get("user"),
                     record.get("device"),
+                    record.get("device_label"),
                     record.get("created_at"),
                     record.get("last_verified_at"),
                 ))
@@ -308,8 +343,8 @@ def save_licenses(data):
                     if rows:
                         cur.executemany("""
                             INSERT INTO raja_licenses
-                                (license_key, active, user_id, device_id, created_at, last_verified_at)
-                            VALUES (%s, %s, %s, %s, %s, %s)
+                                (license_key, active, user_id, device_id, device_label, created_at, last_verified_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
                         """, rows)
             return
 
@@ -1424,6 +1459,8 @@ def verify_license():
     key = str(data.get("key", "")).strip()
     user = normalize_user_id(data.get("user", ""))
     device = str(data.get("device", "")).strip()
+    device_label = str(data.get("device_label", "")).strip()[:160]
+    heartbeat = bool(data.get("heartbeat", False))
 
     if not key or not user or not device:
         return jsonify({
@@ -1440,14 +1477,37 @@ def verify_license():
             "message": "Invalid or revoked license key.",
         }), 401
 
+    now = int(time.time())
     bound_device = record.get("device")
     bound_user = record.get("user")
 
-    if bound_device and bound_device != device:
+    # Heartbeats/saved-session restoration may refresh an existing binding, but they may
+    # not create a new binding. This makes an admin RESET actually kick the old device.
+    if heartbeat and not bound_device:
         return jsonify({
             "status": "error",
-            "message": "This key is already bound to another device.",
+            "message": "Device session was reset. Please login again.",
+        }), 409
+    last_verified_at = int(record.get("last_verified_at") or 0)
+    existing_session_active = bool(
+        bound_device
+        and bound_device != device
+        and last_verified_at
+        and (now - last_verified_at) < DEVICE_SESSION_TTL_SECONDS
+    )
+
+    if existing_session_active:
+        return jsonify({
+            "status": "error",
+            "message": "This key is currently active on another device.",
+            "device_label": record.get("device_label"),
         }), 403
+
+    if heartbeat and bound_device and bound_device != device:
+        return jsonify({
+            "status": "error",
+            "message": "Saved session is no longer active. Please login again.",
+        }), 409
 
     if bound_user and bound_user != user:
         return jsonify({
@@ -1455,9 +1515,12 @@ def verify_license():
             "message": "This key is already assigned to another user.",
         }), 403
 
+    # Same device refreshes the heartbeat. A stale device session can be replaced after
+    # DEVICE_SESSION_TTL_SECONDS, which implements one-active-device-at-a-time behavior.
     record["device"] = device
+    record["device_label"] = device_label or record.get("device_label") or device
     record["user"] = user
-    record["last_verified_at"] = int(time.time())
+    record["last_verified_at"] = now
     licenses[key] = record
     save_licenses(licenses)
 
@@ -1466,7 +1529,34 @@ def verify_license():
         "message": "License verified successfully.",
         "user": user,
         "device_bound": True,
+        "device_label": record.get("device_label"),
+        "session_ttl_seconds": DEVICE_SESSION_TTL_SECONDS,
     })
+
+
+@app.route("/logout-license", methods=["POST"])
+def logout_license():
+    data = request.get_json(silent=True) or {}
+    key = str(data.get("key", "")).strip()
+    user = normalize_user_id(data.get("user", ""))
+    device = str(data.get("device", "")).strip()
+
+    if not key or not user or not device:
+        return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
+
+    licenses = load_licenses()
+    record = licenses.get(key)
+    if not record:
+        return jsonify({"status": "success", "message": "Session already cleared."})
+
+    if record.get("user") == user and record.get("device") == device:
+        record["device"] = None
+        record["device_label"] = None
+        record["last_verified_at"] = None
+        licenses[key] = record
+        save_licenses(licenses)
+
+    return jsonify({"status": "success", "message": "Device session released."})
 
 
 @app.route("/admin/generate-key", methods=["POST"])
@@ -1499,6 +1589,7 @@ def admin_generate_key():
         "active": True,
         "user": user,
         "device": None,
+        "device_label": None,
         "created_at": int(time.time()),
     }
     save_licenses(licenses)
@@ -1522,24 +1613,97 @@ def admin_list_licenses():
             "message": "Incorrect admin password.",
         }), 403
 
+    now = int(time.time())
     licenses = load_licenses()
     rows = []
     for key, record in licenses.items():
         record = record if isinstance(record, dict) else {}
+        last_verified_at = int(record.get("last_verified_at") or 0)
+        session_active = bool(
+            record.get("device")
+            and last_verified_at
+            and (now - last_verified_at) < DEVICE_SESSION_TTL_SECONDS
+        )
         rows.append({
             "key": key,
             "active": bool(record.get("active", False)),
             "user": record.get("user"),
             "device": record.get("device"),
+            "device_label": record.get("device_label"),
+            "session_active": session_active,
             "created_at": record.get("created_at"),
             "last_verified_at": record.get("last_verified_at"),
         })
 
     rows.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+    bound_count = sum(1 for row in rows if row.get("device"))
+    online_count = sum(1 for row in rows if row.get("session_active"))
     return jsonify({
         "status": "success",
         "data": rows,
         "count": len(rows),
+        "summary": {
+            "total": len(rows),
+            "active": sum(1 for row in rows if row.get("active")),
+            "bound": bound_count,
+            "online": online_count,
+            "unbound": max(0, len(rows) - bound_count),
+        },
+    })
+
+
+def _validate_admin_password(data):
+    if str((data or {}).get("password", "")) != ADMIN_PASSWORD:
+        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
+    return None
+
+
+@app.route("/admin/reset-device", methods=["POST"])
+def admin_reset_device():
+    data = request.get_json(silent=True) or {}
+    auth_error = _validate_admin_password(data)
+    if auth_error:
+        return auth_error
+    key = str(data.get("key", "")).strip()
+    if not key:
+        return jsonify({"status": "error", "message": "License key is required."}), 400
+
+    licenses = load_licenses()
+    if key not in licenses:
+        return jsonify({"status": "error", "message": "License key not found."}), 404
+
+    record = licenses.get(key) if isinstance(licenses.get(key), dict) else {}
+    record["device"] = None
+    record["device_label"] = None
+    record["last_verified_at"] = None
+    licenses[key] = record
+    save_licenses(licenses)
+    return jsonify({"status": "success", "message": "Device binding reset.", "key": key})
+
+
+@app.route("/admin/reset-all-devices", methods=["POST"])
+def admin_reset_all_devices():
+    data = request.get_json(silent=True) or {}
+    auth_error = _validate_admin_password(data)
+    if auth_error:
+        return auth_error
+
+    licenses = load_licenses()
+    updated = 0
+    for key, record in list(licenses.items()):
+        record = record if isinstance(record, dict) else {}
+        if record.get("device") or record.get("device_label") or record.get("last_verified_at"):
+            updated += 1
+        record["device"] = None
+        record["device_label"] = None
+        record["last_verified_at"] = None
+        licenses[key] = record
+    save_licenses(licenses)
+    return jsonify({
+        "status": "success",
+        "message": "All device bindings cleared.",
+        "updated": updated,
+        "total": len(licenses),
     })
 
 
