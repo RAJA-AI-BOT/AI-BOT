@@ -7,7 +7,7 @@ import json
 import secrets
 import threading
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from urllib.request import Request as UrlRequest, urlopen
 
 try:
@@ -135,6 +135,8 @@ YAHOO_FETCH_CONCURRENCY = max(1, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "2
 YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
 BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
 BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
+YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
+BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(85.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "68"))))
 
 market_cache = {}
 cache_lock = threading.RLock()
@@ -497,6 +499,7 @@ def fetch_yahoo_1m(symbol):
         interval="1m",
         auto_adjust=False,
         actions=False,
+        timeout=YAHOO_REQUEST_TIMEOUT_SECONDS,
     )
 
     if df is None or df.empty:
@@ -1350,6 +1353,8 @@ def health():
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
         "yahoo_failure_cooldown_seconds": YAHOO_FAILURE_COOLDOWN,
         "batch_cache_seconds": BATCH_CACHE_DURATION,
+        "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
+        "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
         "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
         "closed_candle_analysis": True,
         "license_store": LICENSE_STORE_MODE,
@@ -1804,34 +1809,67 @@ def scan_batch():
                     "cache_hit": True,
                 })
 
+        # Do not let one slow/rate-limited Yahoo symbol hold the whole Auto Scan open.
+        # The batch has a hard server-side deadline and returns whatever finished in time.
+        # Slow symbols are marked skipped and will be retried by the next 5-minute re-scan.
         results_by_pair = {}
+        timed_out_pairs = []
         workers = min(BATCH_SCAN_WORKERS, len(pairs))
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            future_map = {
-                pool.submit(calculate_live_indicators, pair, selected_expiry): pair
-                for pair in pairs
-            }
-            for future in as_completed(future_map):
-                pair = future_map[future]
-                try:
-                    results_by_pair[pair] = future.result()
-                except Exception as exc:
-                    print(f"Batch scan error for {pair}: {exc}")
-                    results_by_pair[pair] = no_signal_result(
-                        pair,
-                        "Scan worker failed for this pair.",
-                        symbol=YAHOO_SYMBOLS.get(pair),
-                    )
+        batch_started = time.time()
+        pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch")
+        future_map = {
+            pool.submit(calculate_live_indicators, pair, selected_expiry): pair
+            for pair in pairs
+        }
+
+        done, pending = wait(
+            future_map.keys(),
+            timeout=BATCH_SCAN_DEADLINE_SECONDS,
+        )
+
+        for future in done:
+            pair = future_map[future]
+            try:
+                results_by_pair[pair] = future.result()
+            except Exception as exc:
+                print(f"Batch scan error for {pair}: {exc}")
+                results_by_pair[pair] = no_signal_result(
+                    pair,
+                    "Scan worker failed for this pair.",
+                    symbol=YAHOO_SYMBOLS.get(pair),
+                )
+
+        for future in pending:
+            pair = future_map[future]
+            timed_out_pairs.append(pair)
+            future.cancel()
+            results_by_pair[pair] = no_signal_result(
+                pair,
+                "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.",
+                symbol=YAHOO_SYMBOLS.get(pair),
+            )
+
+        # Do not block the HTTP response waiting for still-running Yahoo calls. Their own
+        # request timeout is short, and single-flight locks prevent duplicate fetch storms.
+        pool.shutdown(wait=False, cancel_futures=True)
 
         results = [results_by_pair[pair] for pair in pairs]
         data_available = sum(1 for r in results if r.get("data_age") is not None)
         data_unavailable = len(results) - data_available
         signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"})
+        elapsed = round(time.time() - batch_started, 2)
         diagnostics = {
             "total_pairs": len(results),
+            "completed_pairs": len(done),
+            "timed_out_pairs": timed_out_pairs,
+            "timed_out_pairs_count": len(timed_out_pairs),
+            "partial_response": bool(timed_out_pairs),
             "data_available": data_available,
             "data_unavailable": data_unavailable,
             "signals_found": signals_found,
+            "elapsed_seconds": elapsed,
+            "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
+            "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
             "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
             "batch_workers": workers,
         }
