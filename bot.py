@@ -8,6 +8,7 @@ import secrets
 import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from urllib.request import Request as UrlRequest, urlopen
 
 try:
     import psycopg
@@ -151,6 +152,14 @@ batch_cache = {}
 batch_cache_lock = threading.RLock()
 batch_key_locks = {}
 batch_key_locks_guard = threading.Lock()
+
+# Forex Factory exposes an official weekly JSON export from the calendar page.
+# Proxy it through this backend so the browser avoids cross-origin issues and
+# can keep a short cache instead of hitting the source on every click.
+FOREX_FACTORY_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+MARKET_NEWS_CACHE_SECONDS = max(30, int(os.environ.get("RAJA_NEWS_CACHE_SECONDS", "60")))
+market_news_cache = {"timestamp": 0.0, "data": []}
+market_news_lock = threading.RLock()
 
 # Duplicate rotation is handled client-side per browser, so one customer's
 # scan never suppresses another customer's signal.
@@ -1253,6 +1262,51 @@ def calculate_live_indicators(pair, selected_expiry=None):
 
 
 # =========================================================
+# LIVE ECONOMIC NEWS / CALENDAR
+# =========================================================
+
+def fetch_forex_factory_calendar():
+    """Fetch and normalize Forex Factory's official weekly JSON calendar export."""
+    req = UrlRequest(
+        FOREX_FACTORY_CALENDAR_URL,
+        headers={
+            "User-Agent": "RAJA-AI-PREMIUM/2.5 (+economic-calendar)",
+            "Accept": "application/json",
+        },
+    )
+    with urlopen(req, timeout=10) as response:
+        payload = response.read().decode("utf-8", errors="replace")
+
+    raw_items = json.loads(payload)
+    if not isinstance(raw_items, list):
+        raise ValueError("Unexpected Forex Factory calendar response")
+
+    normalized = []
+    for item in raw_items[:300]:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", "")).strip()
+        country = str(item.get("country", "")).strip().upper()
+        date_value = str(item.get("date", "")).strip()
+        if not title or not date_value:
+            continue
+        impact = str(item.get("impact", "Low")).strip().title() or "Low"
+        if impact not in {"High", "Medium", "Low", "Holiday"}:
+            impact = "Low"
+        normalized.append({
+            "title": title[:180],
+            "currency": country[:8],
+            "date": date_value[:40],
+            "impact": impact,
+            "forecast": str(item.get("forecast", "")).strip()[:40],
+            "previous": str(item.get("previous", "")).strip()[:40],
+        })
+
+    normalized.sort(key=lambda x: x.get("date", ""))
+    return normalized
+
+
+# =========================================================
 # ROUTES
 # =========================================================
 
@@ -1301,6 +1355,61 @@ def health():
         "license_store": LICENSE_STORE_MODE,
         "persistent_license_store": bool(DATABASE_URL),
     })
+
+
+@app.route("/market-news", methods=["GET"])
+def market_news():
+    now = time.time()
+    with market_news_lock:
+        cached_data = list(market_news_cache.get("data") or [])
+        cached_at = float(market_news_cache.get("timestamp") or 0.0)
+
+    if cached_data and (now - cached_at) <= MARKET_NEWS_CACHE_SECONDS:
+        return jsonify({
+            "status": "success",
+            "source": "Forex Factory weekly calendar export",
+            "source_url": "https://www.forexfactory.com/calendar",
+            "data": cached_data,
+            "cache_hit": True,
+            "stale": False,
+            "updated_at": int(cached_at),
+        })
+
+    try:
+        fresh_data = fetch_forex_factory_calendar()
+        with market_news_lock:
+            market_news_cache["timestamp"] = time.time()
+            market_news_cache["data"] = fresh_data
+            updated_at = market_news_cache["timestamp"]
+
+        return jsonify({
+            "status": "success",
+            "source": "Forex Factory weekly calendar export",
+            "source_url": "https://www.forexfactory.com/calendar",
+            "data": fresh_data,
+            "cache_hit": False,
+            "stale": False,
+            "updated_at": int(updated_at),
+        })
+    except Exception as exc:
+        print(f"Forex Factory calendar fetch error: {exc}")
+        # If the upstream feed is briefly unavailable, serve the last successful
+        # snapshot instead of leaving the News panel blank.
+        if cached_data:
+            return jsonify({
+                "status": "success",
+                "source": "Forex Factory weekly calendar export",
+                "source_url": "https://www.forexfactory.com/calendar",
+                "data": cached_data,
+                "cache_hit": True,
+                "stale": True,
+                "updated_at": int(cached_at),
+                "warning": "Live source temporarily unavailable; showing last cached calendar.",
+            })
+        return jsonify({
+            "status": "error",
+            "message": "Live economic calendar is temporarily unavailable.",
+        }), 502
 
 
 @app.route("/verify-license", methods=["POST"])
