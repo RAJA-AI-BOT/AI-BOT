@@ -116,6 +116,126 @@
         .admin-user-row:last-child { border-bottom: none; }
         .remove-user-btn { background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff3366; font-size: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-weight: bold; }
     </style>
+
+    <style id="raja-dashboard-v5">
+        body { display:block; padding:0; background:#020712; color:#f8fafc; }
+        .container { max-width:1480px; width:100%; margin:0 auto; padding:14px; background:transparent; border:0; box-shadow:none; }
+        #activationScreen, #adminPanel { max-width:460px; margin:18px auto; background:linear-gradient(180deg,rgba(9,17,31,.98),rgba(4,9,18,.98)); border:1px solid rgba(34,211,238,.28); border-radius:18px; padding:16px; box-shadow:0 24px 70px rgba(0,0,0,.42); }
+        .app-shell { display:grid; grid-template-columns:220px minmax(0,1fr) 270px; gap:14px; min-height:calc(100vh - 28px); }
+        .side-panel,.right-rail,.main-panel-card,.scan-summary-card,.config-panel,.top-status-card { background:linear-gradient(180deg,rgba(8,18,33,.96),rgba(4,11,22,.98)); border:1px solid rgba(83,177,255,.18); box-shadow:0 16px 44px rgba(0,0,0,.24); }
+        .side-panel { border-radius:18px; padding:18px 12px; display:flex; flex-direction:column; }
+        .brand { display:flex; align-items:center; gap:10px; padding:2px 8px 18px; font-size:16px; font-weight:900; letter-spacing:.5px; }
+        .brand-mark { width:32px; height:32px; border-radius:10px; display:grid; place-items:center; color:#07111d; background:linear-gradient(135deg,#00ff87,#38bdf8); box-shadow:0 0 24px rgba(0,255,135,.24); }
+        .vip-pill { font-size:9px; color:#00ff87; border:1px solid rgba(0,255,135,.35); padding:3px 6px; border-radius:6px; }
+        .nav-list { display:flex; flex-direction:column; gap:8px; }
+        .nav-item { border:1px solid transparent; background:transparent; color:#a9bad0; border-radius:10px; padding:11px 12px; text-align:left; font-weight:700; cursor:pointer; font-size:12px; }
+        .nav-item:hover,.nav-item.active { color:#eaffff; background:linear-gradient(90deg,rgba(0,255,135,.17),rgba(56,189,248,.13)); border-color:rgba(34,211,238,.28); box-shadow:inset 3px 0 #22d3ee; }
+        .engine-mini { margin-top:auto; border:1px solid rgba(34,211,238,.18); border-radius:12px; padding:12px; color:#9fb1c7; font-size:10px; line-height:1.7; background:rgba(0,0,0,.15); }
+        .engine-mini strong { color:#00ff87; }
+        .main-column { min-width:0; display:flex; flex-direction:column; gap:14px; }
+        .dashboard-topbar { min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-radius:14px; background:rgba(5,13,25,.78); border:1px solid rgba(83,177,255,.14); }
+        .market-banner { color:#9fb3c8; font-size:11px; }
+        .market-banner strong { color:#22e6c3; }
+        .top-actions { display:flex; align-items:center; gap:8px; }
+        .top-btn { background:rgba(3,15,28,.9); border:1px solid rgba(34,211,238,.28); color:#32e6bf; padding:8px 12px; border-radius:8px; font-size:10px; font-weight:900; cursor:pointer; }
+        .top-btn.logout { color:#ff5d7d; border-color:rgba(255,93,125,.35); }
+        .rescan-card { min-width:172px; text-align:left; background:linear-gradient(135deg,rgba(0,255,135,.10),rgba(56,189,248,.08)); border:1px solid rgba(0,255,135,.28); color:#eaffff; border-radius:10px; padding:8px 11px; cursor:pointer; }
+        .rescan-card .rescan-title { display:block; color:#00ff87; font-size:10px; font-weight:900; }
+        .rescan-card .rescan-time { display:block; margin-top:2px; color:#a9bad0; font-size:9px; }
+        .main-panel-card { border-radius:18px; padding:18px; position:relative; overflow:hidden; }
+        .main-panel-card::before { content:""; position:absolute; inset:-30% 48% auto -20%; height:240px; background:radial-gradient(circle,rgba(0,255,135,.12),transparent 70%); pointer-events:none; }
+        .scan-heading-row { position:relative; display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:14px; }
+        .scan-heading { font-size:18px; font-weight:900; letter-spacing:.2px; }
+        .scan-sub { margin-top:4px; color:#8ca2bb; font-size:10px; }
+        .shared-pill { color:#62d5ff; border:1px solid rgba(56,189,248,.28); background:rgba(56,189,248,.07); padding:7px 10px; border-radius:8px; font-size:9px; font-weight:900; }
+        .ai-hud-box { min-height:310px; margin:0; padding:18px; border:1px solid rgba(34,211,238,.16); background:linear-gradient(180deg,rgba(5,14,27,.98),rgba(3,10,20,.98)); border-radius:14px; box-shadow:none; display:flex; justify-content:center; }
+        .ai-hud-box.glow-buy { border-color:rgba(0,255,135,.6); box-shadow:0 0 30px rgba(0,255,135,.14), inset 0 0 28px rgba(0,255,135,.08); }
+        .ai-hud-box.glow-sell { border-color:rgba(255,51,102,.6); box-shadow:0 0 30px rgba(255,51,102,.12), inset 0 0 28px rgba(255,51,102,.08); }
+        .scan-workspace { display:grid; grid-template-columns:220px minmax(0,1fr); gap:22px; align-items:center; width:100%; }
+        .scan-ring { --p:0; width:180px; aspect-ratio:1; border-radius:50%; margin:auto; display:grid; place-items:center; background:conic-gradient(#16e5c0 calc(var(--p)*1%), #28a8ff calc(var(--p)*1.02%), rgba(45,70,100,.22) 0); box-shadow:0 0 35px rgba(34,211,238,.18); position:relative; }
+        .scan-ring::before { content:""; position:absolute; inset:13px; border-radius:50%; background:radial-gradient(circle at 50% 40%,#0b2135,#05101d 70%); border:1px solid rgba(94,234,212,.18); }
+        .scan-ring-center { position:relative; z-index:1; text-align:center; }
+        .scan-ring-value { font-size:36px; line-height:1; font-weight:900; color:#fff; }
+        .scan-ring-label { color:#00ff87; font-size:10px; font-weight:900; margin-top:7px; letter-spacing:1px; }
+        .scan-stage-title { color:#dff8ff; font-size:12px; font-weight:900; margin-bottom:9px; text-transform:uppercase; }
+        .scan-stage-list { display:grid; gap:7px; margin-bottom:12px; }
+        .scan-stage { display:flex; gap:9px; align-items:center; color:#97abc2; font-size:10px; }
+        .scan-dot { width:10px; height:10px; border-radius:50%; border:1px solid #48627d; }
+        .scan-stage.done .scan-dot { background:#10d9a4; border-color:#10d9a4; box-shadow:0 0 10px rgba(16,217,164,.55); }
+        .scan-stage.active { color:#61e6ff; font-weight:800; }
+        .scan-stage.active .scan-dot { background:#00ff87; border-color:#00ff87; box-shadow:0 0 12px rgba(0,255,135,.65); animation:pulseDot 1.2s infinite; }
+        @keyframes pulseDot { 50% { transform:scale(1.35); opacity:.65; } }
+        .live-scan-console { max-height:118px; font-family:inherit; font-size:9px; background:rgba(2,8,16,.7); border-color:rgba(34,211,238,.15); }
+        .scan-progress-container { height:8px; margin:10px 0 5px; }
+        .scan-progress-bar { transition:width .35s ease; }
+        .default-view,.scan-view,.signal-view,.inline-content-view,.no-signal-view { width:100%; }
+        .default-view { display:flex; }
+        .ready-copy { text-align:left; }
+        .ready-title { font-size:18px; font-weight:900; color:#f6fbff; }
+        .ready-sub { color:#8ea4bd; font-size:10px; margin-top:5px; line-height:1.5; }
+        .status-grid { display:grid; grid-template-columns:1fr 1.35fr .8fr; gap:12px; }
+        .scan-summary-card { border-radius:14px; padding:14px; min-height:128px; }
+        .card-label { color:#69cfff; font-size:9px; font-weight:900; letter-spacing:.4px; text-transform:uppercase; }
+        .selected-pair-box { margin:0; min-height:128px; border:0; background:none; padding:0; align-items:flex-start; text-align:left; justify-content:center; }
+        .selected-pair-label { color:#73d8ff; font-size:9px; }
+        .selected-pair-name { font-size:17px; margin-top:8px; color:#24efc1; }
+        .metric-note { margin-top:10px; color:#00ff87; font-size:9px; font-weight:800; }
+        .snapshot-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:9px; }
+        .snapshot-cell { background:rgba(2,9,18,.46); border:1px solid rgba(83,177,255,.12); border-radius:8px; padding:8px; }
+        .snapshot-cell small { display:block; color:#768da8; font-size:7.5px; }
+        .snapshot-cell strong { display:block; margin-top:4px; color:#26e7bd; font-size:10px; }
+        .timer-section { margin:0; min-height:128px; border:0; background:none; padding:12px; display:flex; flex-direction:column; justify-content:center; }
+        .timer-display { font-size:34px; }
+        .candle-info { color:#a8bbcf; font-size:8px; }
+        .config-panel { border-radius:14px; padding:15px; }
+        .config-title { font-weight:900; color:#d8e9f6; font-size:11px; margin-bottom:10px; }
+        .config-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+        .selection-card { display:contents; }
+        .config-field label { color:#6fcfff; font-size:8px; font-weight:800; display:block; margin-bottom:4px; }
+        .config-field select { padding:9px; font-size:10px; border-color:rgba(83,177,255,.18); background:#06101e; }
+        .expiry-wide { grid-column:1 / -1; }
+        .expiry-container { grid-template-columns:repeat(7,1fr); gap:6px; }
+        .expiry-btn { padding:8px 0; background:#071221; font-size:9px; }
+        .utility-grid { grid-column:1 / -1; grid-template-columns:repeat(4,1fr); margin-top:2px; }
+        .utility-btn { background:#071221; border-color:rgba(83,177,255,.15); color:#8fdcff; padding:9px 5px; }
+        .scan-btn { margin-top:12px; padding:12px; font-size:11px; background:linear-gradient(90deg,#13e9ac,#22d3ee,#3ba7ff); box-shadow:0 8px 24px rgba(34,211,238,.18); }
+        .right-rail { border-radius:18px; padding:14px; display:flex; flex-direction:column; gap:12px; }
+        .rail-card { border:1px solid rgba(83,177,255,.16); background:rgba(2,9,18,.42); border-radius:12px; padding:12px; }
+        .rail-title { color:#dceefa; font-size:10px; font-weight:900; margin-bottom:10px; }
+        .overview-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 0; border-bottom:1px solid rgba(255,255,255,.05); font-size:9px; color:#a8b9cc; }
+        .overview-row:last-child { border-bottom:0; }
+        .ready-tag { color:#00ff87; font-size:8px; font-weight:900; }
+        .recent-list { display:grid; gap:7px; max-height:330px; overflow:auto; }
+        .recent-list .inline-item { background:rgba(255,255,255,.025); border:1px solid rgba(255,255,255,.04); border-radius:8px; padding:8px; font-size:8px; }
+        .rail-actions { display:grid; gap:7px; }
+        .rail-action { width:100%; border:1px solid rgba(83,177,255,.16); background:#071221; color:#aad2ed; border-radius:8px; padding:10px; text-align:left; font-size:9px; font-weight:800; cursor:pointer; }
+        .inline-content-view { padding:4px; }
+        .inline-list-box { max-height:170px; }
+        .no-signal-view { padding:22px 10px; }
+        .signal-view { padding:6px 4px; }
+        .scan-graph { height:64px !important; }
+        @media (max-width:1050px) {
+            .app-shell { grid-template-columns:180px minmax(0,1fr); }
+            .right-rail { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr 1fr; }
+            .right-rail .rail-card:last-child { grid-column:auto; }
+        }
+        @media (max-width:760px) {
+            .container { padding:8px; }
+            .app-shell { display:block; }
+            .side-panel { display:none; }
+            .right-rail { display:none; }
+            .dashboard-topbar { flex-wrap:wrap; }
+            .market-banner { width:100%; text-align:center; }
+            .scan-workspace { grid-template-columns:1fr; }
+            .scan-ring { width:150px; }
+            .status-grid { grid-template-columns:1fr; }
+            .config-grid { grid-template-columns:1fr; }
+            .expiry-container { grid-template-columns:repeat(4,1fr); }
+            .utility-grid { grid-template-columns:repeat(2,1fr); }
+            .top-actions { width:100%; justify-content:center; flex-wrap:wrap; }
+            .rescan-card { min-width:150px; }
+        }
+    </style>
 </head>
 <body>
 
@@ -159,157 +279,136 @@
         </div>
 
         <div id="mainAppContent" style="display: none;">
-            
-            <div style="display: flex; justify-content: flex-end; gap: 5px; margin-bottom: 4px;">
-                <button id="soundToggleBtn" onclick="toggleSound()" style="background: rgba(0, 242, 254, 0.15); border: 1px solid rgba(0, 242, 254, 0.4); color: #00ff87; font-size: 9px; font-weight: 800; padding: 3px 8px; border-radius: 4px; cursor: pointer;">🔊 SOUND: ON</button>
-                <button onclick="logoutSession()" style="background: rgba(255, 51, 102, 0.15); border: 1px solid rgba(255, 51, 102, 0.4); color: #ff3366; font-size: 9px; font-weight: 800; padding: 3px 8px; border-radius: 4px; cursor: pointer;">🚪 LOGOUT</button>
+            <div class="app-shell">
+                <aside class="side-panel">
+                    <div class="brand"><span class="brand-mark">♛</span><span>RAJA AI PREMIUM</span><span class="vip-pill">VIP</span></div>
+                    <div class="nav-list">
+                        <button class="nav-item active" onclick="showDefaultView()">▦ Dashboard</button>
+                        <button class="nav-item" onclick="showDefaultView()">◉ AI Market Scan</button>
+                        <button class="nav-item" onclick="openHistoryInline()">◷ History</button>
+                        <button class="nav-item" onclick="openSettingsInline()">⚙ Settings</button>
+                        <button class="nav-item" onclick="openNewsInline()">▤ News</button>
+                        <button class="nav-item" onclick="openRiskInline()">♢ Risk & Recovery</button>
+                    </div>
+                    <div class="engine-mini">
+                        <div>AI Engine Status <strong>LIVE</strong></div>
+                        <div>Engine: Multi-TF 4-of-6</div>
+                        <div>Source: Yahoo 1m reference</div>
+                        <div>Re-scan interval: <strong>5 min</strong></div>
+                    </div>
+                </aside>
+
+                <main class="main-column">
+                    <div class="dashboard-topbar">
+                        <div class="market-banner">🛡️ Market stays stable & optimal from <strong>9:00 AM to 5:00 PM</strong></div>
+                        <div class="top-actions">
+                            <button class="rescan-card" id="autoRescanCard" onclick="toggleAutoRescan()">
+                                <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
+                                <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
+                            </button>
+                            <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
+                            <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
+                        </div>
+                    </div>
+
+                    <section class="main-panel-card">
+                        <div class="scan-heading-row">
+                            <div>
+                                <div class="scan-heading">📈 AI MARKET SCAN</div>
+                                <div class="scan-sub">Real-time multi-timeframe analysis across the selected market</div>
+                            </div>
+                            <div class="shared-pill">👥 SHARED MULTI-USER SCAN</div>
+                        </div>
+
+                        <div id="hudBoxContainer" class="ai-hud-box">
+                            <div id="defaultView" class="default-view">
+                                <div class="scan-workspace">
+                                    <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
+                                    <div class="ready-copy">
+                                        <div class="ready-title">AI Deep Scan Ready</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Auto Re-Scan can run the next market scan after five minutes.</div>
+                                        <div class="scan-stage-list" style="margin-top:18px;">
+                                            <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
+                                            <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
+                                            <div class="scan-stage"><span class="scan-dot"></span><span>Waiting for scan request</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="scanView" class="scan-view">
+                                <div class="scan-workspace">
+                                    <div class="scan-ring" id="scanRingActive"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercentActive">8%</div><div class="scan-ring-label">SCANNING</div></div></div>
+                                    <div>
+                                        <div class="scan-stage-title">LIVE SCAN PROGRESS</div>
+                                        <div class="scan-stage-list">
+                                            <div class="scan-stage done"><span class="scan-dot"></span><span>Collecting market data</span></div>
+                                            <div class="scan-stage done"><span class="scan-dot"></span><span>Analyzing multi-timeframe trends</span></div>
+                                            <div class="scan-stage active"><span class="scan-dot"></span><span>Scanning eligible assets</span></div>
+                                            <div class="scan-stage"><span class="scan-dot"></span><span>Evaluating market conditions</span></div>
+                                            <div class="scan-stage"><span class="scan-dot"></span><span>Finalizing best opportunity</span></div>
+                                        </div>
+                                        <div id="liveScanConsole" class="live-scan-console"><div class="live-scan-row scanning">Analyzing RSI, EMA, Bollinger & MACD layers...</div></div>
+                                        <div class="scan-progress-container"><div id="scanProgressBar" class="scan-progress-bar"></div></div>
+                                        <div style="font-size:9px;color:#00ff87;font-weight:800;margin-top:5px;" id="scanStepText">Executing Multi-Indicator Convergence...</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="signalView" class="signal-view">
+                                <div style="font-size:11px;color:#60efff;font-weight:900;text-transform:uppercase;">✨ CONFIRMED MULTI-TF SIGNAL ✨</div>
+                                <div id="resModalAsset" style="font-size:18px;color:#fff;font-weight:900;margin:8px 0;">EUR/USD (OTC)</div>
+                                <div class="scan-graph"><div class="graph-line"></div><div id="lightOverlay" class="signal-light-overlay"></div><svg class="graph-svg" viewBox="0 0 300 90" preserveAspectRatio="none"><path id="signalSvgPath" d="M0,45 Q40,15 80,50 T160,25 T240,55 T300,30" fill="none" stroke="#00ff87" stroke-width="2.2"/></svg></div>
+                                <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
+                                <div id="resModalMeta" class="signal-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
+                                <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
+                                <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div><div id="tfBreakdown" class="tf-breakdown"></div>
+                            </div>
+
+                            <div id="noSignalView" class="no-signal-view">
+                                <div style="font-size:14px;color:#ff5d7d;font-weight:900;text-transform:uppercase;margin-bottom:6px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
+                                <div style="font-size:10px;color:#a9bad0;margin-bottom:12px;" id="noSignalDesc">Current filters did not converge safely.</div>
+                                <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">↻ Back to Dashboard</button>
+                            </div>
+
+                            <div id="historyInlineView" class="inline-content-view">
+                                <div class="inline-title">📊 Live Signal History</div><div id="historyListBox" class="inline-list-box"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                            </div>
+                            <div id="settingsInlineView" class="inline-content-view">
+                                <div class="inline-title">⚙️ AI Engine Settings</div><div class="inline-list-box"><div class="inline-item"><span>Active Indicators:</span><span style="color:#00ff87;">8 Layers Active ✔</span></div><div class="inline-item"><span>Multi-TF Confirmation:</span><span style="color:#00ff87;">4 of 6 + Selected Expiry ✔</span></div><div class="inline-item"><span>Auto Pair Reuse:</span><span style="color:#00ff87;">5 Minute Cooldown ✔</span></div><div class="inline-item"><span>Auto Re-Scan:</span><span style="color:#00ff87;">5 Minutes ✔</span></div><div class="inline-item"><span>OTC Result:</span><span style="color:#00ff87;">QX WIN/LOSS Required ✔</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                            </div>
+                            <div id="newsInlineView" class="inline-content-view"><div class="inline-title">📰 Market Sessions</div><div class="inline-list-box"><div class="inline-item"><span>Data Feed:</span><span style="color:#00ff87;">Yahoo Reference Live</span></div><div class="inline-item"><span>OTC Mode:</span><span style="color:#60efff;">Underlying-market proxy</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
+                            <div id="riskInlineView" class="inline-content-view"><div class="inline-title">🛡️ Risk & Recovery</div><div style="font-size:9px;color:#cbd5e1;text-align:left;margin-bottom:4px;">Enter Initial Trade Amount ($):</div><input type="number" id="baseStakeInput" class="input-field" value="10" oninput="calculateRisk()"><div class="inline-list-box"><div class="inline-item"><span>Step 1:</span><span class="win-tag" id="step1Display">$10.00</span></div><div class="inline-item"><span>Step 2:</span><strong id="step2Display" style="color:#ff5d7d;">$22.00</strong></div><div class="inline-item"><span>Step 3:</span><strong id="step3Display" style="color:#ff5d7d;">$48.00</strong></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
+                        </div>
+                    </section>
+
+                    <div class="status-grid">
+                        <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><span class="selected-pair-label">SELECTED TARGET PAIR</span><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong>Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                        <section class="scan-summary-card"><div class="timer-section"><div class="candle-info" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE</div><div id="candleTimer" class="timer-display">00:31</div><div id="tradeAlert" class="trade-alert">⏳ WAIT FOR CANDLE CLOSE</div></div></section>
+                    </div>
+
+                    <section class="config-panel">
+                        <div class="config-title">TRADING CONFIGURATION</div>
+                        <div class="config-grid">
+                            <div class="selection-card">
+                                <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option></select></div>
+                                <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
+                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); const t=document.getElementById('targetPairDisplay'); if(t && this.value && !this.value.includes('Auto Scan')) t.innerText=this.value"></select></div>
+                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this,'15s')">15s</button><button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this,'30s')">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
+                                <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button></div>
+                            </div>
+                        </div>
+                        <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START AI DEEP SCAN</button>
+                    </section>
+                </main>
+
+                <aside class="right-rail">
+                    <section class="rail-card"><div class="rail-title">MARKET OVERVIEW</div><div class="overview-row"><span>Crypto Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Crypto OTC Proxy</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex OTC Proxy</span><span class="ready-tag">READY</span></div></section>
+                    <section class="rail-card"><div class="rail-title">RECENT SCAN HISTORY</div><div id="dashboardRecentHistory" class="recent-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div></section>
+                    <section class="rail-card"><div class="rail-title">QUICK ACTIONS</div><div class="rail-actions"><button class="rail-action" onclick="openHistoryInline()">📈 View Performance / History</button><button class="rail-action" onclick="openRiskInline()">🛡 Risk & Recovery</button><button class="rail-action" onclick="openSettingsInline()">⚙ Bot Settings</button><button class="rail-action" onclick="openNewsInline()">📰 Market Info</button></div></section>
+                </aside>
             </div>
-
-            <div id="hudBoxContainer" class="ai-hud-box">
-                <div id="defaultView" class="default-view">
-                    <div class="vortex-container">
-                        <div class="vortex-icon"></div>
-                    </div>
-                    <div style="font-size: 9.5px; color: #60efff; font-weight: 900; letter-spacing: 1px;">8-INDICATOR LIVE ENGINE</div>
-                    <div class="hud-stats">
-                        <span>FILTERS: <strong style="color:#00ff87;">RSI+EMA+BB+MACD+CANDLE+MULTI-TF+WICKS+CIRCUIT</strong></span>
-                    </div>
-                </div>
-
-                <div id="scanView" class="scan-view">
-                    <div style="font-size: 10px; color: #60efff; font-weight: 900; text-transform: uppercase; margin-bottom: 2px;">⚡ RUNNING 8-LAYER DEEP SCAN ✨</div>
-                    
-                    <div id="liveScanConsole" class="live-scan-console">
-                        <div class="live-scan-row scanning">Analyzing RSI, EMA, Bollinger & MACD layers...</div>
-                    </div>
-
-                    <div class="scan-progress-container">
-                        <div id="scanProgressBar" class="scan-progress-bar"></div>
-                    </div>
-                    
-                    <div style="font-size: 8.5px; color: #00ff87; font-weight: 700; margin-top: 2px;" id="scanStepText">Executing Multi-Indicator Convergence...</div>
-                </div>
-
-                <div id="signalView" class="signal-view">
-                    <div style="font-size: 9.5px; color: #60efff; font-weight: 800; text-transform: uppercase;">✨ 8-INDICATOR CONFIRMED SIGNAL ✨</div>
-                    <div id="resModalAsset" style="font-size: 10.5px; color: #fff; font-weight: 800; margin: 1px 0;">EUR/USD (OTC)</div>
-                    
-                    <div class="scan-graph" style="margin: 2px 0; height: 38px;">
-                        <div class="graph-line"></div>
-                        <div id="lightOverlay" class="signal-light-overlay"></div>
-                        <svg class="graph-svg" viewBox="0 0 300 90" preserveAspectRatio="none">
-                            <path id="signalSvgPath" d="M0,45 Q40,15 80,50 T160,25 T240,55 T300,30" fill="none" stroke="#00ff87" stroke-width="2.2"/>
-                        </svg>
-                    </div>
-
-                    <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
-                    <div id="resModalMeta" class="signal-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
-                    <div id="advancedFiltersInfo" class="advanced-filters">
-                        <span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span>
-                    </div>
-                    <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div>
-                    <div id="tfBreakdown" class="tf-breakdown"></div>
-                </div>
-
-                <div id="noSignalView" class="no-signal-view">
-                    <div style="font-size: 12px; color: #ff3366; font-weight: 900; text-transform: uppercase; margin-bottom: 4px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
-                    <div style="font-size: 9.5px; color: #cbd5e1; margin-bottom: 8px;" id="noSignalDesc">All 8 indicators did not converge safely. Try scanning again!</div>
-                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🔄 Try Scanning Again</button>
-                </div>
-
-                <div id="historyInlineView" class="inline-content-view">
-                    <div class="inline-title">📊 Live Signal History</div>
-                    <div id="historyListBox" class="inline-list-box">
-                        <div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>
-                    </div>
-                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
-                </div>
-
-                <div id="settingsInlineView" class="inline-content-view">
-                    <div class="inline-title">⚙️ AI 8-Indicator Settings</div>
-                    <div class="inline-list-box">
-                        <div class="inline-item"><span>Active Indicators:</span> <span style="color:#00ff87;">8 Layers Active ✔</span></div>
-                        <div class="inline-item"><span>Multi-TF Confirmation:</span> <span style="color:#00ff87;">4 of 6 + Selected Expiry ✔</span></div>
-                        <div class="inline-item"><span>Circuit Breaker:</span> <span style="color:#00ff87;">Protected ✔</span></div>
-                        <div class="inline-item"><span>Duplicate Protection:</span> <span style="color:#00ff87;">ON ✔</span></div>
-                        <div class="inline-item"><span>OTC Result:</span> <span style="color:#00ff87;">QX WIN/LOSS Required ✔</span></div>
-                        <div class="inline-item"><span>Entry Rule:</span> <span style="color:#00ff87;">Next Selected-TF Candle Open ✔</span></div>
-                    </div>
-                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
-                </div>
-
-                <div id="newsInlineView" class="inline-content-view">
-                    <div class="inline-title">📰 Market News & Sessions</div>
-                    <div class="inline-list-box">
-                        <div class="inline-item"><span>Session Volatility:</span> <span style="color:#00ff87;">Optimal Overlap</span></div>
-                        <div class="inline-item"><span>Circuit Status:</span> <span class="win-tag">Ready to Trade</span></div>
-                    </div>
-                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
-                </div>
-
-                <div id="riskInlineView" class="inline-content-view">
-                    <div class="inline-title">🛡️ Risk & Recovery (Safe Mode)</div>
-                    <div style="font-size: 9px; color: #cbd5e1; text-align: left; margin-bottom: 2px;">Enter Initial Trade Amount ($):</div>
-                    <input type="number" id="baseStakeInput" class="input-field" placeholder="Base Stake e.g. 10" value="10" oninput="calculateRisk()" style="margin-bottom: 4px; padding: 5px;">
-                    
-                    <div class="inline-list-box" style="max-height: 75px; margin-bottom: 4px; font-size: 9.5px;">
-                        <div class="inline-item"><span>Step 1 (Base Stake):</span> <span class="win-tag" id="step1Display">$10.00</span></div>
-                        <div class="inline-item" style="color:#ff3366;"><span>Step 2 (Risk Level 1):</span> <strong id="step2Display" style="color:#ff3366;">$22.00</strong></div>
-                        <div class="inline-item" style="color:#ff3366;"><span>Step 3 (High Risk):</span> <strong id="step3Display" style="color:#ff3366;">$48.00</strong></div>
-                    </div>
-                    <div style="font-size: 7.5px; color: #ff3366; text-align: left; margin-bottom: 4px;">⚠️ Auto-Pause triggers if consecutive risk steps hit limits.</div>
-                    <button class="menu-back-btn" onclick="playClickSound(); showDefaultView()">🏠 Main Menu</button>
-                </div>
-            </div>
-
-            <div id="targetPairBoxContainer" class="selected-pair-box">
-                <span class="selected-pair-label">🎯 SELECTED TARGET PAIR:</span>
-                <span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span>
-            </div>
-
-            <div class="timer-section">
-                <div class="candle-info" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE:</div>
-                <div id="candleTimer" class="timer-display">00:15</div>
-                <div id="tradeAlert" class="trade-alert">⏳ WAIT FOR CANDLE CLOSE</div>
-            </div>
-
-            <div class="selection-card">
-                <label>1. Select Broker Platform</label>
-                <select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();">
-                    <option value="Quotex">⚡ Quotex (Broker)</option>
-                </select>
-
-                <label style="margin-top: 6px;">2. Select Market Type</label>
-                <select id="marketType" onchange="playClickSound(); updatePairs();">
-                    <option value="CryptoLive">🪙 Crypto Live Market</option>
-                    <option value="CryptoOTC">🪙 Crypto OTC Market</option>
-                    <option value="ForexLive">🟢 Forex Live Market</option>
-                    <option value="ForexOTC">⚡ Forex OTC Market</option>
-                </select>
-
-                <label style="margin-top: 6px;">3. Select Pair / Asset</label>
-                <select id="pairSelect" onchange="playClickSound()"></select>
-
-                <label style="margin-top: 6px;">4. Trade Expiry Time</label>
-                <div class="expiry-container">
-                    <button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this, '15s')">15s</button>
-                    <button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this, '30s')">30s</button>
-                    <button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this, '1m')">1m</button>
-                    <button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this, '2m')">2m</button>
-                    <button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this, '5m')">5m</button>
-                    <button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this, '15m')">15m</button>
-                    <button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this, '30m')">30m</button>
-                </div>
-
-                <div class="utility-grid">
-                    <button class="utility-btn" onclick="playClickSound(); openHistoryInline()">📊 History</button>
-                    <button class="utility-btn" onclick="playClickSound(); openSettingsInline()">⚙️ Settings</button>
-                    <button class="utility-btn" onclick="playClickSound(); openNewsInline()">📰 News</button>
-                    <button class="utility-btn" onclick="playClickSound(); openRiskInline()">🛡️ Risk & Recovery</button>
-                </div>
-            </div>
-
-            <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START RAJA AI BOT DEEP SCAN</button>
         </div>
 
         <div id="adminPanel" class="panel-box">
@@ -335,10 +434,12 @@
     </div>
 
     <script>
-        const KEY_VERSION = "v4-admin-reset";
+        const KEY_VERSION = "v5-persistent-license";
 
+        // Never clear the full browser storage on a frontend update. Clearing it used to
+        // regenerate the device UID and could make a valid device-bound license look like
+        // a different device after deployment.
         if (localStorage.getItem('raja_key_version') !== KEY_VERSION) {
-            localStorage.clear();
             localStorage.setItem('raja_key_version', KEY_VERSION);
         }
 
@@ -365,9 +466,9 @@
         let backendTrackedHistory = [];
 
         // Auto Scan pair rotation: avoid feeding the same pair repeatedly.
-        // A displayed Auto-Scan signal blocks that pair for 20 minutes, while
-        // manual pair selection remains unrestricted.
-        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 20 * 60 * 1000;
+        // A displayed Auto-Scan signal blocks that pair for 5 minutes, then it becomes eligible again.
+        // Manual pair selection remains unrestricted.
+        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 5 * 60 * 1000;
         let autoPairCooldowns = safeJsonParse(localStorage.getItem('raja_auto_pair_cooldowns'), {});
 
         function cleanAutoPairCooldowns() {
@@ -392,6 +493,114 @@
             if (!pair) return;
             autoPairCooldowns[pair] = Date.now();
             localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
+        }
+
+
+        const AUTO_RESCAN_INTERVAL_MS = 5 * 60 * 1000;
+        let autoRescanEnabled = localStorage.getItem('raja_auto_rescan_enabled') !== 'false';
+        let autoRescanTimeout = null;
+        let autoRescanTicker = null;
+        let nextAutoRescanAt = Number(localStorage.getItem('raja_next_auto_rescan_at') || 0);
+
+        function formatCountdown(ms) {
+            const total = Math.max(0, Math.ceil(ms / 1000));
+            const min = Math.floor(total / 60);
+            const sec = total % 60;
+            return String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+        }
+
+        function updateAutoRescanUI() {
+            const state = document.getElementById('autoRescanState');
+            const countdown = document.getElementById('autoRescanCountdown');
+            const card = document.getElementById('autoRescanCard');
+            if (!state || !countdown || !card) return;
+
+            if (!autoRescanEnabled) {
+                state.innerText = '↻ Auto Re-Scan: OFF';
+                countdown.innerText = 'Click to enable';
+                state.style.color = '#ff5d7d';
+                card.style.borderColor = 'rgba(255,93,125,.35)';
+                return;
+            }
+
+            state.innerText = '↻ Auto Re-Scan: ON';
+            state.style.color = '#00ff87';
+            card.style.borderColor = 'rgba(0,255,135,.28)';
+            if (nextAutoRescanAt > Date.now()) {
+                countdown.innerText = 'Next Re-Scan in ' + formatCountdown(nextAutoRescanAt - Date.now());
+            } else {
+                countdown.innerText = 'Next Re-Scan: READY';
+            }
+        }
+
+        function clearAutoRescanSchedule(clearSaved = false) {
+            if (autoRescanTimeout) clearTimeout(autoRescanTimeout);
+            if (autoRescanTicker) clearInterval(autoRescanTicker);
+            autoRescanTimeout = null;
+            autoRescanTicker = null;
+            if (clearSaved) {
+                nextAutoRescanAt = 0;
+                localStorage.removeItem('raja_next_auto_rescan_at');
+            }
+            updateAutoRescanUI();
+        }
+
+        function armAutoRescan(delayMs) {
+            clearAutoRescanSchedule(false);
+            if (!autoRescanEnabled || !isUserVerified) return;
+            const delay = Math.max(1000, Number(delayMs || AUTO_RESCAN_INTERVAL_MS));
+            nextAutoRescanAt = Date.now() + delay;
+            localStorage.setItem('raja_next_auto_rescan_at', String(nextAutoRescanAt));
+            updateAutoRescanUI();
+            autoRescanTicker = setInterval(updateAutoRescanUI, 1000);
+            autoRescanTimeout = setTimeout(async () => {
+                clearAutoRescanSchedule(true);
+                if (!autoRescanEnabled || !isUserVerified) return;
+                const btn = document.getElementById('scanBtn');
+                if (btn && btn.disabled) {
+                    armAutoRescan(30000);
+                    return;
+                }
+                await startDeepScan(true);
+            }, delay);
+        }
+
+        function scheduleAutoRescan() {
+            if (!autoRescanEnabled || !isUserVerified) return;
+            armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
+        }
+
+        function restoreAutoRescanSchedule() {
+            if (!autoRescanEnabled || !isUserVerified) {
+                updateAutoRescanUI();
+                return;
+            }
+            const saved = Number(localStorage.getItem('raja_next_auto_rescan_at') || 0);
+            if (saved > Date.now()) {
+                armAutoRescan(saved - Date.now());
+            } else {
+                nextAutoRescanAt = 0;
+                localStorage.removeItem('raja_next_auto_rescan_at');
+                updateAutoRescanUI();
+            }
+        }
+
+        function toggleAutoRescan() {
+            autoRescanEnabled = !autoRescanEnabled;
+            localStorage.setItem('raja_auto_rescan_enabled', autoRescanEnabled ? 'true' : 'false');
+            if (!autoRescanEnabled) clearAutoRescanSchedule(true);
+            else updateAutoRescanUI();
+            playClickSound();
+        }
+
+        function setScanProgress(percent) {
+            const safe = Math.max(0, Math.min(100, Number(percent || 0)));
+            const bar = document.getElementById('scanProgressBar');
+            if (bar) bar.style.width = safe + '%';
+            const activeRing = document.getElementById('scanRingActive');
+            if (activeRing) activeRing.style.setProperty('--p', safe);
+            const activeText = document.getElementById('scanPercentActive');
+            if (activeText) activeText.innerText = Math.round(safe) + '%';
         }
 
         const deviceSessionId = localStorage.getItem('raja_device_uid') || ('dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
@@ -483,7 +692,7 @@
             }
         }, 1500);
 
-        function checkRoute() {
+        async function checkRoute() {
             const isAdminRoute = String(window.location.hash || '').trim().toLowerCase() === '#admin';
             const adminPanel = document.getElementById('adminPanel');
             const mainApp = document.getElementById('mainAppContent');
@@ -499,9 +708,27 @@
             }
 
             adminPanel.style.display = "none";
+            isUserVerified = false;
             const savedKey = localStorage.getItem('raja_active_key');
-            if (savedKey && localStorage.getItem('raja_session_' + savedKey) === deviceSessionId) {
-                isUserVerified = true;
+            const savedUser = localStorage.getItem('raja_active_user');
+            const savedSession = savedKey ? localStorage.getItem('raja_session_' + savedKey) : null;
+
+            // Re-check saved access against the backend. This means a revoked/deleted key
+            // stops working even if an old browser session is still present locally.
+            if (savedKey && savedUser && savedSession === deviceSessionId) {
+                try {
+                    const response = await fetch('/verify-license', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ key: savedKey, user: savedUser, device: deviceSessionId })
+                    });
+                    const result = await response.json().catch(() => null);
+                    isUserVerified = Boolean(response.ok && result && result.status === 'success');
+                } catch (error) {
+                    // A temporary network/cold-start error should not destroy the saved key;
+                    // keep the login screen visible and allow the user to retry.
+                    isUserVerified = false;
+                }
             }
 
             if (isUserVerified) {
@@ -509,6 +736,10 @@
                 activation.style.display = "none";
                 updateBrokerAssets();
                 startTimer();
+                restoreAutoRescanSchedule();
+                updateAutoRescanUI();
+                installHistoryMirror();
+                refreshTrackedHistory();
             } else {
                 mainApp.style.display = "none";
                 activation.style.display = "block";
@@ -1021,6 +1252,8 @@
                     pairSelect.appendChild(option);
                 });
             }
+            const target = document.getElementById('targetPairDisplay');
+            if (target && pairSelect.value && !pairSelect.value.includes('Auto Scan')) target.innerText = pairSelect.value;
         }
 
         function getExpirySeconds(expiryStr) {
@@ -1199,7 +1432,10 @@
             }
         }
 
-        async function startDeepScan() {
+        async function startDeepScan(autoTriggered = false) {
+            const existingScanBtn = document.getElementById('scanBtn');
+            if (existingScanBtn && existingScanBtn.disabled) return;
+            clearAutoRescanSchedule(true);
             let broker = document.getElementById('brokerSelect').value;
             let market = document.getElementById('marketType').value;
             let selectedPair = document.getElementById('pairSelect').value;
@@ -1222,7 +1458,7 @@
                     document.getElementById('defaultView').style.display = 'none';
                     document.getElementById('noSignalView').style.display = 'flex';
                     document.getElementById('noSignalTitle').innerText = '⏳ AUTO PAIR ROTATION COOLDOWN';
-                    document.getElementById('noSignalDesc').innerText = 'Recently signaled pairs are cooling down. Wait a little or choose a pair manually.';
+                    document.getElementById('noSignalDesc').innerText = 'Recently signaled pairs can be scanned again after the 5-minute cooldown. Choose a pair manually or wait for Auto Re-Scan.';
                     return;
                 }
             } else {
@@ -1242,9 +1478,9 @@
             let progressBar = document.getElementById('scanProgressBar');
             let scanStep = document.getElementById('scanStepText');
             let scanBtn = document.getElementById('scanBtn');
-            scanBtn.innerText = '▶ RAJA AI BOT DEEP SCAN...';
+            scanBtn.innerText = autoTriggered ? '↻ AUTO RE-SCAN IN PROGRESS...' : '▶ AI DEEP SCAN IN PROGRESS...';
             scanBtn.disabled = true;
-            progressBar.style.width = '8%';
+            setScanProgress(8);
 
             let bestSignalFound = null;
             let highestConfluence = 0;
@@ -1257,7 +1493,7 @@
                     // caches this market snapshot so many users reuse the same scan.
                     scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SHARED MULTI-USER SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
                     scanStep.innerText = 'Fetching shared market snapshot...';
-                    progressBar.style.width = '25%';
+                    setScanProgress(25);
 
                     const batch = await scanPairsBatchFromBackend(eligiblePairs);
 
@@ -1285,15 +1521,15 @@
                     });
 
                     scanStep.innerText = `Shared scan complete: ${processed}/${eligiblePairs.length} eligible${batch.cacheHit ? ' · CACHE HIT' : ''}`;
-                    progressBar.style.width = '100%';
+                    setScanProgress(100);
                     scanConsole.scrollTop = scanConsole.scrollHeight;
                 } else {
                     scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SCANNING ${selectedPair}...</div>`;
                     scanStep.innerText = `RAJA AI Multi-TF Scan: ${selectedPair}`;
-                    progressBar.style.width = '35%';
+                    setScanProgress(35);
 
                     const indicatorResult = await scanPairFromBackend(selectedPair);
-                    progressBar.style.width = '100%';
+                    setScanProgress(100);
                     if (indicatorResult) {
                         bestSignalFound = indicatorResult;
                         highestConfluence = indicatorResult.confluence;
@@ -1307,8 +1543,9 @@
                 scanFailureMessage = error && error.message ? error.message : 'Unknown scan error';
                 scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>Scan failed</span><span>${scanFailureMessage}</span></div>`;
             } finally {
-                scanBtn.innerText = '▶ START RAJA AI BOT DEEP SCAN';
+                scanBtn.innerText = '▶ START AI DEEP SCAN';
                 scanBtn.disabled = false;
+                scheduleAutoRescan();
             }
 
             setTimeout(() => {
@@ -1479,6 +1716,19 @@ let isBuy = signalData.dir.includes("CALL");
             }
             startTimer();
         }
+    
+
+        function installHistoryMirror() {
+            const source = document.getElementById('historyListBox');
+            const target = document.getElementById('dashboardRecentHistory');
+            if (!source || !target || source.dataset.mirrorInstalled === '1') return;
+            const sync = () => { target.innerHTML = source.innerHTML; };
+            sync();
+            new MutationObserver(sync).observe(source, { childList: true, subtree: true, characterData: true });
+            source.dataset.mirrorInstalled = '1';
+        }
+        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); });
+
     </script>
 </body>
 </html>
