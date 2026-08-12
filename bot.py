@@ -9,6 +9,11 @@ import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+try:
+    import psycopg
+except Exception:
+    psycopg = None
+
 app = Flask(__name__, static_folder=".", template_folder=".")
 CORS(app)
 
@@ -163,10 +168,16 @@ DATA_DIR = Path(os.environ.get("RAJA_DATA_DIR", str(BASE_DIR))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 LICENSE_FILE = DATA_DIR / "licenses.json"
-LICENSE_META_FILE = DATA_DIR / "license_meta.json"
 license_lock = threading.RLock()
 
 ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
+
+# Permanent license storage:
+# - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
+# - If DATABASE_URL is absent, the app falls back to licenses.json. Render Free local files
+#   are ephemeral, so the fallback is for local development/testing only.
+DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("RAJA_DATABASE_URL") or "").strip()
+LICENSE_STORE_MODE = "postgres" if DATABASE_URL else "file"
 
 SIGNALS_FILE = DATA_DIR / "signals.json"
 signals_lock = threading.RLock()
@@ -178,44 +189,70 @@ AUTO_TRACK_EXPIRIES = {
     "30m": 1800,
 }
 
-# No built-in/customer license keys ship with the app anymore.
-DEFAULT_LICENSES = {}
 
-# One-time migration token. This deliberately clears all legacy/built-in keys
-# from older releases. Generated keys created after this migration are kept.
-LICENSE_RESET_TOKEN = os.environ.get(
-    "RAJA_LICENSE_RESET_TOKEN",
-    "raja-license-store-reset-2026-08-11-v1",
-)
+def normalize_user_id(value):
+    """Normalize Telegram @usernames so capitalization cannot break a valid license."""
+    user = str(value or "").strip()
+    if user.startswith("@"):
+        return "@" + user[1:].strip().casefold()
+    return user
+
+
+def _db_connect():
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not configured")
+    if psycopg is None:
+        raise RuntimeError("psycopg is not installed; install requirements.txt")
+    return psycopg.connect(DATABASE_URL, connect_timeout=10)
 
 
 def initialize_license_store():
-    with license_lock:
-        current_token = None
-        if LICENSE_META_FILE.exists():
-            try:
-                meta = json.loads(LICENSE_META_FILE.read_text(encoding="utf-8"))
-                if isinstance(meta, dict):
-                    current_token = meta.get("reset_token")
-            except Exception:
-                current_token = None
+    if DATABASE_URL:
+        # Fail fast when a database URL is configured but unusable. This avoids silently
+        # falling back to temporary Render storage and losing customer licenses later.
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raja_licenses (
+                        license_key TEXT PRIMARY KEY,
+                        active BOOLEAN NOT NULL DEFAULT TRUE,
+                        user_id TEXT,
+                        device_id TEXT,
+                        created_at BIGINT,
+                        last_verified_at BIGINT
+                    )
+                """)
+        print("RAJA license store: PostgreSQL (persistent)")
+        return
 
-        if current_token != LICENSE_RESET_TOKEN:
-            # User requested a clean start: remove every legacy license once.
+    with license_lock:
+        if not LICENSE_FILE.exists():
             LICENSE_FILE.write_text("{}", encoding="utf-8")
-            LICENSE_META_FILE.write_text(
-                json.dumps({
-                    "reset_token": LICENSE_RESET_TOKEN,
-                    "reset_at": int(time.time()),
-                }, indent=2),
-                encoding="utf-8",
-            )
-        elif not LICENSE_FILE.exists():
-            LICENSE_FILE.write_text("{}", encoding="utf-8")
+    print("WARNING: RAJA license store is using local file storage (not persistent on Render Free).")
 
 
 def load_licenses():
     with license_lock:
+        if DATABASE_URL:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT license_key, active, user_id, device_id, created_at, last_verified_at
+                        FROM raja_licenses
+                    """)
+                    rows = cur.fetchall()
+
+            data = {}
+            for key, active, user, device, created_at, last_verified_at in rows:
+                data[str(key)] = {
+                    "active": bool(active),
+                    "user": user,
+                    "device": device,
+                    "created_at": created_at,
+                    "last_verified_at": last_verified_at,
+                }
+            return data
+
         if not LICENSE_FILE.exists():
             LICENSE_FILE.write_text("{}", encoding="utf-8")
             return {}
@@ -226,19 +263,51 @@ def load_licenses():
                 raise ValueError("Invalid license database")
             return data
         except Exception:
+            # Do not delete/overwrite a corrupt file silently. Keep a backup for recovery.
+            try:
+                backup = LICENSE_FILE.with_name(f"licenses.corrupt.{int(time.time())}.json")
+                LICENSE_FILE.replace(backup)
+            except Exception:
+                pass
             LICENSE_FILE.write_text("{}", encoding="utf-8")
             return {}
 
 
 def save_licenses(data):
     with license_lock:
+        if DATABASE_URL:
+            rows = []
+            for key, record in (data or {}).items():
+                record = record if isinstance(record, dict) else {}
+                rows.append((
+                    str(key),
+                    bool(record.get("active", False)),
+                    record.get("user"),
+                    record.get("device"),
+                    record.get("created_at"),
+                    record.get("last_verified_at"),
+                ))
+
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    # Existing routes mutate a full in-memory dictionary. Replacing the table
+                    # inside one transaction preserves their current behavior without changing
+                    # the frontend/API contract.
+                    cur.execute("DELETE FROM raja_licenses")
+                    if rows:
+                        cur.executemany("""
+                            INSERT INTO raja_licenses
+                                (license_key, active, user_id, device_id, created_at, last_verified_at)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, rows)
+            return
+
         temp = LICENSE_FILE.with_suffix(".tmp")
         temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         temp.replace(LICENSE_FILE)
 
 
 initialize_license_store()
-
 
 
 # =========================================================
@@ -1229,6 +1298,8 @@ def health():
         "batch_cache_seconds": BATCH_CACHE_DURATION,
         "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
         "closed_candle_analysis": True,
+        "license_store": LICENSE_STORE_MODE,
+        "persistent_license_store": bool(DATABASE_URL),
     })
 
 
@@ -1237,7 +1308,7 @@ def verify_license():
     data = request.get_json(silent=True) or {}
 
     key = str(data.get("key", "")).strip()
-    user = str(data.get("user", "")).strip()
+    user = normalize_user_id(data.get("user", ""))
     device = str(data.get("device", "")).strip()
 
     if not key or not user or not device:
@@ -1289,7 +1360,7 @@ def admin_generate_key():
     data = request.get_json(silent=True) or {}
 
     password = str(data.get("password", ""))
-    user = str(data.get("user", "")).strip()
+    user = normalize_user_id(data.get("user", ""))
 
     if password != ADMIN_PASSWORD:
         return jsonify({
