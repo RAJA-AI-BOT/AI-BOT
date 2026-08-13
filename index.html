@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RAJA AI PREMIUM - PREMIUM UI V11 SCAN FIX</title>
+    <title>RAJA AI PREMIUM - PREMIUM UI V12 CLEAN SIGNAL</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
@@ -864,8 +864,21 @@
         @media (max-width:430px){.psr-hero{min-height:340px}.psr-energy-orb{width:188px}.psr-orb-stage{inset:14px 0 30px}.psr-selected-expiry{bottom:8px;min-width:130px}.psr-shared{display:none}.psr-title strong{font-size:10px}.psr-live-chip{display:none}}
     </style>
 
+
+    <style id="raja-v12-clean-signal">
+        /* V12: remove old momentum graph + entry timer card; let useful status cards fill the row. */
+        .status-grid { grid-template-columns:minmax(220px,.85fr) minmax(0,1.65fr) !important; }
+        .status-grid .scan-summary-card { min-height:112px; }
+        .status-grid .scan-summary-card:nth-child(2) { width:100%; }
+        .status-grid .scan-summary-card:last-child { grid-column:auto !important; }
+        @media (max-width:760px) {
+            .status-grid { grid-template-columns:1fr !important; }
+        }
+    </style>
+
 </head>
 <body>
+    <!-- RAJA AI UI V12 CLEAN SIGNAL: momentum chart and entry-window timer removed -->
 
     <div class="container">
         <h2>RAJA AI PREMIUM - PREMIUM UI V11</h2>
@@ -1064,12 +1077,6 @@
 
                                     <div id="resModalMeta" class="signal-meta psr-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
 
-                                    <div class="psr-live-chart">
-                                        <div class="psr-chart-label">LIVE SIGNAL MOMENTUM</div>
-                                        <div class="graph-line"></div>
-                                        <div id="lightOverlay" class="signal-light-overlay"></div>
-                                        <svg class="graph-svg" viewBox="0 0 300 90" preserveAspectRatio="none"><path id="signalSvgPath" d="M0,45 Q40,15 80,50 T160,25 T240,55 T300,30" fill="none" stroke="#00ff87" stroke-width="2.4"/></svg>
-                                    </div>
                                     <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
                                     <div id="signalConfidenceRing" class="signal3d-confidence"><div><strong>--</strong><span>CONFIDENCE</span></div></div>
                                     <div class="mtf-heading psr-mtf-heading">SAME PAIR · MULTI-TIMEFRAME DIRECTION</div>
@@ -1124,7 +1131,6 @@
                     <div class="status-grid">
                         <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><span class="selected-pair-label">SELECTED TARGET PAIR</span><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
                         <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong>Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
-                        <section class="scan-summary-card"><div class="timer-section"><div class="candle-info" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE</div><div id="candleTimer" class="timer-display">00:31</div><div id="tradeAlert" class="trade-alert">⏳ WAIT FOR CANDLE CLOSE</div></div></section>
                     </div>
 
                     <section class="config-panel">
@@ -2394,6 +2400,12 @@
 
         function startTimer() {
             clearInterval(timerInterval);
+            // V12: entry-window/countdown UI was intentionally removed from the dashboard.
+            // Signal tracking still runs in the backend; do not start a hidden browser timer.
+            if (!document.getElementById('candleTimer') || !document.getElementById('candleStatusText') || !document.getElementById('tradeAlert')) {
+                timerInterval = null;
+                return;
+            }
 
             function tickEntryTimer() {
                 const nowMs = Date.now();
@@ -2788,8 +2800,6 @@
             let resAsset = document.getElementById('resModalAsset');
             let resDir = document.getElementById('resModalDirection');
             let resMeta = document.getElementById('resModalMeta');
-            let lightOverlay = document.getElementById('lightOverlay');
-            let signalSvgPath = document.getElementById('signalSvgPath');
             let targetPairDisplay = document.getElementById('targetPairDisplay');
             let signal3dShell = document.getElementById('signal3dShell');
             let signalConfidenceRing = document.getElementById('signalConfidenceRing');
@@ -2834,9 +2844,6 @@
                 resDir.className = "signal-direction dir-up";
                 resDir.innerHTML = `⬆ UP (BUY) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
                 resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
-                lightOverlay.className = "signal-light-overlay buy-active";
-                signalSvgPath.setAttribute("stroke", "#00ff87");
-                signalSvgPath.setAttribute("d", "M0,60 Q50,20 100,40 T200,15 T300,10");
             } else {
                 hudBox.className = "ai-hud-box glow-sell";
                 targetPairBox.className = "selected-pair-box pair-glow-sell";
@@ -2844,9 +2851,6 @@
                 resDir.className = "signal-direction dir-down";
                 resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
                 resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
-                lightOverlay.className = "signal-light-overlay sell-active";
-                signalSvgPath.setAttribute("stroke", "#ff3366");
-                signalSvgPath.setAttribute("d", "M0,20 Q50,50 100,30 T200,70 T300,80");
             }
             if (currentSection === 'dashboard') renderPrimaryView();
             startTimer();
