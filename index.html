@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RAJA AI PREMIUM - PREMIUM UI V9</title>
+    <title>RAJA AI PREMIUM - PREMIUM UI V11 SCAN FIX</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
@@ -813,7 +813,7 @@
         .psr-live-chip { position:absolute; z-index:12; top:82px; padding:8px 10px; border-radius:9px; border:1px solid color-mix(in srgb,var(--sig) 34%,rgba(96,239,255,.18)); background:rgba(2,13,24,.82); color:#b7d1e8; font-size:7px; font-weight:900; letter-spacing:.35px; box-shadow:0 0 16px rgba(0,0,0,.45); }
         .psr-live-chip span { display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--sig);box-shadow:0 0 10px var(--sig);margin-right:5px;animation:pulseDot 1s infinite; }
         .psr-live-left{left:9%}.psr-live-right{right:9%}
-        .psr-orb-stage { position:absolute; z-index:10; inset:8px 195px 4px 195px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+        .psr-orb-stage { position:absolute; z-index:10; inset:8px 110px 4px 110px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
         .psr-energy-orb { position:relative; z-index:8; width:235px; max-width:42vw; aspect-ratio:1; border-radius:50%; display:grid; place-items:center; background:radial-gradient(circle at 44% 40%,color-mix(in srgb,var(--sig) 16%,rgba(0,68,128,.42)),rgba(0,26,63,.70) 48%,rgba(0,5,14,.98) 73%); border:2px solid rgba(96,239,255,.82); box-shadow:0 0 18px #60efff,0 0 48px rgba(0,151,255,.58),0 0 92px color-mix(in srgb,var(--sig) 30%,transparent),inset 0 0 42px rgba(0,128,255,.28); animation:psrOrbBreathe 1.7s ease-in-out infinite; }
         .psr-energy-orb::before { content:""; position:absolute; inset:-10px; border-radius:50%; border:2px solid transparent; border-top-color:#ffffff;border-right-color:#60efff;border-bottom-color:var(--sig);filter:drop-shadow(0 0 8px #60efff);animation:psrSpin 3.2s linear infinite; }
         .psr-energy-orb::after { content:""; position:absolute; inset:-25px; border-radius:50%; border:1px dashed rgba(96,239,255,.48);box-shadow:0 0 24px rgba(96,239,255,.3);animation:psrSpin 8s linear infinite reverse; }
@@ -840,7 +840,7 @@
         .psr-selected-expiry { position:absolute; z-index:15; bottom:8px; min-width:180px; padding:7px 18px 8px; border-radius:11px; border:1px solid color-mix(in srgb,var(--sig) 78%,#60efff); background:linear-gradient(180deg,color-mix(in srgb,var(--sig) 20%,#071521),#04101c); box-shadow:0 0 22px color-mix(in srgb,var(--sig) 35%,transparent),inset 0 0 17px color-mix(in srgb,var(--sig) 11%,transparent); }
         .psr-selected-expiry span { display:block;color:#c9e9f7;font-size:6.5px;font-weight:900;letter-spacing:1px; }
         .psr-selected-expiry strong { display:block;color:#fff;font-size:28px;line-height:1;margin-top:2px;text-shadow:0 0 16px var(--sig); }
-        .psr-alert-stack { position:absolute; z-index:14; right:12px; top:84px; width:158px; display:grid; gap:8px; }
+        .psr-alert-stack { display:none !important; }
         .psr-alert { display:flex;align-items:center;gap:7px;padding:8px;border-radius:9px;border:1px solid rgba(96,239,255,.15);background:rgba(2,10,20,.82);box-shadow:0 0 12px rgba(0,0,0,.35); }
         .psr-dot { width:8px;height:8px;border-radius:50%;background:var(--sig);box-shadow:0 0 11px var(--sig);animation:pulseDot .85s infinite; }
         .psr-alert div{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1}.psr-alert small{color:#8aa4bb;font-size:6.5px}.psr-alert strong{color:var(--sig);font-size:7px}
@@ -858,17 +858,17 @@
         .signal-arrival-sell .premium-signal-result { animation:psrArrivalSell .55s ease 3; }
         @keyframes psrArrivalBuy{50%{box-shadow:0 0 80px rgba(0,255,135,.52),inset 0 0 58px rgba(0,255,135,.18);filter:brightness(1.19)}}
         @keyframes psrArrivalSell{50%{box-shadow:0 0 80px rgba(255,51,95,.52),inset 0 0 58px rgba(255,51,95,.18);filter:brightness(1.19)}}
-        @media (max-width:1050px){.psr-orb-stage{inset:8px 165px 4px 165px}.psr-alert-stack{width:140px}.psr-live-left{left:4%}.psr-live-right{right:4%}}
+        @media (max-width:1050px){.psr-orb-stage{inset:8px 82px 4px 82px}.psr-live-left{left:4%}.psr-live-right{right:4%}}
         @media (max-width:760px){
-            .premium-signal-result{min-height:0;padding:8px}.psr-topline{align-items:flex-start}.psr-title small{display:none}.psr-shared{font-size:6px;padding:6px}.psr-hero{min-height:390px}.psr-orb-stage{inset:22px 0 68px}.psr-energy-orb{width:210px;max-width:66vw}.psr-orbit-1{max-width:72vw;max-height:72vw}.psr-orbit-2{max-width:84vw}.psr-orbit-3{max-width:94vw}.psr-floor-1{max-width:88vw}.psr-floor-2{max-width:72vw}.psr-floor-3{max-width:56vw}.psr-alert-stack{top:auto;right:6px;left:6px;bottom:8px;width:auto;grid-template-columns:repeat(3,1fr);gap:4px}.psr-alert{padding:6px 5px}.psr-alert div{display:block}.psr-alert small{display:block;font-size:5.5px}.psr-alert strong{font-size:6px}.psr-live-chip{top:18px;font-size:5.5px;padding:5px}.psr-live-left{left:6px}.psr-live-right{right:6px}.psr-volume-bars{bottom:90px;height:65px}.psr-selected-expiry{bottom:58px;min-width:145px}.psr-selected-expiry strong{font-size:23px}.psr-energy-orb #resModalDirection{font-size:23px}.psr-asset{font-size:22px}.psr-live-chart{height:62px}.premium-signal-result .tf-breakdown{grid-template-columns:repeat(5,minmax(70px,1fr));overflow-x:auto;padding-bottom:5px}.premium-signal-result .tf-chip{min-width:70px}}
-        @media (max-width:430px){.psr-hero{min-height:370px}.psr-energy-orb{width:188px}.psr-orb-stage{inset:20px 0 70px}.psr-selected-expiry{min-width:130px}.psr-alert-stack{grid-template-columns:1fr 1fr 1fr}.psr-shared{display:none}.psr-title strong{font-size:10px}.psr-live-chip{display:none}}
+            .premium-signal-result{min-height:0;padding:8px}.psr-topline{align-items:flex-start}.psr-title small{display:none}.psr-shared{font-size:6px;padding:6px}.psr-hero{min-height:355px}.psr-orb-stage{inset:16px 0 34px}.psr-energy-orb{width:210px;max-width:66vw}.psr-orbit-1{max-width:72vw;max-height:72vw}.psr-orbit-2{max-width:84vw}.psr-orbit-3{max-width:94vw}.psr-floor-1{max-width:88vw}.psr-floor-2{max-width:72vw}.psr-floor-3{max-width:56vw}.psr-live-chip{top:18px;font-size:5.5px;padding:5px}.psr-live-left{left:6px}.psr-live-right{right:6px}.psr-volume-bars{bottom:54px;height:65px}.psr-selected-expiry{bottom:10px;min-width:145px}.psr-selected-expiry strong{font-size:23px}.psr-energy-orb #resModalDirection{font-size:23px}.psr-asset{font-size:22px}.psr-live-chart{height:62px}.premium-signal-result .tf-breakdown{grid-template-columns:repeat(5,minmax(70px,1fr));overflow-x:auto;padding-bottom:5px}.premium-signal-result .tf-chip{min-width:70px}}
+        @media (max-width:430px){.psr-hero{min-height:340px}.psr-energy-orb{width:188px}.psr-orb-stage{inset:14px 0 30px}.psr-selected-expiry{bottom:8px;min-width:130px}.psr-shared{display:none}.psr-title strong{font-size:10px}.psr-live-chip{display:none}}
     </style>
 
 </head>
 <body>
 
     <div class="container">
-        <h2>RAJA AI PREMIUM - PREMIUM UI V9</h2>
+        <h2>RAJA AI PREMIUM - PREMIUM UI V11</h2>
         
         <div class="market-notice">
             💡 Market stays stable & optimal from 9:00 AM to 5:00 PM
@@ -1060,11 +1060,6 @@
                                             <div class="psr-selected-expiry"><span>SELECTED EXPIRY</span><strong id="selectedExpiryHeroValue">1m</strong></div>
                                         </div>
 
-                                        <div class="psr-alert-stack">
-                                            <div class="psr-alert"><span class="psr-dot"></span><div><small>Sound Alert</small><strong id="signalSoundStatus">ON</strong></div></div>
-                                            <div class="psr-alert"><span class="psr-dot"></span><div><small>Signal Flashing</small><strong>ON</strong></div></div>
-                                            <div class="psr-alert"><span class="psr-dot"></span><div><small>Movement / Animation</small><strong>ACTIVE</strong></div></div>
-                                        </div>
                                     </div>
 
                                     <div id="resModalMeta" class="signal-meta psr-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
@@ -1138,7 +1133,7 @@
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); const t=document.getElementById('targetPairDisplay'); if(t && this.value && !this.value.includes('Auto Scan')) t.innerText=this.value"></select></div>
+                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this,'15s')">15s</button><button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this,'30s')">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button></div>
                             </div>
@@ -2323,6 +2318,28 @@
 
         function updateBrokerAssets() { updatePairs(); }
 
+        function marketDisplayName(market) {
+            return ({
+                CryptoLive: 'Crypto Live',
+                CryptoOTC: 'Crypto OTC',
+                ForexLive: 'Forex Live',
+                ForexOTC: 'Forex OTC'
+            })[market] || 'Selected Market';
+        }
+
+        function syncTargetPairDisplay() {
+            const pairSelect = document.getElementById('pairSelect');
+            const marketEl = document.getElementById('marketType');
+            const target = document.getElementById('targetPairDisplay');
+            const targetBox = document.getElementById('targetPairBoxContainer');
+            if (!pairSelect || !target) return;
+            const pair = String(pairSelect.value || '');
+            const isAuto = !pair || pair.includes('Auto Scan');
+            target.innerText = isAuto ? `AUTO SCAN · ${marketDisplayName(marketEl ? marketEl.value : '')}` : pair;
+            target.style.color = '#24efc1';
+            if (targetBox) targetBox.className = 'selected-pair-box';
+        }
+
         function updatePairs() {
             let brokerEl = document.getElementById('brokerSelect');
             let marketEl = document.getElementById('marketType');
@@ -2339,8 +2356,7 @@
                     pairSelect.appendChild(option);
                 });
             }
-            const target = document.getElementById('targetPairDisplay');
-            if (target && pairSelect.value && !pairSelect.value.includes('Auto Scan')) target.innerText = pairSelect.value;
+            syncTargetPairDisplay();
         }
 
         function getExpirySeconds(expiryStr) {
@@ -2371,8 +2387,6 @@
         function syncSelectedExpiryUI() {
             const hero = document.getElementById('selectedExpiryHeroValue');
             if (hero) hero.innerText = selectedExpiry;
-            const soundStatus = document.getElementById('signalSoundStatus');
-            if (soundStatus) soundStatus.innerText = soundEnabled ? 'ON' : 'OFF';
             document.querySelectorAll('.tf-chip').forEach(chip => {
                 chip.classList.toggle('tf-selected', (chip.dataset.tf || '').toLowerCase() === String(selectedExpiry).toLowerCase());
             });
@@ -2546,6 +2560,9 @@
             let eligiblePairs = [];
             let allAutoPairs = [];
 
+            // Never carry a pair from the previous market/scan into a new Auto Scan.
+            syncTargetPairDisplay();
+
             if (isAutoScan) {
                 allAutoPairs = brokerData[broker][market].slice(1);
                 cleanAutoPairCooldowns();
@@ -2553,6 +2570,7 @@
 
                 if (eligiblePairs.length === 0) {
                     completeScanSession('nosignal');
+                    syncTargetPairDisplay();
                     currentSection = 'dashboard';
                     document.getElementById('noSignalTitle').innerText = '⏳ AUTO PAIR ROTATION COOLDOWN';
                     document.getElementById('noSignalDesc').innerText = 'Recently signaled pairs can be scanned again after the 5-minute cooldown. Choose a pair manually or wait for Auto Re-Scan.';
@@ -2656,6 +2674,7 @@
                     displaySignalResult(bestSignalFound);
                 } else {
                     completeScanSession('nosignal');
+                    syncTargetPairDisplay();
                     const titleEl = document.getElementById('noSignalTitle');
                     const descEl = document.getElementById('noSignalDesc');
 
@@ -2672,7 +2691,8 @@
                         } else {
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
-                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${dataBad ? `; ${dataBad} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) deferred to next re-scan` : ''}. None passed the 4-of-6 + ${selectedExpiry} confirmation on the current closed candles.`;
+                            const unavailableOnly = Math.max(0, dataBad - skippedSlow);
+                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed the strict 4-of-6 + ${selectedExpiry} confirmation on the current closed candles.`;
                         }
                     } else {
                         titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
