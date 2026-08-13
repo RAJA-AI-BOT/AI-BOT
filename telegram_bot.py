@@ -280,6 +280,33 @@ def pending_users(limit=20):
         return items[:limit]
 
 
+def approved_users(limit=100):
+    """Return active Telegram users for the admin-only license list."""
+    if DATABASE_URL and psycopg is not None:
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT telegram_id,chat_id,username,first_name,last_name,submitted_id,license_key,
+                               status,stage,market,pair,expiry,created_at,updated_at,approved_at
+                        FROM raja_telegram_users
+                        WHERE status='ACTIVE'
+                        ORDER BY approved_at DESC NULLS LAST, updated_at DESC
+                        LIMIT %s
+                    """, (int(limit),))
+                    rows = cur.fetchall()
+            keys = ["telegram_id","chat_id","username","first_name","last_name","submitted_id","license_key",
+                    "status","stage","market","pair","expiry","created_at","updated_at","approved_at"]
+            return [dict(zip(keys, row)) for row in rows]
+        except Exception as exc:
+            print(f"Telegram approved read warning: {exc}")
+    with STORE_LOCK:
+        data = _read_json(USERS_FILE, {})
+        items = [x for x in data.values() if isinstance(x, dict) and str(x.get("status") or "").upper() == "ACTIVE"]
+        items.sort(key=lambda x: (x.get("approved_at") or 0, x.get("updated_at") or 0), reverse=True)
+        return items[:limit]
+
+
 def admin_id():
     if ADMIN_ID_ENV.isdigit():
         return int(ADMIN_ID_ENV)
@@ -391,6 +418,7 @@ def welcome_text(user):
         "👑 <b>RAJA AI PREMIUM</b>\n"
         "Multi-Broker AI Service\n\n"
         "<b>Step 1:</b> Create your Quotex account using our official partner link.\n"
+        f"🔗 <a href=\"{html.escape(PARTNER_URL, quote=True)}\">Quotex Partner Link</a>\n"
         "<b>Step 2:</b> Deposit minimum $50.\n"
         "<b>Step 3:</b> Submit your Telegram ID or Quotex UID for verification.\n\n"
         "🔐 After verification, admin can approve your access and issue/confirm your VIP license.\n"
@@ -445,6 +473,37 @@ def show_pending_to_admin(chat_id):
         )
         kb = markup([[btn("✅ APPROVE", f"admin:approve:{user['telegram_id']}"), btn("❌ REJECT", f"admin:reject:{user['telegram_id']}")]])
         send_message(chat_id, notify_text, kb)
+
+
+def show_approved_to_admin(chat_id):
+    items = approved_users(100)
+    if not items:
+        send_message(chat_id, "🔐 No approved Telegram licenses found.")
+        return
+
+    send_message(chat_id, f"🔐 <b>APPROVED TELEGRAM LICENSES</b> · {len(items)}")
+    # Keep each Telegram message comfortably below the platform text limit.
+    blocks = []
+    for i, user in enumerate(items, 1):
+        username = f"@{user.get('username')}" if user.get('username') else "(no username)"
+        name = ((user.get('first_name') or '') + ' ' + (user.get('last_name') or '')).strip() or 'User'
+        blocks.append(
+            f"<b>{i}. {html.escape(name)}</b> · {html.escape(username)}\n"
+            f"Telegram ID: <code>{user.get('telegram_id')}</code>\n"
+            f"UID/ID: <code>{html.escape(user.get('submitted_id') or '--')}</code>\n"
+            f"VIP Key: <code>{html.escape(user.get('license_key') or '--')}</code>"
+        )
+
+    chunk = ""
+    for block in blocks:
+        candidate = block if not chunk else chunk + "\n\n" + block
+        if len(candidate) > 3300:
+            send_message(chat_id, chunk)
+            chunk = block
+        else:
+            chunk = candidate
+    if chunk:
+        send_message(chat_id, chunk)
 
 
 def market_keyboard():
@@ -518,6 +577,7 @@ def format_signal(result, expiry):
         f"Technical Confluence: <b>{score:.1f}%</b>\n"
         f"Agreement: <b>{float(result.get('multi_tf_agreement') or 0):.1f}%</b>\n\n"
         "<b>Multi-Timeframe:</b>\n" + "\n".join(tf_lines) +
+        "\n\n⏳ <b>Trade Entry:</b> Take the trade after the current candle closes." +
         "\n\n<i>Technical confluence is a model score, not a guaranteed win probability.</i>" + warning
     )
 
@@ -564,6 +624,14 @@ def handle_message(message, services):
     chat_id = int(chat.get("id"))
     user = sync_identity(sender, chat_id)
     text = str(message.get("text") or "").strip()
+
+    if text.split(maxsplit=1)[0].lower() in {"/licenses", "/keys", "/approved"}:
+        current_admin = admin_id()
+        if current_admin and int(sender["id"]) == current_admin:
+            show_approved_to_admin(chat_id)
+        else:
+            send_message(chat_id, "⛔ Admin only command.")
+        return
 
     if text.startswith("/admin"):
         parts = text.split(maxsplit=1)
