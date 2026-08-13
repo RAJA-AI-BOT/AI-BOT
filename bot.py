@@ -1,2102 +1,913 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-import yfinance as yf
+from flask import request, jsonify
 import os
-import time
 import json
-import secrets
+import time
 import threading
+import hashlib
+import html
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from urllib.request import Request as UrlRequest, urlopen
+from urllib.error import HTTPError, URLError
 
 try:
     import psycopg
 except Exception:
     psycopg = None
 
-app = Flask(__name__, static_folder=".", template_folder=".")
-CORS(app)
-
 # =========================================================
-# RAJA AI MULTI-TIMEFRAME BACKEND
-# Yahoo Finance 1-minute OHLCV is the base/reference feed.
-# 2m, 5m, 10m, 15m and 30m are built from the same Yahoo
-# 1-minute candles so every timeframe stays synchronized.
-#
-# IMPORTANT: "(OTC)" assets are underlying-market proxies.
-# They are NOT exact Quotex OTC quotes.
+# RAJA AI TELEGRAM GATEWAY
+# - Token is read ONLY from TELEGRAM_BOT_TOKEN.
+# - Admin can be claimed once with TELEGRAM_ADMIN_SETUP_CODE.
+# - Webhook is protected by Telegram's secret-token header.
+# - Telegram users reuse the same market-analysis callbacks as the web app.
 # =========================================================
 
-YAHOO_SYMBOLS = {
-    # ---------------- Crypto Live ----------------
-    "BTC-USD": "BTC-USD",
-    "ETH-USD": "ETH-USD",
-    "SOL-USD": "SOL-USD",
-    "LTC-USD": "LTC-USD",
-    "XRP-USD": "XRP-USD",
-    "ADA-USD": "ADA-USD",
-    "DOGE-USD": "DOGE-USD",
-
-    # ---------------- Crypto OTC proxies ----------------
-    # Yahoo underlying-market proxies; not exact Quotex OTC quotes.
-    "Bitcoin (OTC)": "BTC-USD",
-    "Ethereum (OTC)": "ETH-USD",
-    "Litecoin (OTC)": "LTC-USD",
-    "Ripple (OTC)": "XRP-USD",
-    "Solana (OTC)": "SOL-USD",
-    "Toncoin (OTC)": "TON-USD",
-    "Ethereum Classic (OTC)": "ETC-USD",
-    "Axie Infinity (OTC)": "AXS-USD",
-    "Binance Coin (OTC)": "BNB-USD",
-    "Polkadot (OTC)": "DOT-USD",
-    "Avalanche (OTC)": "AVAX-USD",
-    "Chainlink (OTC)": "LINK-USD",
-    "Bitcoin Cash (OTC)": "BCH-USD",
-    "Zcash (OTC)": "ZEC-USD",
-    "Cosmos (OTC)": "ATOM-USD",
-
-    # ---------------- Forex Live ----------------
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "USDJPY=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "USDCAD=X",
-    "USD/CHF": "USDCHF=X",
-    "NZD/USD": "NZDUSD=X",
-    "EUR/GBP": "EURGBP=X",
-    "EUR/JPY": "EURJPY=X",
-    "GBP/JPY": "GBPJPY=X",
-    "AUD/JPY": "AUDJPY=X",
-    "EUR/AUD": "EURAUD=X",
-    "GBP/AUD": "GBPAUD=X",
-    "CAD/JPY": "CADJPY=X",
-    "EUR/CAD": "EURCAD=X",
-    "GBP/CAD": "GBPCAD=X",
-    "NZD/JPY": "NZDJPY=X",
-    "AUD/NZD": "AUDNZD=X",
-    "EUR/CHF": "EURCHF=X",
-    "GBP/CHF": "GBPCHF=X",
-    # Gold live reference uses Yahoo gold futures because the old spot-style symbol returned 404.
-    "XAUUSD": "GC=F",
-
-    # ---------------- Current Quotex Forex OTC list ----------------
-    # These are Yahoo underlying/FX proxies; exact Quotex OTC candles can differ.
-    "USD/BRL (OTC)": "USDBRL=X",
-    "NZD/CHF (OTC)": "NZDCHF=X",
-    "NZD/JPY (OTC)": "NZDJPY=X",
-    "USD/COP (OTC)": "USDCOP=X",
-    "USD/MXN (OTC)": "USDMXN=X",
-    "AUD/NZD (OTC)": "AUDNZD=X",
-    "USD/BDT (OTC)": "USDBDT=X",
-    "USD/DZD (OTC)": "USDDZD=X",
-    "USD/NGN (OTC)": "USDNGN=X",
-    "USD/PHP (OTC)": "USDPHP=X",
-    "USD/PKR (OTC)": "USDPKR=X",
-    "USD/ZAR (OTC)": "USDZAR=X",
-    "USD/INR (OTC)": "USDINR=X",
-    "USD/EGP (OTC)": "USDEGP=X",
-    "USD/IDR (OTC)": "USDIDR=X",
-    "USD/ARS (OTC)": "USDARS=X",
-    "GBP/NZD (OTC)": "GBPNZD=X",
-    "EUR/NZD (OTC)": "EURNZD=X",
-    "NZD/USD (OTC)": "NZDUSD=X",
-    "NZD/CAD (OTC)": "NZDCAD=X",
-    "CAD/CHF (OTC)": "CADCHF=X",
-}
-
-ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
-UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
-
-TIMEFRAMES = {
-    "1m": 1,
-    "2m": 2,
-    "5m": 5,
-    "10m": 10,
-    "15m": 15,
-    "30m": 30,
-}
-
-# Selected trade expiry must be confirmed by the matching analysis timeframe.
-# 15s/30s are intentionally excluded because the base Yahoo feed is 1-minute.
-EXPIRY_CONFIRMATION_TIMEFRAME = {
-    "1m": "1m",
-    "2m": "2m",
-    "5m": "5m",
-    "15m": "15m",
-    "30m": "30m",
-}
-
-# One Yahoo 1m download per unique symbol; all higher TFs are resampled.
-CACHE_DURATION = int(os.environ.get("RAJA_CACHE_SECONDS", "90"))
-STALE_CACHE_MAX_AGE = int(os.environ.get("RAJA_STALE_CACHE_SECONDS", "180"))
-YAHOO_FAILURE_COOLDOWN = int(os.environ.get("RAJA_YAHOO_FAILURE_COOLDOWN", "180"))
-# Keep three Yahoo fetches in flight to match the default three batch workers; this reduces
-# partial 21-pair scans without opening an aggressive request storm.
-YAHOO_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "3"))))
-YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
-BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
-BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
-YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
-# Browser batch timeout is 90s; 78s gives the server more room than the old 68s while
-# still returning before the browser aborts.
-BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(85.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "78"))))
-
-market_cache = {}
-cache_lock = threading.RLock()
-
-symbol_fetch_locks = {}
-symbol_fetch_locks_guard = threading.Lock()
-failed_symbol_until = {}
-failed_symbol_lock = threading.Lock()
-
-yahoo_fetch_semaphore = threading.BoundedSemaphore(YAHOO_FETCH_CONCURRENCY)
-yahoo_pace_lock = threading.Lock()
-last_yahoo_fetch_started = 0.0
-
-batch_cache = {}
-batch_cache_lock = threading.RLock()
-batch_key_locks = {}
-batch_key_locks_guard = threading.Lock()
-
-# Forex Factory exposes an official weekly JSON export from the calendar page.
-# Proxy it through this backend so the browser avoids cross-origin issues and
-# can keep a short cache instead of hitting the source on every click.
-FOREX_FACTORY_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-MARKET_NEWS_CACHE_SECONDS = max(30, int(os.environ.get("RAJA_NEWS_CACHE_SECONDS", "60")))
-market_news_cache = {"timestamp": 0.0, "data": []}
-market_news_lock = threading.RLock()
-
-# Duplicate rotation is handled client-side per browser, so one customer's
-# scan never suppresses another customer's signal.
-recent_signal_lock = threading.Lock()
-recent_signals = {}
-DUPLICATE_SIGNAL_COOLDOWN = 0
-
-
-# =========================================================
-# LICENSE STORE
-# =========================================================
-
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.environ.get("RAJA_DATA_DIR", str(BASE_DIR))).resolve()
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-LICENSE_FILE = DATA_DIR / "licenses.json"
-license_lock = threading.RLock()
-
-ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
-
-# Permanent license storage:
-# - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
-# - If DATABASE_URL is absent, the app falls back to licenses.json. Render Free local files
-#   are ephemeral, so the fallback is for local development/testing only.
+BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
+BOT_USERNAME = (os.environ.get("TELEGRAM_BOT_USERNAME") or "Raja_Aii_bot").strip().lstrip("@")
+SUPPORT_USERNAME = (os.environ.get("TELEGRAM_SUPPORT_USERNAME") or "RAJASIGNALAIPREMIUM").strip().lstrip("@")
+PARTNER_URL = (os.environ.get("RAJA_QUOTEX_PARTNER_URL") or "https://broker-qx.pro/sign-up/?lid=2209395").strip()
+PUBLIC_BASE_URL = (os.environ.get("RAJA_PUBLIC_BASE_URL") or "https://raja-ai-bot.onrender.com").strip().rstrip("/")
+ADMIN_SETUP_CODE = (os.environ.get("TELEGRAM_ADMIN_SETUP_CODE") or "").strip()
+ADMIN_ID_ENV = (os.environ.get("TELEGRAM_ADMIN_ID") or "").strip()
 DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("RAJA_DATABASE_URL") or "").strip()
-LICENSE_STORE_MODE = "postgres" if DATABASE_URL else "file"
-DEVICE_SESSION_TTL_SECONDS = max(120, int(os.environ.get("RAJA_DEVICE_SESSION_TTL", "300")))
-# User requested a one-time reset of all previously generated keys. This marker makes
-# the reset run only once per persistent database. Change/empty the env var to control it.
-LICENSE_RESET_VERSION = os.environ.get("RAJA_LICENSE_RESET_VERSION", "2026-08-12-v8-clean-slate").strip()
+DATA_DIR = Path(os.environ.get("RAJA_DATA_DIR", str(Path(__file__).resolve().parent))).resolve()
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+USERS_FILE = DATA_DIR / "telegram_users.json"
+META_FILE = DATA_DIR / "telegram_meta.json"
+STORE_LOCK = threading.RLock()
 
-SIGNALS_FILE = DATA_DIR / "signals.json"
-signals_lock = threading.RLock()
-AUTO_TRACK_EXPIRIES = {
-    "1m": 60,
-    "2m": 120,
-    "5m": 300,
-    "15m": 900,
-    "30m": 1800,
+WEBHOOK_SECRET = (os.environ.get("TELEGRAM_WEBHOOK_SECRET") or "").strip()
+if not WEBHOOK_SECRET and BOT_TOKEN:
+    WEBHOOK_SECRET = hashlib.sha256(("raja-telegram:" + BOT_TOKEN).encode("utf-8")).hexdigest()[:48]
+
+TELEGRAM_API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
+
+MARKET_PAIRS = {
+    "CryptoLive": ["BTC-USD", "ETH-USD", "SOL-USD", "LTC-USD", "XRP-USD", "ADA-USD", "DOGE-USD"],
+    "CryptoOTC": [
+        "Bitcoin (OTC)", "Ethereum (OTC)", "Litecoin (OTC)", "Ripple (OTC)", "Solana (OTC)",
+        "Toncoin (OTC)", "Ethereum Classic (OTC)", "Axie Infinity (OTC)", "Binance Coin (OTC)",
+        "Polkadot (OTC)", "Avalanche (OTC)", "Chainlink (OTC)", "Bitcoin Cash (OTC)", "Zcash (OTC)", "Cosmos (OTC)"
+    ],
+    "ForexLive": [
+        "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD", "USD/CHF", "NZD/USD", "EUR/GBP", "EUR/JPY",
+        "GBP/JPY", "AUD/JPY", "EUR/AUD", "GBP/AUD", "CAD/JPY", "EUR/CAD", "GBP/CAD", "NZD/JPY", "AUD/NZD",
+        "EUR/CHF", "GBP/CHF", "XAUUSD"
+    ],
+    "ForexOTC": [
+        "USD/BRL (OTC)", "NZD/CHF (OTC)", "NZD/JPY (OTC)", "USD/COP (OTC)", "USD/MXN (OTC)", "AUD/NZD (OTC)",
+        "USD/BDT (OTC)", "USD/DZD (OTC)", "USD/NGN (OTC)", "USD/PHP (OTC)", "USD/PKR (OTC)", "USD/ZAR (OTC)",
+        "USD/INR (OTC)", "USD/EGP (OTC)", "USD/IDR (OTC)", "USD/ARS (OTC)", "GBP/NZD (OTC)", "EUR/NZD (OTC)",
+        "NZD/USD (OTC)", "NZD/CAD (OTC)", "CAD/CHF (OTC)"
+    ],
 }
 
+MARKET_LABELS = {
+    "CryptoLive": "🪙 Crypto Live",
+    "CryptoOTC": "🪙 Crypto OTC Proxy",
+    "ForexLive": "💱 Forex Live",
+    "ForexOTC": "⚡ Forex OTC Proxy",
+}
 
-def normalize_user_id(value):
-    """Normalize Telegram @usernames so capitalization cannot break a valid license."""
-    user = str(value or "").strip()
-    if user.startswith("@"):
-        return "@" + user[1:].strip().casefold()
-    return user
+VALID_EXPIRIES = ["1m", "2m", "5m", "15m", "30m"]
 
 
 def _db_connect():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not configured")
-    if psycopg is None:
-        raise RuntimeError("psycopg is not installed; install requirements.txt")
+    if not DATABASE_URL or psycopg is None:
+        return None
     return psycopg.connect(DATABASE_URL, connect_timeout=10)
 
 
-def initialize_license_store():
-    if DATABASE_URL:
-        # Fail fast when a database URL is configured but unusable. This avoids silently
-        # falling back to temporary Render storage and losing customer licenses later.
-        with _db_connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raja_licenses (
-                        license_key TEXT PRIMARY KEY,
-                        active BOOLEAN NOT NULL DEFAULT TRUE,
-                        user_id TEXT,
-                        device_id TEXT,
-                        device_label TEXT,
-                        created_at BIGINT,
-                        last_verified_at BIGINT
-                    )
-                """)
-                cur.execute("ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS device_label TEXT")
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raja_meta (
-                        meta_key TEXT PRIMARY KEY,
-                        meta_value TEXT
-                    )
-                """)
+def _read_json(path, fallback):
+    try:
+        if not path.exists():
+            return fallback
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data
+    except Exception:
+        return fallback
 
-                # One-time clean slate requested by the admin. The version marker prevents
-                # Render restarts/redeploys from repeatedly deleting newly generated keys.
-                if LICENSE_RESET_VERSION:
-                    cur.execute("SELECT meta_value FROM raja_meta WHERE meta_key = %s", ("license_reset_version",))
-                    row = cur.fetchone()
-                    current_version = str(row[0]) if row and row[0] is not None else ""
-                    if current_version != LICENSE_RESET_VERSION:
-                        cur.execute("DELETE FROM raja_licenses")
-                        cur.execute("""
-                            INSERT INTO raja_meta (meta_key, meta_value)
-                            VALUES (%s, %s)
-                            ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value
-                        """, ("license_reset_version", LICENSE_RESET_VERSION))
-                        print(f"RAJA license reset applied once: {LICENSE_RESET_VERSION}")
-        print("RAJA license store: PostgreSQL (persistent)")
-        return
 
-    with license_lock:
-        if not LICENSE_FILE.exists():
-            LICENSE_FILE.write_text("{}", encoding="utf-8")
-        if LICENSE_RESET_VERSION:
-            marker_file = DATA_DIR / ".raja_license_reset_version"
-            current_version = marker_file.read_text(encoding="utf-8").strip() if marker_file.exists() else ""
-            if current_version != LICENSE_RESET_VERSION:
-                LICENSE_FILE.write_text("{}", encoding="utf-8")
-                marker_file.write_text(LICENSE_RESET_VERSION, encoding="utf-8")
-                print(f"RAJA local license reset applied once: {LICENSE_RESET_VERSION}")
-    print("WARNING: RAJA license store is using local file storage (not persistent on Render Free).")
+def _write_json(path, data):
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
 
-def load_licenses():
-    with license_lock:
-        if DATABASE_URL:
+
+def init_telegram_store():
+    """Create Telegram-specific persistent tables without changing the web-license schema."""
+    if DATABASE_URL and psycopg is not None:
+        try:
             with _db_connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT license_key, active, user_id, device_id, device_label, created_at, last_verified_at
-                        FROM raja_licenses
+                        CREATE TABLE IF NOT EXISTS raja_telegram_users (
+                            telegram_id BIGINT PRIMARY KEY,
+                            chat_id BIGINT NOT NULL,
+                            username TEXT,
+                            first_name TEXT,
+                            last_name TEXT,
+                            submitted_id TEXT,
+                            license_key TEXT,
+                            status TEXT NOT NULL DEFAULT 'NEW',
+                            stage TEXT NOT NULL DEFAULT 'START',
+                            market TEXT,
+                            pair TEXT,
+                            expiry TEXT,
+                            created_at BIGINT,
+                            updated_at BIGINT,
+                            approved_at BIGINT
+                        )
                     """)
-                    rows = cur.fetchall()
+                    cur.execute("""
+                        CREATE TABLE IF NOT EXISTS raja_telegram_meta (
+                            meta_key TEXT PRIMARY KEY,
+                            meta_value TEXT
+                        )
+                    """)
+            return
+        except Exception as exc:
+            print(f"Telegram DB initialization warning: {exc}")
+    with STORE_LOCK:
+        if not USERS_FILE.exists():
+            _write_json(USERS_FILE, {})
+        if not META_FILE.exists():
+            _write_json(META_FILE, {})
 
-            data = {}
-            for key, active, user, device, device_label, created_at, last_verified_at in rows:
-                data[str(key)] = {
-                    "active": bool(active),
-                    "user": user,
-                    "device": device,
-                    "device_label": device_label,
-                    "created_at": created_at,
-                    "last_verified_at": last_verified_at,
-                }
-            return data
 
-        if not LICENSE_FILE.exists():
-            LICENSE_FILE.write_text("{}", encoding="utf-8")
-            return {}
-
+def get_meta(key, default=None):
+    if DATABASE_URL and psycopg is not None:
         try:
-            data = json.loads(LICENSE_FILE.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise ValueError("Invalid license database")
-            return data
-        except Exception:
-            # Do not delete/overwrite a corrupt file silently. Keep a backup for recovery.
-            try:
-                backup = LICENSE_FILE.with_name(f"licenses.corrupt.{int(time.time())}.json")
-                LICENSE_FILE.replace(backup)
-            except Exception:
-                pass
-            LICENSE_FILE.write_text("{}", encoding="utf-8")
-            return {}
-
-
-def save_licenses(data):
-    with license_lock:
-        if DATABASE_URL:
-            rows = []
-            for key, record in (data or {}).items():
-                record = record if isinstance(record, dict) else {}
-                rows.append((
-                    str(key),
-                    bool(record.get("active", False)),
-                    record.get("user"),
-                    record.get("device"),
-                    record.get("device_label"),
-                    record.get("created_at"),
-                    record.get("last_verified_at"),
-                ))
-
             with _db_connect() as conn:
                 with conn.cursor() as cur:
-                    # Existing routes mutate a full in-memory dictionary. Replacing the table
-                    # inside one transaction preserves their current behavior without changing
-                    # the frontend/API contract.
-                    cur.execute("DELETE FROM raja_licenses")
-                    if rows:
-                        cur.executemany("""
-                            INSERT INTO raja_licenses
-                                (license_key, active, user_id, device_id, device_label, created_at, last_verified_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        """, rows)
-            return
-
-        temp = LICENSE_FILE.with_suffix(".tmp")
-        temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        temp.replace(LICENSE_FILE)
+                    cur.execute("SELECT meta_value FROM raja_telegram_meta WHERE meta_key=%s", (key,))
+                    row = cur.fetchone()
+                    return row[0] if row else default
+        except Exception as exc:
+            print(f"Telegram meta read warning: {exc}")
+    with STORE_LOCK:
+        return _read_json(META_FILE, {}).get(key, default)
 
 
-initialize_license_store()
-
-
-# =========================================================
-# SIGNAL TRACKING
-# =========================================================
-
-def load_signals():
-    with signals_lock:
-        if not SIGNALS_FILE.exists():
-            SIGNALS_FILE.write_text("[]", encoding="utf-8")
-            return []
-
+def set_meta(key, value):
+    value = str(value)
+    if DATABASE_URL and psycopg is not None:
         try:
-            data = json.loads(SIGNALS_FILE.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
-        except Exception:
-            return []
-
-
-def save_signals(items):
-    with signals_lock:
-        temp = SIGNALS_FILE.with_suffix(".tmp")
-        temp.write_text(json.dumps(items, indent=2), encoding="utf-8")
-        temp.replace(SIGNALS_FILE)
-
-
-def dataframe_epoch_rows(df):
-    rows = []
-    if df is None or df.empty:
-        return rows
-
-    for index_value, row in df.iterrows():
-        try:
-            epoch = int(index_value.timestamp())
-        except Exception:
-            continue
-        rows.append((epoch, row))
-
-    return rows
-
-
-def resolve_tracked_signal(item):
-    """Resolve a pending theoretical signal from Yahoo 1m candles.
-
-    Entry = Open of the next 1-minute candle after the signal was displayed.
-    Exit  = Close of the final 1-minute candle inside the selected expiry.
-    """
-    pair = item.get("pair")
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
-        return False
-
-    update_symbol_cache(symbol)
-
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if not cached:
-        return False
-
-    rows = dataframe_epoch_rows(cached.get("data"))
-    if not rows:
-        return False
-
-    entry_epoch = int(item.get("entry_epoch", 0))
-    expiry_epoch = int(item.get("expiry_epoch", 0))
-
-    # Allow a small tolerance for delayed/missing minute bars.
-    entry_candidates = [
-        (epoch, row) for epoch, row in rows
-        if entry_epoch <= epoch < entry_epoch + 120
-    ]
-    exit_candidates = [
-        (epoch, row) for epoch, row in rows
-        if max(entry_epoch, expiry_epoch - 120) <= epoch < expiry_epoch
-    ]
-
-    if not entry_candidates or not exit_candidates:
-        return False
-
-    entry_epoch_actual, entry_row = entry_candidates[0]
-    exit_epoch_actual, exit_row = exit_candidates[-1]
-
-    try:
-        entry_price = float(entry_row["Open"])
-        exit_price = float(exit_row["Close"])
-    except Exception:
-        return False
-
-    direction = item.get("signal")
-
-    if exit_price == entry_price:
-        result = "DRAW"
-    elif direction == "CALL":
-        result = "WIN" if exit_price > entry_price else "LOSS"
-    elif direction == "PUT":
-        result = "WIN" if exit_price < entry_price else "LOSS"
-    else:
-        return False
-
-    item["entry_price"] = round(entry_price, 8)
-    item["exit_price"] = round(exit_price, 8)
-    item["entry_candle_epoch"] = entry_epoch_actual
-    item["exit_candle_epoch"] = exit_epoch_actual
-    item["result"] = result
-    item["yahoo_result"] = result
-    item["result_source"] = "yahoo_live"
-    item["status"] = "COMPLETED"
-    item["resolved_at"] = int(time.time())
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO raja_telegram_meta(meta_key, meta_value)
+                        VALUES(%s,%s)
+                        ON CONFLICT(meta_key) DO UPDATE SET meta_value=EXCLUDED.meta_value
+                    """, (key, value))
+            return True
+        except Exception as exc:
+            print(f"Telegram meta write warning: {exc}")
+    with STORE_LOCK:
+        data = _read_json(META_FILE, {})
+        data[key] = value
+        _write_json(META_FILE, data)
     return True
 
 
-def signal_outcome_worker():
-    while True:
-        try:
-            with signals_lock:
-                items = load_signals()
-                changed = False
-                now = int(time.time())
-
-                for item in items:
-                    if item.get("status") != "PENDING":
-                        continue
-
-                    expiry_epoch = int(item.get("expiry_epoch", 0))
-                    if now < expiry_epoch + 8:
-                        continue
-
-                    pair = str(item.get("pair", ""))
-
-                    # Yahoo is not the Quotex OTC price feed, so OTC outcomes
-                    # require the user's QX WIN / QX LOSS confirmation.
-                    if "(OTC)" in pair:
-                        item["status"] = "AWAITING_QX"
-                        item["result"] = None
-                        item["result_source"] = "awaiting_quotex"
-                        item["resolved_at"] = now
-                        changed = True
-                        continue
-
-                    if resolve_tracked_signal(item):
-                        changed = True
-
-                if changed:
-                    save_signals(items)
-
-        except Exception as e:
-            print(f"Signal outcome worker error: {e}")
-
-        time.sleep(10)
-
-
-def signal_stats(items):
-    completed = [x for x in items if x.get("status") == "COMPLETED"]
-    wins = sum(1 for x in completed if x.get("result") == "WIN")
-    losses = sum(1 for x in completed if x.get("result") == "LOSS")
-    draws = sum(1 for x in completed if x.get("result") == "DRAW")
-    decided = wins + losses
-
-    return {
-        "completed": len(completed),
-        "wins": wins,
-        "losses": losses,
-        "draws": draws,
-        "observed_win_rate": round((wins / decided) * 100, 2) if decided else None,
-    }
-
-
-# =========================================================
-# YAHOO MARKET DATA
-# =========================================================
-
-def fetch_yahoo_1m(symbol):
-    """Fetch Yahoo Finance 1-minute OHLCV candles."""
-    ticker = yf.Ticker(symbol)
-    df = ticker.history(
-        period="5d",
-        interval="1m",
-        auto_adjust=False,
-        actions=False,
-        timeout=YAHOO_REQUEST_TIMEOUT_SECONDS,
-    )
-
-    if df is None or df.empty:
-        return None
-
-    required = ["Open", "High", "Low", "Close"]
-    if not all(col in df.columns for col in required):
-        return None
-
-    df = df.dropna(subset=required)
-    if len(df) < 120:
-        return None
-
-    return df
-
-
-def _get_symbol_fetch_lock(symbol):
-    with symbol_fetch_locks_guard:
-        lock = symbol_fetch_locks.get(symbol)
-        if lock is None:
-            lock = threading.Lock()
-            symbol_fetch_locks[symbol] = lock
-        return lock
-
-
-def _get_batch_key_lock(key):
-    with batch_key_locks_guard:
-        lock = batch_key_locks.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            batch_key_locks[key] = lock
-        return lock
-
-
-def _pace_yahoo_request():
-    global last_yahoo_fetch_started
-    with yahoo_pace_lock:
-        now = time.time()
-        wait_for = YAHOO_MIN_GAP_SECONDS - (now - last_yahoo_fetch_started)
-        if wait_for > 0:
-            time.sleep(wait_for)
-        last_yahoo_fetch_started = time.time()
-
-
-def update_symbol_cache(symbol, force=False):
-    """Refresh one Yahoo symbol with single-flight, pacing and failure cooldown."""
-    now = time.time()
-
-    with cache_lock:
-        cached = market_cache.get(symbol)
-        if cached and not force and (now - cached["timestamp"]) <= CACHE_DURATION:
-            return True
-
-    with failed_symbol_lock:
-        blocked_until = failed_symbol_until.get(symbol, 0)
-
-    if not force and blocked_until > now:
-        with cache_lock:
-            cached = market_cache.get(symbol)
-            if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
-                return True
-        return False
-
-    symbol_lock = _get_symbol_fetch_lock(symbol)
-    with symbol_lock:
-        now = time.time()
-
-        # Another request may have refreshed this symbol while this caller waited.
-        with cache_lock:
-            cached = market_cache.get(symbol)
-            if cached and not force and (now - cached["timestamp"]) <= CACHE_DURATION:
-                return True
-
-        with failed_symbol_lock:
-            blocked_until = failed_symbol_until.get(symbol, 0)
-
-        if not force and blocked_until > now:
-            with cache_lock:
-                cached = market_cache.get(symbol)
-                if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
-                    return True
-            return False
-
-        try:
-            with yahoo_fetch_semaphore:
-                _pace_yahoo_request()
-                df = fetch_yahoo_1m(symbol)
-
-            if df is None:
-                with failed_symbol_lock:
-                    failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
-                return False
-
-            with cache_lock:
-                market_cache[symbol] = {
-                    "data": df.copy(),
-                    "timestamp": time.time(),
-                }
-
-            with failed_symbol_lock:
-                failed_symbol_until.pop(symbol, None)
-
-            return True
-
-        except Exception as e:
-            with failed_symbol_lock:
-                failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
-            print(f"Yahoo fetch error for {symbol}: {e}")
-            return False
-
-
-def get_market_data(pair):
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
-        return None, None, None
-
-    now = time.time()
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if cached:
-        age = now - cached["timestamp"]
-        if age <= CACHE_DURATION:
-            return cached["data"].copy(), age, symbol
-
-    refreshed = update_symbol_cache(symbol)
-
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if cached:
-        age = time.time() - cached["timestamp"]
-        if refreshed or age <= STALE_CACHE_MAX_AGE:
-            return cached["data"].copy(), age, symbol
-
-    return None, None, symbol
-
-
-def background_market_poller():
-    """Disabled intentionally: full-market polling caused Yahoo rate limits."""
-    return
-
-
-def build_timeframe(base_df, minutes):
-    """Create a CLOSED-candle timeframe from Yahoo 1m OHLCV."""
-    if base_df is None or base_df.empty:
-        return None
-
-    df = base_df.copy()
-
-    if minutes == 1:
-        # Last Yahoo minute may still be forming; analyze only closed candles.
-        if len(df) > 1:
-            df = df.iloc[:-1]
-        return df
-
-    rule = f"{minutes}min"
-
-    agg = {
-        "Open": "first",
-        "High": "max",
-        "Low": "min",
-        "Close": "last",
-    }
-
-    if "Volume" in df.columns:
-        agg["Volume"] = "sum"
-
-    try:
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-            origin="start_day",
-        ).agg(agg)
-    except TypeError:
-        # Compatibility fallback for older pandas versions.
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-        ).agg(agg)
-
-    tf = tf.dropna(subset=["Open", "High", "Low", "Close"])
-
-    # The last resampled bucket can still be forming.
-    if len(tf) > 1:
-        tf = tf.iloc[:-1]
-
-    return tf
-
-
-# =========================================================
-# INDICATORS
-# =========================================================
-
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    avg_loss = loss.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    rs = avg_gain / avg_loss.replace(0, 1e-12)
-    return 100 - (100 / (1 + rs))
-
-
-def calculate_ema(series, period):
-    return series.ewm(
-        span=period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_macd(series):
-    ema12 = calculate_ema(series, 12)
-    ema26 = calculate_ema(series, 26)
-    macd = ema12 - ema26
-    signal = macd.ewm(
-        span=9,
-        adjust=False,
-        min_periods=9,
-    ).mean()
-    return macd, signal
-
-
-def calculate_bollinger_bands(series, period=20, std_dev=2):
-    middle = series.rolling(period).mean()
-    std = series.rolling(period).std()
-    upper = middle + (std_dev * std)
-    lower = middle - (std_dev * std)
-    return upper, middle, lower
-
-
-def calculate_true_range(df):
-    previous_close = df["Close"].shift(1)
-    high_low = df["High"] - df["Low"]
-    high_close = (df["High"] - previous_close).abs()
-    low_close = (df["Low"] - previous_close).abs()
-    return high_low.combine(high_close, max).combine(low_close, max)
-
-
-def calculate_atr(df, period=14):
-    tr = calculate_true_range(df)
-    return tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_adx_components(df, period=14):
-    high = df["High"]
-    low = df["Low"]
-
-    up_move = high.diff()
-    down_move = -low.diff()
-
-    plus_dm = up_move.where(
-        (up_move > down_move) & (up_move > 0),
-        0.0,
-    )
-    minus_dm = down_move.where(
-        (down_move > up_move) & (down_move > 0),
-        0.0,
-    )
-
-    tr = calculate_true_range(df)
-    atr = tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    plus_di = (
-        100
-        * plus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    minus_di = (
-        100
-        * minus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    dx = (
-        100
-        * (plus_di - minus_di).abs()
-        / (plus_di + minus_di).replace(0, 1e-12)
-    )
-
-    adx = dx.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    return adx, plus_di, minus_di
-
-
-def safe_float(value, default=None):
-    try:
-        value = float(value)
-        if value != value:
-            return default
-        return value
-    except Exception:
-        return default
-
-
-def analyze_timeframe(df, timeframe):
-    """Analyze one CLOSED timeframe. No random values are used."""
-    if df is None or df.empty or len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient closed candles",
-        }
-
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(df.columns):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Missing OHLC columns",
-        }
-
-    df = df.copy().dropna(subset=list(required))
-    if len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient clean candles",
-        }
-
-    close = df["Close"]
-
-    rsi = safe_float(calculate_rsi(close, 14).iloc[-1])
-    ema9 = safe_float(calculate_ema(close, 9).iloc[-1])
-    ema21 = safe_float(calculate_ema(close, 21).iloc[-1])
-    ema50 = safe_float(calculate_ema(close, 50).iloc[-1])
-
-    macd, macd_signal = calculate_macd(close)
-    macd_now = safe_float(macd.iloc[-1])
-    macd_sig_now = safe_float(macd_signal.iloc[-1])
-
-    bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
-    bb_mid = safe_float(bb_middle.iloc[-1])
-
-    atr = safe_float(calculate_atr(df, 14).iloc[-1])
-
-    adx, plus_di, minus_di = calculate_adx_components(df, 14)
-    adx_now = safe_float(adx.iloc[-1])
-    plus_di_now = safe_float(plus_di.iloc[-1])
-    minus_di_now = safe_float(minus_di.iloc[-1])
-
-    price = safe_float(close.iloc[-1])
-    previous_close = safe_float(close.iloc[-2])
-
-    values = [
-        rsi, ema9, ema21, ema50,
-        macd_now, macd_sig_now, bb_mid,
-        atr, adx_now, plus_di_now, minus_di_now,
-        price, previous_close,
-    ]
-
-    if any(v is None for v in values) or atr <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Indicators not ready",
-        }
-
-    ema_bullish = price > ema9 > ema21 > ema50
-    ema_bearish = price < ema9 < ema21 < ema50
-
-    macd_bullish = macd_now > macd_sig_now
-    macd_bearish = macd_now < macd_sig_now
-
-    bb_bullish = price > bb_mid
-    bb_bearish = price < bb_mid
-
-    adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
-    adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
-
-    momentum_bullish = price > previous_close
-    momentum_bearish = price < previous_close
-
-    last = df.iloc[-1]
-    candle_open = safe_float(last["Open"])
-    candle_high = safe_float(last["High"])
-    candle_low = safe_float(last["Low"])
-    candle_close = safe_float(last["Close"])
-
-    if None in (candle_open, candle_high, candle_low, candle_close):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Latest candle incomplete",
-        }
-
-    candle_range = candle_high - candle_low
-    if candle_range <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Invalid candle range",
-        }
-
-    bullish_candle = candle_close > candle_open
-    bearish_candle = candle_close < candle_open
-
-    upper_wick = candle_high - max(candle_open, candle_close)
-    lower_wick = min(candle_open, candle_close) - candle_low
-
-    bullish_rejection = (
-        lower_wick / candle_range >= 0.25
-        and bullish_candle
-    )
-    bearish_rejection = (
-        upper_wick / candle_range >= 0.25
-        and bearish_candle
-    )
-
-    volume_bullish = False
-    volume_bearish = False
-    if "Volume" in df.columns:
-        volume = df["Volume"].fillna(0)
-        current_volume = safe_float(volume.iloc[-1], 0.0)
-        avg_volume = safe_float(volume.rolling(20).mean().iloc[-1], 0.0)
-        if current_volume > 0 and avg_volume > 0:
-            volume_bullish = bullish_candle and current_volume > avg_volume
-            volume_bearish = bearish_candle and current_volume > avg_volume
-
-    bullish_points = 0.0
-    bearish_points = 0.0
-
-    if 52 <= rsi <= 70:
-        bullish_points += 1.0
-    elif 30 <= rsi <= 48:
-        bearish_points += 1.0
-
-    if ema_bullish:
-        bullish_points += 2.0
-    elif ema_bearish:
-        bearish_points += 2.0
-
-    if macd_bullish:
-        bullish_points += 1.0
-    elif macd_bearish:
-        bearish_points += 1.0
-
-    if bb_bullish:
-        bullish_points += 1.0
-    elif bb_bearish:
-        bearish_points += 1.0
-
-    if adx_bullish:
-        bullish_points += 1.5
-    elif adx_bearish:
-        bearish_points += 1.5
-
-    if momentum_bullish:
-        bullish_points += 1.0
-    elif momentum_bearish:
-        bearish_points += 1.0
-
-    if bullish_rejection:
-        bullish_points += 1.0
-    elif bearish_rejection:
-        bearish_points += 1.0
-    elif bullish_candle:
-        bullish_points += 0.5
-    elif bearish_candle:
-        bearish_points += 0.5
-
-    if volume_bullish:
-        bullish_points += 1.0
-    elif volume_bearish:
-        bearish_points += 1.0
-
-    difference = abs(bullish_points - bearish_points)
-    winning_points = max(bullish_points, bearish_points)
-
-    # Slightly relaxed per-TF gate because final decision also requires
-    # multi-timeframe agreement.
-    if difference < 1.5 or winning_points < 3.5:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Weak/conflicting timeframe",
-            "rsi": round(rsi, 2),
-            "adx": round(adx_now, 2),
-            "bullish_points": round(bullish_points, 2),
-            "bearish_points": round(bearish_points, 2),
-        }
-
-    signal = "CALL" if bullish_points > bearish_points else "PUT"
-
-    score = 50 + difference * 6
-    if adx_now >= 20:
-        score += min(adx_now - 20, 15) * 0.5
-    score = max(50, min(95, score))
-
-    return {
-        "timeframe": timeframe,
-        "signal": signal,
-        "score": round(score, 2),
-        "rsi": round(rsi, 2),
-        "adx": round(adx_now, 2),
-        "atr": round(atr, 8),
-        "price": round(price, 8),
-        "bullish_points": round(bullish_points, 2),
-        "bearish_points": round(bearish_points, 2),
-        "closed_candle_epoch": int(df.index[-1].timestamp()) if len(df.index) else None,
-    }
-
-
-
-def should_suppress_duplicate(pair, signal, timeframe_summary):
-    """Suppress same pair+direction when the analyzed TF context has not changed."""
-    context = tuple(
-        (tf, details.get("signal"), details.get("score"))
-        for tf, details in sorted((timeframe_summary or {}).items())
-    )
-    fingerprint = (pair, signal, context)
-    now = time.time()
-
-    with recent_signal_lock:
-        existing = recent_signals.get(pair)
-
-        if existing:
-            same_signal = existing.get("signal") == signal
-            same_context = existing.get("fingerprint") == fingerprint
-            still_locked = (now - existing.get("timestamp", 0)) < DUPLICATE_SIGNAL_COOLDOWN
-
-            if same_signal and same_context and still_locked:
-                return True
-
-        recent_signals[pair] = {
-            "signal": signal,
-            "fingerprint": fingerprint,
-            "timestamp": now,
-        }
-
-    return False
-
-
-def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
-    return {
-        "pair": pair,
-        "score": 0,
-        "signal": "NO SIGNAL",
-        "reason": reason,
-        "rsi": None,
-        "adx": None,
-        "atr": None,
-        "price": None,
-        "bullish_points": 0,
-        "bearish_points": 0,
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "otc_proxy_warning": "(OTC)" in pair,
-        "yahoo_symbol": symbol,
-        "timeframe_summary": timeframes or {},
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-    }
-
-
-def calculate_live_indicators(pair, selected_expiry=None):
-    """Scan 1m,2m,5m,10m,15m,30m and require selected-expiry confirmation."""
-    if pair not in YAHOO_SYMBOLS:
-        return no_signal_result(
-            pair,
-            "Pair is not configured in Yahoo mapping.",
-        )
-
-    base_df, data_age, symbol = get_market_data(pair)
-
-    if base_df is None or base_df.empty:
-        return no_signal_result(
-            pair,
-            "Yahoo market data unavailable.",
-            symbol=symbol,
-            data_age=data_age,
-        )
-
-    results = {}
-    for tf_name, minutes in TIMEFRAMES.items():
-        tf_df = build_timeframe(base_df, minutes)
-        results[tf_name] = analyze_timeframe(tf_df, tf_name)
-
-    call_results = [
-        r for r in results.values()
-        if r.get("signal") == "CALL"
-    ]
-    put_results = [
-        r for r in results.values()
-        if r.get("signal") == "PUT"
-    ]
-
-    valid_count = len(call_results) + len(put_results)
-
-    summary = {
-        tf: {
-            "signal": r.get("signal"),
-            "score": r.get("score", 0),
-            "rsi": r.get("rsi"),
-            "adx": r.get("adx"),
-            "closed_candle_epoch": r.get("closed_candle_epoch"),
-        }
-        for tf, r in results.items()
-    }
-
-    # Require at least 4 directional timeframes out of 6.
-    if valid_count < 4:
-        return no_signal_result(
-            pair,
-            "Fewer than 4 timeframes reached valid confluence.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
-
-    if len(call_results) > len(put_results):
-        signal = "CALL"
-        supporters = call_results
-        opponents = put_results
-    elif len(put_results) > len(call_results):
-        signal = "PUT"
-        supporters = put_results
-        opponents = call_results
-    else:
-        return no_signal_result(
-            pair,
-            "Multi-timeframe direction is tied.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
-
-    # At least 4 timeframes must agree with the final direction.
-    if len(supporters) < 4:
-        return no_signal_result(
-            pair,
-            "Fewer than 4 timeframes agree with the final direction.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
-
-    agreement_ratio = len(supporters) / valid_count
-
-    # Require at least two-thirds directional agreement among valid TFs.
-    if agreement_ratio < (2 / 3):
-        return no_signal_result(
-            pair,
-            "Multi-timeframe agreement below 66.7%.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
-
-    # The user's selected expiry is a hard confirmation gate.
-    # Example: 1m expiry requires the 1m analysis itself to confirm the final direction.
-    required_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip())
-    if required_tf:
-        required_result = results.get(required_tf) or {}
-        required_signal = required_result.get("signal")
-        if required_signal != signal:
-            return no_signal_result(
-                pair,
-                (
-                    f"Selected expiry {selected_expiry} requires {required_tf} confirmation; "
-                    f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
-                ),
-                symbol=symbol,
-                data_age=data_age,
-                timeframes=summary,
-            )
-
-    avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
-
-    # Reward agreement without pretending this is a win probability.
-    multi_tf_score = avg_support_score + ((agreement_ratio - 0.5) * 12)
-    multi_tf_score = max(50, min(95, multi_tf_score))
-
-    # Prefer representative diagnostics from 5m, then 2m, then 1m,
-    # otherwise use the strongest supporting timeframe.
-    representative = None
-    for preferred in ("5m", "2m", "1m", "10m", "15m", "30m"):
-        r = results.get(preferred)
-        if r and r.get("signal") == signal:
-            representative = r
-            break
-
-    if representative is None:
-        representative = max(supporters, key=lambda x: x.get("score", 0))
-
-    aligned_tfs = [r["timeframe"] for r in supporters]
-    opposing_tfs = [r["timeframe"] for r in opponents]
-
-
-    return {
-        "pair": pair,
-        "score": round(multi_tf_score, 2),
-        "signal": signal,
-        "reason": (
-            f"Multi-TF agreement: {len(supporters)}/{valid_count} valid "
-            f"timeframes -> {signal}"
-        ),
-        "rsi": representative.get("rsi"),
-        "adx": representative.get("adx"),
-        "atr": representative.get("atr"),
-        "price": representative.get("price"),
-        "bullish_points": representative.get("bullish_points", 0),
-        "bearish_points": representative.get("bearish_points", 0),
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "otc_proxy_warning": "(OTC)" in pair,
-        "yahoo_symbol": symbol,
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "aligned_timeframes": aligned_tfs,
-        "opposing_timeframes": opposing_tfs,
-        "timeframe_summary": summary,
-        "multi_tf_agreement": round(agreement_ratio * 100, 1),
-        "selected_expiry": selected_expiry,
-        "required_expiry_timeframe": required_tf,
-        "confirmation_mode": (
-            f"4-of-6 Strong + {required_tf} Required" if required_tf else "4-of-6 Strong"
-        ),
-        "duplicate_protection": False,
-    }
-
-
-# =========================================================
-# LIVE ECONOMIC NEWS / CALENDAR
-# =========================================================
-
-def fetch_forex_factory_calendar():
-    """Fetch and normalize Forex Factory's official weekly JSON calendar export."""
-    req = UrlRequest(
-        FOREX_FACTORY_CALENDAR_URL,
-        headers={
-            "User-Agent": "RAJA-AI-PREMIUM/2.5 (+economic-calendar)",
-            "Accept": "application/json",
-        },
-    )
-    with urlopen(req, timeout=10) as response:
-        payload = response.read().decode("utf-8", errors="replace")
-
-    raw_items = json.loads(payload)
-    if not isinstance(raw_items, list):
-        raise ValueError("Unexpected Forex Factory calendar response")
-
-    normalized = []
-    for item in raw_items[:300]:
-        if not isinstance(item, dict):
-            continue
-        title = str(item.get("title", "")).strip()
-        country = str(item.get("country", "")).strip().upper()
-        date_value = str(item.get("date", "")).strip()
-        if not title or not date_value:
-            continue
-        impact = str(item.get("impact", "Low")).strip().title() or "Low"
-        if impact not in {"High", "Medium", "Low", "Holiday"}:
-            impact = "Low"
-        normalized.append({
-            "title": title[:180],
-            "currency": country[:8],
-            "date": date_value[:40],
-            "impact": impact,
-            "forecast": str(item.get("forecast", "")).strip()[:40],
-            "previous": str(item.get("previous", "")).strip()[:40],
-        })
-
-    normalized.sort(key=lambda x: x.get("date", ""))
-    return normalized
-
-
-# =========================================================
-# ROUTES
-# =========================================================
-
-@app.route("/")
-def home():
-    if os.path.exists(BASE_DIR / "index.html"):
-        return send_from_directory(str(BASE_DIR), "index.html")
-    return (
-        "RAJA AI backend is running. "
-        "Place index.html in the same folder as bot.py."
-    )
-
-
-@app.after_request
-def disable_html_cache(response):
-    # Prevent stale index.html/inline JS from surviving a new Render deploy.
-    if request.path == "/" or request.path.endswith(".html"):
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    return response
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    with cache_lock:
-        cached_symbols = len(market_cache)
-
-    return jsonify({
-        "status": "success",
-        "service": "RAJA AI multi-timeframe backend",
-        "yahoo_pairs": len(YAHOO_SYMBOLS),
-        "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
-        "cached_symbols": cached_symbols,
-        "base_interval": "1m",
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "4-of-6 Strong",
-        "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
-        "background_full_market_poller": False,
-        "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
-        "yahoo_failure_cooldown_seconds": YAHOO_FAILURE_COOLDOWN,
-        "batch_cache_seconds": BATCH_CACHE_DURATION,
-        "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
-        "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
-        "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
-        "closed_candle_analysis": True,
-        "license_store": LICENSE_STORE_MODE,
-        "persistent_license_store": bool(DATABASE_URL),
-    })
-
-
-@app.route("/market-news", methods=["GET"])
-def market_news():
-    now = time.time()
-    with market_news_lock:
-        cached_data = list(market_news_cache.get("data") or [])
-        cached_at = float(market_news_cache.get("timestamp") or 0.0)
-
-    if cached_data and (now - cached_at) <= MARKET_NEWS_CACHE_SECONDS:
-        return jsonify({
-            "status": "success",
-            "source": "Forex Factory weekly calendar export",
-            "source_url": "https://www.forexfactory.com/calendar",
-            "data": cached_data,
-            "cache_hit": True,
-            "stale": False,
-            "updated_at": int(cached_at),
-        })
-
-    try:
-        fresh_data = fetch_forex_factory_calendar()
-        with market_news_lock:
-            market_news_cache["timestamp"] = time.time()
-            market_news_cache["data"] = fresh_data
-            updated_at = market_news_cache["timestamp"]
-
-        return jsonify({
-            "status": "success",
-            "source": "Forex Factory weekly calendar export",
-            "source_url": "https://www.forexfactory.com/calendar",
-            "data": fresh_data,
-            "cache_hit": False,
-            "stale": False,
-            "updated_at": int(updated_at),
-        })
-    except Exception as exc:
-        print(f"Forex Factory calendar fetch error: {exc}")
-        # If the upstream feed is briefly unavailable, serve the last successful
-        # snapshot instead of leaving the News panel blank.
-        if cached_data:
-            return jsonify({
-                "status": "success",
-                "source": "Forex Factory weekly calendar export",
-                "source_url": "https://www.forexfactory.com/calendar",
-                "data": cached_data,
-                "cache_hit": True,
-                "stale": True,
-                "updated_at": int(cached_at),
-                "warning": "Live source temporarily unavailable; showing last cached calendar.",
-            })
-        return jsonify({
-            "status": "error",
-            "message": "Live economic calendar is temporarily unavailable.",
-        }), 502
-
-
-@app.route("/verify-license", methods=["POST"])
-def verify_license():
-    data = request.get_json(silent=True) or {}
-
-    key = str(data.get("key", "")).strip()
-    user = normalize_user_id(data.get("user", ""))
-    device = str(data.get("device", "")).strip()
-    device_label = str(data.get("device_label", "")).strip()[:160]
-    heartbeat = bool(data.get("heartbeat", False))
-
-    if not key or not user or not device:
-        return jsonify({
-            "status": "error",
-            "message": "Key, user and device are required.",
-        }), 400
-
-    licenses = load_licenses()
-    record = licenses.get(key)
-
-    if not record or not record.get("active", False):
-        return jsonify({
-            "status": "error",
-            "message": "Invalid or revoked license key.",
-        }), 401
-
+def _default_user(telegram_id, chat_id=None):
     now = int(time.time())
-    bound_device = record.get("device")
-    bound_user = record.get("user")
-
-    # Heartbeats/saved-session restoration may refresh an existing binding, but they may
-    # not create a new binding. This makes an admin RESET actually kick the old device.
-    if heartbeat and not bound_device:
-        return jsonify({
-            "status": "error",
-            "message": "Device session was reset. Please login again.",
-        }), 409
-    last_verified_at = int(record.get("last_verified_at") or 0)
-    existing_session_active = bool(
-        bound_device
-        and bound_device != device
-        and last_verified_at
-        and (now - last_verified_at) < DEVICE_SESSION_TTL_SECONDS
-    )
-
-    if existing_session_active:
-        return jsonify({
-            "status": "error",
-            "message": "This key is currently active on another device.",
-            "device_label": record.get("device_label"),
-        }), 403
-
-    if heartbeat and bound_device and bound_device != device:
-        return jsonify({
-            "status": "error",
-            "message": "Saved session is no longer active. Please login again.",
-        }), 409
-
-    if bound_user and bound_user != user:
-        return jsonify({
-            "status": "error",
-            "message": "This key is already assigned to another user.",
-        }), 403
-
-    # Same device refreshes the heartbeat. A stale device session can be replaced after
-    # DEVICE_SESSION_TTL_SECONDS, which implements one-active-device-at-a-time behavior.
-    record["device"] = device
-    record["device_label"] = device_label or record.get("device_label") or device
-    record["user"] = user
-    record["last_verified_at"] = now
-    licenses[key] = record
-    save_licenses(licenses)
-
-    return jsonify({
-        "status": "success",
-        "message": "License verified successfully.",
-        "user": user,
-        "device_bound": True,
-        "device_label": record.get("device_label"),
-        "session_ttl_seconds": DEVICE_SESSION_TTL_SECONDS,
-    })
-
-
-@app.route("/logout-license", methods=["POST"])
-def logout_license():
-    data = request.get_json(silent=True) or {}
-    key = str(data.get("key", "")).strip()
-    user = normalize_user_id(data.get("user", ""))
-    device = str(data.get("device", "")).strip()
-
-    if not key or not user or not device:
-        return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
-
-    licenses = load_licenses()
-    record = licenses.get(key)
-    if not record:
-        return jsonify({"status": "success", "message": "Session already cleared."})
-
-    if record.get("user") == user and record.get("device") == device:
-        record["device"] = None
-        record["device_label"] = None
-        record["last_verified_at"] = None
-        licenses[key] = record
-        save_licenses(licenses)
-
-    return jsonify({"status": "success", "message": "Device session released."})
-
-
-@app.route("/admin/generate-key", methods=["POST"])
-def admin_generate_key():
-    data = request.get_json(silent=True) or {}
-
-    password = str(data.get("password", ""))
-    user = normalize_user_id(data.get("user", ""))
-
-    if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
-
-    if not user:
-        return jsonify({
-            "status": "error",
-            "message": "User Telegram ID / UID is required.",
-        }), 400
-
-    licenses = load_licenses()
-
-    while True:
-        key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
-        if key not in licenses:
-            break
-
-    licenses[key] = {
-        "active": True,
-        "user": user,
-        "device": None,
-        "device_label": None,
-        "created_at": int(time.time()),
-    }
-    save_licenses(licenses)
-
-    return jsonify({
-        "status": "success",
-        "message": "License created.",
-        "key": key,
-        "user": user,
-    })
-
-
-@app.route("/admin/licenses", methods=["POST"])
-def admin_list_licenses():
-    data = request.get_json(silent=True) or {}
-    password = str(data.get("password", ""))
-
-    if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
-
-    now = int(time.time())
-    licenses = load_licenses()
-    rows = []
-    for key, record in licenses.items():
-        record = record if isinstance(record, dict) else {}
-        last_verified_at = int(record.get("last_verified_at") or 0)
-        session_active = bool(
-            record.get("device")
-            and last_verified_at
-            and (now - last_verified_at) < DEVICE_SESSION_TTL_SECONDS
-        )
-        rows.append({
-            "key": key,
-            "active": bool(record.get("active", False)),
-            "user": record.get("user"),
-            "device": record.get("device"),
-            "device_label": record.get("device_label"),
-            "session_active": session_active,
-            "created_at": record.get("created_at"),
-            "last_verified_at": record.get("last_verified_at"),
-        })
-
-    rows.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
-    bound_count = sum(1 for row in rows if row.get("device"))
-    online_count = sum(1 for row in rows if row.get("session_active"))
-    return jsonify({
-        "status": "success",
-        "data": rows,
-        "count": len(rows),
-        "summary": {
-            "total": len(rows),
-            "active": sum(1 for row in rows if row.get("active")),
-            "bound": bound_count,
-            "online": online_count,
-            "unbound": max(0, len(rows) - bound_count),
-        },
-    })
-
-
-def _validate_admin_password(data):
-    if str((data or {}).get("password", "")) != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
-    return None
-
-
-@app.route("/admin/reset-device", methods=["POST"])
-def admin_reset_device():
-    data = request.get_json(silent=True) or {}
-    auth_error = _validate_admin_password(data)
-    if auth_error:
-        return auth_error
-    key = str(data.get("key", "")).strip()
-    if not key:
-        return jsonify({"status": "error", "message": "License key is required."}), 400
-
-    licenses = load_licenses()
-    if key not in licenses:
-        return jsonify({"status": "error", "message": "License key not found."}), 404
-
-    record = licenses.get(key) if isinstance(licenses.get(key), dict) else {}
-    record["device"] = None
-    record["device_label"] = None
-    record["last_verified_at"] = None
-    licenses[key] = record
-    save_licenses(licenses)
-    return jsonify({"status": "success", "message": "Device binding reset.", "key": key})
-
-
-@app.route("/admin/reset-all-devices", methods=["POST"])
-def admin_reset_all_devices():
-    data = request.get_json(silent=True) or {}
-    auth_error = _validate_admin_password(data)
-    if auth_error:
-        return auth_error
-
-    licenses = load_licenses()
-    updated = 0
-    for key, record in list(licenses.items()):
-        record = record if isinstance(record, dict) else {}
-        if record.get("device") or record.get("device_label") or record.get("last_verified_at"):
-            updated += 1
-        record["device"] = None
-        record["device_label"] = None
-        record["last_verified_at"] = None
-        licenses[key] = record
-    save_licenses(licenses)
-    return jsonify({
-        "status": "success",
-        "message": "All device bindings cleared.",
-        "updated": updated,
-        "total": len(licenses),
-    })
-
-
-def _delete_license_from_request(data):
-    password = str(data.get("password", ""))
-    key = str(data.get("key", "")).strip()
-
-    if password != ADMIN_PASSWORD:
-        return None, (jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403)
-
-    if not key:
-        return None, (jsonify({
-            "status": "error",
-            "message": "License key is required.",
-        }), 400)
-
-    licenses = load_licenses()
-    if key not in licenses:
-        return None, (jsonify({
-            "status": "error",
-            "message": "License key not found.",
-        }), 404)
-
-    licenses.pop(key, None)
-    save_licenses(licenses)
-    return key, None
-
-
-@app.route("/admin/delete-key", methods=["POST"])
-def admin_delete_key():
-    data = request.get_json(silent=True) or {}
-    key, error = _delete_license_from_request(data)
-    if error:
-        return error
-    return jsonify({
-        "status": "success",
-        "message": "License removed permanently.",
-        "key": key,
-    })
-
-
-@app.route("/admin/revoke-key", methods=["POST"])
-def admin_revoke_key():
-    # Backward-compatible alias: REMOVE now deletes the key completely.
-    data = request.get_json(silent=True) or {}
-    key, error = _delete_license_from_request(data)
-    if error:
-        return error
-    return jsonify({
-        "status": "success",
-        "message": "License removed permanently.",
-        "key": key,
-    })
-
-
-@app.route("/admin/clear-keys", methods=["POST"])
-def admin_clear_keys():
-    data = request.get_json(silent=True) or {}
-    password = str(data.get("password", ""))
-
-    if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
-
-    licenses = load_licenses()
-    removed = len(licenses)
-    save_licenses({})
-    return jsonify({
-        "status": "success",
-        "message": "All license keys removed.",
-        "removed": removed,
-    })
-
-
-
-@app.route("/track-signal", methods=["POST"])
-def track_signal():
-    data = request.get_json(silent=True) or {}
-
-    pair = str(data.get("pair", "")).strip()
-    direction = str(data.get("signal", "")).strip().upper()
-    expiry = str(data.get("expiry", "")).strip()
-    score = data.get("score")
-    timeframe_summary = data.get("timeframe_summary") or {}
-    client_id = str(data.get("client_id", "")).strip()
-
-    if pair not in YAHOO_SYMBOLS:
-        return jsonify({"status": "error", "message": "Unsupported pair."}), 400
-
-    if direction not in {"CALL", "PUT"}:
-        return jsonify({"status": "error", "message": "Signal must be CALL or PUT."}), 400
-
-    if expiry not in AUTO_TRACK_EXPIRIES:
-        return jsonify({
-            "status": "success",
-            "auto_tracking": False,
-            "message": "15s/30s outcome tracking is disabled because the Yahoo base feed is 1-minute.",
-        })
-
-    now = int(time.time())
-    duration = AUTO_TRACK_EXPIRIES[expiry]
-    entry_epoch = ((now // duration) + 1) * duration
-    expiry_epoch = entry_epoch + duration
-
-    signal_id = "sig_" + secrets.token_hex(8)
-    item = {
-        "id": signal_id,
-        "client_id": client_id,
-        "pair": pair,
-        "signal": direction,
-        "score": float(score or 0),
-        "expiry": expiry,
+    return {
+        "telegram_id": int(telegram_id),
+        "chat_id": int(chat_id or telegram_id),
+        "username": "",
+        "first_name": "",
+        "last_name": "",
+        "submitted_id": "",
+        "license_key": "",
+        "status": "NEW",
+        "stage": "START",
+        "market": "",
+        "pair": "",
+        "expiry": "1m",
         "created_at": now,
-        "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch,
-        "entry_price": None,
-        "exit_price": None,
-        "result": None,
-        "status": "PENDING",
-        "result_source": "pending",
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "timeframe_summary": timeframe_summary,
+        "updated_at": now,
+        "approved_at": None,
     }
 
-    with signals_lock:
-        items = load_signals()
-        items.insert(0, item)
-        items = items[:1000]
-        save_signals(items)
 
-    return jsonify({
-        "status": "success",
-        "auto_tracking": True,
-        "signal_id": signal_id,
-        "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch,
-        "message": f"Signal registered. Enter on the next {expiry} candle open.",
-    })
-
-
-@app.route("/signals/result", methods=["POST"])
-def set_signal_result():
-    data = request.get_json(silent=True) or {}
-    signal_id = str(data.get("signal_id", "")).strip()
-    result = str(data.get("result", "")).strip().upper()
-    client_id = str(data.get("client_id", "")).strip()
-
-    if not signal_id or result not in {"WIN", "LOSS", "DRAW"}:
-        return jsonify({
-            "status": "error",
-            "message": "Valid signal_id and WIN/LOSS/DRAW result are required.",
-        }), 400
-
-    with signals_lock:
-        items = load_signals()
-        target = next((x for x in items if x.get("id") == signal_id), None)
-
-        if target is None:
-            return jsonify({"status": "error", "message": "Signal not found."}), 404
-
-        saved_client = str(target.get("client_id", "")).strip()
-        if saved_client and client_id and saved_client != client_id:
-            return jsonify({
-                "status": "error",
-                "message": "This signal belongs to another device session.",
-            }), 403
-
-        if "(OTC)" not in str(target.get("pair", "")):
-            return jsonify({
-                "status": "error",
-                "message": "Manual Quotex result is only used for OTC signals.",
-            }), 400
-
-        target["result"] = result
-        target["status"] = "COMPLETED"
-        target["result_source"] = "quotex_manual"
-        target["resolved_at"] = int(time.time())
-        save_signals(items)
-
-    return jsonify({
-        "status": "success",
-        "signal_id": signal_id,
-        "result": result,
-        "result_source": "quotex_manual",
-    })
+def get_user(telegram_id, chat_id=None):
+    telegram_id = int(telegram_id)
+    if DATABASE_URL and psycopg is not None:
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT telegram_id,chat_id,username,first_name,last_name,submitted_id,license_key,
+                               status,stage,market,pair,expiry,created_at,updated_at,approved_at
+                        FROM raja_telegram_users WHERE telegram_id=%s
+                    """, (telegram_id,))
+                    row = cur.fetchone()
+            if row:
+                keys = ["telegram_id","chat_id","username","first_name","last_name","submitted_id","license_key",
+                        "status","stage","market","pair","expiry","created_at","updated_at","approved_at"]
+                return dict(zip(keys, row))
+        except Exception as exc:
+            print(f"Telegram user read warning: {exc}")
+    else:
+        with STORE_LOCK:
+            data = _read_json(USERS_FILE, {})
+            item = data.get(str(telegram_id))
+            if isinstance(item, dict):
+                return item
+    return _default_user(telegram_id, chat_id)
 
 
-@app.route("/signals/history", methods=["GET"])
-def signals_history():
+def save_user(user):
+    user = dict(user)
+    user["telegram_id"] = int(user["telegram_id"])
+    user["chat_id"] = int(user.get("chat_id") or user["telegram_id"])
+    user["updated_at"] = int(time.time())
+    user.setdefault("created_at", user["updated_at"])
+    if DATABASE_URL and psycopg is not None:
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO raja_telegram_users(
+                            telegram_id,chat_id,username,first_name,last_name,submitted_id,license_key,
+                            status,stage,market,pair,expiry,created_at,updated_at,approved_at
+                        ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT(telegram_id) DO UPDATE SET
+                            chat_id=EXCLUDED.chat_id, username=EXCLUDED.username, first_name=EXCLUDED.first_name,
+                            last_name=EXCLUDED.last_name, submitted_id=EXCLUDED.submitted_id,
+                            license_key=EXCLUDED.license_key, status=EXCLUDED.status, stage=EXCLUDED.stage,
+                            market=EXCLUDED.market, pair=EXCLUDED.pair, expiry=EXCLUDED.expiry,
+                            updated_at=EXCLUDED.updated_at, approved_at=EXCLUDED.approved_at
+                    """, (
+                        user["telegram_id"], user["chat_id"], user.get("username"), user.get("first_name"),
+                        user.get("last_name"), user.get("submitted_id"), user.get("license_key"), user.get("status", "NEW"),
+                        user.get("stage", "START"), user.get("market"), user.get("pair"), user.get("expiry", "1m"),
+                        user.get("created_at"), user.get("updated_at"), user.get("approved_at")
+                    ))
+            return user
+        except Exception as exc:
+            print(f"Telegram user write warning: {exc}")
+    with STORE_LOCK:
+        data = _read_json(USERS_FILE, {})
+        data[str(user["telegram_id"])] = user
+        _write_json(USERS_FILE, data)
+    return user
+
+
+def pending_users(limit=20):
+    if DATABASE_URL and psycopg is not None:
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT telegram_id,chat_id,username,first_name,last_name,submitted_id,license_key,
+                               status,stage,market,pair,expiry,created_at,updated_at,approved_at
+                        FROM raja_telegram_users
+                        WHERE status='PENDING'
+                        ORDER BY updated_at ASC LIMIT %s
+                    """, (int(limit),))
+                    rows = cur.fetchall()
+            keys = ["telegram_id","chat_id","username","first_name","last_name","submitted_id","license_key",
+                    "status","stage","market","pair","expiry","created_at","updated_at","approved_at"]
+            return [dict(zip(keys, row)) for row in rows]
+        except Exception as exc:
+            print(f"Telegram pending read warning: {exc}")
+    with STORE_LOCK:
+        data = _read_json(USERS_FILE, {})
+        items = [x for x in data.values() if isinstance(x, dict) and x.get("status") == "PENDING"]
+        items.sort(key=lambda x: x.get("updated_at", 0))
+        return items[:limit]
+
+
+def admin_id():
+    if ADMIN_ID_ENV.isdigit():
+        return int(ADMIN_ID_ENV)
+    saved = str(get_meta("admin_telegram_id", "") or "").strip()
+    return int(saved) if saved.isdigit() else None
+
+
+def tg_api(method, payload=None, timeout=20):
+    if not BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
+    payload = payload or {}
+    data = json.dumps(payload).encode("utf-8")
+    req = UrlRequest(
+        f"{TELEGRAM_API_BASE}/{method}",
+        data=data,
+        headers={"Content-Type": "application/json", "User-Agent": "RAJA-AI-Telegram/1.0"},
+        method="POST",
+    )
     try:
-        limit = max(1, min(int(request.args.get("limit", 30)), 100))
-    except Exception:
-        limit = 30
-
-    client_id = str(request.args.get("client_id", "")).strip()
-    items = load_signals()
-    if client_id:
-        items = [x for x in items if str(x.get("client_id", "")).strip() == client_id]
-
-    return jsonify({
-        "status": "success",
-        "data": items[:limit],
-        "stats": signal_stats(items),
-    })
+        with urlopen(req, timeout=timeout) as response:
+            body = response.read().decode("utf-8", errors="replace")
+        result = json.loads(body)
+        if not result.get("ok"):
+            raise RuntimeError(result.get("description") or f"Telegram {method} failed")
+        return result.get("result")
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace") if hasattr(exc, "read") else ""
+        raise RuntimeError(f"Telegram {method} HTTP {exc.code}: {body[:300]}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Telegram {method} network error: {exc}") from exc
 
 
-@app.route("/signals/stats", methods=["GET"])
-def signals_stats():
-    items = load_signals()
-    return jsonify({
-        "status": "success",
-        "stats": signal_stats(items),
-    })
+def send_message(chat_id, text, keyboard=None, parse_mode="HTML"):
+    payload = {
+        "chat_id": int(chat_id),
+        "text": text,
+        "disable_web_page_preview": True,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
+    if keyboard:
+        payload["reply_markup"] = keyboard
+    return tg_api("sendMessage", payload)
 
 
-@app.route("/scan-batch", methods=["POST"])
-def scan_batch():
-    data = request.get_json(silent=True) or {}
-    requested_pairs = data.get("pairs") or []
-    selected_expiry = str(data.get("expiry", "")).strip()
+def edit_message(chat_id, message_id, text, keyboard=None):
+    payload = {"chat_id": int(chat_id), "message_id": int(message_id), "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    if keyboard:
+        payload["reply_markup"] = keyboard
+    return tg_api("editMessageText", payload)
 
-    if not isinstance(requested_pairs, list):
-        return jsonify({"status": "error", "message": "pairs must be an array."}), 400
 
-    pairs = []
-    seen = set()
-    for raw in requested_pairs[:40]:
-        pair = str(raw).strip()
-        if pair in YAHOO_SYMBOLS and pair not in seen:
-            pairs.append(pair)
-            seen.add(pair)
+def answer_callback(callback_id, text=None, alert=False):
+    payload = {"callback_query_id": callback_id, "show_alert": bool(alert)}
+    if text:
+        payload["text"] = text[:180]
+    try:
+        return tg_api("answerCallbackQuery", payload)
+    except Exception as exc:
+        print(f"Telegram answerCallbackQuery warning: {exc}")
+        return None
 
-    if not pairs:
-        return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
 
-    key = (selected_expiry, tuple(pairs))
-    now = time.time()
+def btn(text, callback_data=None, url=None):
+    item = {"text": text}
+    if url:
+        item["url"] = url
+    else:
+        item["callback_data"] = callback_data
+    return item
 
-    with batch_cache_lock:
-        cached = batch_cache.get(key)
-        if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
-            payload = cached["payload"]
-            return jsonify({
-                "status": "success",
-                "data": payload["data"],
-                "diagnostics": payload["diagnostics"],
-                "cache_hit": True,
-            })
 
-    key_lock = _get_batch_key_lock(key)
-    with key_lock:
-        now = time.time()
-        with batch_cache_lock:
-            cached = batch_cache.get(key)
-            if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
-                payload = cached["payload"]
-                return jsonify({
-                    "status": "success",
-                    "data": payload["data"],
-                    "diagnostics": payload["diagnostics"],
-                    "cache_hit": True,
-                })
+def markup(rows):
+    return {"inline_keyboard": rows}
 
-        # Do not let one slow/rate-limited Yahoo symbol hold the whole Auto Scan open.
-        # The batch has a hard server-side deadline and returns whatever finished in time.
-        # Slow symbols are marked skipped and will be retried by the next 5-minute re-scan.
-        results_by_pair = {}
-        timed_out_pairs = []
-        workers = min(BATCH_SCAN_WORKERS, len(pairs))
-        batch_started = time.time()
-        pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch")
-        future_map = {
-            pool.submit(calculate_live_indicators, pair, selected_expiry): pair
-            for pair in pairs
-        }
 
-        done, pending = wait(
-            future_map.keys(),
-            timeout=BATCH_SCAN_DEADLINE_SECONDS,
+def contact_url():
+    return f"https://t.me/{SUPPORT_USERNAME}"
+
+
+def start_keyboard(active=False):
+    if active:
+        return markup([
+            [btn("📊 AI MARKET SCAN", "menu:scan")],
+            [btn("🔑 MY ACCESS / LICENSE", "menu:status"), btn("💬 CONTACT ADMIN", url=contact_url())],
+        ])
+    return markup([
+        [btn("🔗 CREATE QUOTEX ACCOUNT", url=PARTNER_URL)],
+        [btn("✅ SUBMIT UID / REQUEST ACCESS", "access:uid")],
+        [btn("🔑 I ALREADY HAVE VIP KEY", "access:key")],
+        [btn("💬 CONTACT ADMIN", url=contact_url())],
+    ])
+
+
+def welcome_text(user):
+    status = str(user.get("status") or "NEW").upper()
+    if status == "ACTIVE":
+        return (
+            "👑 <b>RAJA AI PREMIUM</b>\n\n"
+            "✅ Your Telegram access is <b>ACTIVE</b>.\n"
+            "Use the menu below to scan the same RAJA AI market engine used by the web dashboard."
         )
+    status_line = ""
+    if status == "PENDING":
+        status_line = "\n\n⏳ <b>Status:</b> Pending admin verification."
+    elif status == "REJECTED":
+        status_line = "\n\n❌ <b>Status:</b> Verification was not approved. Contact admin if you need help."
+    return (
+        "👑 <b>RAJA AI PREMIUM</b>\n"
+        "Multi-Broker AI Service\n\n"
+        "<b>Step 1:</b> Create your Quotex account using our official partner link.\n"
+        "<b>Step 2:</b> Deposit minimum $50.\n"
+        "<b>Step 3:</b> Submit your Telegram ID or Quotex UID for verification.\n\n"
+        "🔐 After verification, admin can approve your access and issue/confirm your VIP license.\n"
+        "📱 One approved Telegram account per access record.\n\n"
+        f"💬 <b>Official Support:</b> @{html.escape(SUPPORT_USERNAME)}"
+        + status_line
+    )
 
-        for future in done:
-            pair = future_map[future]
-            try:
-                results_by_pair[pair] = future.result()
-            except Exception as exc:
-                print(f"Batch scan error for {pair}: {exc}")
-                results_by_pair[pair] = no_signal_result(
-                    pair,
-                    "Scan worker failed for this pair.",
-                    symbol=YAHOO_SYMBOLS.get(pair),
-                )
 
-        for future in pending:
-            pair = future_map[future]
-            timed_out_pairs.append(pair)
-            future.cancel()
-            results_by_pair[pair] = no_signal_result(
-                pair,
-                "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.",
-                symbol=YAHOO_SYMBOLS.get(pair),
+def sync_identity(update_user, chat_id):
+    tg_id = int(update_user.get("id"))
+    user = get_user(tg_id, chat_id)
+    user["chat_id"] = int(chat_id)
+    user["username"] = str(update_user.get("username") or "")[:120]
+    user["first_name"] = str(update_user.get("first_name") or "")[:120]
+    user["last_name"] = str(update_user.get("last_name") or "")[:120]
+    return save_user(user)
+
+
+def notify_admin_pending(user):
+    aid = admin_id()
+    if not aid:
+        return False
+    uname = f"@{user.get('username')}" if user.get("username") else "(no username)"
+    text = (
+        "🛡️ <b>NEW TELEGRAM ACCESS REQUEST</b>\n\n"
+        f"Name: <b>{html.escape((user.get('first_name') or '') + ' ' + (user.get('last_name') or ''))}</b>\n"
+        f"Username: {html.escape(uname)}\n"
+        f"Telegram ID: <code>{user.get('telegram_id')}</code>\n"
+        f"Submitted UID/ID: <code>{html.escape(user.get('submitted_id') or 'Not supplied')}</code>\n"
+        f"VIP Key: <code>{html.escape(user.get('license_key') or 'Not supplied / issue on approval')}</code>\n\n"
+        "Verify the user's Quotex/referral details, then approve or reject."
+    )
+    kb = markup([[btn("✅ APPROVE", f"admin:approve:{user['telegram_id']}"), btn("❌ REJECT", f"admin:reject:{user['telegram_id']}")]])
+    send_message(aid, text, kb)
+    return True
+
+
+def show_pending_to_admin(chat_id):
+    items = pending_users(20)
+    if not items:
+        send_message(chat_id, "✅ No pending Telegram access requests.")
+        return
+    send_message(chat_id, f"🛡️ <b>Pending requests:</b> {len(items)}")
+    for user in items:
+        notify_text = (
+            f"👤 <b>{html.escape(user.get('first_name') or 'User')}</b> "
+            f"@{html.escape(user.get('username') or 'no_username')}\n"
+            f"Telegram ID: <code>{user['telegram_id']}</code>\n"
+            f"Submitted: <code>{html.escape(user.get('submitted_id') or '--')}</code>\n"
+            f"Key: <code>{html.escape(user.get('license_key') or 'Issue on approval')}</code>"
+        )
+        kb = markup([[btn("✅ APPROVE", f"admin:approve:{user['telegram_id']}"), btn("❌ REJECT", f"admin:reject:{user['telegram_id']}")]])
+        send_message(chat_id, notify_text, kb)
+
+
+def market_keyboard():
+    return markup([
+        [btn(MARKET_LABELS["CryptoLive"], "mkt:CryptoLive"), btn(MARKET_LABELS["CryptoOTC"], "mkt:CryptoOTC")],
+        [btn(MARKET_LABELS["ForexLive"], "mkt:ForexLive"), btn(MARKET_LABELS["ForexOTC"], "mkt:ForexOTC")],
+        [btn("⬅️ MAIN MENU", "menu:home")],
+    ])
+
+
+def pair_keyboard(market, page=0):
+    pairs = MARKET_PAIRS.get(market, [])
+    per_page = 8
+    pages = max(1, (len(pairs) + per_page - 1) // per_page)
+    page = max(0, min(int(page), pages - 1))
+    start = page * per_page
+    rows = [[btn("✨ AUTO SCAN BEST PAIR", f"pairauto:{market}")]]
+    chunk = pairs[start:start+per_page]
+    for offset in range(0, len(chunk), 2):
+        row = []
+        for j in range(offset, min(offset+2, len(chunk))):
+            index = start + j
+            row.append(btn(chunk[j], f"pair:{market}:{index}"))
+        rows.append(row)
+    nav = []
+    if page > 0:
+        nav.append(btn("◀️", f"pairs:{market}:{page-1}"))
+    nav.append(btn(f"{page+1}/{pages}", f"pairs:{market}:{page}"))
+    if page + 1 < pages:
+        nav.append(btn("▶️", f"pairs:{market}:{page+1}"))
+    rows.append(nav)
+    rows.append([btn("⬅️ MARKETS", "menu:scan")])
+    return markup(rows)
+
+
+def expiry_keyboard():
+    return markup([
+        [btn("1m", "exp:1m"), btn("2m", "exp:2m"), btn("5m", "exp:5m"), btn("15m", "exp:15m"), btn("30m", "exp:30m")],
+        [btn("⬅️ CHANGE PAIR", "pair:back")],
+    ])
+
+
+def ready_to_scan_keyboard():
+    return markup([
+        [btn("🚀 START AI MARKET SCAN", "scan:run")],
+        [btn("⬅️ CHANGE EXPIRY", "scan:expiry"), btn("🏠 MAIN MENU", "menu:home")],
+    ])
+
+
+def format_signal(result, expiry):
+    signal = result.get("signal")
+    pair = result.get("pair") or "--"
+    score = float(result.get("score") or 0)
+    direction = "🟢 ⬆️ UP (BUY)" if signal == "CALL" else "🔴 ⬇️ DOWN (SELL)"
+    summary = result.get("timeframe_summary") or {}
+    tf_lines = []
+    for tf in ["1m", "2m", "5m", "10m", "15m", "30m"]:
+        item = summary.get(tf) or {}
+        sig = item.get("signal")
+        sc = float(item.get("score") or 0)
+        label = "⬆ UP" if sig == "CALL" else ("⬇ DOWN" if sig == "PUT" else "→ WAIT")
+        tf_lines.append(f"{tf}: {label} {sc:.0f}%")
+    warning = ""
+    if result.get("otc_proxy_warning"):
+        warning = "\n\n⚠️ OTC uses an underlying-market proxy/reference feed and can differ from Quotex OTC quotes."
+    return (
+        "🤖 <b>RAJA AI · CONFIRMED SIGNAL</b>\n\n"
+        f"Asset: <b>{html.escape(str(pair))}</b>\n"
+        f"Signal: <b>{direction}</b>\n"
+        f"Selected Expiry: <b>{html.escape(expiry)}</b>\n"
+        f"Technical Confluence: <b>{score:.1f}%</b>\n"
+        f"Agreement: <b>{float(result.get('multi_tf_agreement') or 0):.1f}%</b>\n\n"
+        "<b>Multi-Timeframe:</b>\n" + "\n".join(tf_lines) +
+        "\n\n<i>Technical confluence is a model score, not a guaranteed win probability.</i>" + warning
+    )
+
+
+def _run_scan(user, services):
+    chat_id = user["chat_id"]
+    expiry = user.get("expiry") or "1m"
+    pair = user.get("pair") or ""
+    market = user.get("market") or ""
+    try:
+        if pair == "__AUTO__":
+            pairs = MARKET_PAIRS.get(market, [])
+            outcome = services["scan_auto"](pairs, expiry)
+            result = (outcome or {}).get("best") if isinstance(outcome, dict) else None
+            diagnostics = (outcome or {}).get("diagnostics", {}) if isinstance(outcome, dict) else {}
+        else:
+            result = services["scan_pair"](pair, expiry)
+            diagnostics = {}
+        if result and result.get("signal") in {"CALL", "PUT"}:
+            send_message(chat_id, format_signal(result, expiry), markup([
+                [btn("🔁 SCAN AGAIN", "scan:run")],
+                [btn("🔄 CHANGE PAIR", "menu:scan"), btn("🏠 MAIN MENU", "menu:home")],
+            ]))
+        else:
+            extra = ""
+            if diagnostics:
+                extra = f"\nData available: {diagnostics.get('data_available','--')}/{diagnostics.get('total_pairs','--')}"
+            send_message(chat_id,
+                "⚠️ <b>NO VALID LIVE SIGNAL FOUND</b>\n\n"
+                f"No asset passed the strict multi-timeframe + {html.escape(expiry)} confirmation on the current closed candles.{extra}\n\n"
+                "Use Scan Again or wait for a fresh market setup.",
+                markup([[btn("🔁 SCAN AGAIN", "scan:run")], [btn("🏠 MAIN MENU", "menu:home")]])
             )
+    except Exception as exc:
+        print(f"Telegram scan error: {exc}")
+        send_message(chat_id, "⚠️ Scan could not complete right now. Please try again shortly.", markup([[btn("🔁 TRY AGAIN", "scan:run")], [btn("🏠 MAIN MENU", "menu:home")]]))
 
-        # Do not block the HTTP response waiting for still-running Yahoo calls. Their own
-        # request timeout is short, and single-flight locks prevent duplicate fetch storms.
-        pool.shutdown(wait=False, cancel_futures=True)
 
-        results = [results_by_pair[pair] for pair in pairs]
-        data_available = sum(1 for r in results if r.get("data_age") is not None)
-        data_unavailable = len(results) - data_available
-        signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"})
-        elapsed = round(time.time() - batch_started, 2)
-        diagnostics = {
-            "total_pairs": len(results),
-            "completed_pairs": len(done),
-            "timed_out_pairs": timed_out_pairs,
-            "timed_out_pairs_count": len(timed_out_pairs),
-            "partial_response": bool(timed_out_pairs),
-            "data_available": data_available,
-            "data_unavailable": data_unavailable,
-            "signals_found": signals_found,
-            "elapsed_seconds": elapsed,
-            "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
-            "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
-            "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
-            "batch_workers": workers,
-        }
-        payload = {"data": results, "diagnostics": diagnostics}
+def handle_message(message, services):
+    chat = message.get("chat") or {}
+    sender = message.get("from") or {}
+    if chat.get("type") != "private" or not sender.get("id"):
+        return
+    chat_id = int(chat.get("id"))
+    user = sync_identity(sender, chat_id)
+    text = str(message.get("text") or "").strip()
 
-        with batch_cache_lock:
-            batch_cache[key] = {"timestamp": time.time(), "payload": payload}
-            if len(batch_cache) > 40:
-                oldest = sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]
-                for old_key, _ in oldest:
-                    batch_cache.pop(old_key, None)
+    if text.startswith("/admin"):
+        parts = text.split(maxsplit=1)
+        current_admin = admin_id()
+        if current_admin and int(sender["id"]) == current_admin:
+            show_pending_to_admin(chat_id)
+            return
+        code = parts[1].strip() if len(parts) > 1 else ""
+        if not current_admin and ADMIN_SETUP_CODE and code and code == ADMIN_SETUP_CODE:
+            set_meta("admin_telegram_id", str(sender["id"]))
+            send_message(chat_id, "✅ <b>ADMIN TELEGRAM ACCOUNT BOUND</b>\n\nThis Telegram account can now approve/reject RAJA AI access requests.")
+            show_pending_to_admin(chat_id)
+            return
+        if not current_admin:
+            send_message(chat_id, "🔐 Admin is not bound yet. Set TELEGRAM_ADMIN_SETUP_CODE in Render, then send <code>/admin YOUR_CODE</code> from the admin Telegram account.")
+        else:
+            send_message(chat_id, "⛔ This Telegram account is not the configured admin.")
+        return
 
+    if text.startswith("/start") or text.startswith("/menu"):
+        send_message(chat_id, welcome_text(user), start_keyboard(user.get("status") == "ACTIVE"))
+        return
+
+    if user.get("status") == "ACTIVE":
+        send_message(chat_id, "Use the RAJA AI menu below.", start_keyboard(True))
+        return
+
+    stage = user.get("stage")
+    if stage == "AWAITING_UID" and text:
+        user["submitted_id"] = text[:160]
+        user["stage"] = "AWAITING_LICENSE"
+        save_user(user)
+        send_message(chat_id,
+            "✅ UID / ID received.\n\n"
+            "🔑 <b>Now send your VIP License Key</b> if admin has already issued one.\n"
+            "If you do not have a key yet, tap <b>REQUEST ADMIN APPROVAL</b>; a VIP key can be issued when admin approves you.",
+            markup([[btn("🛡️ REQUEST ADMIN APPROVAL", "access:submit")], [btn("💬 CONTACT ADMIN", url=contact_url())]])
+        )
+        return
+
+    if stage == "AWAITING_LICENSE" and text:
+        user["license_key"] = text[:160]
+        user["status"] = "PENDING"
+        user["stage"] = "PENDING"
+        save_user(user)
+        notified = notify_admin_pending(user)
+        send_message(chat_id,
+            "⏳ <b>ACCESS REQUEST SUBMITTED</b>\n\n"
+            "Your Telegram ID / Quotex UID and VIP key have been sent for admin verification.\n"
+            f"Support: @{html.escape(SUPPORT_USERNAME)}" + ("" if notified else "\n\n⚠️ Admin Telegram binding is not configured yet; contact support."),
+            start_keyboard(False)
+        )
+        return
+
+    send_message(chat_id, welcome_text(user), start_keyboard(False))
+
+
+def handle_callback(query, services):
+    callback_id = query.get("id")
+    sender = query.get("from") or {}
+    message = query.get("message") or {}
+    chat = message.get("chat") or {}
+    if not sender.get("id") or not chat.get("id"):
+        answer_callback(callback_id)
+        return
+    chat_id = int(chat["id"])
+    message_id = int(message.get("message_id") or 0)
+    user = sync_identity(sender, chat_id)
+    data = str(query.get("data") or "")
+
+    # Admin actions are always checked against the numeric admin Telegram ID.
+    if data.startswith("admin:"):
+        if admin_id() != int(sender["id"]):
+            answer_callback(callback_id, "Admin only", True)
+            return
+        parts = data.split(":")
+        if len(parts) != 3 or not parts[2].isdigit():
+            answer_callback(callback_id, "Invalid request", True)
+            return
+        action, target_id = parts[1], int(parts[2])
+        target = get_user(target_id)
+        if target.get("status") != "PENDING":
+            answer_callback(callback_id, f"Already {target.get('status','processed')}", True)
+            return
+        if action == "approve":
+            user_ref = (target.get("submitted_id") or ("@" + target.get("username") if target.get("username") else str(target_id))).strip()
+            submitted_key = (target.get("license_key") or "").strip()
+            key = None
+            if submitted_key:
+                try:
+                    if services["validate_license"](submitted_key, user_ref):
+                        key = submitted_key
+                except Exception:
+                    key = None
+            if not key:
+                key = services["issue_license"](user_ref)
+            target["license_key"] = key
+            target["status"] = "ACTIVE"
+            target["stage"] = "ACTIVE"
+            target["approved_at"] = int(time.time())
+            save_user(target)
+            send_message(target["chat_id"],
+                "✅ <b>RAJA AI TELEGRAM ACCESS APPROVED</b>\n\n"
+                "Your bot access is now active.\n"
+                f"VIP License Key: <code>{html.escape(key)}</code>\n\n"
+                "Keep your key private. Use AI Market Scan below to continue.",
+                start_keyboard(True)
+            )
+            answer_callback(callback_id, "Approved")
+            send_message(chat_id, f"✅ Approved Telegram user <code>{target_id}</code>. License: <code>{html.escape(key)}</code>")
+            return
+        if action == "reject":
+            target["status"] = "REJECTED"
+            target["stage"] = "REJECTED"
+            save_user(target)
+            send_message(target["chat_id"],
+                "❌ <b>ACCESS NOT APPROVED</b>\n\nPlease contact the admin if your Quotex UID/referral details need to be checked again.",
+                markup([[btn("💬 CONTACT ADMIN", url=contact_url())]])
+            )
+            answer_callback(callback_id, "Rejected")
+            send_message(chat_id, f"❌ Rejected Telegram user <code>{target_id}</code>.")
+            return
+
+    if data == "access:uid":
+        user["stage"] = "AWAITING_UID"
+        user["status"] = "NEW"
+        save_user(user)
+        answer_callback(callback_id)
+        send_message(chat_id,
+            "🆔 <b>SUBMIT TELEGRAM ID OR QUOTEX UID</b>\n\n"
+            "Send the ID/UID in your next message. Your numeric Telegram ID is captured automatically as well.\n\n"
+            f"Need help? @{html.escape(SUPPORT_USERNAME)}"
+        )
+        return
+
+    if data == "access:key":
+        user["stage"] = "AWAITING_LICENSE"
+        save_user(user)
+        answer_callback(callback_id)
+        send_message(chat_id,
+            "🔑 <b>ENTER VIP LICENSE KEY</b>\n\n"
+            "Send your RAJA VIP license key in the next message. If your UID has not been submitted yet, use Request Access first."
+        )
+        return
+
+    if data == "access:submit":
+        if not user.get("submitted_id"):
+            answer_callback(callback_id, "Submit UID first", True)
+            return
+        user["status"] = "PENDING"
+        user["stage"] = "PENDING"
+        save_user(user)
+        notified = notify_admin_pending(user)
+        answer_callback(callback_id, "Request sent")
+        send_message(chat_id,
+            "⏳ <b>ACCESS REQUEST SUBMITTED</b>\n\nAdmin will verify your UID and approve/reject your request." +
+            ("" if notified else f"\n\n⚠️ Contact @{html.escape(SUPPORT_USERNAME)} because admin Telegram binding is not configured yet."),
+            start_keyboard(False)
+        )
+        return
+
+    if data == "menu:home":
+        answer_callback(callback_id)
+        send_message(chat_id, welcome_text(user), start_keyboard(user.get("status") == "ACTIVE"))
+        return
+
+    if data == "menu:status":
+        answer_callback(callback_id)
+        key = html.escape(user.get("license_key") or "Not issued")
+        submitted = html.escape(user.get("submitted_id") or "--")
+        send_message(chat_id,
+            "🔐 <b>MY RAJA AI ACCESS</b>\n\n"
+            f"Status: <b>{html.escape(str(user.get('status') or 'NEW'))}</b>\n"
+            f"Telegram ID: <code>{user['telegram_id']}</code>\n"
+            f"Submitted UID/ID: <code>{submitted}</code>\n"
+            f"VIP Key: <code>{key}</code>",
+            start_keyboard(user.get("status") == "ACTIVE")
+        )
+        return
+
+    if data == "menu:scan":
+        if user.get("status") != "ACTIVE":
+            answer_callback(callback_id, "Access not active", True)
+            return
+        answer_callback(callback_id)
+        send_message(chat_id, "📊 <b>SELECT MARKET TYPE</b>", market_keyboard())
+        return
+
+    if data.startswith("mkt:"):
+        market = data.split(":",1)[1]
+        if market not in MARKET_PAIRS:
+            answer_callback(callback_id, "Unknown market", True)
+            return
+        user["market"] = market
+        user["pair"] = ""
+        save_user(user)
+        answer_callback(callback_id)
+        send_message(chat_id, f"{MARKET_LABELS[market]}\n\n<b>Select Pair / Asset</b>", pair_keyboard(market, 0))
+        return
+
+    if data.startswith("pairs:"):
+        parts = data.split(":")
+        if len(parts) == 3:
+            market, page = parts[1], int(parts[2]) if parts[2].isdigit() else 0
+            answer_callback(callback_id)
+            try:
+                edit_message(chat_id, message_id, f"{MARKET_LABELS.get(market, market)}\n\n<b>Select Pair / Asset</b>", pair_keyboard(market, page))
+            except Exception:
+                send_message(chat_id, f"{MARKET_LABELS.get(market, market)}\n\n<b>Select Pair / Asset</b>", pair_keyboard(market, page))
+        return
+
+    if data == "pair:back":
+        market = user.get("market") or "CryptoLive"
+        answer_callback(callback_id)
+        send_message(chat_id, f"{MARKET_LABELS.get(market, market)}\n\n<b>Select Pair / Asset</b>", pair_keyboard(market, 0))
+        return
+
+    if data.startswith("pairauto:"):
+        market = data.split(":",1)[1]
+        user["market"] = market
+        user["pair"] = "__AUTO__"
+        save_user(user)
+        answer_callback(callback_id)
+        send_message(chat_id, f"✨ Auto Scan Best Pair · {MARKET_LABELS.get(market, market)}\n\n⏱️ <b>Select Trade Expiry</b>", expiry_keyboard())
+        return
+
+    if data.startswith("pair:") and data != "pair:back":
+        parts = data.split(":")
+        if len(parts) == 3 and parts[2].isdigit():
+            market, index = parts[1], int(parts[2])
+            pairs = MARKET_PAIRS.get(market, [])
+            if 0 <= index < len(pairs):
+                user["market"] = market
+                user["pair"] = pairs[index]
+                save_user(user)
+                answer_callback(callback_id)
+                send_message(chat_id, f"Asset: <b>{html.escape(pairs[index])}</b>\n\n⏱️ <b>Select Trade Expiry</b>", expiry_keyboard())
+                return
+        answer_callback(callback_id, "Invalid pair", True)
+        return
+
+    if data.startswith("exp:"):
+        expiry = data.split(":",1)[1]
+        if expiry not in VALID_EXPIRIES:
+            answer_callback(callback_id, "Unsupported expiry", True)
+            return
+        user["expiry"] = expiry
+        save_user(user)
+        pair_label = "Auto Scan Best Pair" if user.get("pair") == "__AUTO__" else user.get("pair")
+        answer_callback(callback_id)
+        send_message(chat_id,
+            "✅ <b>SCAN CONFIGURATION READY</b>\n\n"
+            f"Market: {html.escape(MARKET_LABELS.get(user.get('market'), user.get('market') or '--'))}\n"
+            f"Pair: <b>{html.escape(pair_label or '--')}</b>\n"
+            f"Expiry: <b>{html.escape(expiry)}</b>",
+            ready_to_scan_keyboard()
+        )
+        return
+
+    if data == "scan:expiry":
+        answer_callback(callback_id)
+        send_message(chat_id, "⏱️ <b>Select Trade Expiry</b>", expiry_keyboard())
+        return
+
+    if data == "scan:run":
+        if user.get("status") != "ACTIVE":
+            answer_callback(callback_id, "Access not active", True)
+            return
+        if not user.get("market") or not user.get("pair") or not user.get("expiry"):
+            answer_callback(callback_id, "Choose market, pair and expiry first", True)
+            send_message(chat_id, "📊 <b>Select Market</b>", market_keyboard())
+            return
+        answer_callback(callback_id, "Scan started")
+        pair_label = "best pair" if user.get("pair") == "__AUTO__" else user.get("pair")
+        send_message(chat_id,
+            "🔎 <b>AI MARKET SCAN STARTED</b>\n\n"
+            f"Scanning {html.escape(str(pair_label))} with {html.escape(user.get('expiry') or '1m')} confirmation.\n"
+            "I will send the result here when the scan finishes."
+        )
+        threading.Thread(target=_run_scan, args=(dict(user), services), daemon=True).start()
+        return
+
+    answer_callback(callback_id)
+
+
+def handle_update(update, services):
+    try:
+        if update.get("callback_query"):
+            handle_callback(update["callback_query"], services)
+        elif update.get("message"):
+            handle_message(update["message"], services)
+    except Exception as exc:
+        print(f"Telegram update handler error: {exc}")
+
+
+def configure_webhook():
+    if not BOT_TOKEN or not PUBLIC_BASE_URL:
+        return False
+    payload = {
+        "url": f"{PUBLIC_BASE_URL}/telegram/webhook",
+        "allowed_updates": ["message", "callback_query"],
+        "drop_pending_updates": False,
+    }
+    if WEBHOOK_SECRET:
+        payload["secret_token"] = WEBHOOK_SECRET
+    result = tg_api("setWebhook", payload, timeout=20)
+    print(f"Telegram webhook configured for @{BOT_USERNAME}: {result}")
+    return bool(result)
+
+
+def register_telegram_routes(app, services):
+    init_telegram_store()
+
+    @app.route("/telegram/webhook", methods=["POST"])
+    def telegram_webhook():
+        if not BOT_TOKEN:
+            return jsonify({"ok": False, "message": "Telegram bot is not configured."}), 503
+        if WEBHOOK_SECRET:
+            provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+            if provided != WEBHOOK_SECRET:
+                return jsonify({"ok": False, "message": "Invalid webhook secret."}), 403
+        update = request.get_json(silent=True) or {}
+        # Return fast. Any long market scan is already moved to a background thread.
+        handle_update(update, services)
+        return jsonify({"ok": True})
+
+    @app.route("/telegram/health", methods=["GET"])
+    def telegram_health():
         return jsonify({
-            "status": "success",
-            "data": results,
-            "diagnostics": diagnostics,
-            "cache_hit": False,
+            "status": "ok",
+            "telegram_enabled": bool(BOT_TOKEN),
+            "bot_username": BOT_USERNAME,
+            "support_username": SUPPORT_USERNAME,
+            "admin_bound": bool(admin_id()),
+            "public_base_url": PUBLIC_BASE_URL,
         })
 
-
-@app.route("/scan", methods=["POST"])
-def scan_markets():
-    data = request.get_json(silent=True) or {}
-    selected_pair = str(data.get("pair", "")).strip()
-    selected_expiry = str(data.get("expiry", "")).strip()
-
-    if not selected_pair or "Auto Scan Best Pair" in selected_pair:
-        return jsonify({
-            "status": "error",
-            "message": "Auto Scan must use /scan-batch with the selected market pair list.",
-        }), 400
-
-    if selected_pair not in YAHOO_SYMBOLS:
-        return jsonify({
-            "status": "error",
-            "message": f"Unsupported pair: {selected_pair}",
-            "data": no_signal_result(
-                selected_pair,
-                "Pair is not configured in Yahoo mapping.",
-            ),
-        }), 400
-
-    result = calculate_live_indicators(selected_pair, selected_expiry)
-    return jsonify({"status": "success", "data": result})
-
-
-
-signal_worker_thread = threading.Thread(
-    target=signal_outcome_worker,
-    daemon=True,
-)
-signal_worker_thread.start()
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        threaded=True,
-    )
+    if BOT_TOKEN:
+        def delayed_setup():
+            time.sleep(5)
+            try:
+                configure_webhook()
+            except Exception as exc:
+                print(f"Telegram webhook setup warning: {exc}")
+        threading.Thread(target=delayed_setup, daemon=True).start()
+    else:
+        print("Telegram integration loaded but TELEGRAM_BOT_TOKEN is not set.")
