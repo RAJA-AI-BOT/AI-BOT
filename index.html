@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RAJA AI PREMIUM - VIP QUANTUM (ULTRA PRO UPGRADED)</title>
+    <title>RAJA AI PREMIUM - PREMIUM UI V9</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
@@ -624,11 +624,173 @@
         }
     </style>
 
+
+    <style id="raja-v9-premium-ui">
+        /* ===== V9 selected-dashboard visual upgrade ===== */
+        :root { --raja-cyan:#60efff; --raja-green:#00ff87; --raja-red:#ff3366; --raja-panel:#050d19; }
+
+        /* Direction-aware full dashboard flash */
+        @keyframes signalArrivalBuy { 0%{box-shadow:0 0 0 rgba(0,255,135,0)} 32%{box-shadow:0 0 65px rgba(0,255,135,.42),inset 0 0 35px rgba(0,255,135,.20)} 66%{box-shadow:0 0 24px rgba(96,239,255,.30)} 100%{box-shadow:0 0 0 rgba(0,255,135,0)} }
+        @keyframes signalArrivalSell { 0%{box-shadow:0 0 0 rgba(255,51,102,0)} 32%{box-shadow:0 0 65px rgba(255,51,102,.42),inset 0 0 35px rgba(255,51,102,.20)} 66%{box-shadow:0 0 24px rgba(255,125,150,.25)} 100%{box-shadow:0 0 0 rgba(255,51,102,0)} }
+        .signal-arrival-buy { animation:signalArrivalBuy .72s ease-in-out 2; }
+        .signal-arrival-sell { animation:signalArrivalSell .72s ease-in-out 2; }
+
+        /* Left premium risk snapshot */
+        .premium-risk-mini { margin-top:10px; border:1px solid rgba(0,255,135,.20); border-radius:13px; padding:10px; background:linear-gradient(180deg,rgba(1,18,26,.82),rgba(2,8,17,.94)); overflow:hidden; position:relative; }
+        .premium-risk-mini::after { content:""; position:absolute; width:120px; height:120px; right:-55px; top:-55px; border-radius:50%; background:radial-gradient(circle,rgba(0,255,135,.13),transparent 68%); pointer-events:none; }
+        .premium-risk-mini-title { color:#00ff87; font-size:8px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; display:flex; justify-content:space-between; gap:5px; }
+        .premium-risk-mini-title b { color:#d9fff3; font-size:7px; border:1px solid rgba(0,255,135,.28); border-radius:999px; padding:2px 5px; }
+        .mini-pressure-wrap { display:grid; grid-template-columns:62px 1fr; gap:8px; align-items:center; margin-top:8px; }
+        .mini-pressure-gauge { --pressure:28; width:58px; height:34px; overflow:hidden; position:relative; }
+        .mini-pressure-gauge::before { content:""; position:absolute; width:58px; height:58px; border-radius:50%; background:conic-gradient(from 270deg,#00ff87 0 21%,#d7ef36 21% 32%,#ffb21a 32% 41%,#ff3366 41% 50%,transparent 50% 100%); }
+        .mini-pressure-gauge::after { content:""; position:absolute; width:42px; height:42px; left:8px; top:8px; border-radius:50%; background:#06101d; box-shadow:inset 0 0 10px rgba(96,239,255,.08); }
+        .mini-pressure-value { position:absolute; z-index:2; left:0; right:0; bottom:0; text-align:center; color:#00ff87; font-size:13px; font-weight:900; }
+        .mini-risk-copy small { color:#7990a8; font-size:7px; display:block; }
+        .mini-risk-copy strong { display:block; color:#e9fbff; font-size:9px; margin:2px 0; }
+        .mini-risk-copy span { color:#00ff87; font-size:7px; font-weight:900; }
+        .mini-risk-metrics { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:7px; }
+        .mini-risk-metric { border:1px solid rgba(96,239,255,.12); background:rgba(4,11,21,.68); border-radius:7px; padding:5px; }
+        .mini-risk-metric small { display:block; color:#758da5; font-size:6px; text-transform:uppercase; }
+        .mini-risk-metric strong { display:block; color:#dffcff; font-size:8px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+        /* Selected signal/result hero */
+        .signal3d-shell { min-height:420px; padding:13px !important; background:
+            radial-gradient(circle at 50% 33%,rgba(0,126,255,.18),transparent 28%),
+            radial-gradient(circle at 50% 58%,rgba(0,255,135,.09),transparent 33%),
+            linear-gradient(180deg,#03101d 0%,#020812 100%) !important; }
+        .signal3d-shell.signal-live-buy { --sig:#00ff87; }
+        .signal3d-shell.signal-live-sell { --sig:#ff3366; }
+        .signal3d-shell.signal-live-buy,.signal3d-shell.signal-live-sell { animation:signalShellPulse 2.3s ease-in-out infinite; }
+        @keyframes signalShellPulse { 50% { box-shadow:inset 0 0 50px color-mix(in srgb,var(--sig) 10%,transparent),0 0 34px color-mix(in srgb,var(--sig) 22%,transparent); } }
+        .signal3d-kicker { text-align:left; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .signal3d-kicker::after { content:"● LIVE SIGNAL ENGINE"; color:#00ff87; font-size:7px; letter-spacing:.7px; }
+        .signal-hero-stage { position:relative; min-height:245px; display:grid; grid-template-columns:minmax(0,1fr) 180px; align-items:center; gap:12px; overflow:hidden; border-radius:14px; padding:8px; }
+        .signal-hero-stage::before { content:""; position:absolute; inset:0; opacity:.40; background-image:linear-gradient(rgba(56,189,248,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.05) 1px,transparent 1px); background-size:22px 22px; animation:gridDrift 10s linear infinite; }
+        .signal-market-motion { position:absolute; inset:22px 3% 28px; opacity:.75; pointer-events:none; }
+        .signal-market-motion::before,.signal-market-motion::after { content:""; position:absolute; left:0; right:0; height:2px; top:45%; background:linear-gradient(90deg,transparent 0%,#00ff87 15%,#60efff 34%,transparent 52%,#60efff 70%,#00ff87 88%,transparent 100%); filter:drop-shadow(0 0 6px #60efff); transform:skewY(-4deg); animation:marketWave 3.2s ease-in-out infinite alternate; }
+        .signal-market-motion::after { top:68%; opacity:.5; transform:skewY(5deg) scaleY(.7); animation-duration:4.6s; }
+        @keyframes marketWave { from{transform:translateY(-8px) skewY(-4deg)} to{transform:translateY(15px) skewY(4deg)} }
+        .signal-orb-wrap { position:relative; z-index:2; display:grid; place-items:center; min-height:230px; }
+        .signal-orb { width:min(225px,56vw); aspect-ratio:1; border-radius:50%; position:relative; display:grid; place-items:center; background:radial-gradient(circle at 35% 28%,rgba(96,239,255,.30),rgba(0,84,170,.16) 36%,rgba(1,10,21,.96) 70%); border:2px solid rgba(96,239,255,.65); box-shadow:0 0 22px rgba(96,239,255,.50),0 0 58px color-mix(in srgb,var(--sig) 28%,transparent),inset 0 0 38px rgba(0,150,255,.18); animation:orbBreath 1.8s ease-in-out infinite; }
+        .signal-orb::before,.signal-orb::after { content:""; position:absolute; border-radius:50%; border:1px solid color-mix(in srgb,var(--sig) 65%,transparent); animation:scannerOrbit 4.4s linear infinite; }
+        .signal-orb::before { inset:-18px; border-left-color:#60efff; border-right-color:#60efff; }
+        .signal-orb::after { inset:-37px; border-style:dashed; opacity:.48; animation-duration:8s; animation-direction:reverse; }
+        @keyframes orbBreath { 50%{transform:scale(1.025); filter:brightness(1.14)} }
+        .signal-ripple { position:absolute; width:310px; max-width:80vw; height:64px; bottom:5px; border-radius:50%; border:2px solid rgba(96,239,255,.34); box-shadow:0 0 18px rgba(96,239,255,.36),inset 0 0 16px color-mix(in srgb,var(--sig) 14%,transparent); transform:perspective(170px) rotateX(68deg); animation:ripplePulse 1.8s ease-in-out infinite; }
+        .signal-ripple::before,.signal-ripple::after { content:""; position:absolute; inset:9px 20px; border-radius:50%; border:1px solid color-mix(in srgb,var(--sig) 44%,transparent); }
+        .signal-ripple::after { inset:18px 42px; }
+        @keyframes ripplePulse { 50%{transform:perspective(170px) rotateX(68deg) scale(1.08);opacity:.58} }
+        .signal-orb-content { position:relative; z-index:3; width:78%; text-align:center; }
+        .signal-confirmed { color:#00ff87; font-size:8px; font-weight:900; letter-spacing:.7px; text-transform:uppercase; margin-bottom:5px; }
+        .signal-orb #resModalAsset { font-size:25px !important; margin:0 !important; color:#fff; }
+        .signal-orb #resModalDirection { font-size:26px; line-height:1.1; margin:7px 0; text-shadow:0 0 18px currentColor; }
+        .signal-orb .signal-expiry-badge { display:none; }
+        .signal-orb-confidence-label { color:#8ba0b7; font-size:7px; text-transform:uppercase; letter-spacing:.7px; }
+        .signal-orb #signalConfidenceValue { display:block; color:#fff; font-size:25px; font-weight:900; margin-top:1px; }
+        .signal-selected-expiry { position:relative; z-index:3; margin-top:-4px; min-width:165px; padding:7px 16px; border-radius:10px; border:1px solid color-mix(in srgb,var(--sig) 65%,transparent); background:linear-gradient(180deg,color-mix(in srgb,var(--sig) 13%,#06101d),#05101c); box-shadow:0 0 22px color-mix(in srgb,var(--sig) 24%,transparent); text-align:center; }
+        .signal-selected-expiry span { display:block; color:#95abc0; font-size:7px; font-weight:900; letter-spacing:.9px; text-transform:uppercase; }
+        .signal-selected-expiry strong { display:block; color:#f7ffff; font-size:25px; line-height:1.05; margin-top:2px; text-shadow:0 0 16px var(--sig); }
+        .signal-live-controls { position:relative; z-index:3; display:grid; gap:8px; align-self:center; }
+        .signal-live-control { border:1px solid rgba(96,239,255,.16); border-radius:9px; background:rgba(2,12,23,.80); padding:8px 9px; display:flex; align-items:center; gap:7px; color:#9bb2c7; font-size:8px; }
+        .signal-live-control i { width:8px; height:8px; border-radius:50%; background:#00ff87; box-shadow:0 0 10px #00ff87; animation:pulseDot 1s infinite; }
+        .signal-live-control strong { color:#00ff87; font-size:8px; margin-left:auto; }
+        .signal-meta-premium { position:relative; z-index:3; text-align:center; margin:3px 0 7px; color:#9bb1c7; font-size:8px; }
+        .signal-graph-premium { position:relative; z-index:3; max-width:900px; margin:0 auto 5px; }
+        .signal3d-confidence { display:none !important; }
+        .signal3d-layout { display:block !important; }
+        .signal3d-ai,.signal3d-main { display:contents !important; }
+        .signal3d-orbit,.signal3d-platform { display:none !important; }
+        .tf-breakdown { position:relative; z-index:3; }
+        .tf-chip { position:relative; transition:transform .2s ease,box-shadow .2s ease; }
+        .tf-chip.tf-selected { transform:translateY(-2px); outline:2px solid rgba(96,239,255,.72); box-shadow:0 0 20px rgba(96,239,255,.20),inset 0 0 18px rgba(96,239,255,.06); }
+        .tf-chip.tf-selected::after { content:"SELECTED"; position:absolute; top:3px; right:3px; color:#60efff; font-size:5px; font-weight:900; }
+
+        /* Scan telemetry strip */
+        .scan-telemetry { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:2px; }
+        .scan-telemetry-card { border:1px solid rgba(96,239,255,.12); border-radius:8px; background:rgba(2,10,20,.72); padding:7px; text-align:left; }
+        .scan-telemetry-card small { display:block; color:#6f879f; font-size:6.5px; text-transform:uppercase; letter-spacing:.5px; }
+        .scan-telemetry-card strong { display:block; color:#00ff87; font-size:10px; margin-top:3px; }
+        .scan-telemetry-card.live strong::before { content:"● "; animation:pulseDot 1s infinite; }
+
+        /* Right rail sound alerts */
+        .sound-alert-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+        .sound-alert-tile { border-radius:9px; padding:9px 7px; text-align:center; font-size:7px; position:relative; overflow:hidden; }
+        .sound-alert-tile.buy { color:#00ff87; border:1px solid rgba(0,255,135,.32); background:rgba(0,255,135,.06); }
+        .sound-alert-tile.sell { color:#ff5577; border:1px solid rgba(255,85,119,.32); background:rgba(255,85,119,.06); }
+        .sound-alert-tile strong { display:block; font-size:9px; }
+        .sound-wave { height:20px; margin-top:5px; background:repeating-linear-gradient(90deg,currentColor 0 2px,transparent 2px 5px); mask-image:linear-gradient(to bottom,transparent,black 25%,black 75%,transparent); animation:soundWave .75s ease-in-out infinite alternate; transform-origin:center; }
+        @keyframes soundWave { from{transform:scaleY(.35);opacity:.55} to{transform:scaleY(1);opacity:1} }
+        .sound-alert-status { margin-top:7px; color:#00ff87; font-size:7px; text-align:center; font-weight:900; }
+
+        /* Premium Risk & Recovery detail page */
+        .risk-premium-shell { text-align:left; }
+        .risk-premium-hero { display:grid; grid-template-columns:1.15fr .85fr; gap:8px; margin-bottom:8px; }
+        .risk-guidance-card,.risk-pressure-card,.risk-input-card,.risk-table-card { border:1px solid rgba(96,239,255,.15); border-radius:10px; background:linear-gradient(180deg,rgba(4,14,26,.88),rgba(2,8,17,.92)); padding:10px; }
+        .risk-section-label { color:#60efff; font-size:7px; font-weight:900; letter-spacing:.7px; text-transform:uppercase; margin-bottom:6px; }
+        .risk-guidance-state { color:#00ff87; font-size:13px; font-weight:900; }
+        .risk-guidance-copy { color:#8da4ba; font-size:8px; line-height:1.55; margin-top:4px; }
+        .risk-guidance-list { display:grid; gap:4px; margin-top:7px; color:#bdd0df; font-size:8px; }
+        .risk-guidance-list span::before { content:"✓"; color:#00ff87; margin-right:6px; font-weight:900; }
+        .risk-pressure-meter { --pressure:28; width:150px; max-width:100%; height:86px; margin:0 auto; position:relative; overflow:hidden; }
+        .risk-pressure-meter::before { content:""; position:absolute; width:150px; height:150px; border-radius:50%; background:conic-gradient(from 270deg,#00ff87 0 22%,#c9ec38 22% 31%,#ffad1c 31% 40%,#ff3366 40% 50%,transparent 50% 100%); }
+        .risk-pressure-meter::after { content:""; position:absolute; width:108px; height:108px; left:21px; top:21px; border-radius:50%; background:#06101d; }
+        .risk-pressure-reading { position:absolute; z-index:2; left:0; right:0; bottom:3px; text-align:center; }
+        .risk-pressure-reading strong { display:block; color:#00ff87; font-size:23px; }
+        .risk-pressure-reading span { color:#86a0b7; font-size:7px; text-transform:uppercase; font-weight:900; }
+        .risk-form-grid.v9 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .risk-metrics.v9 { grid-template-columns:repeat(6,minmax(0,1fr)); }
+        .risk-metrics.v9 .risk-metric-card { min-width:0; }
+        .risk-table-card { margin-top:8px; }
+        .risk-table-card .inline-list-box { max-height:265px !important; margin:0; }
+        .risk-note-premium { margin-top:7px; color:#71879e; font-size:7px; line-height:1.45; }
+
+        /* Better selected expiry visibility in configuration */
+        .expiry-btn.active { color:#fff !important; background:linear-gradient(180deg,#0e73ff,#074399) !important; border-color:#60efff !important; box-shadow:0 0 18px rgba(96,239,255,.55),inset 0 0 14px rgba(255,255,255,.08) !important; transform:translateY(-1px); }
+
+        @media (max-width:1100px) {
+            .signal-hero-stage { grid-template-columns:minmax(0,1fr) 150px; }
+            .signal-live-control { padding:7px; }
+            .risk-metrics.v9 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width:900px) {
+            .premium-risk-mini { display:none; }
+            .signal-hero-stage { grid-template-columns:1fr; min-height:0; }
+            .signal-live-controls { grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; }
+            .signal-live-control { justify-content:center; }
+            .signal-live-control strong { margin-left:0; }
+            .risk-premium-hero { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width:600px) {
+            .signal3d-shell { min-height:0; padding:8px !important; }
+            .signal3d-kicker { font-size:7px; }
+            .signal3d-kicker::after { font-size:5.5px; }
+            .signal-orb { width:min(205px,66vw); }
+            .signal-orb #resModalAsset { font-size:21px !important; }
+            .signal-orb #resModalDirection { font-size:22px; }
+            .signal-selected-expiry { min-width:145px; padding:6px 12px; }
+            .signal-selected-expiry strong { font-size:22px; }
+            .signal-live-controls { grid-template-columns:1fr; gap:5px; }
+            .signal-live-control { padding:6px 7px; }
+            .scan-telemetry { grid-template-columns:1fr 1fr; }
+            .risk-premium-hero { grid-template-columns:1fr; }
+            .risk-form-grid.v9 { grid-template-columns:1fr; }
+            .risk-metrics.v9 { grid-template-columns:1fr 1fr; }
+            .risk-row { grid-template-columns:42px 1fr 1fr 1fr !important; font-size:8px; }
+            .risk-row span:nth-child(4),.risk-row.header span:nth-child(4) { display:block !important; }
+        }
+        @media (max-width:390px) {
+            .signal-orb { width:190px; }
+            .signal-market-motion { display:none; }
+            .risk-metrics.v9 { grid-template-columns:1fr; }
+            .scan-telemetry { grid-template-columns:1fr; }
+        }
+    </style>
+
 </head>
 <body>
 
     <div class="container">
-        <h2>RAJA AI PREMIUM - ULTRA PRO (UPGRADED)</h2>
+        <h2>RAJA AI PREMIUM - PREMIUM UI V9</h2>
         
         <div class="market-notice">
             💡 Market stays stable & optimal from 9:00 AM to 5:00 PM
@@ -677,6 +839,17 @@
                         <button class="nav-item" onclick="openSettingsInline()">⚙ Settings</button>
                         <button class="nav-item" onclick="openNewsInline()">▤ News · LIVE</button>
                         <button class="nav-item" onclick="openRiskInline()">♢ Risk & Recovery</button>
+                    </div>
+                    <div class="premium-risk-mini" onclick="openRiskInline()" role="button" tabindex="0" title="Open Risk & Recovery">
+                        <div class="premium-risk-mini-title"><span>Risk & Recovery Premium</span><b>LIVE</b></div>
+                        <div class="mini-pressure-wrap">
+                            <div class="mini-pressure-gauge" id="sideRiskGauge"><div class="mini-pressure-value" id="sideRiskPressure">28%</div></div>
+                            <div class="mini-risk-copy"><small>RECOVERY PRESSURE</small><strong id="sideRiskState">LOW PRESSURE</strong><span>Tap to open recovery center</span></div>
+                        </div>
+                        <div class="mini-risk-metrics">
+                            <div class="mini-risk-metric"><small>Total Exposure</small><strong id="sideRiskExposure">$0.00</strong></div>
+                            <div class="mini-risk-metric"><small>Profile</small><strong id="sideRiskProfile">--</strong></div>
+                        </div>
                     </div>
                     <div class="engine-mini">
                         <div>AI Engine Status <strong>LIVE</strong></div>
@@ -749,6 +922,12 @@
                                             <div id="scanStageFinal" class="scan-stage"><span class="scan-dot"></span><span>Finalizing best opportunity</span><span class="scan-stage-status">PENDING</span></div>
                                         </div>
                                     </div>
+                                    <div class="scan-telemetry">
+                                        <div class="scan-telemetry-card live"><small>Assets in Scan</small><strong id="scanActiveAssetsValue">0</strong></div>
+                                        <div class="scan-telemetry-card"><small>Scan Progress</small><strong id="scanTelemetryProgress">8%</strong></div>
+                                        <div class="scan-telemetry-card"><small>Current Phase</small><strong id="scanTelemetryStage">Collecting Data</strong></div>
+                                        <div class="scan-telemetry-card"><small>Elapsed</small><strong id="scanElapsedValue">00:00</strong></div>
+                                    </div>
                                     <div class="scan-live-footer">
                                         <div id="liveScanConsole" class="live-scan-console"><div class="live-scan-row scanning">Synchronizing closed candles and multi-timeframe filters...</div></div>
                                         <div class="scan-progress-container"><div id="scanProgressBar" class="scan-progress-bar"></div></div>
@@ -758,22 +937,33 @@
                             </div>
 
                             <div id="signalView" class="signal-view">
-                                <div id="signal3dShell" class="signal3d-shell">
-                                    <div class="signal3d-kicker">✦ RAJA AI · CONFIRMED MULTI-TIMEFRAME SIGNAL ✦</div>
-                                    <div class="signal3d-layout">
-                                        <div class="signal3d-ai">
-                                            <div class="signal3d-orbit"><div class="signal3d-core"><strong>AI</strong><span>SIGNAL LOCK</span></div></div>
-                                            <div class="signal3d-platform"></div>
+                                <div id="signal3dShell" class="signal3d-shell signal-live-buy">
+                                    <div class="signal3d-kicker"><span>✦ RAJA AI · CONFIRMED MULTI-TIMEFRAME SIGNAL ✦</span></div>
+                                    <div class="signal-hero-stage">
+                                        <div class="signal-market-motion"></div>
+                                        <div class="signal-orb-wrap">
+                                            <div class="signal-orb">
+                                                <div class="signal-orb-content">
+                                                    <div class="signal-confirmed">Confirmed AI Signal</div>
+                                                    <div id="resModalAsset">EUR/USD</div>
+                                                    <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
+                                                    <div class="signal-orb-confidence-label">Confidence</div>
+                                                    <span id="signalConfidenceValue">--</span>
+                                                </div>
+                                            </div>
+                                            <div class="signal-ripple"></div>
+                                            <div class="signal-selected-expiry"><span>Selected Expiry</span><strong id="selectedExpiryHeroValue">1m</strong></div>
                                         </div>
-                                        <div class="signal3d-main">
-                                            <div id="resModalAsset">EUR/USD</div>
-                                            <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
-                                            <div id="resModalMeta" class="signal-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
-                                            <div class="scan-graph"><div class="graph-line"></div><div id="lightOverlay" class="signal-light-overlay"></div><svg class="graph-svg" viewBox="0 0 300 90" preserveAspectRatio="none"><path id="signalSvgPath" d="M0,45 Q40,15 80,50 T160,25 T240,55 T300,30" fill="none" stroke="#00ff87" stroke-width="2.2"/></svg></div>
-                                            <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
+                                        <div class="signal-live-controls">
+                                            <div class="signal-live-control"><i></i><span>Sound Alert</span><strong id="signalSoundStatus">ON</strong></div>
+                                            <div class="signal-live-control"><i></i><span>Signal Flashing</span><strong>ON</strong></div>
+                                            <div class="signal-live-control"><i></i><span>Movement / Animation</span><strong>ACTIVE</strong></div>
                                         </div>
-                                        <div class="signal3d-confidence" id="signalConfidenceRing"><div><strong id="signalConfidenceValue">--</strong><span>CONFIDENCE</span></div></div>
                                     </div>
+                                    <div id="resModalMeta" class="signal-meta signal-meta-premium">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
+                                    <div class="scan-graph signal-graph-premium"><div class="graph-line"></div><div id="lightOverlay" class="signal-light-overlay"></div><svg class="graph-svg" viewBox="0 0 300 90" preserveAspectRatio="none"><path id="signalSvgPath" d="M0,45 Q40,15 80,50 T160,25 T240,55 T300,30" fill="none" stroke="#00ff87" stroke-width="2.2"/></svg></div>
+                                    <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
+                                    <div id="signalConfidenceRing" class="signal3d-confidence"><div><strong>--</strong><span>CONFIDENCE</span></div></div>
                                     <div class="mtf-heading">Same Pair · Multi-Timeframe Direction</div>
                                     <div id="tfBreakdown" class="tf-breakdown"></div>
                                     <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div>
@@ -798,7 +988,28 @@
                                 <div id="marketNewsList" class="inline-list-box" style="max-height:235px;"><div class="inline-item"><span>Loading live economic calendar...</span><span class="win-tag">LIVE</span></div></div>
                                 <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;"><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button><button class="menu-back-btn" onclick="window.open('https://www.forexfactory.com/calendar','_blank','noopener')">↗ Forex Factory Calendar</button></div>
                             </div>
-                            <div id="riskInlineView" class="inline-content-view"><div class="inline-title">🛡️ Smart Risk & Recovery</div><div class="risk-inline-note">Calculation aid only: set the stake, expected payout and recovery depth. The ladder shows total exposure before placing any trade.</div><div class="risk-form-grid"><div><label class="label-text">Base Stake ($)</label><input type="number" id="baseStakeInput" class="input-field" value="10" min="1" step="0.01" oninput="calculateRisk()"></div><div><label class="label-text">Payout %</label><input type="number" id="payoutRateInput" class="input-field" value="95" min="50" max="100" step="1" oninput="calculateRisk()"></div><div><label class="label-text">Recovery Steps</label><select id="riskStepsSelect" class="input-field" onchange="calculateRisk()"><option value="3">3 Steps</option><option value="4" selected>4 Steps</option><option value="5">5 Steps</option><option value="6">6 Steps</option></select></div></div><div class="risk-metrics"><div class="risk-metric-card"><small>Profile</small><strong id="riskProfileDisplay">--</strong></div><div class="risk-metric-card"><small>Total Exposure</small><strong id="riskTotalExposure">$0.00</strong></div><div class="risk-metric-card"><small>Target Profit</small><strong id="riskTargetProfit">$0.00</strong></div><div class="risk-metric-card"><small>Suggested Balance</small><strong id="riskRecommendedBalance">$0.00</strong></div></div><div id="riskRecoveryTable" class="inline-list-box" style="max-height:230px;"></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
+                            <div id="riskInlineView" class="inline-content-view risk-premium-shell">
+                                <div class="inline-title">🛡️ Risk & Recovery Premium</div>
+                                <div class="risk-premium-hero">
+                                    <div class="risk-guidance-card">
+                                        <div class="risk-section-label">Top Guidance</div>
+                                        <div id="riskGuidanceState" class="risk-guidance-state">LOWER EXPOSURE MODE</div>
+                                        <div id="riskGuidanceCopy" class="risk-guidance-copy">Use this calculator to see cumulative stake exposure before placing trades. Recovery sizing does not increase prediction accuracy.</div>
+                                        <div class="risk-guidance-list"><span>Review total exposure before entry</span><span>Keep recovery depth limited</span><span>Stop when your loss limit is reached</span><span>Avoid increasing stake to chase losses</span></div>
+                                    </div>
+                                    <div class="risk-pressure-card">
+                                        <div class="risk-section-label">Recovery Pressure Meter</div>
+                                        <div class="risk-pressure-meter" id="riskPressureMeter"><div class="risk-pressure-reading"><strong id="riskPressureValue">28%</strong><span id="riskPressureLabel">LOW PRESSURE</span></div></div>
+                                    </div>
+                                </div>
+                                <div class="risk-input-card">
+                                    <div class="risk-section-label">Recovery Inputs</div>
+                                    <div class="risk-form-grid v9"><div><label class="label-text">Base Stake ($)</label><input type="number" id="baseStakeInput" class="input-field" value="10" min="1" step="0.01" oninput="calculateRisk()"></div><div><label class="label-text">Payout %</label><input type="number" id="payoutRateInput" class="input-field" value="95" min="50" max="100" step="1" oninput="calculateRisk()"></div><div><label class="label-text">Recovery Steps</label><select id="riskStepsSelect" class="input-field" onchange="calculateRisk()"><option value="3">3 Steps</option><option value="4" selected>4 Steps</option><option value="5">5 Steps</option><option value="6">6 Steps</option></select></div></div>
+                                    <div class="risk-metrics v9"><div class="risk-metric-card"><small>Profile</small><strong id="riskProfileDisplay">--</strong></div><div class="risk-metric-card"><small>Total Exposure</small><strong id="riskTotalExposure">$0.00</strong></div><div class="risk-metric-card"><small>Target Profit</small><strong id="riskTargetProfit">$0.00</strong></div><div class="risk-metric-card"><small>Suggested Balance</small><strong id="riskRecommendedBalance">$0.00</strong></div><div class="risk-metric-card"><small>Exposure / Base</small><strong id="riskExposureMultiple">0.0x</strong></div><div class="risk-metric-card"><small>Max Step</small><strong id="riskMaxStep">$0.00</strong></div></div>
+                                </div>
+                                <div class="risk-table-card"><div class="risk-section-label">Recovery Plan Table</div><div id="riskRecoveryTable" class="inline-list-box"></div><div class="risk-note-premium">Planning aid only. Binary-options style recovery ladders can increase losses quickly; the safest control is a fixed loss limit rather than an escalating stake sequence.</div></div>
+                                <div style="display:flex;justify-content:center;margin-top:8px;"><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
+                            </div>
                         </div>
                     </section>
 
@@ -819,7 +1030,7 @@
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button></div>
                             </div>
                         </div>
-                        <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START AI DEEP SCAN</button>
+                        <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START AI MARKET SCAN</button>
                     </section>
                 </main>
 
@@ -827,6 +1038,7 @@
                     <section class="rail-card"><div class="rail-title">MARKET OVERVIEW</div><div class="overview-row"><span>Crypto Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Crypto OTC Proxy</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex OTC Proxy</span><span class="ready-tag">READY</span></div></section>
                     <section class="rail-card"><div class="rail-title">RECENT SCAN HISTORY</div><div id="dashboardRecentHistory" class="recent-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div></section>
                     <section class="rail-card"><div class="rail-title">QUICK ACTIONS</div><div class="rail-actions"><button class="rail-action" onclick="openHistoryInline()">📈 View Performance / History</button><button class="rail-action" onclick="openRiskInline()">🛡 Risk & Recovery</button><button class="rail-action" onclick="openSettingsInline()">⚙ Bot Settings</button><button class="rail-action" onclick="openNewsInline()">📰 Live News / Calendar</button></div></section>
+                    <section class="rail-card"><div class="rail-title">SOUND + SIGNAL ALERTS</div><div class="sound-alert-grid"><div class="sound-alert-tile buy"><strong>↑ UP (BUY)</strong><div class="sound-wave"></div><span>Ascending tone</span></div><div class="sound-alert-tile sell"><strong>↓ DOWN (SELL)</strong><div class="sound-wave"></div><span>Descending tone</span></div></div><div id="soundAlertStatusText" class="sound-alert-status">● Alerts active · flashing + movement enabled</div></section>
                 </aside>
             </div>
         </div>
@@ -1074,6 +1286,15 @@
             const activeText = document.getElementById('scanPercentActive');
             if (activeText) activeText.innerText = Math.round(safe) + '%';
             updateScanStageVisual(safe);
+            const telemetryProgress = document.getElementById('scanTelemetryProgress');
+            if (telemetryProgress) telemetryProgress.innerText = Math.round(safe) + '%';
+            const telemetryStage = document.getElementById('scanTelemetryStage');
+            if (telemetryStage) telemetryStage.innerText = safe < 28 ? 'Collecting Data' : (safe < 55 ? 'Multi-TF Analysis' : (safe < 82 ? 'Asset Ranking' : 'Final Validation'));
+            if (scanSessionState.running && scanSessionState.startedAt) {
+                const elapsed = Math.max(0, Math.floor((Date.now() - scanSessionState.startedAt) / 1000));
+                const elapsedEl = document.getElementById('scanElapsedValue');
+                if (elapsedEl) elapsedEl.innerText = String(Math.floor(elapsed / 60)).padStart(2,'0') + ':' + String(elapsed % 60).padStart(2,'0');
+            }
             updateScanSessionChip();
         }
 
@@ -1108,6 +1329,10 @@
 
         function beginScanSession(autoTriggered, pairCount) {
             scanSessionState = { running: true, progress: 8, startedAt: Date.now(), autoTriggered: Boolean(autoTriggered), pairCount: Number(pairCount || 0) };
+            const assetsEl = document.getElementById('scanActiveAssetsValue');
+            if (assetsEl) assetsEl.innerText = String(Number(pairCount || 0));
+            const elapsedEl = document.getElementById('scanElapsedValue');
+            if (elapsedEl) elapsedEl.innerText = '00:00';
             primaryViewState = 'scanning';
             updateScanSessionChip();
             setScanProgress(8);
@@ -1178,6 +1403,9 @@
                 btn.style.color = "#ff3366";
                 btn.style.borderColor = "rgba(255, 51, 102, 0.4)";
             }
+            const alertStatus = document.getElementById('soundAlertStatusText');
+            if (alertStatus) alertStatus.innerText = soundEnabled ? '● Alerts active · flashing + movement enabled' : '○ Sound off · visual flashing + movement remain active';
+            syncSelectedExpiryUI();
         }
 
         async function logoutSession() {
@@ -1222,23 +1450,26 @@
             } catch(e) {}
         }
 
-        function playSignalAlertSound() {
+        function playSignalAlertSound(isBuy = true) {
             if (!soundEnabled) return;
             try {
                 if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                 if (audioCtx.state === 'suspended') audioCtx.resume();
-                let now = audioCtx.currentTime;
-                let osc = audioCtx.createOscillator();
-                let gainNode = audioCtx.createGain();
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(880, now);
-                osc.frequency.setValueAtTime(1760, now + 0.15);
-                gainNode.gain.setValueAtTime(0.4, now);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                osc.connect(gainNode);
-                gainNode.connect(audioCtx.destination);
-                osc.start(now);
-                osc.stop(now + 0.3);
+                const now = audioCtx.currentTime;
+                const notes = isBuy ? [660, 880, 1320] : [1320, 880, 520];
+                notes.forEach((freq, i) => {
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    osc.type = i === 1 ? 'triangle' : 'sine';
+                    const start = now + i * 0.10;
+                    osc.frequency.setValueAtTime(freq, start);
+                    gainNode.gain.setValueAtTime(0.22, start);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, start + 0.14);
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    osc.start(start);
+                    osc.stop(start + 0.15);
+                });
             } catch(e) {}
         }
 
@@ -1848,23 +2079,52 @@
             const targetProfit = Math.max(0.5, base * payout);
             let runningLoss = 0;
             let totalExposure = 0;
+            let maxStepStake = base;
             const rows = [`<div class="risk-row header"><span>Step</span><span>Stake</span><span>Loss Cover</span><span>Net Goal</span></div>`];
             for (let step = 1; step <= steps; step++) {
                 const rawStake = step === 1 ? base : ((runningLoss + targetProfit) / payout);
                 const stake = Math.ceil(rawStake * 100) / 100;
                 const netGoal = Math.max(0, (stake * payout) - runningLoss);
                 totalExposure += stake;
+                maxStepStake = Math.max(maxStepStake, stake);
                 const cls = step <= 2 ? 'safe' : (step <= 4 ? 'balanced' : 'aggressive');
                 rows.push(`<div class="risk-row"><span class="risk-tag ${cls}">#${step}</span><span>$${stake.toFixed(2)}</span><span>$${runningLoss.toFixed(2)}</span><span>$${netGoal.toFixed(2)}</span></div>`);
                 runningLoss += stake;
             }
             const balance = totalExposure * 1.35;
             const multiple = totalExposure / base;
-            const profile = multiple > 8 ? 'Aggressive' : (multiple > 4 ? 'Balanced' : 'Lower');
+            const profile = multiple > 8 ? 'High' : (multiple > 4 ? 'Balanced' : 'Lower');
+            const pressure = Math.max(8, Math.min(100, Math.round((multiple / 10) * 100)));
+            const pressureLabel = pressure < 35 ? 'LOW PRESSURE' : (pressure < 68 ? 'MEDIUM PRESSURE' : 'HIGH PRESSURE');
             const table = document.getElementById('riskRecoveryTable');
             if (table) table.innerHTML = rows.join('');
-            const values = { riskProfileDisplay:profile, riskTotalExposure:`$${totalExposure.toFixed(2)}`, riskTargetProfit:`$${targetProfit.toFixed(2)}`, riskRecommendedBalance:`$${balance.toFixed(2)}` };
+            const values = {
+                riskProfileDisplay:profile,
+                riskTotalExposure:`$${totalExposure.toFixed(2)}`,
+                riskTargetProfit:`$${targetProfit.toFixed(2)}`,
+                riskRecommendedBalance:`$${balance.toFixed(2)}`,
+                riskExposureMultiple:`${multiple.toFixed(1)}x`,
+                riskMaxStep:`$${maxStepStake.toFixed(2)}`,
+                riskPressureValue:`${pressure}%`,
+                riskPressureLabel:pressureLabel,
+                sideRiskPressure:`${pressure}%`,
+                sideRiskExposure:`$${totalExposure.toFixed(2)}`,
+                sideRiskProfile:profile,
+                sideRiskState:pressureLabel
+            };
             Object.entries(values).forEach(([id,value]) => { const el=document.getElementById(id); if(el) el.innerText=value; });
+            const meter = document.getElementById('riskPressureMeter');
+            if (meter) meter.style.setProperty('--pressure', pressure);
+            const sideGauge = document.getElementById('sideRiskGauge');
+            if (sideGauge) sideGauge.style.setProperty('--pressure', pressure);
+            const guidanceState = document.getElementById('riskGuidanceState');
+            const guidanceCopy = document.getElementById('riskGuidanceCopy');
+            if (guidanceState) guidanceState.innerText = profile === 'Lower' ? 'LOWER EXPOSURE MODE' : (profile === 'Balanced' ? 'BALANCED EXPOSURE MODE' : 'HIGH EXPOSURE WARNING');
+            if (guidanceCopy) guidanceCopy.innerText = profile === 'High'
+                ? 'The selected recovery depth creates high cumulative exposure. Consider fewer steps or a smaller base stake.'
+                : (profile === 'Balanced'
+                    ? 'Cumulative exposure is moderate. Check that the full ladder fits inside your pre-set loss limit before trading.'
+                    : 'Cumulative exposure is lower, but recovery sizing still increases risk after losses. Keep a fixed stop limit.');
         }
 
         const brokerData = {
@@ -1991,7 +2251,18 @@
             // require a fresh scan before another entry instruction is displayed.
             activeSignalEntryEpochMs = null;
             activeTrackedSignalId = null;
+            syncSelectedExpiryUI();
             startTimer();
+        }
+
+        function syncSelectedExpiryUI() {
+            const hero = document.getElementById('selectedExpiryHeroValue');
+            if (hero) hero.innerText = selectedExpiry;
+            const soundStatus = document.getElementById('signalSoundStatus');
+            if (soundStatus) soundStatus.innerText = soundEnabled ? 'ON' : 'OFF';
+            document.querySelectorAll('.tf-chip').forEach(chip => {
+                chip.classList.toggle('tf-selected', (chip.dataset.tf || '').toLowerCase() === String(selectedExpiry).toLowerCase());
+            });
         }
 
         function startTimer() {
@@ -2191,7 +2462,7 @@
             let progressBar = document.getElementById('scanProgressBar');
             let scanStep = document.getElementById('scanStepText');
             let scanBtn = document.getElementById('scanBtn');
-            scanBtn.innerText = autoTriggered ? '↻ AUTO RE-SCAN IN PROGRESS...' : '▶ AI DEEP SCAN IN PROGRESS...';
+            scanBtn.innerText = autoTriggered ? '↻ AUTO RE-SCAN IN PROGRESS...' : '▶ AI MARKET SCAN IN PROGRESS...';
             scanBtn.disabled = true;
             setScanProgress(8);
 
@@ -2261,7 +2532,7 @@
                 scanFailureMessage = error && error.message ? error.message : 'Unknown scan error';
                 scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>Scan failed</span><span>${scanFailureMessage}</span></div>`;
             } finally {
-                scanBtn.innerText = '▶ START AI DEEP SCAN';
+                scanBtn.innerText = '▶ START AI MARKET SCAN';
                 scanBtn.disabled = false;
                 scheduleAutoRescan();
             }
@@ -2364,21 +2635,20 @@
                 const cls = sig === 'CALL' ? 'tf-call' : (sig === 'PUT' ? 'tf-put' : 'tf-none');
                 const label = sig === 'CALL' ? '↑ UP' : (sig === 'PUT' ? '↓ DOWN' : '• WAIT');
                 const scoreText = score > 0 ? `${score.toFixed(0)}%` : '--';
-                return `<div class="tf-chip ${cls}"><span class="tf-name">${tf}</span><span class="tf-dir">${label}</span><span class="tf-score">${scoreText}</span></div>`;
+                const selectedCls = tf === selectedExpiry ? ' tf-selected' : '';
+                return `<div class="tf-chip ${cls}${selectedCls}" data-tf="${tf}"><span class="tf-name">${tf}</span><span class="tf-dir">${label}</span><span class="tf-score">${scoreText}</span></div>`;
             }).join('');
             const agreement = Number(signalData.multiTfAgreement);
             const agreementText = Number.isFinite(agreement) ? agreement.toFixed(1) + '%' : '--';
-            line.innerText = `Same pair multi-TF agreement: ${agreementText} · Mode: ${signalData.confirmationMode || '4-of-6 Strong'}`;
+            line.innerText = `Same pair multi-TF agreement: ${agreementText} · Mode: ${signalData.confirmationMode || '4-of-6 Strong'} · Selected Expiry: ${selectedExpiry}`;
+            syncSelectedExpiryUI();
         }
 
         function displaySignalResult(signalData) {
             completeScanSession('signal');
             let signalView = document.getElementById('signalView');
 
-            playSignalAlertSound();
             let containerEl = document.querySelector('.container');
-            containerEl.classList.add('alert-flash');
-            setTimeout(() => { containerEl.classList.remove('alert-flash'); }, 1200);
 
             let hudBox = document.getElementById('hudBoxContainer');
             let targetPairBox = document.getElementById('targetPairBoxContainer');
@@ -2399,12 +2669,21 @@
             // Render actual backend multi-timeframe breakdown.
             renderTimeframeBreakdown(signalData);
             registerSignalForTracking(signalData);
-let isBuy = signalData.dir.includes("CALL");
+            let isBuy = signalData.dir.includes("CALL");
+            playSignalAlertSound(isBuy);
+            if (containerEl) {
+                containerEl.classList.remove('signal-arrival-buy','signal-arrival-sell','alert-flash');
+                void containerEl.offsetWidth;
+                const cls = isBuy ? 'signal-arrival-buy' : 'signal-arrival-sell';
+                containerEl.classList.add(cls);
+                setTimeout(() => containerEl.classList.remove(cls), 1700);
+            }
+            syncSelectedExpiryUI();
             let confluenceNumber = Math.max(0, Math.min(100, Number(signalData.confluence || 0)));
             let confluenceString = confluenceNumber.toFixed(1) + "%";
             if (signalConfidenceRing) signalConfidenceRing.style.setProperty('--conf', confluenceNumber);
             if (signalConfidenceValue) signalConfidenceValue.innerText = confluenceString;
-            if (signal3dShell) signal3dShell.className = isBuy ? 'signal3d-shell' : 'signal3d-shell sell';
+            if (signal3dShell) signal3dShell.className = isBuy ? 'signal3d-shell signal-live-buy' : 'signal3d-shell sell signal-live-sell';
 
             dynamicHistory.unshift({
                 pair: signalData.pair,
@@ -2450,7 +2729,7 @@ let isBuy = signalData.dir.includes("CALL");
             new MutationObserver(sync).observe(source, { childList: true, subtree: true, characterData: true });
             source.dataset.mirrorInstalled = '1';
         }
-        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); });
+        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); });
 
     </script>
 </body>
