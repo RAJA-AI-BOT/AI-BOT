@@ -863,25 +863,45 @@
             .premium-signal-result{min-height:0;padding:8px}.psr-topline{align-items:flex-start}.psr-title small{display:none}.psr-shared{font-size:6px;padding:6px}.psr-hero{min-height:355px}.psr-orb-stage{inset:16px 0 34px}.psr-energy-orb{width:210px;max-width:66vw}.psr-orbit-1{max-width:72vw;max-height:72vw}.psr-orbit-2{max-width:84vw}.psr-orbit-3{max-width:94vw}.psr-floor-1{max-width:88vw}.psr-floor-2{max-width:72vw}.psr-floor-3{max-width:56vw}.psr-live-chip{top:18px;font-size:5.5px;padding:5px}.psr-live-left{left:6px}.psr-live-right{right:6px}.psr-volume-bars{bottom:54px;height:65px}.psr-selected-expiry{bottom:10px;min-width:145px}.psr-selected-expiry strong{font-size:23px}.psr-energy-orb #resModalDirection{font-size:23px}.psr-asset{font-size:22px}.psr-live-chart{height:62px}.premium-signal-result .tf-breakdown{grid-template-columns:repeat(5,minmax(70px,1fr));overflow-x:auto;padding-bottom:5px}.premium-signal-result .tf-chip{min-width:70px}}
         @media (max-width:430px){.psr-hero{min-height:340px}.psr-energy-orb{width:188px}.psr-orb-stage{inset:14px 0 30px}.psr-selected-expiry{bottom:8px;min-width:130px}.psr-shared{display:none}.psr-title strong{font-size:10px}.psr-live-chip{display:none}}
     </style>
-
-
-    <style id="raja-v12-clean-signal">
-        /* V12: remove old momentum graph + entry timer card; let useful status cards fill the row. */
+    <style id="raja-v13-timer-moved">
+        /* V13: old LIVE SIGNAL MOMENTUM graph stays removed.
+           The entry/candle timer now occupies that exact result-screen zone. */
         .status-grid { grid-template-columns:minmax(220px,.85fr) minmax(0,1.65fr) !important; }
         .status-grid .scan-summary-card { min-height:112px; }
         .status-grid .scan-summary-card:nth-child(2) { width:100%; }
         .status-grid .scan-summary-card:last-child { grid-column:auto !important; }
+
+        .signal-entry-window {
+            position:relative; z-index:24; max-width:980px; min-height:76px; margin:4px auto 8px;
+            display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:14px;
+            padding:10px 16px; border-radius:10px; overflow:hidden;
+            border:1px solid rgba(96,239,255,.32);
+            background:linear-gradient(180deg,rgba(3,16,29,.96),rgba(2,9,18,.98));
+            box-shadow:inset 0 0 26px rgba(34,211,238,.06),0 0 18px rgba(34,211,238,.06);
+        }
+        .signal-entry-window::before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.32;
+            background-image:linear-gradient(rgba(96,239,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(96,239,255,.05) 1px,transparent 1px);
+            background-size:18px 18px; }
+        .signal-entry-status { position:relative; z-index:1; color:#9bc6d8; font-size:9px; font-weight:900; letter-spacing:.65px; text-transform:uppercase; text-align:left; }
+        .signal-entry-timer { position:relative; z-index:1; min-width:108px; color:#00ff87; font-size:28px; line-height:1; font-weight:950; letter-spacing:2px; text-align:center;
+            text-shadow:0 0 16px rgba(0,255,135,.65); padding:7px 12px; border-radius:9px; border:1px solid rgba(0,255,135,.28); background:rgba(0,255,135,.055); }
+        .signal-entry-alert { position:relative; z-index:1; display:block; margin:0; color:#60efff; font-size:9px; font-weight:900; line-height:1.35; text-transform:uppercase; text-align:right; }
+        .signal-entry-window:has(.signal-entry-alert[style*="255, 51, 102"]) { border-color:rgba(255,51,102,.38); }
+
         @media (max-width:760px) {
             .status-grid { grid-template-columns:1fr !important; }
+            .signal-entry-window { grid-template-columns:1fr; gap:7px; padding:9px 10px; text-align:center; }
+            .signal-entry-status,.signal-entry-alert { text-align:center; }
+            .signal-entry-timer { justify-self:center; min-width:116px; }
         }
     </style>
 
 </head>
 <body>
-    <!-- RAJA AI UI V12 CLEAN SIGNAL: momentum chart and entry-window timer removed -->
+    <!-- RAJA AI UI V13: momentum graph removed; entry-window timer moved into the signal result area -->
 
     <div class="container">
-        <h2>RAJA AI PREMIUM - PREMIUM UI V11</h2>
+        <h2>RAJA AI PREMIUM - PREMIUM UI V13</h2>
         
         <div class="market-notice">
             💡 Market stays stable & optimal from 9:00 AM to 5:00 PM
@@ -1076,6 +1096,12 @@
                                     </div>
 
                                     <div id="resModalMeta" class="signal-meta psr-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
+
+                                    <div class="signal-entry-window" id="signalEntryWindow">
+                                        <div class="signal-entry-status" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE</div>
+                                        <div id="candleTimer" class="signal-entry-timer">00:31</div>
+                                        <div id="tradeAlert" class="signal-entry-alert">⏳ WAIT FOR CANDLE CLOSE</div>
+                                    </div>
 
                                     <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
                                     <div id="signalConfidenceRing" class="signal3d-confidence"><div><strong>--</strong><span>CONFIDENCE</span></div></div>
