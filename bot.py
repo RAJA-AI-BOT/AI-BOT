@@ -131,12 +131,16 @@ EXPIRY_CONFIRMATION_TIMEFRAME = {
 CACHE_DURATION = int(os.environ.get("RAJA_CACHE_SECONDS", "90"))
 STALE_CACHE_MAX_AGE = int(os.environ.get("RAJA_STALE_CACHE_SECONDS", "180"))
 YAHOO_FAILURE_COOLDOWN = int(os.environ.get("RAJA_YAHOO_FAILURE_COOLDOWN", "180"))
-YAHOO_FETCH_CONCURRENCY = max(1, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "2")))
+# Keep three Yahoo fetches in flight to match the default three batch workers; this reduces
+# partial 21-pair scans without opening an aggressive request storm.
+YAHOO_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "3"))))
 YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
 BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
 BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
 YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
-BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(85.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "68"))))
+# Browser batch timeout is 90s; 78s gives the server more room than the old 68s while
+# still returning before the browser aborts.
+BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(85.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "78"))))
 
 market_cache = {}
 cache_lock = threading.RLock()
