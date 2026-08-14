@@ -120,6 +120,105 @@
         .admin-user-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 10px; }
         .admin-user-row:last-child { border-bottom: none; }
         .remove-user-btn { background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff3366; font-size: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    
+
+        /* =========================================================
+           V15 PREMIUM MARKET INTELLIGENCE
+           Heatmap · Build Meter · Opportunity Queue · AI Explanation
+           Performance Heatmap · Replay Playback
+           ========================================================= */
+        .intel-heatmap-shell,.setup-build-shell,.ai-explain-card,.perf-heatmap-card,.replay-spotlight-card {
+            border:1px solid rgba(83,177,255,.16); background:linear-gradient(180deg,rgba(3,12,24,.82),rgba(2,8,18,.94));
+            border-radius:12px; box-shadow:inset 0 0 28px rgba(34,211,238,.025); position:relative; overflow:hidden;
+        }
+        .intel-heatmap-shell { padding:10px; margin-bottom:8px; }
+        .intel-title-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:7px; }
+        .intel-title { color:#dff7ff; font-size:9px; font-weight:950; letter-spacing:.65px; text-transform:uppercase; }
+        .intel-caption { color:#6f8ba5; font-size:7px; font-weight:750; text-align:right; }
+        .market-heatmap-grid { display:grid; grid-template-columns:repeat(7,minmax(78px,1fr)); gap:5px; }
+        .heat-tile { min-width:0; border:1px solid rgba(120,164,205,.16); background:rgba(5,15,28,.8); border-radius:8px; padding:8px; cursor:pointer; transition:.18s ease; text-align:left; }
+        .heat-tile:hover { transform:translateY(-1px); border-color:rgba(96,239,255,.45); }
+        .heat-tile.bull { border-color:rgba(0,255,135,.35); background:linear-gradient(180deg,rgba(0,255,135,.08),rgba(3,13,24,.84)); }
+        .heat-tile.bear { border-color:rgba(255,93,125,.38); background:linear-gradient(180deg,rgba(255,51,102,.08),rgba(3,13,24,.84)); }
+        .heat-tile.weak { opacity:.72; }
+        .heat-pair { color:#e7f6ff; font-size:8px; font-weight:950; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .heat-score { margin-top:4px; font-size:14px; line-height:1; font-weight:950; }
+        .heat-tile.bull .heat-score { color:#00ff9a; } .heat-tile.bear .heat-score { color:#ff5d7d; } .heat-tile.weak .heat-score { color:#91a6ba; }
+        .heat-meta { margin-top:4px; display:flex; justify-content:space-between; gap:5px; color:#7d94aa; font-size:6.7px; font-weight:800; }
+        .heat-bars { height:13px; margin-top:5px; display:flex; align-items:flex-end; gap:1px; opacity:.9; }
+        .heat-bars i { flex:1; min-width:1px; height:var(--h,35%); background:currentColor; border-radius:1px 1px 0 0; opacity:.65; }
+        .heat-tile.bull .heat-bars { color:#00ff87; } .heat-tile.bear .heat-bars { color:#ff5d7d; } .heat-tile.weak .heat-bars { color:#6c8197; }
+
+        .setup-build-shell { padding:9px 10px; margin-bottom:9px; }
+        .setup-build-grid { display:grid; grid-template-columns:minmax(0,1fr) 92px; gap:10px; align-items:center; }
+        .setup-track { position:relative; display:grid; grid-template-columns:repeat(5,1fr); gap:5px; padding-top:8px; }
+        .setup-track::before { content:""; position:absolute; left:5%; right:5%; top:13px; height:2px; background:linear-gradient(90deg,#00ff87,#60efff,rgba(96,239,255,.12)); box-shadow:0 0 12px rgba(0,255,135,.18); }
+        .setup-stage { position:relative; z-index:1; text-align:center; color:#6f879e; font-size:6.5px; font-weight:850; }
+        .setup-stage-dot { width:12px; height:12px; margin:0 auto 4px; border-radius:50%; border:2px solid #345069; background:#07111e; }
+        .setup-stage.done { color:#c9fef2; } .setup-stage.done .setup-stage-dot { border-color:#00ff9a; background:#00a879; box-shadow:0 0 9px rgba(0,255,135,.55); }
+        .setup-stage strong { display:block; color:#dceef8; font-size:6.9px; margin-bottom:1px; }
+        .setup-score-box { border:1px solid rgba(0,255,135,.24); background:rgba(0,255,135,.06); border-radius:9px; text-align:center; padding:7px 4px; }
+        .setup-score-box strong { display:block; color:#00ff9a; font-size:22px; line-height:1; font-weight:950; text-shadow:0 0 14px rgba(0,255,135,.3); }
+        .setup-score-box span { display:block; color:#60efff; font-size:6.8px; margin-top:4px; font-weight:950; letter-spacing:.6px; }
+
+        .opportunity-list { display:grid; gap:6px; }
+        .mobile-opportunity-card { display:none; }
+        .opp-item { display:grid; grid-template-columns:22px minmax(0,1fr) 38px; gap:7px; align-items:center; padding:8px 7px; border:1px solid rgba(83,177,255,.11); background:rgba(255,255,255,.018); border-radius:8px; }
+        .opp-dir { width:22px; height:22px; border-radius:7px; display:grid; place-items:center; font-size:12px; font-weight:950; }
+        .opp-dir.bull { color:#00ff87; background:rgba(0,255,135,.09); } .opp-dir.bear { color:#ff5d7d; background:rgba(255,51,102,.09); } .opp-dir.weak { color:#94a3b8; background:rgba(148,163,184,.08); }
+        .opp-main { min-width:0; } .opp-main strong { display:block; color:#e7f4ff; font-size:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .opp-main span { display:block; color:#748ca2; font-size:6.7px; margin-top:2px; font-weight:800; }
+        .opp-score { width:34px; height:34px; border-radius:50%; border:2px solid rgba(0,255,135,.35); display:grid; place-items:center; color:#aefde8; font-size:7px; font-weight:950; }
+
+        .ai-explain-card { padding:9px; margin-top:8px; text-align:left; }
+        .ai-explain-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
+        .ai-factor { border:1px solid rgba(96,239,255,.10); background:rgba(255,255,255,.018); border-radius:7px; padding:7px; min-width:0; }
+        .ai-factor small { display:block; color:#6f8aa2; font-size:6.2px; text-transform:uppercase; font-weight:900; }
+        .ai-factor strong { display:block; margin-top:3px; color:#dff7ff; font-size:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ai-factor span { display:block; margin-top:2px; color:#7da1b8; font-size:6px; line-height:1.25; }
+        .ai-summary { margin-top:6px; border-top:1px solid rgba(96,239,255,.10); padding-top:6px; color:#a9c1d3; font-size:7px; line-height:1.5; }
+        .ai-summary b { color:#60efff; }
+
+        .signal-intel-bottom { display:grid; grid-template-columns:1.25fr .75fr; gap:8px; margin-top:8px; }
+        .perf-heatmap-card,.replay-spotlight-card { padding:9px; text-align:left; }
+        .perf-table-wrap { overflow:auto; }
+        .perf-table { width:100%; border-collapse:separate; border-spacing:3px; min-width:370px; }
+        .perf-table th { color:#7891a8; font-size:6.2px; font-weight:900; text-transform:uppercase; padding:3px; }
+        .perf-table td { text-align:center; border-radius:5px; padding:6px 4px; background:rgba(255,255,255,.025); color:#8da3b8; font-size:7px; font-weight:900; }
+        .perf-table td.pair { text-align:left; color:#d9eafa; background:rgba(96,239,255,.035); }
+        .perf-table td.good { color:#bfffe9; background:rgba(0,255,135,.18); } .perf-table td.mid { color:#ffe9a8; background:rgba(250,204,21,.16); } .perf-table td.bad { color:#ffd1da; background:rgba(255,51,102,.16); }
+        .perf-note { color:#647c92; font-size:6.2px; margin-top:5px; }
+        .replay-spotlight-body { border:1px solid rgba(255,93,125,.14); background:rgba(255,51,102,.035); border-radius:8px; padding:8px; }
+        .replay-spotlight-body strong { color:#eef8ff; font-size:10px; } .replay-spotlight-body span { color:#7f96aa; font-size:6.8px; }
+        .replay-outcome { margin-top:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+        .replay-outcome b { font-size:13px; } .replay-outcome b.win { color:#00ff87; } .replay-outcome b.loss { color:#ff5d7d; } .replay-outcome b.pending { color:#facc15; }
+        .replay-open-btn { border:1px solid rgba(96,239,255,.28); background:rgba(96,239,255,.07); color:#60efff; border-radius:6px; padding:6px 8px; font-size:7px; font-weight:900; cursor:pointer; }
+        .replay-controls { display:flex; justify-content:center; align-items:center; gap:6px; margin-top:7px; }
+        .replay-control-btn { border:1px solid rgba(96,239,255,.22); background:#071221; color:#b8edff; border-radius:7px; min-width:35px; padding:7px; font-size:8px; font-weight:900; cursor:pointer; }
+        .replay-control-btn.play { color:#001711; background:#00ff9a; border-color:#00ff9a; }
+        .replay-frame-label { text-align:center; color:#6f8aa2; font-size:7px; margin-top:4px; font-weight:800; }
+
+        @media (max-width:1180px) {
+            .market-heatmap-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+            .ai-explain-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width:820px) {
+            .mobile-opportunity-card { display:block; }
+            .market-heatmap-grid { display:flex; overflow-x:auto; scroll-snap-type:x proximity; padding-bottom:2px; }
+            .heat-tile { min-width:115px; scroll-snap-align:start; }
+            .setup-build-grid { grid-template-columns:1fr 72px; }
+            .setup-score-box strong { font-size:18px; }
+            .signal-intel-bottom { grid-template-columns:1fr; }
+            .ai-explain-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        }
+        @media (max-width:520px) {
+            .intel-heatmap-shell,.setup-build-shell { padding:7px; }
+            .setup-stage strong { font-size:6.2px; } .setup-stage { font-size:5.7px; }
+            .setup-stage-dot { width:10px; height:10px; }
+            .ai-explain-grid { grid-template-columns:1fr 1fr; }
+            .ai-factor:last-child { grid-column:1/-1; }
+        }
+
     </style>
 
     <style id="raja-dashboard-v5">
@@ -1081,6 +1180,26 @@
                             <div class="shared-pill">👥 SHARED MULTI-USER SCAN</div>
                         </div>
 
+
+
+                        <section class="intel-heatmap-shell" id="premiumMarketHeatmap">
+                            <div class="intel-title-row"><div class="intel-title">◉ LIVE MARKET HEATMAP</div><div class="intel-caption" id="heatmapCaption">Latest authenticated scan snapshot · click a pair to select</div></div>
+                            <div id="marketHeatmapGrid" class="market-heatmap-grid"></div>
+                        </section>
+                        <section class="setup-build-shell" id="setupBuildShell">
+                            <div class="intel-title-row"><div class="intel-title">◎ SETUP BUILD-UP METER</div><div class="intel-caption">Technical setup formation · not a win probability</div></div>
+                            <div class="setup-build-grid">
+                                <div class="setup-track">
+                                    <div class="setup-stage" id="buildStageTrend"><div class="setup-stage-dot"></div><strong>TREND</strong><span id="buildTrendText">Waiting</span></div>
+                                    <div class="setup-stage" id="buildStageMomentum"><div class="setup-stage-dot"></div><strong>MOMENTUM</strong><span id="buildMomentumText">Waiting</span></div>
+                                    <div class="setup-stage" id="buildStageVolatility"><div class="setup-stage-dot"></div><strong>VOLATILITY</strong><span id="buildVolatilityText">Waiting</span></div>
+                                    <div class="setup-stage" id="buildStageTf"><div class="setup-stage-dot"></div><strong>TF AGREEMENT</strong><span id="buildTfText">--</span></div>
+                                    <div class="setup-stage" id="buildStageExpiry"><div class="setup-stage-dot"></div><strong>EXPIRY</strong><span id="buildExpiryText">1m</span></div>
+                                </div>
+                                <div class="setup-score-box"><strong id="setupBuildScore">0%</strong><span id="setupBuildState">READY</span></div>
+                            </div>
+                        </section>
+
                         <div id="hudBoxContainer" class="ai-hud-box">
                             <div id="defaultView" class="default-view">
                                 <div class="scan-workspace">
@@ -1197,6 +1316,18 @@
 
                                     <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · ENTRY LINE</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><canvas id="signalMiniChart"></canvas></div>
 
+                                    <section class="ai-explain-card" id="aiExplainCard">
+                                        <div class="intel-title-row"><div class="intel-title">✦ AI EXPLANATION · WHY THIS SIGNAL</div><div class="intel-caption">Based on current closed-candle indicators</div></div>
+                                        <div class="ai-explain-grid">
+                                            <div class="ai-factor"><small>Trend</small><strong id="explainTrend">--</strong><span id="explainTrendSub">Higher-TF direction</span></div>
+                                            <div class="ai-factor"><small>Momentum</small><strong id="explainMomentum">--</strong><span id="explainMomentumSub">Confluence strength</span></div>
+                                            <div class="ai-factor"><small>TF Agreement</small><strong id="explainAgreement">--</strong><span id="explainAgreementSub">Aligned timeframes</span></div>
+                                            <div class="ai-factor"><small>Expiry</small><strong id="explainExpiry">--</strong><span id="explainExpirySub">Selected-TF confirmation</span></div>
+                                            <div class="ai-factor"><small>Volatility</small><strong id="explainVolatility">--</strong><span id="explainVolatilitySub">ATR range</span></div>
+                                        </div>
+                                        <div class="ai-summary"><b>SUMMARY:</b> <span id="aiExplanationSummary">Waiting for a confirmed signal.</span></div>
+                                    </section>
+
                                     
 
                                     <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
@@ -1204,6 +1335,18 @@
                                     <div class="mtf-heading psr-mtf-heading">SAME PAIR · MULTI-TIMEFRAME DIRECTION</div>
                                     <div id="tfBreakdown" class="tf-breakdown"></div>
                                     <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div>
+
+                                    <div class="signal-intel-bottom">
+                                        <section class="perf-heatmap-card">
+                                            <div class="intel-title-row"><div class="intel-title">▦ PERFORMANCE HEATMAP</div><div class="intel-caption">Recorded completed results</div></div>
+                                            <div class="perf-table-wrap"><table class="perf-table"><thead><tr><th>Pair</th><th>1m</th><th>2m</th><th>5m</th><th>15m</th><th>30m</th></tr></thead><tbody id="performanceHeatmapBody"><tr><td class="pair">Waiting for history</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr></tbody></table></div>
+                                            <div class="perf-note">Historical recorded outcomes only; they do not guarantee future results.</div>
+                                        </section>
+                                        <section class="replay-spotlight-card">
+                                            <div class="intel-title-row"><div class="intel-title">▶ HISTORY / REPLAY</div><div class="intel-caption">Latest tracked setup</div></div>
+                                            <div id="replaySpotlight" class="replay-spotlight-body"><span>No tracked signal available yet.</span></div>
+                                        </section>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1220,6 +1363,7 @@
                                 <div class="replay-header"><div class="inline-title" style="margin:0;">🎬 Signal Replay</div><button class="menu-back-btn" onclick="openHistoryInline()">← History</button></div>
                                 <div id="replaySummary" class="inline-list-box" style="max-height:none;">Select a historical signal.</div>
                                 <div class="mini-chart-wrap"><div class="mini-chart-label">SIGNAL SNAPSHOT + OUTCOME</div><canvas id="replayMiniChart"></canvas></div>
+                                <div class="replay-controls"><button class="replay-control-btn" onclick="replayReset()">⏮ START</button><button class="replay-control-btn play" onclick="replayPlay()">▶ PLAY</button><button class="replay-control-btn" onclick="replayPause()">⏸ PAUSE</button><button class="replay-control-btn" onclick="replayNext()">NEXT CANDLE ⏭</button></div><div id="replayFrameLabel" class="replay-frame-label">Replay ready</div>
                                 <div id="replayTimeframes" class="tf-breakdown"></div>
                             </div>
                             <div id="profileInlineView" class="inline-content-view">
@@ -1282,6 +1426,11 @@
                         <div id="guardWarningDashboard" class="guard-warning">⛔ Trading session limit reached — scanning is paused by Daily Stop Guard.</div>
                     </section>
 
+                    <section class="upgrade-card mobile-opportunity-card">
+                        <div class="upgrade-title">⚡ Opportunity Queue</div>
+                        <div class="opportunity-list js-opportunity-queue"><div class="opp-item"><div class="opp-dir weak">•</div><div class="opp-main"><strong>Waiting for scan</strong><span>Auto Scan will rank the next setups</span></div><div class="opp-score">--</div></div></div>
+                    </section>
+
                     <section class="config-panel">
                         <div class="config-title">TRADING CONFIGURATION</div>
                         <div class="config-grid">
@@ -1298,7 +1447,7 @@
                 </main>
 
                 <aside class="right-rail">
-                    <section class="rail-card"><div class="rail-title">MARKET OVERVIEW</div><div class="overview-row"><span>Crypto Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Crypto OTC Proxy</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex OTC Proxy</span><span class="ready-tag">READY</span></div></section>
+                    <section class="rail-card"><div class="rail-title">⚡ OPPORTUNITY QUEUE</div><div class="opportunity-list js-opportunity-queue"><div class="opp-item"><div class="opp-dir weak">•</div><div class="opp-main"><strong>Waiting for scan</strong><span>Run Auto Scan to rank setups</span></div><div class="opp-score">--</div></div></div></section>
                     <section class="rail-card"><div class="rail-title">RECENT SCAN HISTORY</div><div id="dashboardRecentHistory" class="recent-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div></section>
                     <section class="rail-card"><div class="rail-title">QUICK ACTIONS</div><div class="rail-actions"><button class="rail-action" onclick="openHistoryInline()">📈 View Performance / History</button><button class="rail-action" onclick="openRiskInline()">🛡 Risk & Recovery</button><button class="rail-action" onclick="openSettingsInline()">⚙ Bot Settings</button><button class="rail-action" onclick="openNewsInline()">📰 Live News / Calendar</button><button class="rail-action" onclick="openProfileInline()">👤 My Profile</button></div></section>
                     <section class="rail-card"><div class="rail-title">SOUND + SIGNAL ALERTS</div><div class="sound-alert-grid"><div class="sound-alert-tile buy"><strong>↑ UP (BUY)</strong><div class="sound-wave"></div><span>Ascending tone</span></div><div class="sound-alert-tile sell"><strong>↓ DOWN (SELL)</strong><div class="sound-wave"></div><span>Descending tone</span></div></div><div id="soundAlertStatusText" class="sound-alert-status">● Alerts active · flashing + movement enabled</div></section>
@@ -1330,7 +1479,7 @@
     </div>
 
     <script>
-        const KEY_VERSION = "v14-smart-dashboard";
+        const KEY_VERSION = "v15-premium-intelligence";
 
         // Never clear the full browser storage on a frontend update. Clearing it used to
         // regenerate the device UID and could make a valid device-bound license look like
@@ -1356,6 +1505,11 @@
         let latestGeneratedKey = "";
         let audioCtx = null;
         let dynamicHistory = safeJsonParse(localStorage.getItem('raja_signal_history'), []);
+        let premiumMarketSnapshot = safeJsonParse(localStorage.getItem('raja_market_snapshot_v15'), []);
+        let activePremiumSignal = null;
+        let replayPlaybackItem = null;
+        let replayPlaybackIndex = 0;
+        let replayPlaybackTimer = null;
         let soundEnabled = true;
         let activeSignalEntryEpochMs = null;
         let activeTrackedSignalId = null;
@@ -1656,6 +1810,7 @@
                 if (elapsedEl) elapsedEl.innerText = String(Math.floor(elapsed / 60)).padStart(2,'0') + ':' + String(elapsed % 60).padStart(2,'0');
             }
             updateScanSessionChip();
+            updateSetupBuildMeterProgress(safe);
         }
 
         function startScanAnimation() {
@@ -2360,6 +2515,7 @@
             if(!brokerEl || !marketEl || !pairSelect) return;
             let broker = brokerEl.value;
             let market = marketEl.value;
+            premiumMarketSnapshot = []; localStorage.removeItem('raja_market_snapshot_v15'); renderPremiumMarketSnapshot();
             pairSelect.innerHTML = ""; 
             if (brokerData[broker] && brokerData[broker][market]) {
                 brokerData[broker][market].forEach(pair => {
@@ -2394,6 +2550,7 @@
             activeSignalEntryEpochMs = null;
             activeTrackedSignalId = null;
             syncSelectedExpiryUI();
+            const buildExpiry=document.getElementById('buildExpiryText'); if(buildExpiry) buildExpiry.innerText=selectedExpiry;
             startTimer();
         }
 
@@ -2619,6 +2776,7 @@
                     scanDiagnostics = batch.diagnostics || null;
                     const eligibleSet = new Set(eligiblePairs);
                     const rawResults = batch.results;
+                    updatePremiumMarketSnapshot(rawResults);
                     let processed = 0;
 
                     rawResults.forEach(raw => {
@@ -2655,6 +2813,7 @@
                     const indicatorResult = await scanPairFromBackend(selectedPair);
                     setScanProgress(100);
                     if (indicatorResult) {
+                        updatePremiumMarketSnapshotFromNormalized(indicatorResult);
                         bestSignalFound = indicatorResult;
                         highestConfluence = indicatorResult.confluence;
                         scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${selectedPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
@@ -2716,7 +2875,7 @@
 
 
         async function refreshTrackedHistory() {
-            try { const auth=getAuthPayload(); if(!auth.key||!auth.session_token)return; const q=new URLSearchParams({...auth,limit:'60'}); const response=await fetch('/signals/history?'+q.toString()); const result=await response.json(); if(response.ok&&result&&result.status==='success'){backendTrackedHistory=Array.isArray(result.data)?result.data:[];renderHistoryList();updateDailyPerformance();} }
+            try { const auth=getAuthPayload(); if(!auth.key||!auth.session_token)return; const q=new URLSearchParams({...auth,limit:'60'}); const response=await fetch('/signals/history?'+q.toString()); const result=await response.json(); if(response.ok&&result&&result.status==='success'){backendTrackedHistory=Array.isArray(result.data)?result.data:[];renderHistoryList();updateDailyPerformance();renderPerformanceHeatmap();renderReplaySpotlight();} }
             catch(error){console.error('History refresh error:',error);}
         }
 
@@ -2807,6 +2966,9 @@
                 resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
             }
             updateStabilityUI(signalData);
+            activePremiumSignal = signalData;
+            renderSignalIntelligence(signalData);
+            updatePremiumMarketSnapshotFromNormalized(signalData);
             speakSignal(signalData, isBuy);
             if (currentSection === 'dashboard') renderPrimaryView();
             requestAnimationFrame(() => renderSignalChart(document.getElementById('signalMiniChart'), signalData.chartPreview || [], isBuy, null, null));
@@ -2831,7 +2993,7 @@
             if(!canvas||!Array.isArray(candles)||candles.length<2)return; const rect=canvas.getBoundingClientRect(); const dpr=Math.max(1,window.devicePixelRatio||1); canvas.width=Math.max(320,Math.floor(rect.width*dpr));canvas.height=Math.max(120,Math.floor(rect.height*dpr));const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);const w=canvas.width/dpr,h=canvas.height/dpr;ctx.clearRect(0,0,w,h);const pad={l:12,r:12,t:24,b:16};const lows=candles.map(c=>Number(c.l)),highs=candles.map(c=>Number(c.h));if(entryPrice)lows.push(Number(entryPrice)),highs.push(Number(entryPrice));if(exitPrice)lows.push(Number(exitPrice)),highs.push(Number(exitPrice));let lo=Math.min(...lows),hi=Math.max(...highs);if(!Number.isFinite(lo)||!Number.isFinite(hi)||hi<=lo)return;const range=(hi-lo)||1;lo-=range*.08;hi+=range*.08;const y=p=>pad.t+(hi-p)/(hi-lo)*(h-pad.t-pad.b);ctx.strokeStyle='rgba(96,239,255,.10)';ctx.lineWidth=1;for(let i=0;i<5;i++){const yy=pad.t+i*(h-pad.t-pad.b)/4;ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(w-pad.r,yy);ctx.stroke();}const step=(w-pad.l-pad.r)/candles.length,body=Math.max(2,Math.min(9,step*.55));candles.forEach((c,i)=>{const x=pad.l+step*(i+.5),o=Number(c.o),cl=Number(c.c),hh=Number(c.h),ll=Number(c.l),up=cl>=o;ctx.strokeStyle=up?'#00ff87':'#ff5d7d';ctx.fillStyle=up?'#00ff87':'#ff5d7d';ctx.beginPath();ctx.moveTo(x,y(hh));ctx.lineTo(x,y(ll));ctx.stroke();const top=Math.min(y(o),y(cl)),bh=Math.max(1,Math.abs(y(o)-y(cl)));ctx.fillRect(x-body/2,top,body,bh);});const last=Number(candles[candles.length-1].c);const entry=entryPrice?Number(entryPrice):last;ctx.setLineDash([5,4]);ctx.strokeStyle=isBuy?'#00ff87':'#ff5d7d';ctx.beginPath();ctx.moveTo(pad.l,y(entry));ctx.lineTo(w-pad.r,y(entry));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=isBuy?'#00ff87':'#ff5d7d';ctx.font='bold 9px Segoe UI';ctx.fillText(isBuy?'▲ ENTRY / UP':'▼ ENTRY / DOWN',pad.l+4,Math.max(12,y(entry)-5));if(exitPrice){ctx.strokeStyle='#facc15';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(pad.l,y(Number(exitPrice)));ctx.lineTo(w-pad.r,y(Number(exitPrice)));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#facc15';ctx.fillText('EXIT',w-pad.r-30,Math.max(12,y(Number(exitPrice))-4));}}
 
         function openSignalReplay(signalId) {
-            const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');
+            const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');replayPlaybackItem=item;replayPlaybackIndex=Math.min(Math.max(4,(item.chart_preview||[]).length>4?4:(item.chart_preview||[]).length),(item.chart_preview||[]).length);replayPause();renderReplayFrame();
         }
 
         async function openProfileInline(){currentSection='profile';hideAllHudViews();document.getElementById('profileInlineView').style.display='block';await loadUserProfile();}
@@ -2846,7 +3008,118 @@
             new MutationObserver(sync).observe(source, { childList: true, subtree: true, characterData: true });
             source.dataset.mirrorInstalled = '1';
         }
-        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); });
+
+
+        // =========================================================
+        // V15 PREMIUM MARKET INTELLIGENCE
+        // =========================================================
+        function buildStrengthFromRaw(raw) {
+            raw = raw || {};
+            const summary = raw.timeframe_summary || {};
+            const vals = Object.values(summary).filter(v => v && (v.signal === 'CALL' || v.signal === 'PUT'));
+            const calls = vals.filter(v => v.signal === 'CALL');
+            const puts = vals.filter(v => v.signal === 'PUT');
+            const side = calls.length > puts.length ? 'CALL' : (puts.length > calls.length ? 'PUT' : (raw.signal === 'CALL' ? 'CALL' : (raw.signal === 'PUT' ? 'PUT' : 'WAIT')));
+            const supporters = side === 'CALL' ? calls : (side === 'PUT' ? puts : []);
+            const avg = supporters.length ? supporters.reduce((a,v)=>a+Number(v.score||0),0)/supporters.length : 0;
+            const agreement = vals.length ? supporters.length/vals.length*100 : 0;
+            const finalScore = Number(raw.score||0) > 0 ? Number(raw.score||0) : Math.max(0, Math.min(94, avg*0.82 + agreement*0.18));
+            let status = finalScore >= 85 ? 'NEAR CONFIRM' : (finalScore >= 70 ? 'BUILDING' : (finalScore >= 55 ? 'WATCHING' : 'WEAK'));
+            if (raw.signal === 'CALL' || raw.signal === 'PUT') status = 'CONFIRMED';
+            return {pair:String(raw.pair||'--'), direction:side, strength:Math.round(finalScore), agreement:Math.round(agreement), status, signalFound:raw.signal==='CALL'||raw.signal==='PUT', volatility:Number(raw.volatility_pct||0), stability:Number(raw.market_stability_score||0)};
+        }
+
+        function updatePremiumMarketSnapshot(rawResults) {
+            if (!Array.isArray(rawResults)) return;
+            const next = rawResults.filter(x=>x&&x.pair).map(buildStrengthFromRaw).sort((a,b)=>b.strength-a.strength);
+            premiumMarketSnapshot = next.slice(0,40);
+            localStorage.setItem('raja_market_snapshot_v15', JSON.stringify(premiumMarketSnapshot));
+            renderPremiumMarketSnapshot();
+        }
+
+        function updatePremiumMarketSnapshotFromNormalized(signal) {
+            if (!signal || !signal.pair) return;
+            const pulse = {pair:signal.pair,direction:signal.dir&&signal.dir.includes('CALL')?'CALL':'PUT',strength:Math.round(Number(signal.confluence||0)),agreement:Math.round(Number(signal.multiTfAgreement||0)),status:'CONFIRMED',signalFound:true,volatility:Number(signal.volatilityPct||0),stability:Number(signal.marketStabilityScore||0)};
+            const map = new Map((premiumMarketSnapshot||[]).map(x=>[x.pair,x])); map.set(pulse.pair,pulse);
+            premiumMarketSnapshot = Array.from(map.values()).sort((a,b)=>b.strength-a.strength).slice(0,40);
+            localStorage.setItem('raja_market_snapshot_v15', JSON.stringify(premiumMarketSnapshot));
+            renderPremiumMarketSnapshot();
+        }
+
+        function heatBars(seed) {
+            const base = Math.max(10, Number(seed||0));
+            return Array.from({length:11},(_,i)=>`<i style="--h:${18+((base*(i+3)*7+i*11)%75)}%"></i>`).join('');
+        }
+
+        function renderPremiumMarketSnapshot() {
+            const grid=document.getElementById('marketHeatmapGrid'); if(!grid)return;
+            let rows=(premiumMarketSnapshot||[]).slice(0,7);
+            if(!rows.length){
+                try { const broker=document.getElementById('brokerSelect')?.value||'Quotex', market=document.getElementById('marketType')?.value||'ForexLive'; const pairs=(brokerData?.[broker]?.[market]||[]).filter(x=>x&&!String(x).includes('Auto Scan')).slice(0,7); rows=pairs.map(pair=>({pair,direction:'WAIT',strength:0,agreement:0,status:'WAITING'})); } catch(e) {}
+            }
+            grid.innerHTML=rows.map(x=>{const cls=x.direction==='CALL'?'bull':(x.direction==='PUT'?'bear':'weak');const arrow=x.direction==='CALL'?'↑':(x.direction==='PUT'?'↓':'•');const label=x.strength?`${x.strength}%`:'--';return `<button class="heat-tile ${cls}" onclick="selectHeatmapPair('${String(x.pair).replace(/'/g,"\\'")}')"><div class="heat-pair">${escapeHtml(x.pair)}</div><div class="heat-score">${arrow} ${label}</div><div class="heat-meta"><span>${escapeHtml(x.status||'--')}</span><span>TF ${Number(x.agreement||0)}%</span></div><div class="heat-bars">${heatBars(x.strength||23)}</div></button>`;}).join('');
+            renderOpportunityQueue();
+        }
+
+        function selectHeatmapPair(pair) {
+            const select=document.getElementById('pairSelect'); if(!select)return;
+            const option=Array.from(select.options).find(o=>o.value===pair); if(option){select.value=pair;syncTargetPairDisplay();playClickSound();}
+        }
+
+        function renderOpportunityQueue() {
+            const boxes=Array.from(document.querySelectorAll('.js-opportunity-queue')); if(!boxes.length)return;
+            const activePair=activePremiumSignal?.pair;
+            const rows=(premiumMarketSnapshot||[]).filter(x=>x.pair!==activePair).slice(0,3);
+            const html=!rows.length?'<div class="opp-item"><div class="opp-dir weak">•</div><div class="opp-main"><strong>Waiting for scan</strong><span>Auto Scan will rank the next setups</span></div><div class="opp-score">--</div></div>':rows.map(x=>{const cls=x.direction==='CALL'?'bull':(x.direction==='PUT'?'bear':'weak'),arr=x.direction==='CALL'?'↑':(x.direction==='PUT'?'↓':'•');return `<div class="opp-item"><div class="opp-dir ${cls}">${arr}</div><div class="opp-main"><strong>${escapeHtml(x.pair)}</strong><span>${escapeHtml(x.status)} · TF ${Number(x.agreement||0)}%</span></div><div class="opp-score">${Number(x.strength||0)}%</div></div>`;}).join('');
+            boxes.forEach(box=>box.innerHTML=html);
+        }
+
+        function updateSetupBuildMeterProgress(percent) {
+            if(activePremiumSignal && !scanSessionState.running) return;
+            const p=Math.max(0,Math.min(100,Math.round(Number(percent||0))));
+            const score=document.getElementById('setupBuildScore'), state=document.getElementById('setupBuildState'); if(score)score.innerText=p+'%'; if(state)state.innerText=p===0?'READY':(p<100?'SCANNING':'VALIDATING');
+            const stages=[['buildStageTrend',18],['buildStageMomentum',38],['buildStageVolatility',58],['buildStageTf',78],['buildStageExpiry',96]]; stages.forEach(([id,t])=>document.getElementById(id)?.classList.toggle('done',p>=t));
+            const b=document.getElementById('buildExpiryText'); if(b)b.innerText=selectedExpiry;
+        }
+
+        function updateSetupBuildMeterSignal(signalData) {
+            const p=Math.max(0,Math.min(100,Math.round(Number(signalData?.confluence||0)))); const isBuy=String(signalData?.dir||'').includes('CALL');
+            document.getElementById('setupBuildScore').innerText=p+'%'; document.getElementById('setupBuildState').innerText='CONFIRMED';
+            ['buildStageTrend','buildStageMomentum','buildStageVolatility','buildStageTf','buildStageExpiry'].forEach(id=>document.getElementById(id)?.classList.add('done'));
+            const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;}; set('buildTrendText',isBuy?'Bullish':'Bearish'); set('buildMomentumText',p>=85?'Very Strong':(p>=70?'Strong':'Moderate')); set('buildVolatilityText',String(signalData?.marketRiskLevel||'NORMAL')); set('buildTfText',`${(signalData?.alignedTimeframes||[]).length||'--'}/6`); set('buildExpiryText',selectedExpiry+' ✓');
+        }
+
+        function renderSignalIntelligence(signalData) {
+            if(!signalData)return; updateSetupBuildMeterSignal(signalData);
+            const isBuy=String(signalData.dir||'').includes('CALL'), conf=Number(signalData.confluence||0), agreement=Number(signalData.multiTfAgreement||0), aligned=(signalData.alignedTimeframes||[]).length, risk=String(signalData.marketRiskLevel||'--').toUpperCase(), vol=Number(signalData.volatilityPct||0);
+            const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;};
+            set('explainTrend',isBuy?'Bullish':'Bearish'); set('explainTrendSub',isBuy?'Higher-TF bias points upward':'Higher-TF bias points downward'); set('explainMomentum',conf>=85?'Very Strong':(conf>=70?'Strong':'Moderate')); set('explainMomentumSub',`Technical confluence ${conf.toFixed(1)}%`); set('explainAgreement',`${aligned||'--'}/6 · ${agreement.toFixed(0)}%`); set('explainAgreementSub','Aligned valid timeframes'); set('explainExpiry',`${selectedExpiry} Confirmed`); set('explainExpirySub','Selected expiry timeframe aligned'); set('explainVolatility',risk==='LOW'?'Normal / Stable':(risk==='MEDIUM'?'Moderate':'Elevated')); set('explainVolatilitySub',`ATR ${vol.toFixed(4)}% · Risk ${risk}`);
+            set('aiExplanationSummary',`${isBuy?'BUY':'SELL'} setup confirmed because the dominant trend, momentum, multi-timeframe agreement and selected ${selectedExpiry} expiry are aligned. This is a technical model assessment, not a guaranteed outcome.`);
+            renderOpportunityQueue();
+        }
+
+        function renderPerformanceHeatmap() {
+            const body=document.getElementById('performanceHeatmapBody'); if(!body)return;
+            const completed=(backendTrackedHistory||[]).filter(x=>x&&['WIN','LOSS'].includes(String(x.result||'').toUpperCase()));
+            const counts=new Map(); completed.forEach(x=>counts.set(x.pair,(counts.get(x.pair)||0)+1)); const pairs=Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(x=>x[0]);
+            if(!pairs.length){body.innerHTML='<tr><td class="pair">No completed results</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>';return;}
+            const expiries=['1m','2m','5m','15m','30m']; body.innerHTML=pairs.map(pair=>{const cells=expiries.map(exp=>{const rows=completed.filter(x=>x.pair===pair&&x.expiry===exp);if(!rows.length)return '<td>--</td>';const wins=rows.filter(x=>String(x.result).toUpperCase()==='WIN').length,rate=Math.round(wins/rows.length*100),cls=rate>=70?'good':(rate>=50?'mid':'bad');return `<td class="${cls}" title="${wins}/${rows.length} recorded wins">${rate}%<br><small>n=${rows.length}</small></td>`;}).join('');return `<tr><td class="pair">${escapeHtml(pair)}</td>${cells}</tr>`;}).join('');
+        }
+
+        function renderReplaySpotlight() {
+            const box=document.getElementById('replaySpotlight'); if(!box)return; const item=(backendTrackedHistory||[]).find(x=>x&&x.pair); if(!item){box.innerHTML='<span>No tracked signal available yet.</span>';return;} const out=String(item.result||item.status||'PENDING').toUpperCase(),cls=out==='WIN'?'win':(out==='LOSS'?'loss':'pending');box.innerHTML=`<strong>${escapeHtml(item.pair)} · ${escapeHtml(item.signal||'--')}</strong><br><span>${escapeHtml(item.expiry||'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span><div class="replay-outcome"><b class="${cls}">${escapeHtml(out)}</b><button class="replay-open-btn" onclick="openSignalReplay('${item.id}')">OPEN REPLAY ▶</button></div>`;
+        }
+
+        function renderReplayFrame() {
+            const canvas=document.getElementById('replayMiniChart'); if(!canvas||!replayPlaybackItem)return; const candles=Array.isArray(replayPlaybackItem.chart_preview)?replayPlaybackItem.chart_preview:[]; if(!candles.length)return; replayPlaybackIndex=Math.max(1,Math.min(candles.length,replayPlaybackIndex||1)); const slice=candles.slice(0,replayPlaybackIndex); renderSignalChart(canvas,slice,replayPlaybackItem.signal==='CALL',replayPlaybackItem.entry_price,replayPlaybackIndex>=candles.length?replayPlaybackItem.exit_price:null); const label=document.getElementById('replayFrameLabel');if(label)label.innerText=`Candle ${replayPlaybackIndex} / ${candles.length}${replayPlaybackIndex>=candles.length?' · Replay complete':''}`;
+        }
+        function replayReset(){replayPause();if(!replayPlaybackItem)return;replayPlaybackIndex=Math.min(4,(replayPlaybackItem.chart_preview||[]).length)||1;renderReplayFrame();}
+        function replayNext(){replayPause();if(!replayPlaybackItem)return;const n=(replayPlaybackItem.chart_preview||[]).length;replayPlaybackIndex=Math.min(n,(replayPlaybackIndex||0)+1);renderReplayFrame();}
+        function replayPlay(){if(!replayPlaybackItem)return;replayPause();const n=(replayPlaybackItem.chart_preview||[]).length;if((replayPlaybackIndex||0)>=n)replayPlaybackIndex=Math.min(4,n)||1;replayPlaybackTimer=setInterval(()=>{if(!replayPlaybackItem)return replayPause();replayPlaybackIndex++;if(replayPlaybackIndex>=n){replayPlaybackIndex=n;renderReplayFrame();replayPause();return;}renderReplayFrame();},650);}
+        function replayPause(){if(replayPlaybackTimer){clearInterval(replayPlaybackTimer);replayPlaybackTimer=null;}}
+
+
+        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
 
     </script>
 </body>
