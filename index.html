@@ -1462,8 +1462,8 @@
 
             <div style="margin-top: 10px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
                 <input type="text" id="adminTelegramId" class="input-field" placeholder="User Telegram ID / UID">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;"><select id="adminPlan" class="input-field"><option value="VIP">VIP</option><option value="VIP GOLD">VIP GOLD</option><option value="VIP PLATINUM">VIP PLATINUM</option></select><select id="adminDurationDays" class="input-field"><option value="0">Lifetime</option><option value="7">7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option><option value="365">365 Days</option></select></div>
-                <button class="action-btn" onclick="generateKey()">GENERATE NEW LICENSE KEY</button>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;"><select id="adminPlan" class="input-field"><option value="FREE TRIAL">FREE TRIAL</option><option value="VIP">VIP</option><option value="VIP GOLD">VIP GOLD</option><option value="VIP PLATINUM">VIP PLATINUM</option></select><select id="adminDurationDays" class="input-field"><option value="0.5">12 Hours</option><option value="1">24 Hours</option><option value="7">7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option><option value="365">365 Days</option><option value="0">Lifetime</option></select></div>
+                <button class="action-btn" onclick="generateKey()">GENERATE NEW LICENSE KEY</button><div style="margin-top:5px;color:#94a3b8;font-size:8.5px;text-align:center;">FREE TRIAL: one claim per Telegram ID / UID and one claim per device. 2-hour Telegram expiry reminder enabled.</div>
                 <p id="generatedKeyDisplay" style="margin-top: 10px; font-weight: bold; text-align: center; font-size: 11px; color: #00ff87; word-break: break-all;"></p>
                 <button id="copyKeyBtn" class="copy-key-btn" onclick="copyGeneratedKey()">📋 COPY LICENSE KEY</button>
             </div>
@@ -2051,7 +2051,7 @@
 
         async function generateKey() {
             const tId=document.getElementById('adminTelegramId').value.trim(), pass=document.getElementById('adminPasswordInput').value, display=document.getElementById('generatedKeyDisplay'), copyBtn=document.getElementById('copyKeyBtn');
-            const plan=document.getElementById('adminPlan')?.value||'VIP', duration_days=Number(document.getElementById('adminDurationDays')?.value||0);
+            const plan=document.getElementById('adminPlan')?.value||'VIP', duration_days=Number(document.getElementById('adminDurationDays')?.value||0); // 0.5=12h, 1=24h
             if(!tId||!pass){display.innerText='❌ Enter User Telegram ID / UID and admin password.';display.style.color='#ff3366';copyBtn.style.display='none';return;}
             display.innerText='🔄 Creating key through backend...';display.style.color='#60efff';copyBtn.style.display='none';
             try { const response=await fetch('/admin/generate-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass,user:tId,plan,duration_days})}); const result=await response.json(); if(!response.ok||!result||result.status!=='success') throw new Error((result&&result.message)||'Unable to generate license.'); latestGeneratedKey=result.key; display.innerHTML=`User: ${escapeHtml(result.user)}<br>Plan: ${escapeHtml(result.plan||plan)} · Expiry: ${escapeHtml(formatExpiryDate(result.expires_at))}<br>Key: ${escapeHtml(result.key)}`;display.style.color='#00ff87';copyBtn.style.display='block';await refreshAdminLicenses(); } catch(error){latestGeneratedKey='';display.innerText='❌ '+error.message;display.style.color='#ff3366';copyBtn.style.display='none';}
