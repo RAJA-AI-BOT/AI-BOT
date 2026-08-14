@@ -3,12 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RAJA AI PREMIUM - SMART TRADING DASHBOARD</title>
+    <title>RAJA AI PREMIUM</title>
     <meta name="theme-color" content="#050b16">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="/manifest.json">
+    <meta name="application-name" content="RAJA AI PREMIUM">
+    <meta name="apple-mobile-web-app-title" content="RAJA AI">
+    <meta name="format-detection" content="telephone=no">
+    <link rel="icon" type="image/png" sizes="192x192" href="/raja-ai-icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/raja-ai-icon-512.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="/raja-ai-icon-192.png">
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
@@ -273,6 +280,17 @@
             }
             .raja-fullscreen-btn .fs-label { display: none; }
             .raja-fullscreen-btn .fs-icon { font-size: 16px; }
+        }
+
+    
+        /* PWA installed mode */
+        @media (display-mode: standalone) {
+            html, body {
+                width: 100%;
+                min-height: 100%;
+                overscroll-behavior-y: contain;
+            }
+            #installAppBtn { display: none !important; }
         }
 
     </style>
@@ -1678,6 +1696,68 @@
         window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); deferredInstallPrompt=event; const b=document.getElementById('installAppBtn'); if(b)b.style.display='inline-flex'; });
         async function installPWA(){ if(!deferredInstallPrompt){ alert('On mobile, use your browser menu and choose “Install app” or “Add to Home Screen”.'); return; } deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt=null; const b=document.getElementById('installAppBtn'); if(b)b.style.display='none'; }
         if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+
+        
+        function isRajaStandalone() {
+            return window.matchMedia('(display-mode: standalone)').matches ||
+                   window.navigator.standalone === true;
+        }
+
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredInstallPrompt = event;
+            const b = document.getElementById('installAppBtn');
+            if (b && !isRajaStandalone()) {
+                b.style.display = 'inline-flex';
+                b.innerText = '⬇ INSTALL APP';
+            }
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            const b = document.getElementById('installAppBtn');
+            if (b) b.style.display = 'none';
+        });
+
+        async function installPWA() {
+            const b = document.getElementById('installAppBtn');
+
+            if (isRajaStandalone()) {
+                if (b) b.style.display = 'none';
+                return;
+            }
+
+            if (!deferredInstallPrompt) {
+                alert('App install is not ready yet. Refresh once, wait a few seconds, then tap INSTALL APP again. Do not choose Create shortcut.');
+                return;
+            }
+
+            try {
+                deferredInstallPrompt.prompt();
+                const choice = await deferredInstallPrompt.userChoice;
+                if (choice && choice.outcome === 'accepted' && b) {
+                    b.style.display = 'none';
+                }
+            } catch (err) {
+                console.warn('RAJA AI install prompt error:', err);
+            } finally {
+                deferredInstallPrompt = null;
+            }
+        }
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                try {
+                    await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                } catch (err) {
+                    console.warn('RAJA AI service worker registration failed:', err);
+                }
+
+                const b = document.getElementById('installAppBtn');
+                if (b && isRajaStandalone()) b.style.display = 'none';
+            });
+        }
+
 
         // Primary-view navigation and live scan session state. A scan continues while
         // History / News / Settings are open; returning to Dashboard restores the
