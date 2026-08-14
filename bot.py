@@ -8,6 +8,8 @@ import secrets
 import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
+from collections import Counter
+from datetime import datetime, timezone
 from urllib.request import Request as UrlRequest, urlopen
 
 try:
@@ -200,6 +202,9 @@ LICENSE_RESET_VERSION = os.environ.get("RAJA_LICENSE_RESET_VERSION", "2026-08-12
 
 SIGNALS_FILE = DATA_DIR / "signals.json"
 signals_lock = threading.RLock()
+SCAN_EVENTS_FILE = DATA_DIR / "scan_events.json"
+scan_events_lock = threading.RLock()
+DEFAULT_LICENSE_PLAN = "VIP"
 AUTO_TRACK_EXPIRIES = {
     "1m": 60,
     "2m": 120,
@@ -210,11 +215,11 @@ AUTO_TRACK_EXPIRIES = {
 
 
 def normalize_user_id(value):
-    """Normalize Telegram @usernames so capitalization cannot break a valid license."""
+    """Canonicalize Telegram/user IDs so @Name and name resolve to the same customer."""
     user = str(value or "").strip()
     if user.startswith("@"):
-        return "@" + user[1:].strip().casefold()
-    return user
+        user = user[1:].strip()
+    return user.casefold()
 
 
 def _db_connect():
@@ -227,8 +232,7 @@ def _db_connect():
 
 def initialize_license_store():
     if DATABASE_URL:
-        # Fail fast when a database URL is configured but unusable. This avoids silently
-        # falling back to temporary Render storage and losing customer licenses later.
+        # Persistent license + scan analytics storage.
         with _db_connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -239,19 +243,41 @@ def initialize_license_store():
                         device_id TEXT,
                         device_label TEXT,
                         created_at BIGINT,
-                        last_verified_at BIGINT
+                        last_verified_at BIGINT,
+                        session_token TEXT,
+                        plan TEXT,
+                        expires_at BIGINT,
+                        last_login_at BIGINT
                     )
                 """)
-                cur.execute("ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS device_label TEXT")
+                for statement in [
+                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS device_label TEXT",
+                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS session_token TEXT",
+                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS plan TEXT",
+                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS expires_at BIGINT",
+                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS last_login_at BIGINT",
+                ]:
+                    cur.execute(statement)
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS raja_meta (
                         meta_key TEXT PRIMARY KEY,
                         meta_value TEXT
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raja_scan_events (
+                        event_id BIGSERIAL PRIMARY KEY,
+                        created_at BIGINT NOT NULL,
+                        user_id TEXT,
+                        market TEXT,
+                        pair TEXT,
+                        mode TEXT,
+                        signal_found BOOLEAN NOT NULL DEFAULT FALSE
+                    )
+                """)
 
-                # One-time clean slate requested by the admin. The version marker prevents
-                # Render restarts/redeploys from repeatedly deleting newly generated keys.
+                # Preserve the existing one-time reset marker behavior; do not change the version
+                # during ordinary feature upgrades or existing customer keys would be deleted.
                 if LICENSE_RESET_VERSION:
                     cur.execute("SELECT meta_value FROM raja_meta WHERE meta_key = %s", ("license_reset_version",))
                     row = cur.fetchone()
@@ -270,6 +296,8 @@ def initialize_license_store():
     with license_lock:
         if not LICENSE_FILE.exists():
             LICENSE_FILE.write_text("{}", encoding="utf-8")
+        if not SCAN_EVENTS_FILE.exists():
+            SCAN_EVENTS_FILE.write_text("[]", encoding="utf-8")
         if LICENSE_RESET_VERSION:
             marker_file = DATA_DIR / ".raja_license_reset_version"
             current_version = marker_file.read_text(encoding="utf-8").strip() if marker_file.exists() else ""
@@ -279,19 +307,22 @@ def initialize_license_store():
                 print(f"RAJA local license reset applied once: {LICENSE_RESET_VERSION}")
     print("WARNING: RAJA license store is using local file storage (not persistent on Render Free).")
 
+
 def load_licenses():
     with license_lock:
         if DATABASE_URL:
             with _db_connect() as conn:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        SELECT license_key, active, user_id, device_id, device_label, created_at, last_verified_at
+                        SELECT license_key, active, user_id, device_id, device_label, created_at,
+                               last_verified_at, session_token, plan, expires_at, last_login_at
                         FROM raja_licenses
                     """)
                     rows = cur.fetchall()
 
             data = {}
-            for key, active, user, device, device_label, created_at, last_verified_at in rows:
+            for (key, active, user, device, device_label, created_at, last_verified_at,
+                 session_token, plan, expires_at, last_login_at) in rows:
                 data[str(key)] = {
                     "active": bool(active),
                     "user": user,
@@ -299,20 +330,22 @@ def load_licenses():
                     "device_label": device_label,
                     "created_at": created_at,
                     "last_verified_at": last_verified_at,
+                    "session_token": session_token,
+                    "plan": plan or DEFAULT_LICENSE_PLAN,
+                    "expires_at": expires_at,
+                    "last_login_at": last_login_at,
                 }
             return data
 
         if not LICENSE_FILE.exists():
             LICENSE_FILE.write_text("{}", encoding="utf-8")
             return {}
-
         try:
             data = json.loads(LICENSE_FILE.read_text(encoding="utf-8"))
             if not isinstance(data, dict):
                 raise ValueError("Invalid license database")
             return data
         except Exception:
-            # Do not delete/overwrite a corrupt file silently. Keep a backup for recovery.
             try:
                 backup = LICENSE_FILE.with_name(f"licenses.corrupt.{int(time.time())}.json")
                 LICENSE_FILE.replace(backup)
@@ -329,32 +362,101 @@ def save_licenses(data):
             for key, record in (data or {}).items():
                 record = record if isinstance(record, dict) else {}
                 rows.append((
-                    str(key),
-                    bool(record.get("active", False)),
-                    record.get("user"),
-                    record.get("device"),
-                    record.get("device_label"),
-                    record.get("created_at"),
-                    record.get("last_verified_at"),
+                    str(key), bool(record.get("active", False)), record.get("user"),
+                    record.get("device"), record.get("device_label"), record.get("created_at"),
+                    record.get("last_verified_at"), record.get("session_token"),
+                    record.get("plan") or DEFAULT_LICENSE_PLAN, record.get("expires_at"),
+                    record.get("last_login_at"),
                 ))
-
             with _db_connect() as conn:
                 with conn.cursor() as cur:
-                    # Existing routes mutate a full in-memory dictionary. Replacing the table
-                    # inside one transaction preserves their current behavior without changing
-                    # the frontend/API contract.
                     cur.execute("DELETE FROM raja_licenses")
                     if rows:
                         cur.executemany("""
                             INSERT INTO raja_licenses
-                                (license_key, active, user_id, device_id, device_label, created_at, last_verified_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                (license_key, active, user_id, device_id, device_label, created_at,
+                                 last_verified_at, session_token, plan, expires_at, last_login_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """, rows)
             return
-
         temp = LICENSE_FILE.with_suffix(".tmp")
         temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         temp.replace(LICENSE_FILE)
+
+
+def license_is_expired(record, now=None):
+    expires_at = int((record or {}).get("expires_at") or 0)
+    return bool(expires_at and expires_at <= int(now or time.time()))
+
+
+def _load_scan_events(limit=5000):
+    limit = max(1, min(int(limit), 20000))
+    if DATABASE_URL:
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT created_at, user_id, market, pair, mode, signal_found
+                    FROM raja_scan_events ORDER BY created_at DESC LIMIT %s
+                """, (limit,))
+                rows = cur.fetchall()
+        return [
+            {"created_at": int(ts), "user": user, "market": market, "pair": pair,
+             "mode": mode, "signal_found": bool(found)}
+            for ts, user, market, pair, mode, found in rows
+        ]
+    with scan_events_lock:
+        if not SCAN_EVENTS_FILE.exists():
+            SCAN_EVENTS_FILE.write_text("[]", encoding="utf-8")
+        try:
+            items = json.loads(SCAN_EVENTS_FILE.read_text(encoding="utf-8"))
+            return items[:limit] if isinstance(items, list) else []
+        except Exception:
+            return []
+
+
+def _append_scan_event(user, market, pair, mode, signal_found=False):
+    item = {
+        "created_at": int(time.time()), "user": normalize_user_id(user),
+        "market": str(market or "Unknown")[:80], "pair": str(pair or "")[:120],
+        "mode": str(mode or "BALANCED")[:30], "signal_found": bool(signal_found),
+    }
+    if DATABASE_URL:
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO raja_scan_events(created_at,user_id,market,pair,mode,signal_found)
+                        VALUES(%s,%s,%s,%s,%s,%s)
+                    """, (item["created_at"], item["user"], item["market"], item["pair"], item["mode"], item["signal_found"]))
+            return
+        except Exception as exc:
+            print(f"Scan analytics DB warning: {exc}")
+    with scan_events_lock:
+        items = _load_scan_events(5000)
+        items.insert(0, item)
+        temp = SCAN_EVENTS_FILE.with_suffix(".tmp")
+        temp.write_text(json.dumps(items[:5000], indent=2), encoding="utf-8")
+        temp.replace(SCAN_EVENTS_FILE)
+
+
+def _auth_session(data):
+    data = data or {}
+    key = str(data.get("key", "")).strip()
+    user = normalize_user_id(data.get("user", ""))
+    device = str(data.get("device", "")).strip()
+    session_token = str(data.get("session_token", "")).strip()
+    if not key or not user or not device or not session_token:
+        return None, (jsonify({"status": "error", "message": "Active license session required."}), 401)
+    licenses = load_licenses()
+    record = licenses.get(key)
+    now = int(time.time())
+    if not record or not record.get("active", False) or license_is_expired(record, now):
+        return None, (jsonify({"status": "error", "message": "Invalid, expired or revoked license key."}), 401)
+    if normalize_user_id(record.get("user", "")) != user:
+        return None, (jsonify({"status": "error", "message": "License is assigned to a different user."}), 403)
+    if str(record.get("device") or "") != device or str(record.get("session_token") or "") != session_token:
+        return None, (jsonify({"status": "error", "message": "This session was replaced by another device. Please login again."}), 409)
+    return {"key": key, "user": user, "device": device, "record": record, "licenses": licenses}, None
 
 
 initialize_license_store()
@@ -1136,170 +1238,178 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
     }
 
 
-def calculate_live_indicators(pair, selected_expiry=None):
-    """Scan 1m,2m,5m,10m,15m,30m and require selected-expiry confirmation."""
+def serialize_candles(df, limit=28):
+    if df is None or df.empty:
+        return []
+    out = []
+    for idx, row in df.tail(max(8, min(int(limit), 60))).iterrows():
+        try:
+            out.append({
+                "t": int(idx.timestamp()),
+                "o": round(float(row["Open"]), 8),
+                "h": round(float(row["High"]), 8),
+                "l": round(float(row["Low"]), 8),
+                "c": round(float(row["Close"]), 8),
+            })
+        except Exception:
+            continue
+    return out
+
+
+def market_stability_metrics(price, atr, adx, data_age, agreement_pct):
+    try:
+        price = abs(float(price or 0))
+        atr = abs(float(atr or 0))
+        vol_pct = (atr / price * 100.0) if price > 0 else 0.0
+    except Exception:
+        vol_pct = 0.0
+    age = max(0.0, float(data_age or 0))
+    adx_val = max(0.0, min(60.0, float(adx or 0)))
+    agreement = max(0.0, min(100.0, float(agreement_pct or 0)))
+    data_score = max(0.0, 100.0 - min(age, 180.0) / 1.8)
+    trend_score = min(100.0, 35.0 + adx_val * 1.15)
+    if vol_pct < 0.003:
+        vol_score = 58.0
+    elif vol_pct <= 0.8:
+        vol_score = 96.0 - abs(vol_pct - 0.16) * 18.0
+    elif vol_pct <= 1.8:
+        vol_score = 78.0 - (vol_pct - 0.8) * 28.0
+    else:
+        vol_score = max(18.0, 50.0 - (vol_pct - 1.8) * 20.0)
+    score = max(0.0, min(100.0, data_score * 0.28 + trend_score * 0.24 + agreement * 0.30 + vol_score * 0.18))
+    risk = "LOW" if score >= 78 else ("MEDIUM" if score >= 58 else "HIGH")
+    return round(score, 1), risk, round(vol_pct, 5)
+
+
+def normalize_scan_options(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    mode = str(raw.get("mode") or "BALANCED").strip().upper()
+    presets = {
+        "SAFE": {"min_tf": 5, "min_agreement": 80.0, "min_score": 80.0, "vol_min": 0.003, "vol_max": 1.20},
+        "BALANCED": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.002, "vol_max": 2.00},
+        "AGGRESSIVE": {"min_tf": 4, "min_agreement": 66.7, "min_score": 55.0, "vol_min": 0.0, "vol_max": 3.00},
+        "CUSTOM": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.0, "vol_max": 3.00},
+    }
+    base = dict(presets.get(mode, presets["BALANCED"]))
+    if mode == "CUSTOM":
+        try: base["min_tf"] = max(4, min(6, int(raw.get("min_tf", base["min_tf"]))))
+        except Exception: pass
+        try: base["min_agreement"] = max(60.0, min(100.0, float(raw.get("min_agreement", base["min_agreement"]))))
+        except Exception: pass
+        try: base["min_score"] = max(50.0, min(95.0, float(raw.get("min_score", base["min_score"]))))
+        except Exception: pass
+        try: base["vol_min"] = max(0.0, min(5.0, float(raw.get("vol_min", base["vol_min"]))))
+        except Exception: pass
+        try: base["vol_max"] = max(base["vol_min"], min(10.0, float(raw.get("vol_max", base["vol_max"]))))
+        except Exception: pass
+    base["mode"] = mode if mode in presets else "BALANCED"
+    return base
+
+
+def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
+    """Scan synchronized timeframes using a SAFE/BALANCED/AGGRESSIVE/CUSTOM gate."""
+    opts = normalize_scan_options(scan_options)
     if pair not in YAHOO_SYMBOLS:
-        return no_signal_result(
-            pair,
-            "Pair is not configured in Yahoo mapping.",
-        )
+        result = no_signal_result(pair, "Pair is not configured in Yahoo mapping.")
+        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
+        return result
 
     base_df, data_age, symbol = get_market_data(pair)
-
     if base_df is None or base_df.empty:
-        return no_signal_result(
-            pair,
-            "Yahoo market data unavailable.",
-            symbol=symbol,
-            data_age=data_age,
-        )
+        result = no_signal_result(pair, "Yahoo market data unavailable.", symbol=symbol, data_age=data_age)
+        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
+        return result
 
+    chart_preview = serialize_candles(base_df, 28)
     results = {}
     for tf_name, minutes in TIMEFRAMES.items():
         tf_df = build_timeframe(base_df, minutes)
         results[tf_name] = analyze_timeframe(tf_df, tf_name)
 
-    call_results = [
-        r for r in results.values()
-        if r.get("signal") == "CALL"
-    ]
-    put_results = [
-        r for r in results.values()
-        if r.get("signal") == "PUT"
-    ]
-
+    call_results = [r for r in results.values() if r.get("signal") == "CALL"]
+    put_results = [r for r in results.values() if r.get("signal") == "PUT"]
     valid_count = len(call_results) + len(put_results)
-
     summary = {
-        tf: {
-            "signal": r.get("signal"),
-            "score": r.get("score", 0),
-            "rsi": r.get("rsi"),
-            "adx": r.get("adx"),
-            "closed_candle_epoch": r.get("closed_candle_epoch"),
-        }
+        tf: {"signal": r.get("signal"), "score": r.get("score", 0), "rsi": r.get("rsi"),
+             "adx": r.get("adx"), "closed_candle_epoch": r.get("closed_candle_epoch")}
         for tf, r in results.items()
     }
 
-    # Require at least 4 directional timeframes out of 6.
-    if valid_count < 4:
-        return no_signal_result(
-            pair,
-            "Fewer than 4 timeframes reached valid confluence.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+    def rejected(reason):
+        result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary)
+        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview})
+        return result
+
+    if valid_count < opts["min_tf"]:
+        return rejected(f"Fewer than {opts['min_tf']} timeframes reached valid confluence for {opts['mode']} mode.")
 
     if len(call_results) > len(put_results):
-        signal = "CALL"
-        supporters = call_results
-        opponents = put_results
+        signal, supporters, opponents = "CALL", call_results, put_results
     elif len(put_results) > len(call_results):
-        signal = "PUT"
-        supporters = put_results
-        opponents = call_results
+        signal, supporters, opponents = "PUT", put_results, call_results
     else:
-        return no_signal_result(
-            pair,
-            "Multi-timeframe direction is tied.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+        return rejected("Multi-timeframe direction is tied.")
 
-    # At least 4 timeframes must agree with the final direction.
-    if len(supporters) < 4:
-        return no_signal_result(
-            pair,
-            "Fewer than 4 timeframes agree with the final direction.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
+    if len(supporters) < opts["min_tf"]:
+        return rejected(f"Fewer than {opts['min_tf']} timeframes agree with the final direction.")
 
     agreement_ratio = len(supporters) / valid_count
+    if agreement_ratio * 100.0 < opts["min_agreement"]:
+        return rejected(f"Multi-timeframe agreement below {opts['min_agreement']:.1f}% for {opts['mode']} mode.")
 
-    # Require at least two-thirds directional agreement among valid TFs.
-    if agreement_ratio < (2 / 3):
-        return no_signal_result(
-            pair,
-            "Multi-timeframe agreement below 66.7%.",
-            symbol=symbol,
-            data_age=data_age,
-            timeframes=summary,
-        )
-
-    # The user's selected expiry is a hard confirmation gate.
-    # Example: 1m expiry requires the 1m analysis itself to confirm the final direction.
     required_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip())
     if required_tf:
         required_result = results.get(required_tf) or {}
         required_signal = required_result.get("signal")
         if required_signal != signal:
-            return no_signal_result(
-                pair,
-                (
-                    f"Selected expiry {selected_expiry} requires {required_tf} confirmation; "
-                    f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
-                ),
-                symbol=symbol,
-                data_age=data_age,
-                timeframes=summary,
+            return rejected(
+                f"Selected expiry {selected_expiry} requires {required_tf} confirmation; "
+                f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
             )
 
     avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
+    multi_tf_score = max(50, min(95, avg_support_score + ((agreement_ratio - 0.5) * 12)))
 
-    # Reward agreement without pretending this is a win probability.
-    multi_tf_score = avg_support_score + ((agreement_ratio - 0.5) * 12)
-    multi_tf_score = max(50, min(95, multi_tf_score))
-
-    # Prefer representative diagnostics from 5m, then 2m, then 1m,
-    # otherwise use the strongest supporting timeframe.
     representative = None
     for preferred in ("5m", "2m", "1m", "10m", "15m", "30m"):
         r = results.get(preferred)
         if r and r.get("signal") == signal:
             representative = r
             break
-
     if representative is None:
         representative = max(supporters, key=lambda x: x.get("score", 0))
 
+    stability_score, risk_level, volatility_pct = market_stability_metrics(
+        representative.get("price"), representative.get("atr"), representative.get("adx"),
+        data_age, agreement_ratio * 100.0,
+    )
+    if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
+        return rejected(
+            f"Volatility {volatility_pct:.4f}% is outside {opts['mode']} range "
+            f"({opts['vol_min']:.4f}%–{opts['vol_max']:.2f}%)."
+        )
+    if multi_tf_score < opts["min_score"]:
+        return rejected(f"Technical confluence {multi_tf_score:.1f}% is below {opts['mode']} threshold {opts['min_score']:.1f}%.")
+
     aligned_tfs = [r["timeframe"] for r in supporters]
     opposing_tfs = [r["timeframe"] for r in opponents]
-
-
     return {
-        "pair": pair,
-        "score": round(multi_tf_score, 2),
-        "signal": signal,
-        "reason": (
-            f"Multi-TF agreement: {len(supporters)}/{valid_count} valid "
-            f"timeframes -> {signal}"
-        ),
-        "rsi": representative.get("rsi"),
-        "adx": representative.get("adx"),
-        "atr": representative.get("atr"),
-        "price": representative.get("price"),
-        "bullish_points": representative.get("bullish_points", 0),
+        "pair": pair, "score": round(multi_tf_score, 2), "signal": signal,
+        "reason": f"{opts['mode']} · Multi-TF agreement: {len(supporters)}/{valid_count} valid timeframes -> {signal}",
+        "rsi": representative.get("rsi"), "adx": representative.get("adx"), "atr": representative.get("atr"),
+        "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
         "bearish_points": representative.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "otc_proxy_warning": "(OTC)" in pair,
-        "yahoo_symbol": symbol,
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "aligned_timeframes": aligned_tfs,
-        "opposing_timeframes": opposing_tfs,
-        "timeframe_summary": summary,
-        "multi_tf_agreement": round(agreement_ratio * 100, 1),
-        "selected_expiry": selected_expiry,
+        "source": "Yahoo Finance", "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
+        "otc_proxy_warning": "(OTC)" in pair, "yahoo_symbol": symbol,
+        "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
+        "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
+        "multi_tf_agreement": round(agreement_ratio * 100, 1), "selected_expiry": selected_expiry,
         "required_expiry_timeframe": required_tf,
-        "confirmation_mode": (
-            f"4-of-6 Strong + {required_tf} Required" if required_tf else "4-of-6 Strong"
-        ),
-        "duplicate_protection": False,
+        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-6 + {required_tf or 'TF'} Required",
+        "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
+        "market_stability_score": stability_score, "market_risk_level": risk_level,
+        "volatility_pct": volatility_pct, "chart_preview": chart_preview,
     }
 
 
@@ -1360,6 +1470,26 @@ def home():
         "RAJA AI backend is running. "
         "Place index.html in the same folder as bot.py."
     )
+
+
+@app.route("/manifest.json", methods=["GET"])
+def pwa_manifest():
+    return send_from_directory(str(BASE_DIR), "manifest.json", mimetype="application/manifest+json")
+
+
+@app.route("/sw.js", methods=["GET"])
+def pwa_service_worker():
+    response = send_from_directory(str(BASE_DIR), "sw.js", mimetype="application/javascript")
+    response.headers["Service-Worker-Allowed"] = "/"
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route("/raja-ai-icon-<size>.png", methods=["GET"])
+def pwa_icon(size):
+    if size not in {"192", "512"}:
+        return jsonify({"status": "error", "message": "Icon not found."}), 404
+    return send_from_directory(str(BASE_DIR), f"raja-ai-icon-{size}.png", mimetype="image/png")
 
 
 @app.after_request
@@ -1459,82 +1589,61 @@ def market_news():
 @app.route("/verify-license", methods=["POST"])
 def verify_license():
     data = request.get_json(silent=True) or {}
-
     key = str(data.get("key", "")).strip()
     user = normalize_user_id(data.get("user", ""))
     device = str(data.get("device", "")).strip()
     device_label = str(data.get("device_label", "")).strip()[:160]
     heartbeat = bool(data.get("heartbeat", False))
-
+    supplied_token = str(data.get("session_token", "")).strip()
     if not key or not user or not device:
-        return jsonify({
-            "status": "error",
-            "message": "Key, user and device are required.",
-        }), 400
+        return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
 
     licenses = load_licenses()
     record = licenses.get(key)
-
-    if not record or not record.get("active", False):
-        return jsonify({
-            "status": "error",
-            "message": "Invalid or revoked license key.",
-        }), 401
-
     now = int(time.time())
-    bound_device = record.get("device")
-    bound_user = record.get("user")
+    if not record or not record.get("active", False):
+        return jsonify({"status": "error", "message": "Invalid or revoked license key."}), 401
+    if license_is_expired(record, now):
+        return jsonify({"status": "error", "message": "This license has expired. Contact admin to renew access."}), 401
 
-    # Heartbeats/saved-session restoration may refresh an existing binding, but they may
-    # not create a new binding. This makes an admin RESET actually kick the old device.
-    if heartbeat and not bound_device:
-        return jsonify({
-            "status": "error",
-            "message": "Device session was reset. Please login again.",
-        }), 409
-    last_verified_at = int(record.get("last_verified_at") or 0)
-    existing_session_active = bool(
-        bound_device
-        and bound_device != device
-        and last_verified_at
-        and (now - last_verified_at) < DEVICE_SESSION_TTL_SECONDS
-    )
-
-    if existing_session_active:
-        return jsonify({
-            "status": "error",
-            "message": "This key is currently active on another device.",
-            "device_label": record.get("device_label"),
-        }), 403
-
-    if heartbeat and bound_device and bound_device != device:
-        return jsonify({
-            "status": "error",
-            "message": "Saved session is no longer active. Please login again.",
-        }), 409
-
+    bound_user = normalize_user_id(record.get("user", ""))
+    # @username and username are treated as the same identity. A genuinely different
+    # customer still cannot use someone else's key.
     if bound_user and bound_user != user:
-        return jsonify({
-            "status": "error",
-            "message": "This key is already assigned to another user.",
-        }), 403
+        return jsonify({"status": "error", "message": "This key is assigned to another user/UID."}), 403
 
-    # Same device refreshes the heartbeat. A stale device session can be replaced after
-    # DEVICE_SESSION_TTL_SECONDS, which implements one-active-device-at-a-time behavior.
+    if heartbeat:
+        if str(record.get("device") or "") != device or not supplied_token or str(record.get("session_token") or "") != supplied_token:
+            return jsonify({"status": "error", "message": "This session was replaced by a newer device login."}), 409
+        record["last_verified_at"] = now
+        licenses[key] = record
+        save_licenses(licenses)
+        return jsonify({
+            "status": "success", "message": "Session active.", "user": user,
+            "device_bound": True, "device_label": record.get("device_label"),
+            "session_token": record.get("session_token"), "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
+            "expires_at": record.get("expires_at"),
+        })
+
+    # NEW DEVICE WINS: a valid login immediately replaces the previous browser session.
+    previous_device = str(record.get("device") or "")
+    previous_label = str(record.get("device_label") or "")
+    new_token = secrets.token_urlsafe(32)
     record["device"] = device
-    record["device_label"] = device_label or record.get("device_label") or device
+    record["device_label"] = device_label or device
     record["user"] = user
+    record["session_token"] = new_token
     record["last_verified_at"] = now
+    record["last_login_at"] = now
+    record["plan"] = record.get("plan") or DEFAULT_LICENSE_PLAN
     licenses[key] = record
     save_licenses(licenses)
-
     return jsonify({
-        "status": "success",
-        "message": "License verified successfully.",
-        "user": user,
-        "device_bound": True,
-        "device_label": record.get("device_label"),
-        "session_ttl_seconds": DEVICE_SESSION_TTL_SECONDS,
+        "status": "success", "message": "License verified successfully.", "user": user,
+        "device_bound": True, "device_label": record.get("device_label"), "session_token": new_token,
+        "replaced_previous_device": bool(previous_device and previous_device != device),
+        "previous_device_label": previous_label if previous_device and previous_device != device else None,
+        "plan": record.get("plan"), "expires_at": record.get("expires_at"),
     })
 
 
@@ -1544,122 +1653,138 @@ def logout_license():
     key = str(data.get("key", "")).strip()
     user = normalize_user_id(data.get("user", ""))
     device = str(data.get("device", "")).strip()
-
+    token = str(data.get("session_token", "")).strip()
     if not key or not user or not device:
         return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
-
     licenses = load_licenses()
     record = licenses.get(key)
     if not record:
         return jsonify({"status": "success", "message": "Session already cleared."})
-
-    if record.get("user") == user and record.get("device") == device:
+    if (normalize_user_id(record.get("user", "")) == user and record.get("device") == device
+            and (not record.get("session_token") or record.get("session_token") == token)):
         record["device"] = None
         record["device_label"] = None
         record["last_verified_at"] = None
+        record["session_token"] = None
         licenses[key] = record
         save_licenses(licenses)
-
     return jsonify({"status": "success", "message": "Device session released."})
+
+
+@app.route("/user/profile", methods=["POST"])
+def user_profile():
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+    record = auth["record"]
+    user = auth["user"]
+    now = int(time.time())
+    day_start = now - (now % 86400)
+    events = _load_scan_events(5000)
+    user_events = [e for e in events if normalize_user_id(e.get("user", "")) == user]
+    scans_today = sum(1 for e in user_events if int(e.get("created_at") or 0) >= day_start)
+    return jsonify({
+        "status": "success",
+        "data": {
+            "user": user, "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
+            "expires_at": record.get("expires_at"), "created_at": record.get("created_at"),
+            "last_login_at": record.get("last_login_at"), "last_active_at": record.get("last_verified_at"),
+            "device": record.get("device"), "device_label": record.get("device_label"),
+            "scans_today": scans_today, "total_scans": len(user_events),
+        }
+    })
 
 
 @app.route("/admin/generate-key", methods=["POST"])
 def admin_generate_key():
     data = request.get_json(silent=True) or {}
-
     password = str(data.get("password", ""))
     user = normalize_user_id(data.get("user", ""))
-
+    plan = str(data.get("plan") or DEFAULT_LICENSE_PLAN).strip().upper()[:40]
+    try:
+        duration_days = max(0, min(3650, int(data.get("duration_days") or 0)))
+    except Exception:
+        duration_days = 0
     if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
-
+        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
     if not user:
-        return jsonify({
-            "status": "error",
-            "message": "User Telegram ID / UID is required.",
-        }), 400
-
+        return jsonify({"status": "error", "message": "User Telegram ID / UID is required."}), 400
     licenses = load_licenses()
-
     while True:
         key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
         if key not in licenses:
             break
-
+    now = int(time.time())
     licenses[key] = {
-        "active": True,
-        "user": user,
-        "device": None,
-        "device_label": None,
-        "created_at": int(time.time()),
+        "active": True, "user": user, "device": None, "device_label": None,
+        "session_token": None, "created_at": now, "last_verified_at": None,
+        "last_login_at": None, "plan": plan, "expires_at": now + duration_days * 86400 if duration_days else None,
     }
     save_licenses(licenses)
-
-    return jsonify({
-        "status": "success",
-        "message": "License created.",
-        "key": key,
-        "user": user,
-    })
+    return jsonify({"status": "success", "message": "License created.", "key": key, "user": user,
+                    "plan": plan, "expires_at": licenses[key].get("expires_at")})
 
 
 @app.route("/admin/licenses", methods=["POST"])
 def admin_list_licenses():
     data = request.get_json(silent=True) or {}
     password = str(data.get("password", ""))
-
     if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
-
+        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
     now = int(time.time())
     licenses = load_licenses()
     rows = []
     for key, record in licenses.items():
         record = record if isinstance(record, dict) else {}
         last_verified_at = int(record.get("last_verified_at") or 0)
-        session_active = bool(
-            record.get("device")
-            and last_verified_at
-            and (now - last_verified_at) < DEVICE_SESSION_TTL_SECONDS
-        )
+        session_active = bool(record.get("device") and record.get("session_token") and last_verified_at and (now - last_verified_at) < 90)
         rows.append({
-            "key": key,
-            "active": bool(record.get("active", False)),
-            "user": record.get("user"),
-            "device": record.get("device"),
-            "device_label": record.get("device_label"),
-            "session_active": session_active,
-            "created_at": record.get("created_at"),
-            "last_verified_at": record.get("last_verified_at"),
+            "key": key, "active": bool(record.get("active", False)) and not license_is_expired(record, now),
+            "expired": license_is_expired(record, now), "user": record.get("user"), "device": record.get("device"),
+            "device_label": record.get("device_label"), "session_active": session_active,
+            "created_at": record.get("created_at"), "last_verified_at": record.get("last_verified_at"),
+            "last_login_at": record.get("last_login_at"), "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
+            "expires_at": record.get("expires_at"),
         })
-
     rows.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
     bound_count = sum(1 for row in rows if row.get("device"))
     online_count = sum(1 for row in rows if row.get("session_active"))
-    return jsonify({
-        "status": "success",
-        "data": rows,
-        "count": len(rows),
-        "summary": {
-            "total": len(rows),
-            "active": sum(1 for row in rows if row.get("active")),
-            "bound": bound_count,
-            "online": online_count,
-            "unbound": max(0, len(rows) - bound_count),
-        },
-    })
+    return jsonify({"status": "success", "data": rows, "count": len(rows), "summary": {
+        "total": len(rows), "active": sum(1 for row in rows if row.get("active")), "bound": bound_count,
+        "online": online_count, "unbound": max(0, len(rows) - bound_count),
+        "expired": sum(1 for row in rows if row.get("expired")),
+    }})
 
 
 def _validate_admin_password(data):
     if str((data or {}).get("password", "")) != ADMIN_PASSWORD:
         return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
     return None
+
+
+@app.route("/admin/analytics", methods=["POST"])
+def admin_analytics():
+    data = request.get_json(silent=True) or {}
+    auth_error = _validate_admin_password(data)
+    if auth_error:
+        return auth_error
+    now = int(time.time())
+    day_start = now - (now % 86400)
+    events = [e for e in _load_scan_events(10000) if int(e.get("created_at") or 0) >= day_start]
+    user_counts = Counter(normalize_user_id(e.get("user", "")) for e in events if e.get("user"))
+    market_counts = Counter(str(e.get("market") or "Unknown") for e in events)
+    licenses = load_licenses()
+    online = sum(1 for r in licenses.values() if r.get("device") and r.get("session_token") and int(r.get("last_verified_at") or 0) >= now - 90)
+    return jsonify({"status": "success", "data": {
+        "scans_today": len(events), "signals_today": sum(1 for e in events if e.get("signal_found")),
+        "most_active_customer": user_counts.most_common(1)[0][0] if user_counts else "--",
+        "most_active_customer_scans": user_counts.most_common(1)[0][1] if user_counts else 0,
+        "most_scanned_market": market_counts.most_common(1)[0][0] if market_counts else "--",
+        "most_scanned_market_count": market_counts.most_common(1)[0][1] if market_counts else 0,
+        "active_licenses": sum(1 for r in licenses.values() if r.get("active") and not license_is_expired(r, now)),
+        "online_users": online,
+    }})
 
 
 @app.route("/admin/reset-device", methods=["POST"])
@@ -1671,15 +1796,11 @@ def admin_reset_device():
     key = str(data.get("key", "")).strip()
     if not key:
         return jsonify({"status": "error", "message": "License key is required."}), 400
-
     licenses = load_licenses()
     if key not in licenses:
         return jsonify({"status": "error", "message": "License key not found."}), 404
-
     record = licenses.get(key) if isinstance(licenses.get(key), dict) else {}
-    record["device"] = None
-    record["device_label"] = None
-    record["last_verified_at"] = None
+    record["device"] = None; record["device_label"] = None; record["last_verified_at"] = None; record["session_token"] = None
     licenses[key] = record
     save_licenses(licenses)
     return jsonify({"status": "success", "message": "Device binding reset.", "key": key})
@@ -1691,278 +1812,160 @@ def admin_reset_all_devices():
     auth_error = _validate_admin_password(data)
     if auth_error:
         return auth_error
-
-    licenses = load_licenses()
-    updated = 0
+    licenses = load_licenses(); updated = 0
     for key, record in list(licenses.items()):
         record = record if isinstance(record, dict) else {}
-        if record.get("device") or record.get("device_label") or record.get("last_verified_at"):
-            updated += 1
-        record["device"] = None
-        record["device_label"] = None
-        record["last_verified_at"] = None
+        if record.get("device") or record.get("session_token"): updated += 1
+        record["device"] = None; record["device_label"] = None; record["last_verified_at"] = None; record["session_token"] = None
         licenses[key] = record
     save_licenses(licenses)
-    return jsonify({
-        "status": "success",
-        "message": "All device bindings cleared.",
-        "updated": updated,
-        "total": len(licenses),
-    })
+    return jsonify({"status": "success", "message": "All device bindings cleared.", "updated": updated, "total": len(licenses)})
 
 
 def _delete_license_from_request(data):
-    password = str(data.get("password", ""))
-    key = str(data.get("key", "")).strip()
-
+    password = str(data.get("password", "")); key = str(data.get("key", "")).strip()
     if password != ADMIN_PASSWORD:
-        return None, (jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403)
-
+        return None, (jsonify({"status": "error", "message": "Incorrect admin password."}), 403)
     if not key:
-        return None, (jsonify({
-            "status": "error",
-            "message": "License key is required.",
-        }), 400)
-
+        return None, (jsonify({"status": "error", "message": "License key is required."}), 400)
     licenses = load_licenses()
     if key not in licenses:
-        return None, (jsonify({
-            "status": "error",
-            "message": "License key not found.",
-        }), 404)
-
-    licenses.pop(key, None)
-    save_licenses(licenses)
+        return None, (jsonify({"status": "error", "message": "License key not found."}), 404)
+    licenses.pop(key, None); save_licenses(licenses)
     return key, None
 
 
 @app.route("/admin/delete-key", methods=["POST"])
 def admin_delete_key():
-    data = request.get_json(silent=True) or {}
-    key, error = _delete_license_from_request(data)
-    if error:
-        return error
-    return jsonify({
-        "status": "success",
-        "message": "License removed permanently.",
-        "key": key,
-    })
+    data = request.get_json(silent=True) or {}; key, error = _delete_license_from_request(data)
+    if error: return error
+    return jsonify({"status": "success", "message": "License removed permanently.", "key": key})
 
 
 @app.route("/admin/revoke-key", methods=["POST"])
 def admin_revoke_key():
-    # Backward-compatible alias: REMOVE now deletes the key completely.
-    data = request.get_json(silent=True) or {}
-    key, error = _delete_license_from_request(data)
-    if error:
-        return error
-    return jsonify({
-        "status": "success",
-        "message": "License removed permanently.",
-        "key": key,
-    })
+    data = request.get_json(silent=True) or {}; key, error = _delete_license_from_request(data)
+    if error: return error
+    return jsonify({"status": "success", "message": "License removed permanently.", "key": key})
 
 
 @app.route("/admin/clear-keys", methods=["POST"])
 def admin_clear_keys():
-    data = request.get_json(silent=True) or {}
-    password = str(data.get("password", ""))
-
+    data = request.get_json(silent=True) or {}; password = str(data.get("password", ""))
     if password != ADMIN_PASSWORD:
-        return jsonify({
-            "status": "error",
-            "message": "Incorrect admin password.",
-        }), 403
+        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
+    licenses = load_licenses(); removed = len(licenses); save_licenses({})
+    return jsonify({"status": "success", "message": "All license keys removed.", "removed": removed})
 
-    licenses = load_licenses()
-    removed = len(licenses)
-    save_licenses({})
-    return jsonify({
-        "status": "success",
-        "message": "All license keys removed.",
-        "removed": removed,
-    })
 
 
 
 @app.route("/track-signal", methods=["POST"])
 def track_signal():
     data = request.get_json(silent=True) or {}
-
-    pair = str(data.get("pair", "")).strip()
-    direction = str(data.get("signal", "")).strip().upper()
-    expiry = str(data.get("expiry", "")).strip()
-    score = data.get("score")
-    timeframe_summary = data.get("timeframe_summary") or {}
-    client_id = str(data.get("client_id", "")).strip()
-
+    auth, error = _auth_session(data)
+    if error:
+        return error
+    pair = str(data.get("pair", "")).strip(); direction = str(data.get("signal", "")).strip().upper()
+    expiry = str(data.get("expiry", "")).strip(); score = data.get("score")
+    timeframe_summary = data.get("timeframe_summary") or {}; client_id = str(data.get("client_id", "")).strip()
     if pair not in YAHOO_SYMBOLS:
         return jsonify({"status": "error", "message": "Unsupported pair."}), 400
-
     if direction not in {"CALL", "PUT"}:
         return jsonify({"status": "error", "message": "Signal must be CALL or PUT."}), 400
-
     if expiry not in AUTO_TRACK_EXPIRIES:
-        return jsonify({
-            "status": "success",
-            "auto_tracking": False,
-            "message": "15s/30s outcome tracking is disabled because the Yahoo base feed is 1-minute.",
-        })
-
-    now = int(time.time())
-    duration = AUTO_TRACK_EXPIRIES[expiry]
-    entry_epoch = ((now // duration) + 1) * duration
-    expiry_epoch = entry_epoch + duration
-
+        return jsonify({"status": "success", "auto_tracking": False,
+                        "message": "15s/30s outcome tracking is disabled because the Yahoo base feed is 1-minute."})
+    now = int(time.time()); duration = AUTO_TRACK_EXPIRIES[expiry]
+    entry_epoch = ((now // duration) + 1) * duration; expiry_epoch = entry_epoch + duration
     signal_id = "sig_" + secrets.token_hex(8)
     item = {
-        "id": signal_id,
-        "client_id": client_id,
-        "pair": pair,
-        "signal": direction,
-        "score": float(score or 0),
-        "expiry": expiry,
-        "created_at": now,
-        "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch,
-        "entry_price": None,
-        "exit_price": None,
-        "result": None,
-        "status": "PENDING",
-        "result_source": "pending",
-        "source": "Yahoo Finance",
+        "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
+        "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
+        "expiry_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
+        "status": "PENDING", "result_source": "pending", "source": "Yahoo Finance",
         "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "timeframe_summary": timeframe_summary,
+        "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
+        "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
+        "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
+        "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
     }
-
     with signals_lock:
-        items = load_signals()
-        items.insert(0, item)
-        items = items[:1000]
-        save_signals(items)
-
-    return jsonify({
-        "status": "success",
-        "auto_tracking": True,
-        "signal_id": signal_id,
-        "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch,
-        "message": f"Signal registered. Enter on the next {expiry} candle open.",
-    })
+        items = load_signals(); items.insert(0, item); save_signals(items[:2000])
+    return jsonify({"status": "success", "auto_tracking": True, "signal_id": signal_id,
+                    "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
+                    "message": f"Signal registered. Enter on the next {expiry} candle open."})
 
 
 @app.route("/signals/result", methods=["POST"])
 def set_signal_result():
     data = request.get_json(silent=True) or {}
-    signal_id = str(data.get("signal_id", "")).strip()
-    result = str(data.get("result", "")).strip().upper()
-    client_id = str(data.get("client_id", "")).strip()
-
+    auth, error = _auth_session(data)
+    if error: return error
+    signal_id = str(data.get("signal_id", "")).strip(); result = str(data.get("result", "")).strip().upper()
     if not signal_id or result not in {"WIN", "LOSS", "DRAW"}:
-        return jsonify({
-            "status": "error",
-            "message": "Valid signal_id and WIN/LOSS/DRAW result are required.",
-        }), 400
-
+        return jsonify({"status": "error", "message": "Valid signal_id and WIN/LOSS/DRAW result are required."}), 400
     with signals_lock:
-        items = load_signals()
-        target = next((x for x in items if x.get("id") == signal_id), None)
-
-        if target is None:
-            return jsonify({"status": "error", "message": "Signal not found."}), 404
-
-        saved_client = str(target.get("client_id", "")).strip()
-        if saved_client and client_id and saved_client != client_id:
-            return jsonify({
-                "status": "error",
-                "message": "This signal belongs to another device session.",
-            }), 403
-
+        items = load_signals(); target = next((x for x in items if x.get("id") == signal_id), None)
+        if target is None: return jsonify({"status": "error", "message": "Signal not found."}), 404
+        if target.get("user") and normalize_user_id(target.get("user")) != auth["user"]:
+            return jsonify({"status": "error", "message": "This signal belongs to another user."}), 403
         if "(OTC)" not in str(target.get("pair", "")):
-            return jsonify({
-                "status": "error",
-                "message": "Manual Quotex result is only used for OTC signals.",
-            }), 400
-
-        target["result"] = result
-        target["status"] = "COMPLETED"
-        target["result_source"] = "quotex_manual"
-        target["resolved_at"] = int(time.time())
+            return jsonify({"status": "error", "message": "Manual Quotex result is only used for OTC signals."}), 400
+        target["result"] = result; target["status"] = "COMPLETED"; target["result_source"] = "quotex_manual"; target["resolved_at"] = int(time.time())
         save_signals(items)
-
-    return jsonify({
-        "status": "success",
-        "signal_id": signal_id,
-        "result": result,
-        "result_source": "quotex_manual",
-    })
+    return jsonify({"status": "success", "signal_id": signal_id, "result": result, "result_source": "quotex_manual"})
 
 
 @app.route("/signals/history", methods=["GET"])
 def signals_history():
-    try:
-        limit = max(1, min(int(request.args.get("limit", 30)), 100))
-    except Exception:
-        limit = 30
-
-    client_id = str(request.args.get("client_id", "")).strip()
+    try: limit = max(1, min(int(request.args.get("limit", 30)), 100))
+    except Exception: limit = 30
+    auth_data = {k: request.args.get(k, "") for k in ("key", "user", "device", "session_token")}
+    auth, error = _auth_session(auth_data)
+    if error: return error
     items = load_signals()
-    if client_id:
-        items = [x for x in items if str(x.get("client_id", "")).strip() == client_id]
-
-    return jsonify({
-        "status": "success",
-        "data": items[:limit],
-        "stats": signal_stats(items),
-    })
+    user_items = [x for x in items if normalize_user_id(x.get("user", "")) == auth["user"]]
+    # Backward compatibility: include old same-device history records that predate user tagging.
+    user_items.extend([x for x in items if not x.get("user") and str(x.get("client_id", "")) == auth["device"] and x not in user_items])
+    user_items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
+    return jsonify({"status": "success", "data": user_items[:limit], "stats": signal_stats(user_items)})
 
 
 @app.route("/signals/stats", methods=["GET"])
 def signals_stats():
-    items = load_signals()
-    return jsonify({
-        "status": "success",
-        "stats": signal_stats(items),
-    })
+    auth_data = {k: request.args.get(k, "") for k in ("key", "user", "device", "session_token")}
+    auth, error = _auth_session(auth_data)
+    if error: return error
+    items = [x for x in load_signals() if normalize_user_id(x.get("user", "")) == auth["user"]]
+    return jsonify({"status": "success", "stats": signal_stats(items)})
 
 
 @app.route("/scan-batch", methods=["POST"])
 def scan_batch():
     data = request.get_json(silent=True) or {}
-    requested_pairs = data.get("pairs") or []
-    selected_expiry = str(data.get("expiry", "")).strip()
-
+    auth, error = _auth_session(data)
+    if error: return error
+    requested_pairs = data.get("pairs") or []; selected_expiry = str(data.get("expiry", "")).strip()
+    market = str(data.get("market") or "Unknown")[:80]; opts = normalize_scan_options(data.get("scan_options"))
     if not isinstance(requested_pairs, list):
         return jsonify({"status": "error", "message": "pairs must be an array."}), 400
-
-    pairs = []
-    seen = set()
+    pairs, seen = [], set()
     for raw in requested_pairs[:40]:
         pair = str(raw).strip()
-        if pair in YAHOO_SYMBOLS and pair not in seen:
-            pairs.append(pair)
-            seen.add(pair)
-
+        if pair in YAHOO_SYMBOLS and pair not in seen: pairs.append(pair); seen.add(pair)
     if not pairs:
         return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
 
-    key = (selected_expiry, tuple(pairs))
-    now = time.time()
-
+    options_key = (opts["mode"], opts["min_tf"], opts["min_agreement"], opts["min_score"], opts["vol_min"], opts["vol_max"])
+    key = (selected_expiry, tuple(pairs), options_key); now = time.time()
     with batch_cache_lock:
         cached = batch_cache.get(key)
         if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
             payload = cached["payload"]
-            return jsonify({
-                "status": "success",
-                "data": payload["data"],
-                "diagnostics": payload["diagnostics"],
-                "cache_hit": True,
-            })
-
+            found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
+            _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
+            return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
     key_lock = _get_batch_key_lock(key)
     with key_lock:
         now = time.time()
@@ -1970,117 +1973,56 @@ def scan_batch():
             cached = batch_cache.get(key)
             if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
                 payload = cached["payload"]
-                return jsonify({
-                    "status": "success",
-                    "data": payload["data"],
-                    "diagnostics": payload["diagnostics"],
-                    "cache_hit": True,
-                })
+                found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
+                _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
+                return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
 
-        # Do not let one slow/rate-limited Yahoo symbol hold the whole Auto Scan open.
-        # The batch has a hard server-side deadline and returns whatever finished in time.
-        # Slow symbols are marked skipped and will be retried by the next 5-minute re-scan.
-        results_by_pair = {}
-        timed_out_pairs = []
-        workers = min(BATCH_SCAN_WORKERS, len(pairs))
-        batch_started = time.time()
+        results_by_pair, timed_out_pairs = {}, []
+        workers = min(BATCH_SCAN_WORKERS, len(pairs)); batch_started = time.time()
         pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch")
-        future_map = {
-            pool.submit(calculate_live_indicators, pair, selected_expiry): pair
-            for pair in pairs
-        }
-
-        done, pending = wait(
-            future_map.keys(),
-            timeout=BATCH_SCAN_DEADLINE_SECONDS,
-        )
-
+        future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry, opts): pair for pair in pairs}
+        done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
         for future in done:
             pair = future_map[future]
-            try:
-                results_by_pair[pair] = future.result()
+            try: results_by_pair[pair] = future.result()
             except Exception as exc:
-                print(f"Batch scan error for {pair}: {exc}")
-                results_by_pair[pair] = no_signal_result(
-                    pair,
-                    "Scan worker failed for this pair.",
-                    symbol=YAHOO_SYMBOLS.get(pair),
-                )
-
+                print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
         for future in pending:
-            pair = future_map[future]
-            timed_out_pairs.append(pair)
-            future.cancel()
-            results_by_pair[pair] = no_signal_result(
-                pair,
-                "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.",
-                symbol=YAHOO_SYMBOLS.get(pair),
-            )
-
-        # Do not block the HTTP response waiting for still-running Yahoo calls. Their own
-        # request timeout is short, and single-flight locks prevent duplicate fetch storms.
+            pair = future_map[future]; timed_out_pairs.append(pair); future.cancel()
+            results_by_pair[pair] = no_signal_result(pair, "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.", symbol=YAHOO_SYMBOLS.get(pair))
         pool.shutdown(wait=False, cancel_futures=True)
-
         results = [results_by_pair[pair] for pair in pairs]
-        data_available = sum(1 for r in results if r.get("data_age") is not None)
-        data_unavailable = len(results) - data_available
-        signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"})
-        elapsed = round(time.time() - batch_started, 2)
-        diagnostics = {
-            "total_pairs": len(results),
-            "completed_pairs": len(done),
-            "timed_out_pairs": timed_out_pairs,
-            "timed_out_pairs_count": len(timed_out_pairs),
-            "partial_response": bool(timed_out_pairs),
-            "data_available": data_available,
-            "data_unavailable": data_unavailable,
-            "signals_found": signals_found,
-            "elapsed_seconds": elapsed,
-            "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
-            "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
-            "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
-            "batch_workers": workers,
-        }
+        data_available = sum(1 for r in results if r.get("data_age") is not None); data_unavailable = len(results) - data_available
+        signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"}); elapsed = round(time.time() - batch_started, 2)
+        diagnostics = {"total_pairs": len(results), "completed_pairs": len(done), "timed_out_pairs": timed_out_pairs,
+                       "timed_out_pairs_count": len(timed_out_pairs), "partial_response": bool(timed_out_pairs),
+                       "data_available": data_available, "data_unavailable": data_unavailable, "signals_found": signals_found,
+                       "elapsed_seconds": elapsed, "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
+                       "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS, "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
+                       "batch_workers": workers, "scan_mode": opts["mode"]}
         payload = {"data": results, "diagnostics": diagnostics}
-
         with batch_cache_lock:
             batch_cache[key] = {"timestamp": time.time(), "payload": payload}
             if len(batch_cache) > 40:
-                oldest = sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]
-                for old_key, _ in oldest:
-                    batch_cache.pop(old_key, None)
-
-        return jsonify({
-            "status": "success",
-            "data": results,
-            "diagnostics": diagnostics,
-            "cache_hit": False,
-        })
+                for old_key, _ in sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]: batch_cache.pop(old_key, None)
+        _append_scan_event(auth["user"], market, "AUTO", opts["mode"], signals_found > 0)
+        return jsonify({"status": "success", "data": results, "diagnostics": diagnostics, "cache_hit": False})
 
 
 @app.route("/scan", methods=["POST"])
 def scan_markets():
     data = request.get_json(silent=True) or {}
-    selected_pair = str(data.get("pair", "")).strip()
-    selected_expiry = str(data.get("expiry", "")).strip()
-
+    auth, error = _auth_session(data)
+    if error: return error
+    selected_pair = str(data.get("pair", "")).strip(); selected_expiry = str(data.get("expiry", "")).strip()
+    market = str(data.get("market") or "Unknown")[:80]; opts = normalize_scan_options(data.get("scan_options"))
     if not selected_pair or "Auto Scan Best Pair" in selected_pair:
-        return jsonify({
-            "status": "error",
-            "message": "Auto Scan must use /scan-batch with the selected market pair list.",
-        }), 400
-
+        return jsonify({"status": "error", "message": "Auto Scan must use /scan-batch with the selected market pair list."}), 400
     if selected_pair not in YAHOO_SYMBOLS:
-        return jsonify({
-            "status": "error",
-            "message": f"Unsupported pair: {selected_pair}",
-            "data": no_signal_result(
-                selected_pair,
-                "Pair is not configured in Yahoo mapping.",
-            ),
-        }), 400
-
-    result = calculate_live_indicators(selected_pair, selected_expiry)
+        return jsonify({"status": "error", "message": f"Unsupported pair: {selected_pair}",
+                        "data": no_signal_result(selected_pair, "Pair is not configured in Yahoo mapping.")}), 400
+    result = calculate_live_indicators(selected_pair, selected_expiry, opts)
+    _append_scan_event(auth["user"], market, selected_pair, opts["mode"], result.get("signal") in {"CALL", "PUT"})
     return jsonify({"status": "success", "data": result})
 
 
@@ -2110,8 +2052,12 @@ def issue_telegram_license(user_ref):
         "user": user,
         "device": None,
         "device_label": None,
+        "session_token": None,
         "created_at": int(time.time()),
         "last_verified_at": None,
+        "last_login_at": None,
+        "plan": DEFAULT_LICENSE_PLAN,
+        "expires_at": None,
     }
     save_licenses(licenses)
     return key
