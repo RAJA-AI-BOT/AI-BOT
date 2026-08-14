@@ -1250,7 +1250,7 @@
                                 <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
                                 <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
                             </button>
-                            <button id="installAppBtn" class="top-btn install-btn" onclick="installPWA()">⬇ INSTALL APP</button>
+                            <button id="installAppBtn" class="top-btn install-btn" style="display:none" onclick="installPWA()">⬇ INSTALL APP</button>
                             <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
                             <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
                         </div>
@@ -1693,55 +1693,66 @@
         function formatDateTime(epoch) { if(!epoch) return '--'; try{return new Date(Number(epoch)*1000).toLocaleString();}catch(e){return '--';} }
         function formatExpiryDate(epoch) { return epoch ? formatDateTime(epoch) : 'Lifetime'; }
 
-        window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); deferredInstallPrompt=event; const b=document.getElementById('installAppBtn'); if(b)b.style.display='inline-flex'; });
-        async function installPWA(){ if(!deferredInstallPrompt){ alert('On mobile, use your browser menu and choose “Install app” or “Add to Home Screen”.'); return; } deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt=null; const b=document.getElementById('installAppBtn'); if(b)b.style.display='none'; }
-        if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 
-        
         function isRajaStandalone() {
             return window.matchMedia('(display-mode: standalone)').matches ||
                    window.navigator.standalone === true;
         }
 
-        window.addEventListener('beforeinstallprompt', (event) => {
-            event.preventDefault();
-            deferredInstallPrompt = event;
-            const b = document.getElementById('installAppBtn');
-            if (b && !isRajaStandalone()) {
-                b.style.display = 'inline-flex';
-                b.innerText = '⬇ INSTALL APP';
-            }
-        });
-
-        window.addEventListener('appinstalled', () => {
-            deferredInstallPrompt = null;
-            const b = document.getElementById('installAppBtn');
-            if (b) b.style.display = 'none';
-        });
-
-        async function installPWA() {
-            const b = document.getElementById('installAppBtn');
+        function setInstallButtonVisible(visible) {
+            const btn = document.getElementById('installAppBtn');
+            if (!btn) return;
 
             if (isRajaStandalone()) {
-                if (b) b.style.display = 'none';
+                btn.style.display = 'none';
                 return;
             }
 
+            btn.style.display = visible ? 'inline-flex' : 'none';
+            btn.innerText = '⬇ INSTALL APP';
+        }
+
+        // Chrome / Edge fires this event only when the current site
+        // is eligible for native PWA installation.
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredInstallPrompt = event;
+            setInstallButtonVisible(true);
+        });
+
+        // When installation finishes, remove the install button.
+        window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            setInstallButtonVisible(false);
+        });
+
+        async function installPWA() {
+            // If already running as the installed app, nothing to install.
+            if (isRajaStandalone()) {
+                setInstallButtonVisible(false);
+                return;
+            }
+
+            // The browser must provide beforeinstallprompt first.
+            // Do not show the old "install not ready" alert.
             if (!deferredInstallPrompt) {
-                alert('App install is not ready yet. Refresh once, wait a few seconds, then tap INSTALL APP again. Do not choose Create shortcut.');
+                setInstallButtonVisible(false);
                 return;
             }
 
             try {
-                deferredInstallPrompt.prompt();
-                const choice = await deferredInstallPrompt.userChoice;
-                if (choice && choice.outcome === 'accepted' && b) {
-                    b.style.display = 'none';
-                }
-            } catch (err) {
-                console.warn('RAJA AI install prompt error:', err);
-            } finally {
+                const promptEvent = deferredInstallPrompt;
                 deferredInstallPrompt = null;
+
+                // This opens Chrome/Edge's real native Install dialog
+                // directly from the dashboard button.
+                await promptEvent.prompt();
+                await promptEvent.userChoice;
+
+                setInstallButtonVisible(false);
+            } catch (err) {
+                console.warn('RAJA AI native install prompt error:', err);
+                setInstallButtonVisible(false);
             }
         }
 
@@ -1753,8 +1764,10 @@
                     console.warn('RAJA AI service worker registration failed:', err);
                 }
 
-                const b = document.getElementById('installAppBtn');
-                if (b && isRajaStandalone()) b.style.display = 'none';
+                // Button must appear only after beforeinstallprompt fires.
+                if (isRajaStandalone()) {
+                    setInstallButtonVisible(false);
+                }
             });
         }
 
