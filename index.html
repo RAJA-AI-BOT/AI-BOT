@@ -1098,9 +1098,38 @@
         .stability-chip small { display:block; color:#8ea8bd; font-size:7px; text-transform:uppercase; font-weight:900; }
         .stability-chip strong { display:block; margin-top:2px; font-size:10px; }
         .stability-low strong { color:#00ff87; }.stability-medium strong { color:#facc15; }.stability-high strong { color:#ff5d7d; }
-        .mini-chart-wrap { position:relative; width:100%; height:170px; margin:8px 0; border:1px solid rgba(96,239,255,.22); background:linear-gradient(180deg,#030914,#06111e); border-radius:10px; overflow:hidden; }
-        .mini-chart-wrap canvas { width:100%; height:100%; display:block; }
-        .mini-chart-label { position:absolute; top:6px; left:8px; color:#60efff; font-size:8px; font-weight:950; letter-spacing:.6px; text-transform:uppercase; z-index:2; }
+        .mini-chart-wrap {
+            position:relative;
+            width:100%;
+            height:190px;
+            margin:8px 0;
+            border:1px solid rgba(96,239,255,.25);
+            background:
+                radial-gradient(circle at 50% 20%,rgba(34,211,238,.045),transparent 46%),
+                linear-gradient(180deg,#020814,#05101d);
+            border-radius:10px;
+            overflow:hidden;
+            box-shadow:inset 0 0 26px rgba(34,211,238,.035);
+        }
+        .mini-chart-wrap canvas {
+            width:100%;
+            height:100%;
+            display:block;
+            image-rendering:auto;
+        }
+        .mini-chart-label {
+            position:absolute;
+            top:7px;
+            left:10px;
+            color:#8defff;
+            font-size:8px;
+            font-weight:950;
+            letter-spacing:.7px;
+            text-transform:uppercase;
+            z-index:2;
+            text-shadow:0 0 10px rgba(96,239,255,.25);
+            pointer-events:none;
+        }
         .replay-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
         .history-replay-btn { border:1px solid rgba(96,239,255,.35); background:rgba(96,239,255,.08); color:#60efff; font-size:7px; font-weight:900; padding:4px 6px; border-radius:5px; cursor:pointer; }
         .settings-section { background:rgba(2,8,18,.72); border:1px solid rgba(96,239,255,.16); border-radius:9px; padding:8px; margin-bottom:7px; text-align:left; }
@@ -1140,14 +1169,14 @@
             .status-grid { grid-template-columns:1fr !important; }
             .mode-buttons { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .custom-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
-            .mini-chart-wrap { height:150px; }
+            .mini-chart-wrap { height:165px; }
         }
         @media (max-width:540px) {
             .daily-performance-grid,.admin-analytics-grid,.profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .guard-grid,.stability-strip { grid-template-columns:1fr; }
             .custom-controls { grid-template-columns:1fr 1fr; }
             .mode-btn { padding:8px 3px; }
-            .mini-chart-wrap { height:138px; }
+            .mini-chart-wrap { height:150px; }
             .signal-entry-window { width:100%; }
         }
         @media (max-width:360px) {
@@ -3189,7 +3218,314 @@
         }
 
         function renderSignalChart(canvas, candles, isBuy=true, entryPrice=null, exitPrice=null) {
-            if(!canvas||!Array.isArray(candles)||candles.length<2)return; const rect=canvas.getBoundingClientRect(); const dpr=Math.max(1,window.devicePixelRatio||1); canvas.width=Math.max(320,Math.floor(rect.width*dpr));canvas.height=Math.max(120,Math.floor(rect.height*dpr));const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);const w=canvas.width/dpr,h=canvas.height/dpr;ctx.clearRect(0,0,w,h);const pad={l:12,r:12,t:24,b:16};const lows=candles.map(c=>Number(c.l)),highs=candles.map(c=>Number(c.h));if(entryPrice)lows.push(Number(entryPrice)),highs.push(Number(entryPrice));if(exitPrice)lows.push(Number(exitPrice)),highs.push(Number(exitPrice));let lo=Math.min(...lows),hi=Math.max(...highs);if(!Number.isFinite(lo)||!Number.isFinite(hi)||hi<=lo)return;const range=(hi-lo)||1;lo-=range*.08;hi+=range*.08;const y=p=>pad.t+(hi-p)/(hi-lo)*(h-pad.t-pad.b);ctx.strokeStyle='rgba(96,239,255,.10)';ctx.lineWidth=1;for(let i=0;i<5;i++){const yy=pad.t+i*(h-pad.t-pad.b)/4;ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(w-pad.r,yy);ctx.stroke();}const step=(w-pad.l-pad.r)/candles.length,body=Math.max(2,Math.min(9,step*.55));candles.forEach((c,i)=>{const x=pad.l+step*(i+.5),o=Number(c.o),cl=Number(c.c),hh=Number(c.h),ll=Number(c.l),up=cl>=o;ctx.strokeStyle=up?'#00ff87':'#ff5d7d';ctx.fillStyle=up?'#00ff87':'#ff5d7d';ctx.beginPath();ctx.moveTo(x,y(hh));ctx.lineTo(x,y(ll));ctx.stroke();const top=Math.min(y(o),y(cl)),bh=Math.max(1,Math.abs(y(o)-y(cl)));ctx.fillRect(x-body/2,top,body,bh);});const last=Number(candles[candles.length-1].c);const entry=entryPrice?Number(entryPrice):last;ctx.setLineDash([5,4]);ctx.strokeStyle=isBuy?'#00ff87':'#ff5d7d';ctx.beginPath();ctx.moveTo(pad.l,y(entry));ctx.lineTo(w-pad.r,y(entry));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=isBuy?'#00ff87':'#ff5d7d';ctx.font='bold 9px Segoe UI';ctx.fillText(isBuy?'▲ ENTRY / UP':'▼ ENTRY / DOWN',pad.l+4,Math.max(12,y(entry)-5));if(exitPrice){ctx.strokeStyle='#facc15';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(pad.l,y(Number(exitPrice)));ctx.lineTo(w-pad.r,y(Number(exitPrice)));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#facc15';ctx.fillText('EXIT',w-pad.r-30,Math.max(12,y(Number(exitPrice))-4));}}
+            if (!canvas || !Array.isArray(candles) || candles.length < 2) return;
+
+            const clean = candles.map((c, i) => ({
+                o: Number(c && c.o),
+                h: Number(c && c.h),
+                l: Number(c && c.l),
+                c: Number(c && c.c),
+                t: c && (c.t ?? c.time ?? c.timestamp ?? i)
+            })).filter(c =>
+                Number.isFinite(c.o) &&
+                Number.isFinite(c.h) &&
+                Number.isFinite(c.l) &&
+                Number.isFinite(c.c) &&
+                c.h >= Math.max(c.o, c.c) &&
+                c.l <= Math.min(c.o, c.c)
+            );
+
+            if (clean.length < 2) return;
+
+            const rect = canvas.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+
+            const cssW = Math.max(320, rect.width);
+            const cssH = Math.max(120, rect.height);
+            const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+
+            canvas.width = Math.round(cssW * dpr);
+            canvas.height = Math.round(cssH * dpr);
+
+            const ctx = canvas.getContext('2d');
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            ctx.clearRect(0, 0, cssW, cssH);
+
+            // Keep candles readable instead of squeezing every historical bar into the canvas.
+            const maxVisible = cssW < 520 ? 24 : (cssW < 900 ? 30 : 36);
+            const data = clean.slice(-maxVisible);
+
+            const pad = { l: 14, r: 64, t: 28, b: 18 };
+            const plotW = Math.max(80, cssW - pad.l - pad.r);
+            const plotH = Math.max(60, cssH - pad.t - pad.b);
+
+            const lows = data.map(c => c.l);
+            const highs = data.map(c => c.h);
+
+            const entryNum = entryPrice !== null && entryPrice !== undefined && entryPrice !== ''
+                ? Number(entryPrice)
+                : null;
+            const exitNum = exitPrice !== null && exitPrice !== undefined && exitPrice !== ''
+                ? Number(exitPrice)
+                : null;
+
+            if (Number.isFinite(entryNum)) {
+                lows.push(entryNum);
+                highs.push(entryNum);
+            }
+            if (Number.isFinite(exitNum)) {
+                lows.push(exitNum);
+                highs.push(exitNum);
+            }
+
+            let lo = Math.min(...lows);
+            let hi = Math.max(...highs);
+            if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
+
+            let rawRange = hi - lo;
+            if (rawRange <= 0) rawRange = Math.max(Math.abs(hi) * 0.001, 0.00001);
+            lo -= rawRange * 0.13;
+            hi += rawRange * 0.13;
+
+            const y = price => pad.t + ((hi - price) / (hi - lo)) * plotH;
+            const xStep = plotW / data.length;
+            const bodyW = Math.max(4, Math.min(13, xStep * 0.56));
+
+            const priceDecimals = (() => {
+                const v = Math.max(Math.abs(hi), Math.abs(lo));
+                if (v >= 10000) return 1;
+                if (v >= 1000) return 2;
+                if (v >= 100) return 3;
+                if (v >= 10) return 4;
+                if (v >= 1) return 5;
+                return 6;
+            })();
+
+            const fmtPrice = value => Number(value).toFixed(priceDecimals);
+
+            const roundedRect = (x, yy, w, h, r) => {
+                const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+                ctx.beginPath();
+                ctx.moveTo(x + rr, yy);
+                ctx.lineTo(x + w - rr, yy);
+                ctx.quadraticCurveTo(x + w, yy, x + w, yy + rr);
+                ctx.lineTo(x + w, yy + h - rr);
+                ctx.quadraticCurveTo(x + w, yy + h, x + w - rr, yy + h);
+                ctx.lineTo(x + rr, yy + h);
+                ctx.quadraticCurveTo(x, yy + h, x, yy + h - rr);
+                ctx.lineTo(x, yy + rr);
+                ctx.quadraticCurveTo(x, yy, x + rr, yy);
+                ctx.closePath();
+            };
+
+            // Subtle chart area fill.
+            const bg = ctx.createLinearGradient(0, pad.t, 0, pad.t + plotH);
+            bg.addColorStop(0, 'rgba(13,36,58,.16)');
+            bg.addColorStop(1, 'rgba(2,8,18,.02)');
+            ctx.fillStyle = bg;
+            ctx.fillRect(pad.l, pad.t, plotW, plotH);
+
+            // Horizontal grid + right-side price scale.
+            ctx.font = '600 8px Segoe UI, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            for (let i = 0; i < 5; i++) {
+                const ratio = i / 4;
+                const yy = pad.t + ratio * plotH;
+                const price = hi - ratio * (hi - lo);
+
+                ctx.strokeStyle = i === 2
+                    ? 'rgba(96,239,255,.11)'
+                    : 'rgba(96,239,255,.065)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash(i === 2 ? [3, 4] : []);
+                ctx.beginPath();
+                ctx.moveTo(pad.l, yy);
+                ctx.lineTo(pad.l + plotW, yy);
+                ctx.stroke();
+
+                ctx.setLineDash([]);
+                ctx.fillStyle = 'rgba(136,171,194,.68)';
+                ctx.fillText(fmtPrice(price), pad.l + plotW + 7, yy);
+            }
+
+            // Vertical grid for a more platform-like chart.
+            for (let i = 0; i <= 6; i++) {
+                const xx = pad.l + (plotW * i / 6);
+                ctx.strokeStyle = 'rgba(96,239,255,.045)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(xx, pad.t);
+                ctx.lineTo(xx, pad.t + plotH);
+                ctx.stroke();
+            }
+
+            // Latest-candle focus band.
+            const latestX = pad.l + xStep * (data.length - 0.5);
+            ctx.fillStyle = 'rgba(96,239,255,.035)';
+            ctx.fillRect(
+                Math.max(pad.l, latestX - xStep * 0.48),
+                pad.t,
+                Math.min(xStep * 0.96, pad.l + plotW - Math.max(pad.l, latestX - xStep * 0.48)),
+                plotH
+            );
+
+            data.forEach((c, i) => {
+                const x = pad.l + xStep * (i + 0.5);
+                const up = c.c >= c.o;
+                const color = up ? '#18f59a' : '#ff5b7d';
+                const wickColor = up ? 'rgba(24,245,154,.88)' : 'rgba(255,91,125,.88)';
+                const isLatest = i === data.length - 1;
+
+                const highY = y(c.h);
+                const lowY = y(c.l);
+                const openY = y(c.o);
+                const closeY = y(c.c);
+
+                // Wick
+                ctx.save();
+                ctx.strokeStyle = wickColor;
+                ctx.lineWidth = isLatest ? 1.7 : 1.25;
+                ctx.shadowColor = isLatest ? color : 'transparent';
+                ctx.shadowBlur = isLatest ? 7 : 0;
+                ctx.beginPath();
+                ctx.moveTo(x, highY);
+                ctx.lineTo(x, lowY);
+                ctx.stroke();
+                ctx.restore();
+
+                // Body
+                let top = Math.min(openY, closeY);
+                let bodyH = Math.abs(openY - closeY);
+                if (bodyH < 2.4) {
+                    top -= (2.4 - bodyH) / 2;
+                    bodyH = 2.4;
+                }
+
+                ctx.save();
+                ctx.fillStyle = color;
+                ctx.shadowColor = isLatest ? color : 'rgba(0,0,0,0)';
+                ctx.shadowBlur = isLatest ? 10 : 0;
+                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(2.4, bodyW * 0.2));
+                ctx.fill();
+                ctx.restore();
+
+                // Fine outline makes small candle bodies easier to read.
+                ctx.strokeStyle = up ? 'rgba(175,255,223,.42)' : 'rgba(255,197,210,.35)';
+                ctx.lineWidth = 0.65;
+                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(2.4, bodyW * 0.2));
+                ctx.stroke();
+            });
+
+            const last = data[data.length - 1].c;
+            const entry = Number.isFinite(entryNum) ? entryNum : last;
+            const signalColor = isBuy ? '#18f59a' : '#ff5b7d';
+            const entryY = y(entry);
+
+            // Entry line.
+            ctx.save();
+            ctx.setLineDash([6, 5]);
+            ctx.strokeStyle = signalColor;
+            ctx.lineWidth = 1.25;
+            ctx.globalAlpha = 0.88;
+            ctx.beginPath();
+            ctx.moveTo(pad.l, entryY);
+            ctx.lineTo(pad.l + plotW, entryY);
+            ctx.stroke();
+            ctx.restore();
+
+            // Entry label badge.
+            const entryText = isBuy ? '▲ ENTRY / UP' : '▼ ENTRY / DOWN';
+            ctx.font = '800 9px Segoe UI, sans-serif';
+            const entryLabelW = Math.ceil(ctx.measureText(entryText).width) + 12;
+            const entryLabelY = Math.max(pad.t + 3, Math.min(pad.t + plotH - 18, entryY - 20));
+
+            ctx.fillStyle = 'rgba(2,10,19,.92)';
+            roundedRect(pad.l + 4, entryLabelY, entryLabelW, 16, 4);
+            ctx.fill();
+            ctx.strokeStyle = isBuy ? 'rgba(24,245,154,.45)' : 'rgba(255,91,125,.45)';
+            ctx.lineWidth = 1;
+            roundedRect(pad.l + 4, entryLabelY, entryLabelW, 16, 4);
+            ctx.stroke();
+            ctx.fillStyle = signalColor;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(entryText, pad.l + 10, entryLabelY + 8);
+
+            // Current/latest price marker on the right.
+            const lastY = y(last);
+            const lastText = fmtPrice(last);
+            ctx.font = '800 8px Segoe UI, sans-serif';
+            const lastBoxW = Math.max(49, Math.ceil(ctx.measureText(lastText).width) + 10);
+            const lastBoxX = pad.l + plotW + 4;
+            const lastBoxY = Math.max(pad.t, Math.min(pad.t + plotH - 17, lastY - 8));
+
+            ctx.fillStyle = 'rgba(7,24,36,.96)';
+            roundedRect(lastBoxX, lastBoxY, lastBoxW, 17, 4);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(96,239,255,.28)';
+            roundedRect(lastBoxX, lastBoxY, lastBoxW, 17, 4);
+            ctx.stroke();
+            ctx.fillStyle = '#b9f5ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(lastText, lastBoxX + lastBoxW / 2, lastBoxY + 8.5);
+
+            // Latest candle marker.
+            ctx.fillStyle = '#8defff';
+            ctx.font = '800 7px Segoe UI, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('LATEST', latestX, pad.t + 8);
+
+            // Optional replay exit line.
+            if (Number.isFinite(exitNum)) {
+                const exitY = y(exitNum);
+                ctx.save();
+                ctx.strokeStyle = '#facc15';
+                ctx.lineWidth = 1.15;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.moveTo(pad.l, exitY);
+                ctx.lineTo(pad.l + plotW, exitY);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.fillStyle = '#facc15';
+                ctx.font = '800 8px Segoe UI, sans-serif';
+                ctx.textAlign = 'right';
+                ctx.fillText('EXIT', pad.l + plotW - 4, Math.max(pad.t + 8, exitY - 7));
+            }
+
+            // Save chart state so a fullscreen/window resize redraws sharply.
+            canvas.__rajaChartState = {
+                candles: clean,
+                isBuy: !!isBuy,
+                entryPrice: Number.isFinite(entryNum) ? entryNum : null,
+                exitPrice: Number.isFinite(exitNum) ? exitNum : null
+            };
+
+            if (!window.__rajaSignalChartResizeBound) {
+                window.__rajaSignalChartResizeBound = true;
+                let chartResizeTimer = null;
+                window.addEventListener('resize', () => {
+                    clearTimeout(chartResizeTimer);
+                    chartResizeTimer = setTimeout(() => {
+                        ['signalMiniChart', 'replayMiniChart'].forEach(id => {
+                            const target = document.getElementById(id);
+                            const state = target && target.__rajaChartState;
+                            if (target && state) {
+                                renderSignalChart(
+                                    target,
+                                    state.candles,
+                                    state.isBuy,
+                                    state.entryPrice,
+                                    state.exitPrice
+                                );
+                            }
+                        });
+                    }, 100);
+                });
+            }
+        }
 
         function openSignalReplay(signalId) {
             const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');replayPlaybackItem=item;replayPlaybackIndex=Math.min(Math.max(4,(item.chart_preview||[]).length>4?4:(item.chart_preview||[]).length),(item.chart_preview||[]).length);replayPause();renderReplayFrame();
