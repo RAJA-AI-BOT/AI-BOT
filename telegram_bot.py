@@ -482,28 +482,20 @@ def show_approved_to_admin(chat_id):
         return
 
     send_message(chat_id, f"🔐 <b>APPROVED TELEGRAM LICENSES</b> · {len(items)}")
-    # Keep each Telegram message comfortably below the platform text limit.
-    blocks = []
     for i, user in enumerate(items, 1):
-        username = f"@{user.get('username')}" if user.get('username') else "(no username)"
+        username = f"@{user.get('username')}" if user.get("username") else "(no username)"
         name = ((user.get('first_name') or '') + ' ' + (user.get('last_name') or '')).strip() or 'User'
-        blocks.append(
+        text = (
             f"<b>{i}. {html.escape(name)}</b> · {html.escape(username)}\n"
             f"Telegram ID: <code>{user.get('telegram_id')}</code>\n"
             f"UID/ID: <code>{html.escape(user.get('submitted_id') or '--')}</code>\n"
-            f"VIP Key: <code>{html.escape(user.get('license_key') or '--')}</code>"
+            f"VIP Key: <code>{html.escape(user.get('license_key') or '--')}</code>\n"
+            f"Status: <b>{html.escape(str(user.get('status') or '--'))}</b>"
         )
-
-    chunk = ""
-    for block in blocks:
-        candidate = block if not chunk else chunk + "\n\n" + block
-        if len(candidate) > 3300:
-            send_message(chat_id, chunk)
-            chunk = block
-        else:
-            chunk = candidate
-    if chunk:
-        send_message(chat_id, chunk)
+        kb = markup([
+            [btn("❌ REMOVE ACCESS", f"admin:revoke:{user['telegram_id']}")]
+        ])
+        send_message(chat_id, text, kb)
 
 
 def market_keyboard():
@@ -713,6 +705,37 @@ def handle_callback(query, services):
             return
         action, target_id = parts[1], int(parts[2])
         target = get_user(target_id)
+
+        if action == "revoke":
+            if str(target.get("status") or "").upper() != "ACTIVE":
+                answer_callback(callback_id, f"User is {target.get('status','not active')}", True)
+                return
+            target["status"] = "REVOKED"
+            target["stage"] = "REVOKED"
+            save_user(target)
+            send_message(
+                target["chat_id"],
+                "⛔ <b>RAJA AI TELEGRAM ACCESS REMOVED</b>\n\n"
+                "Your Telegram bot access has been revoked by the admin.\n"
+                f"If you believe this is a mistake, contact @{html.escape(SUPPORT_USERNAME)}.",
+                markup([[btn("💬 CONTACT ADMIN", url=contact_url())]])
+            )
+            answer_callback(callback_id, "Access removed")
+            try:
+                edit_message(
+                    chat_id,
+                    message_id,
+                    "⛔ <b>ACCESS REMOVED</b>\n\n"
+                    f"Telegram ID: <code>{target_id}</code>\n"
+                    f"Status: <b>REVOKED</b>"
+                )
+            except Exception:
+                send_message(
+                    chat_id,
+                    f"⛔ Removed access for Telegram user <code>{target_id}</code>."
+                )
+            return
+
         if target.get("status") != "PENDING":
             answer_callback(callback_id, f"Already {target.get('status','processed')}", True)
             return
