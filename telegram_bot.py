@@ -578,7 +578,7 @@ def format_signal(result, expiry):
         f"Agreement: <b>{float(result.get('multi_tf_agreement') or 0):.1f}%</b>\n\n"
         "<b>Multi-Timeframe:</b>\n" + "\n".join(tf_lines) +
         "\n\n⏳ <b>Trade Entry:</b> Take the trade after the current candle closes." +
-        "\n\n<i>Technical confluence is a model score, not a guaranteed win probability.</i>" + warning
+        "\n\n<i>⚡ Powered by RAJA AI • Multi-Timeframe Smart Analysis</i>" + warning
     )
 
 
