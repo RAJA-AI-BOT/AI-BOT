@@ -219,6 +219,62 @@
             .ai-factor:last-child { grid-column:1/-1; }
         }
 
+    
+        /* =========================================================
+           FULL SCREEN CONTROL
+           Browser Fullscreen API + WebKit fallback for supported mobile browsers.
+           ========================================================= */
+        .raja-fullscreen-btn {
+            position: fixed;
+            top: 10px;
+            right: 12px;
+            z-index: 99999;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 34px;
+            padding: 7px 11px;
+            border: 1px solid rgba(96, 239, 255, 0.62);
+            border-radius: 8px;
+            background: rgba(3, 9, 18, 0.90);
+            color: #60efff;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: .35px;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 0 18px rgba(0, 242, 254, 0.18);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            user-select: none;
+            -webkit-user-select: none;
+            transition: transform .18s ease, border-color .18s ease, color .18s ease, background .18s ease;
+        }
+        .raja-fullscreen-btn:hover {
+            transform: translateY(-1px);
+            border-color: #00ff87;
+            color: #00ff87;
+            background: rgba(4, 18, 25, 0.96);
+        }
+        .raja-fullscreen-btn:active { transform: scale(.97); }
+        .raja-fullscreen-btn .fs-icon { font-size: 14px; line-height: 1; }
+        .raja-fullscreen-btn.is-fullscreen {
+            border-color: rgba(0, 255, 135, .70);
+            color: #00ff87;
+        }
+        @media (max-width: 700px) {
+            .raja-fullscreen-btn {
+                top: 7px;
+                right: 7px;
+                min-height: 31px;
+                padding: 6px 8px;
+                font-size: 8px;
+            }
+            .raja-fullscreen-btn .fs-label { display: none; }
+            .raja-fullscreen-btn .fs-icon { font-size: 16px; }
+        }
+
     </style>
 
     <style id="raja-dashboard-v5">
@@ -1083,6 +1139,14 @@
 
 </head>
 <body>
+
+    <button id="rajaFullscreenBtn" class="raja-fullscreen-btn" type="button"
+            onclick="toggleRajaFullscreen()" title="Open dashboard in full screen"
+            aria-label="Open dashboard in full screen">
+        <span id="rajaFullscreenIcon" class="fs-icon">⛶</span>
+        <span id="rajaFullscreenLabel" class="fs-label">FULL SCREEN</span>
+    </button>
+
     <!-- RAJA AI UI V13: momentum graph removed; entry-window timer moved into the signal result area -->
 
     <div class="container">
@@ -3119,7 +3183,61 @@
         function replayPause(){if(replayPlaybackTimer){clearInterval(replayPlaybackTimer);replayPlaybackTimer=null;}}
 
 
-        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
+
+        // =========================================================
+        // RAJA AI FULL SCREEN
+        // Works on desktop browsers and supported Android/tablet browsers.
+        // Fullscreen can only be entered after a real user click.
+        // =========================================================
+        function rajaFullscreenElement() {
+            return document.fullscreenElement || document.webkitFullscreenElement || null;
+        }
+
+        function updateRajaFullscreenButton() {
+            const btn = document.getElementById('rajaFullscreenBtn');
+            const icon = document.getElementById('rajaFullscreenIcon');
+            const label = document.getElementById('rajaFullscreenLabel');
+            if (!btn || !icon || !label) return;
+
+            const active = !!rajaFullscreenElement();
+            btn.classList.toggle('is-fullscreen', active);
+            icon.textContent = active ? '✕' : '⛶';
+            label.textContent = active ? 'EXIT FULL SCREEN' : 'FULL SCREEN';
+            btn.title = active ? 'Exit full screen' : 'Open dashboard in full screen';
+            btn.setAttribute('aria-label', btn.title);
+        }
+
+        async function toggleRajaFullscreen() {
+            const root = document.documentElement;
+            try {
+                if (!rajaFullscreenElement()) {
+                    if (root.requestFullscreen) {
+                        await root.requestFullscreen({ navigationUI: 'hide' });
+                    } else if (root.webkitRequestFullscreen) {
+                        root.webkitRequestFullscreen();
+                    } else {
+                        alert('Full screen is not supported by this browser. You can still use the browser full-screen option.');
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        await document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    }
+                }
+            } catch (error) {
+                console.warn('RAJA full-screen request was blocked:', error);
+                alert('Full screen could not start. Tap the button again or use your browser full-screen option.');
+            } finally {
+                setTimeout(updateRajaFullscreenButton, 60);
+            }
+        }
+
+        document.addEventListener('fullscreenchange', updateRajaFullscreenButton);
+        document.addEventListener('webkitfullscreenchange', updateRajaFullscreenButton);
+
+
+        document.addEventListener('DOMContentLoaded', () => { updateRajaFullscreenButton(); installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
 
     </script>
 </body>
