@@ -91,7 +91,7 @@
         .tf-call { color:#00ff87; border-color:rgba(0,255,135,.45); }
         .tf-put { color:#ff3366; border-color:rgba(255,51,102,.45); }
         .tf-none { color:#94a3b8; border-color:rgba(148,163,184,.25); }
-        .tf-summary-line { font-size:8px; color:#60efff; font-weight:800; margin-top:4px; }
+        .tf-summary-line { font-size:9px; color:#60efff; font-weight:800; margin-top:4px; }
 
         .advanced-filters { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 5px; padding: 3px 6px; margin-top: 4px; font-size: 7.5px; color: #60efff; display: flex; justify-content: center; gap: 3px; font-weight: bold; flex-wrap: wrap; }
         
@@ -420,7 +420,7 @@
         .holo-core strong { display:block; font-size:35px; line-height:1; color:#eaffff; }
         .holo-core span { display:block; margin-top:6px; color:#60efff; font-size:9px; font-weight:900; letter-spacing:1.2px; }
         .holo-platform { position:absolute; width:190px; height:48px; bottom:18px; border-radius:50%; border:2px solid rgba(0,242,254,.5); box-shadow:0 0 22px rgba(0,242,254,.45),inset 0 0 22px rgba(0,255,135,.18); transform:perspective(140px) rotateX(66deg); animation:platformPulse 1.6s ease-in-out infinite; }
-        .holo-radar-beam { position:absolute; z-index:3; width:190px; height:190px; border-radius:50%; background:conic-gradient(from 0deg,transparent 0 77%,rgba(0,255,135,.05) 80%,rgba(96,239,255,.7) 87%,transparent 90%); animation:scannerOrbit 2.8s linear infinite; filter:drop-shadow(0 0 8px #60efff); }
+        .holo-radar-beam { position:absolute; z-index:3; width:190px; height:265px; border-radius:50%; background:conic-gradient(from 0deg,transparent 0 77%,rgba(0,255,135,.05) 80%,rgba(96,239,255,.7) 87%,transparent 90%); animation:scannerOrbit 2.8s linear infinite; filter:drop-shadow(0 0 8px #60efff); }
         .holo-candle-strip { position:absolute; z-index:5; top:32px; left:8%; right:8%; height:54px; display:flex; align-items:end; justify-content:space-around; opacity:.82; pointer-events:none; }
         .holo-candle-strip i { display:block; width:3px; border-radius:2px; background:#00ff87; box-shadow:0 0 8px currentColor; animation:candlePulse 1.4s ease-in-out infinite alternate; }
         .holo-candle-strip i:nth-child(3n) { background:#ff4f76; }
@@ -1146,7 +1146,7 @@
         .admin-analytics-grid { grid-template-columns:repeat(6,minmax(0,1fr)); margin-top:8px; }
         .admin-license-meta .license-plan { color:#60efff; font-weight:900; }
         .pwa-tip { color:#8ea8bd; font-size:8px; margin-top:4px; text-align:center; }
-        .chart-legend { position:absolute; right:8px; top:6px; display:flex; gap:6px; z-index:2; font-size:7px; font-weight:900; }
+        .chart-legend { position:absolute; right:9px; top:7px; display:flex; gap:7px; z-index:2; font-size:8px; font-weight:900; }
         .chart-legend span { padding:2px 5px; border-radius:4px; background:rgba(2,8,18,.75); }
 
         /* Fit laptop, iPad/tablet and mobile without horizontal overflow. */
@@ -1169,14 +1169,14 @@
             .status-grid { grid-template-columns:1fr !important; }
             .mode-buttons { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .custom-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
-            .mini-chart-wrap { height:165px; }
+            .mini-chart-wrap { height:225px; }
         }
         @media (max-width:540px) {
             .daily-performance-grid,.admin-analytics-grid,.profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .guard-grid,.stability-strip { grid-template-columns:1fr; }
             .custom-controls { grid-template-columns:1fr 1fr; }
             .mode-btn { padding:8px 3px; }
-            .mini-chart-wrap { height:150px; }
+            .mini-chart-wrap { height:195px; }
             .signal-entry-window { width:100%; }
         }
         @media (max-width:360px) {
@@ -1429,7 +1429,7 @@
                                         <div id="tradeAlert" class="signal-entry-alert">⏳ WAIT FOR CANDLE CLOSE</div>
                                     </div>
 
-                                    <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · ENTRY LINE</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><canvas id="signalMiniChart"></canvas></div>
+                                    <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · AUTO ZOOM</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><canvas id="signalMiniChart"></canvas></div>
 
                                     <section class="ai-explain-card" id="aiExplainCard">
                                         <div class="intel-title-row"><div class="intel-title">✦ AI EXPLANATION · WHY THIS SIGNAL</div><div class="intel-caption">Based on current closed-candle indicators</div></div>
@@ -3252,7 +3252,7 @@
             ctx.clearRect(0, 0, cssW, cssH);
 
             // Keep candles readable instead of squeezing every historical bar into the canvas.
-            const maxVisible = cssW < 520 ? 24 : (cssW < 900 ? 30 : 36);
+            const maxVisible = cssW < 520 ? 14 : (cssW < 900 ? 16 : 20);
             const data = clean.slice(-maxVisible);
 
             const pad = { l: 14, r: 64, t: 28, b: 18 };
@@ -3289,7 +3289,7 @@
 
             const y = price => pad.t + ((hi - price) / (hi - lo)) * plotH;
             const xStep = plotW / data.length;
-            const bodyW = Math.max(4, Math.min(13, xStep * 0.56));
+            const bodyW = Math.max(7, Math.min(22, xStep * 0.68));
 
             const priceDecimals = (() => {
                 const v = Math.max(Math.abs(hi), Math.abs(lo));
@@ -3336,7 +3336,7 @@
 
                 ctx.strokeStyle = i === 2
                     ? 'rgba(96,239,255,.11)'
-                    : 'rgba(96,239,255,.065)';
+                    : 'rgba(96,239,255,.095)';
                 ctx.lineWidth = 1;
                 ctx.setLineDash(i === 2 ? [3, 4] : []);
                 ctx.beginPath();
@@ -3345,7 +3345,7 @@
                 ctx.stroke();
 
                 ctx.setLineDash([]);
-                ctx.fillStyle = 'rgba(136,171,194,.68)';
+                ctx.fillStyle = 'rgba(190,220,235,.82)';
                 ctx.fillText(fmtPrice(price), pad.l + plotW + 7, yy);
             }
 
@@ -3362,7 +3362,7 @@
 
             // Latest-candle focus band.
             const latestX = pad.l + xStep * (data.length - 0.5);
-            ctx.fillStyle = 'rgba(96,239,255,.035)';
+            ctx.fillStyle = 'rgba(96,239,255,.065)';
             ctx.fillRect(
                 Math.max(pad.l, latestX - xStep * 0.48),
                 pad.t,
@@ -3385,7 +3385,7 @@
                 // Wick
                 ctx.save();
                 ctx.strokeStyle = wickColor;
-                ctx.lineWidth = isLatest ? 1.7 : 1.25;
+                ctx.lineWidth = isLatest ? 2.6 : 2.0;
                 ctx.shadowColor = isLatest ? color : 'transparent';
                 ctx.shadowBlur = isLatest ? 7 : 0;
                 ctx.beginPath();
@@ -3397,23 +3397,23 @@
                 // Body
                 let top = Math.min(openY, closeY);
                 let bodyH = Math.abs(openY - closeY);
-                if (bodyH < 2.4) {
-                    top -= (2.4 - bodyH) / 2;
-                    bodyH = 2.4;
+                if (bodyH < 5) {
+                    top -= (5 - bodyH) / 2;
+                    bodyH = 5;
                 }
 
                 ctx.save();
                 ctx.fillStyle = color;
-                ctx.shadowColor = isLatest ? color : 'rgba(0,0,0,0)';
-                ctx.shadowBlur = isLatest ? 10 : 0;
-                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(2.4, bodyW * 0.2));
+                ctx.shadowColor = color;
+                ctx.shadowBlur = isLatest ? 13 : 3;
+                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(3.5, bodyW * 0.22));
                 ctx.fill();
                 ctx.restore();
 
                 // Fine outline makes small candle bodies easier to read.
                 ctx.strokeStyle = up ? 'rgba(175,255,223,.42)' : 'rgba(255,197,210,.35)';
-                ctx.lineWidth = 0.65;
-                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(2.4, bodyW * 0.2));
+                ctx.lineWidth = 1.0;
+                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(3.5, bodyW * 0.22));
                 ctx.stroke();
             });
 
@@ -3456,7 +3456,7 @@
             const lastY = y(last);
             const lastText = fmtPrice(last);
             ctx.font = '800 8px Segoe UI, sans-serif';
-            const lastBoxW = Math.max(49, Math.ceil(ctx.measureText(lastText).width) + 10);
+            const lastBoxW = Math.max(58, Math.ceil(ctx.measureText(lastText).width) + 14);
             const lastBoxX = pad.l + plotW + 4;
             const lastBoxY = Math.max(pad.t, Math.min(pad.t + plotH - 17, lastY - 8));
 
