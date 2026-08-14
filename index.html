@@ -1203,8 +1203,231 @@
     </style>
 
     <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+
+    <style id="raja-app-features-v1">
+        html, body { width:100%; max-width:100%; overflow-x:hidden; }
+        body { min-height:100dvh; }
+        .container, #mainAppContent, .app-shell, .main-column, .main-panel-card,
+        .config-panel, .status-grid, .right-rail, .side-panel {
+            min-width:0;
+        }
+        img, svg, canvas, video { max-width:100%; }
+
+        /* ---------- APP LOCK ---------- */
+        .raja-lock-overlay {
+            position:fixed; inset:0; z-index:2147483000; display:none;
+            align-items:center; justify-content:center; padding:18px;
+            background:radial-gradient(circle at 50% 18%,rgba(0,242,254,.10),transparent 34%),
+                       rgba(1,5,12,.97);
+            backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+        }
+        .raja-lock-overlay.visible { display:flex; }
+        .raja-lock-card {
+            width:min(390px,100%); border-radius:18px; padding:22px 18px;
+            background:linear-gradient(180deg,#091426,#050b15);
+            border:1px solid rgba(96,239,255,.30);
+            box-shadow:0 24px 80px rgba(0,0,0,.58),0 0 36px rgba(34,211,238,.08);
+            text-align:center;
+        }
+        .raja-lock-mark {
+            width:58px; height:58px; margin:0 auto 12px; border-radius:16px;
+            display:grid; place-items:center; font-size:27px;
+            background:linear-gradient(135deg,rgba(0,255,135,.16),rgba(34,211,238,.17));
+            border:1px solid rgba(0,255,135,.32);
+        }
+        .raja-lock-card h3 { color:#effbff; font-size:17px; margin:0 0 5px; }
+        .raja-lock-card p { color:#8fa8bd; font-size:10px; line-height:1.5; margin:0 0 13px; }
+        .raja-pin-input {
+            width:100%; padding:13px 12px; border-radius:10px; outline:none;
+            border:1px solid rgba(96,239,255,.28); background:#030914; color:#fff;
+            font-size:20px; font-weight:900; text-align:center; letter-spacing:8px;
+        }
+        .raja-lock-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+        .raja-lock-btn {
+            border:1px solid rgba(96,239,255,.25); border-radius:9px; padding:10px 8px;
+            background:#071321; color:#a9eaff; font-size:9px; font-weight:900; cursor:pointer;
+        }
+        .raja-lock-btn.primary { color:#04120e; background:linear-gradient(90deg,#00ff9a,#60efff); border:0; }
+        .raja-lock-message { min-height:16px; margin-top:9px; color:#ff879e; font-size:8.5px; font-weight:800; }
+
+        .raja-modal-overlay {
+            position:fixed; inset:0; z-index:2147482900; display:none; align-items:center;
+            justify-content:center; padding:18px; background:rgba(1,6,14,.84);
+            backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px);
+        }
+        .raja-modal-overlay.visible { display:flex; }
+        .raja-modal-card {
+            width:min(390px,100%); padding:18px; border-radius:16px;
+            background:linear-gradient(180deg,#091426,#050b15);
+            border:1px solid rgba(96,239,255,.26); box-shadow:0 20px 70px rgba(0,0,0,.55);
+        }
+        .raja-modal-card h3 { font-size:14px; color:#eafaff; margin-bottom:5px; }
+        .raja-modal-card p { font-size:9px; color:#8fa8bd; line-height:1.45; margin-bottom:10px; }
+        .raja-modal-card .raja-pin-input { font-size:17px; letter-spacing:6px; margin-top:7px; }
+        .raja-modal-actions { display:flex; gap:7px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+
+        /* ---------- TUTORIAL ---------- */
+        .raja-tutorial-overlay {
+            position:fixed; inset:0; z-index:2147482800; display:none;
+            pointer-events:none;
+        }
+        .raja-tutorial-overlay.visible { display:block; }
+        .raja-tutorial-dim { position:absolute; inset:0; background:rgba(0,4,10,.65); pointer-events:auto; }
+        .raja-tutorial-card {
+            position:fixed; left:50%; bottom:max(18px,env(safe-area-inset-bottom));
+            transform:translateX(-50%); width:min(460px,calc(100vw - 24px));
+            z-index:3; pointer-events:auto; border-radius:16px; padding:15px;
+            background:linear-gradient(180deg,#0a1728,#05101c);
+            border:1px solid rgba(96,239,255,.35);
+            box-shadow:0 20px 70px rgba(0,0,0,.60),0 0 24px rgba(34,211,238,.08);
+        }
+        .raja-tutorial-step { color:#00ff9a; font-size:8px; font-weight:950; letter-spacing:.8px; text-transform:uppercase; }
+        .raja-tutorial-card h3 { color:#f0fbff; font-size:15px; margin:4px 0 5px; }
+        .raja-tutorial-card p { color:#a4b8ca; font-size:10px; line-height:1.5; }
+        .raja-tutorial-actions { display:flex; align-items:center; gap:7px; margin-top:11px; }
+        .raja-tutorial-actions button {
+            border-radius:8px; padding:8px 11px; cursor:pointer; font-size:8.5px; font-weight:900;
+            border:1px solid rgba(96,239,255,.24); background:#071321; color:#a9eaff;
+        }
+        .raja-tutorial-actions .next { margin-left:auto; border:0; background:linear-gradient(90deg,#00ff9a,#60efff); color:#04120e; }
+        .raja-tutorial-focus {
+            position:relative !important; z-index:2147482850 !important;
+            box-shadow:0 0 0 3px rgba(0,255,154,.90),0 0 30px rgba(0,255,154,.42) !important;
+            border-radius:10px !important;
+        }
+
+        /* ---------- SETTINGS FEATURE CARDS ---------- */
+        .app-feature-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+        .app-feature-card {
+            border:1px solid rgba(96,239,255,.14); border-radius:9px; padding:9px;
+            background:rgba(2,9,18,.48); min-width:0;
+        }
+        .app-feature-card small { color:#7894aa; font-size:7px; font-weight:850; text-transform:uppercase; }
+        .app-feature-card strong { display:block; color:#e7f8ff; font-size:9px; margin-top:3px; }
+        .app-feature-actions { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
+        .app-feature-actions button {
+            flex:1 1 92px; border:1px solid rgba(96,239,255,.23); border-radius:7px;
+            padding:7px 6px; background:#071321; color:#9feaff; font-size:7.5px;
+            font-weight:900; cursor:pointer;
+        }
+        .app-feature-actions button.danger { color:#ff8ca4; border-color:rgba(255,93,125,.32); }
+        .app-feature-status { margin-top:6px; color:#7fa1b7; font-size:7px; line-height:1.35; }
+
+        /* ---------- RESPONSIVE APP SHELL ---------- */
+        @media (max-width:1180px) {
+            .container { width:100% !important; max-width:100% !important; padding:10px !important; }
+            .app-shell { grid-template-columns:180px minmax(0,1fr) !important; gap:10px !important; }
+            .right-rail {
+                grid-column:1 / -1; display:grid !important;
+                grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;
+            }
+            .right-rail > * { min-width:0; }
+            .scan-live-grid { grid-template-columns:130px minmax(0,1fr) !important; }
+            .scan-process-panel { grid-column:1 / -1; }
+        }
+
+        @media (max-width:820px) {
+            body { padding:0 !important; }
+            .container { padding:6px !important; margin:0 !important; border-radius:0 !important; }
+            .app-shell { display:block !important; min-height:0 !important; }
+            .side-panel,.main-column,.right-rail { width:100% !important; max-width:100% !important; }
+            .side-panel { margin-bottom:7px; padding:9px !important; border-radius:12px !important; }
+            .brand { padding:2px 4px 8px !important; }
+            .nav-list { display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px !important; }
+            .nav-item { padding:8px 4px !important; font-size:8px !important; text-align:center !important; }
+            .engine-mini,.side-risk-card { display:none !important; }
+            .right-rail { margin-top:8px; grid-template-columns:1fr 1fr !important; padding:8px !important; border-radius:12px !important; }
+            .dashboard-topbar { flex-direction:column !important; align-items:stretch !important; padding:8px !important; }
+            .top-actions { display:grid !important; grid-template-columns:1fr 1fr; width:100% !important; }
+            .top-actions > * { min-width:0 !important; width:100% !important; }
+            .rescan-card { min-width:0 !important; }
+            .main-panel-card,.config-panel,.scan-summary-card { padding:10px !important; border-radius:12px !important; }
+            .status-grid,.config-grid,.signal-intel-bottom,.setup-build-grid,.scan-workspace,.scan-live-grid {
+                grid-template-columns:1fr !important;
+            }
+            .scan-live-grid { gap:8px !important; }
+            .scan-live-left,.scan-process-panel { width:100% !important; }
+            .utility-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+            .expiry-container { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+            .market-heatmap-grid { max-width:100%; }
+            .premium-signal-result,.psr-hero,.signal-entry-window,.mini-chart-wrap { max-width:100% !important; }
+            .signal-entry-window { grid-template-columns:1fr !important; gap:7px !important; text-align:center !important; }
+            .signal-entry-status,.signal-entry-alert { text-align:center !important; }
+            .perf-table-wrap,.inline-list-box { max-width:100%; overflow:auto; }
+            .app-feature-grid { grid-template-columns:1fr; }
+        }
+
+        @media (max-width:520px) {
+            .container { padding:4px !important; }
+            .nav-list { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .dashboard-topbar { border-radius:10px !important; }
+            .top-actions { grid-template-columns:1fr !important; }
+            .right-rail { grid-template-columns:1fr !important; }
+            .status-grid,.snapshot-grid,.ai-explain-grid,.daily-performance-grid,.profile-grid {
+                grid-template-columns:1fr !important;
+            }
+            .config-grid { gap:7px !important; }
+            .expiry-container { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+            .utility-grid { grid-template-columns:1fr 1fr !important; }
+            .scan-heading-row { flex-direction:column; }
+            .signal-direction { font-size:16px !important; }
+            .signal-entry-timer { font-size:23px !important; min-width:0 !important; }
+            .mini-chart-wrap { height:170px !important; }
+            .raja-lock-actions { grid-template-columns:1fr; }
+        }
+
+        @media (max-width:360px) {
+            .nav-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .utility-grid,.expiry-container { grid-template-columns:1fr 1fr !important; }
+        }
+    </style>
+
 </head>
 <body>
+
+    <div id="rajaAppLockOverlay" class="raja-lock-overlay" aria-hidden="true">
+        <div class="raja-lock-card">
+            <div class="raja-lock-mark">🔐</div>
+            <h3>RAJA AI APP LOCK</h3>
+            <p>Enter your local app PIN or use the device biometric option.</p>
+            <input id="rajaUnlockPin" class="raja-pin-input" type="password" inputmode="numeric"
+                   autocomplete="off" maxlength="6" placeholder="••••" onkeydown="if(event.key==='Enter')unlockRajaWithPin()">
+            <div class="raja-lock-actions">
+                <button class="raja-lock-btn primary" onclick="unlockRajaWithPin()">UNLOCK</button>
+                <button id="rajaBiometricUnlockBtn" class="raja-lock-btn" onclick="unlockRajaWithBiometric()">BIOMETRIC</button>
+            </div>
+            <div id="rajaLockMessage" class="raja-lock-message"></div>
+        </div>
+    </div>
+
+    <div id="rajaPinSetupModal" class="raja-modal-overlay" aria-hidden="true">
+        <div class="raja-modal-card">
+            <h3>Set App Lock PIN</h3>
+            <p>Choose a 4–6 digit PIN. This protects the local app screen; your existing RAJA AI license login stays unchanged.</p>
+            <input id="rajaNewPin" class="raja-pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="NEW PIN">
+            <input id="rajaConfirmPin" class="raja-pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="CONFIRM PIN">
+            <div id="rajaPinSetupMessage" class="raja-lock-message"></div>
+            <div class="raja-modal-actions">
+                <button class="raja-lock-btn" onclick="closeRajaPinSetup()">CANCEL</button>
+                <button class="raja-lock-btn primary" onclick="saveRajaAppPin()">SAVE PIN</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="rajaTutorialOverlay" class="raja-tutorial-overlay" aria-hidden="true">
+        <div class="raja-tutorial-dim"></div>
+        <div class="raja-tutorial-card">
+            <div id="rajaTutorialStep" class="raja-tutorial-step">STEP 1 OF 3</div>
+            <h3 id="rajaTutorialTitle">Select Market & Pair</h3>
+            <p id="rajaTutorialText">Choose Crypto/Forex and the pair you want RAJA AI to scan.</p>
+            <div class="raja-tutorial-actions">
+                <button onclick="closeRajaTutorial(true)">SKIP</button>
+                <button id="rajaTutorialBack" onclick="rajaTutorialBack()">BACK</button>
+                <button id="rajaTutorialNext" class="next" onclick="rajaTutorialNext()">NEXT</button>
+            </div>
+        </div>
+    </div>
+
 
     <button id="rajaFullscreenBtn" class="raja-fullscreen-btn" type="button"
             onclick="toggleRajaFullscreen()" title="Open dashboard in full screen"
@@ -1507,6 +1730,44 @@
                                 <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
                                 <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
                                 <div class="settings-section"><h4>Voice Alerts</h4><div class="switch-row"><span>Speak signal aloud (example: “USD CAD, Down signal, one minute”)</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div></div>
+
+                                <div class="settings-section">
+                                    <h4>App Security & Alerts</h4>
+                                    <div class="app-feature-grid">
+                                        <div class="app-feature-card">
+                                            <small>App Lock</small>
+                                            <strong id="rajaLockStatusText">OFF</strong>
+                                            <div class="app-feature-actions">
+                                                <button onclick="openRajaPinSetup()">SET / CHANGE PIN</button>
+                                                <button onclick="lockRajaAppNow()">LOCK NOW</button>
+                                                <button class="danger" onclick="disableRajaAppLock()">DISABLE</button>
+                                            </div>
+                                            <div id="rajaBiometricStatus" class="app-feature-status">Biometric quick unlock: not configured.</div>
+                                            <div class="app-feature-actions"><button onclick="setupRajaBiometric()">SET UP BIOMETRIC</button></div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Signal Notifications</small>
+                                            <strong id="rajaNotificationStatus">CHECKING...</strong>
+                                            <div class="app-feature-actions">
+                                                <button onclick="enableRajaNotifications()">ENABLE ALERTS</button>
+                                                <button onclick="testRajaNotification()">TEST ALERT</button>
+                                            </div>
+                                            <div class="app-feature-status">When a confirmed scan finishes while the installed app is minimized/backgrounded, the service worker can show a system notification.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>App Tutorial</small>
+                                            <strong>3-STEP QUICK GUIDE</strong>
+                                            <div class="app-feature-actions"><button onclick="startRajaTutorial(true)">RUN TUTORIAL</button></div>
+                                            <div class="app-feature-status">Select market → start scan → read the confirmed signal and candle entry timing.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Screen Fit</small>
+                                            <strong>AUTO RESPONSIVE</strong>
+                                            <div class="app-feature-status">Optimized layouts for laptop, tablet and mobile widths.</div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div class="inline-list-box"><div class="inline-item"><span>Active Indicators:</span><span style="color:#00ff87;">8 Layers Active ✔</span></div><div class="inline-item"><span>Multi-TF Engine:</span><span id="settingsModeStatus" style="color:#00ff87;">BALANCED ✔</span></div><div class="inline-item"><span>Auto Re-Scan:</span><span style="color:#00ff87;">5 Minutes ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Underlying proxy feed</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             </div>
                             <div id="newsInlineView" class="inline-content-view">
@@ -2264,7 +2525,7 @@
             }
             if (isUserVerified) {
                 setOuterHeaderVisible(false); mainApp.style.display='block'; activation.style.display='none'; updateBrokerAssets(); startTimer(); restoreAutoRescanSchedule(); updateAutoRescanUI(); updateScanSessionChip(); startLicenseHeartbeat(); renderPrimaryView(); installHistoryMirror();
-                setScanMode(scanMode); hydrateUpgradeSettings(); await refreshTrackedHistory(); loadUserProfile();
+                setScanMode(scanMode); hydrateUpgradeSettings(); await refreshTrackedHistory(); loadUserProfile(); initializeRajaAppFeatures();
             } else { setOuterHeaderVisible(true); mainApp.style.display='none'; activation.style.display='block'; }
         }
 
@@ -3209,6 +3470,7 @@
                 resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
                 resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
             }
+            notifyRajaSignal(signalData, isBuy, confluenceString);
             updateStabilityUI(signalData);
             activePremiumSignal = signalData;
             renderSignalIntelligence(signalData);
@@ -3566,6 +3828,508 @@
 
 
         document.addEventListener('DOMContentLoaded', () => { updateRajaFullscreenButton(); installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
+
+    
+
+        // =========================================================
+        // RAJA AI APP FEATURES V1
+        // Local App Lock · Platform Biometric Quick Unlock
+        // Signal System Notifications · First-run Tutorial
+        // =========================================================
+        const RAJA_LOCK_ENABLED_KEY = 'raja_app_lock_enabled_v1';
+        const RAJA_LOCK_HASH_KEY = 'raja_app_lock_hash_v1';
+        const RAJA_LOCK_SALT_KEY = 'raja_app_lock_salt_v1';
+        const RAJA_BIO_CRED_KEY = 'raja_app_bio_credential_v1';
+        const RAJA_TUTORIAL_KEY = 'raja_tutorial_seen_v1';
+        const RAJA_NOTIFY_KEY = 'raja_signal_notifications_v1';
+
+        let rajaAppIsLocked = false;
+        let rajaHiddenAt = 0;
+        let rajaTutorialIndex = 0;
+        let rajaTutorialTarget = null;
+        let rajaFeaturesInitializedForSession = false;
+
+        function rajaBytesToBase64Url(bytes) {
+            let binary = '';
+            const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+            arr.forEach(b => binary += String.fromCharCode(b));
+            return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+        }
+
+        function rajaBase64UrlToBytes(value) {
+            const base64 = String(value || '').replace(/-/g,'+').replace(/_/g,'/');
+            const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+            const binary = atob(padded);
+            return Uint8Array.from(binary, c => c.charCodeAt(0));
+        }
+
+        function rajaRandomBytes(length=32) {
+            const bytes = new Uint8Array(length);
+            crypto.getRandomValues(bytes);
+            return bytes;
+        }
+
+        async function rajaHashPin(pin, saltB64) {
+            const salt = rajaBase64UrlToBytes(saltB64);
+            const pinBytes = new TextEncoder().encode(String(pin));
+            const combined = new Uint8Array(salt.length + pinBytes.length);
+            combined.set(salt, 0);
+            combined.set(pinBytes, salt.length);
+            const digest = await crypto.subtle.digest('SHA-256', combined);
+            return rajaBytesToBase64Url(new Uint8Array(digest));
+        }
+
+        function rajaLockEnabled() {
+            return localStorage.getItem(RAJA_LOCK_ENABLED_KEY) === '1' &&
+                   !!localStorage.getItem(RAJA_LOCK_HASH_KEY);
+        }
+
+        function updateRajaAppFeatureStatus() {
+            const lockStatus = document.getElementById('rajaLockStatusText');
+            if (lockStatus) {
+                lockStatus.innerText = rajaLockEnabled() ? 'ON · PIN PROTECTED' : 'OFF';
+                lockStatus.style.color = rajaLockEnabled() ? '#00ff87' : '#94a3b8';
+            }
+
+            const bioStatus = document.getElementById('rajaBiometricStatus');
+            const bioReady = !!localStorage.getItem(RAJA_BIO_CRED_KEY);
+            if (bioStatus) {
+                bioStatus.innerText = bioReady
+                    ? 'Biometric quick unlock: configured on this device.'
+                    : 'Biometric quick unlock: not configured.';
+                bioStatus.style.color = bioReady ? '#00ff87' : '#7fa1b7';
+            }
+
+            const notifyStatus = document.getElementById('rajaNotificationStatus');
+            if (notifyStatus) {
+                if (!('Notification' in window)) {
+                    notifyStatus.innerText = 'NOT SUPPORTED';
+                    notifyStatus.style.color = '#ff8ca4';
+                } else {
+                    const permission = Notification.permission;
+                    notifyStatus.innerText = permission === 'granted' ? 'ON · ALLOWED' :
+                                             permission === 'denied' ? 'BLOCKED IN BROWSER' :
+                                             'OFF · PERMISSION NEEDED';
+                    notifyStatus.style.color = permission === 'granted' ? '#00ff87' :
+                                               permission === 'denied' ? '#ff5d7d' : '#facc15';
+                }
+            }
+
+            const bioUnlockBtn = document.getElementById('rajaBiometricUnlockBtn');
+            if (bioUnlockBtn) {
+                bioUnlockBtn.style.display = localStorage.getItem(RAJA_BIO_CRED_KEY) ? '' : 'none';
+            }
+        }
+
+        function openRajaPinSetup() {
+            const modal = document.getElementById('rajaPinSetupModal');
+            const newPin = document.getElementById('rajaNewPin');
+            const confirmPin = document.getElementById('rajaConfirmPin');
+            const msg = document.getElementById('rajaPinSetupMessage');
+            if (newPin) newPin.value = '';
+            if (confirmPin) confirmPin.value = '';
+            if (msg) msg.innerText = '';
+            if (modal) {
+                modal.classList.add('visible');
+                modal.setAttribute('aria-hidden','false');
+                setTimeout(() => newPin && newPin.focus(), 120);
+            }
+        }
+
+        function closeRajaPinSetup() {
+            const modal = document.getElementById('rajaPinSetupModal');
+            if (modal) {
+                modal.classList.remove('visible');
+                modal.setAttribute('aria-hidden','true');
+            }
+        }
+
+        async function saveRajaAppPin() {
+            const pin = String(document.getElementById('rajaNewPin')?.value || '').trim();
+            const confirmPin = String(document.getElementById('rajaConfirmPin')?.value || '').trim();
+            const msg = document.getElementById('rajaPinSetupMessage');
+
+            if (!/^\d{4,6}$/.test(pin)) {
+                if (msg) msg.innerText = 'Use a 4–6 digit numeric PIN.';
+                return;
+            }
+            if (pin !== confirmPin) {
+                if (msg) msg.innerText = 'PIN confirmation does not match.';
+                return;
+            }
+
+            const salt = rajaBytesToBase64Url(rajaRandomBytes(16));
+            const hash = await rajaHashPin(pin, salt);
+            localStorage.setItem(RAJA_LOCK_SALT_KEY, salt);
+            localStorage.setItem(RAJA_LOCK_HASH_KEY, hash);
+            localStorage.setItem(RAJA_LOCK_ENABLED_KEY, '1');
+            if (msg) {
+                msg.style.color = '#00ff87';
+                msg.innerText = 'PIN saved. App Lock is now ON.';
+            }
+            updateRajaAppFeatureStatus();
+            setTimeout(closeRajaPinSetup, 650);
+        }
+
+        function showRajaLock() {
+            if (!rajaLockEnabled() || !isUserVerified) return;
+            closeRajaTutorial(false);
+            rajaAppIsLocked = true;
+            const overlay = document.getElementById('rajaAppLockOverlay');
+            const pin = document.getElementById('rajaUnlockPin');
+            const msg = document.getElementById('rajaLockMessage');
+            if (msg) msg.innerText = '';
+            if (pin) pin.value = '';
+            if (overlay) {
+                overlay.classList.add('visible');
+                overlay.setAttribute('aria-hidden','false');
+                setTimeout(() => pin && pin.focus(), 120);
+            }
+            updateRajaAppFeatureStatus();
+        }
+
+        function hideRajaLock() {
+            rajaAppIsLocked = false;
+            const overlay = document.getElementById('rajaAppLockOverlay');
+            if (overlay) {
+                overlay.classList.remove('visible');
+                overlay.setAttribute('aria-hidden','true');
+            }
+        }
+
+        async function unlockRajaWithPin() {
+            if (!rajaLockEnabled()) return hideRajaLock();
+            const pin = String(document.getElementById('rajaUnlockPin')?.value || '').trim();
+            const msg = document.getElementById('rajaLockMessage');
+            if (!/^\d{4,6}$/.test(pin)) {
+                if (msg) msg.innerText = 'Enter your 4–6 digit PIN.';
+                return;
+            }
+            try {
+                const salt = localStorage.getItem(RAJA_LOCK_SALT_KEY) || '';
+                const expected = localStorage.getItem(RAJA_LOCK_HASH_KEY) || '';
+                const actual = await rajaHashPin(pin, salt);
+                if (actual === expected) {
+                    if (msg) {
+                        msg.style.color = '#00ff87';
+                        msg.innerText = 'Unlocked.';
+                    }
+                    setTimeout(hideRajaLock, 120);
+                } else {
+                    if (msg) {
+                        msg.style.color = '#ff879e';
+                        msg.innerText = 'Incorrect PIN.';
+                    }
+                }
+            } catch (error) {
+                if (msg) msg.innerText = 'Unable to verify PIN on this device.';
+            }
+        }
+
+        function lockRajaAppNow() {
+            if (!rajaLockEnabled()) return openRajaPinSetup();
+            showRajaLock();
+        }
+
+        function disableRajaAppLock() {
+            if (!confirm('Disable RAJA AI App Lock on this device?')) return;
+            localStorage.removeItem(RAJA_LOCK_ENABLED_KEY);
+            localStorage.removeItem(RAJA_LOCK_HASH_KEY);
+            localStorage.removeItem(RAJA_LOCK_SALT_KEY);
+            localStorage.removeItem(RAJA_BIO_CRED_KEY);
+            hideRajaLock();
+            updateRajaAppFeatureStatus();
+        }
+
+        async function setupRajaBiometric() {
+            const status = document.getElementById('rajaBiometricStatus');
+            if (!window.PublicKeyCredential || !navigator.credentials || !crypto?.getRandomValues) {
+                if (status) {
+                    status.style.color = '#ff8ca4';
+                    status.innerText = 'Biometric/WebAuthn is not available in this browser.';
+                }
+                return;
+            }
+            if (!rajaLockEnabled()) {
+                if (status) {
+                    status.style.color = '#facc15';
+                    status.innerText = 'Set an App Lock PIN first, then add biometric unlock.';
+                }
+                openRajaPinSetup();
+                return;
+            }
+
+            try {
+                const userId = rajaRandomBytes(16);
+                const credential = await navigator.credentials.create({
+                    publicKey: {
+                        challenge: rajaRandomBytes(32),
+                        rp: { name: 'RAJA AI PREMIUM' },
+                        user: {
+                            id: userId,
+                            name: 'raja-ai-local-lock',
+                            displayName: 'RAJA AI App Lock'
+                        },
+                        pubKeyCredParams: [
+                            { type:'public-key', alg:-7 },
+                            { type:'public-key', alg:-257 }
+                        ],
+                        authenticatorSelection: {
+                            authenticatorAttachment:'platform',
+                            residentKey:'preferred',
+                            userVerification:'required'
+                        },
+                        timeout:60000,
+                        attestation:'none'
+                    }
+                });
+
+                if (!credential || !credential.rawId) throw new Error('No credential returned');
+                localStorage.setItem(RAJA_BIO_CRED_KEY, rajaBytesToBase64Url(new Uint8Array(credential.rawId)));
+                if (status) {
+                    status.style.color = '#00ff87';
+                    status.innerText = 'Biometric quick unlock configured on this device.';
+                }
+                updateRajaAppFeatureStatus();
+            } catch (error) {
+                if (status) {
+                    status.style.color = '#ff8ca4';
+                    status.innerText = 'Biometric setup cancelled or unavailable on this device.';
+                }
+            }
+        }
+
+        async function unlockRajaWithBiometric() {
+            const msg = document.getElementById('rajaLockMessage');
+            const storedId = localStorage.getItem(RAJA_BIO_CRED_KEY);
+            if (!storedId || !navigator.credentials) {
+                if (msg) msg.innerText = 'Biometric unlock is not configured.';
+                return;
+            }
+
+            try {
+                const assertion = await navigator.credentials.get({
+                    publicKey: {
+                        challenge: rajaRandomBytes(32),
+                        allowCredentials: [{
+                            id: rajaBase64UrlToBytes(storedId),
+                            type:'public-key',
+                            transports:['internal']
+                        }],
+                        userVerification:'required',
+                        timeout:60000
+                    }
+                });
+                if (!assertion) throw new Error('No assertion');
+                if (msg) {
+                    msg.style.color = '#00ff87';
+                    msg.innerText = 'Biometric verified.';
+                }
+                setTimeout(hideRajaLock, 100);
+            } catch (error) {
+                if (msg) {
+                    msg.style.color = '#ff879e';
+                    msg.innerText = 'Biometric unlock cancelled or failed.';
+                }
+            }
+        }
+
+        async function enableRajaNotifications() {
+            const status = document.getElementById('rajaNotificationStatus');
+            if (!('Notification' in window)) {
+                if (status) status.innerText = 'NOT SUPPORTED';
+                return false;
+            }
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') localStorage.setItem(RAJA_NOTIFY_KEY, '1');
+                updateRajaAppFeatureStatus();
+                return permission === 'granted';
+            } catch (error) {
+                updateRajaAppFeatureStatus();
+                return false;
+            }
+        }
+
+        async function rajaPostNotification(payload) {
+            if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+            if (localStorage.getItem(RAJA_NOTIFY_KEY) !== '1') return false;
+
+            try {
+                if ('serviceWorker' in navigator) {
+                    const reg = await navigator.serviceWorker.ready;
+                    if (reg && reg.active) {
+                        reg.active.postMessage({ type:'RAJA_SHOW_NOTIFICATION', payload });
+                        return true;
+                    }
+                    if (reg && reg.showNotification) {
+                        await reg.showNotification(payload.title, payload.options || {});
+                        return true;
+                    }
+                }
+                new Notification(payload.title, payload.options || {});
+                return true;
+            } catch (error) {
+                console.warn('RAJA notification failed:', error);
+                return false;
+            }
+        }
+
+        async function testRajaNotification() {
+            if (!('Notification' in window)) return;
+            if (Notification.permission !== 'granted') {
+                const ok = await enableRajaNotifications();
+                if (!ok) return;
+            }
+            await rajaPostNotification({
+                title:'RAJA AI · Test Alert',
+                options:{
+                    body:'Notifications are ready on this device.',
+                    icon:'/raja-ai-icon-192.png',
+                    badge:'/raja-ai-icon-192.png',
+                    tag:'raja-test',
+                    renotify:false,
+                    data:{ url:'/' }
+                }
+            });
+        }
+
+        async function notifyRajaSignal(signalData, isBuy, confluenceString) {
+            const pair = String(signalData?.pair || 'Selected Pair');
+            const expiry = String(selectedExpiry || signalData?.selectedExpiry || '1m');
+            const direction = isBuy ? 'UP (BUY)' : 'DOWN (SELL)';
+            const body = `${pair} · ${direction} · ${expiry} expiry · Confluence ${confluenceString}`;
+            await rajaPostNotification({
+                title:'RAJA AI · SIGNAL CONFIRMED',
+                options:{
+                    body,
+                    icon:'/raja-ai-icon-192.png',
+                    badge:'/raja-ai-icon-192.png',
+                    tag:'raja-live-signal',
+                    renotify:true,
+                    requireInteraction:false,
+                    vibrate:[160,80,160],
+                    data:{ url:'/' }
+                }
+            });
+        }
+
+        const RAJA_TUTORIAL_STEPS = [
+            {
+                title:'Select Market & Pair',
+                text:'Choose Crypto or Forex, then select a pair or Auto Scan. RAJA AI uses this selection for the next market scan.',
+                selector:'#marketType'
+            },
+            {
+                title:'Start AI Market Scan',
+                text:'Tap START AI MARKET SCAN. The scanner checks the selected market and multi-timeframe filters before confirming a setup.',
+                selector:'#scanBtn'
+            },
+            {
+                title:'Read Signal & Entry Timing',
+                text:'A confirmed UP/DOWN signal appears in the signal area with expiry, confluence and the current-candle countdown. Use the candle timing shown in the app before entering.',
+                selector:'#hudBoxContainer'
+            }
+        ];
+
+        function clearRajaTutorialFocus() {
+            if (rajaTutorialTarget) rajaTutorialTarget.classList.remove('raja-tutorial-focus');
+            rajaTutorialTarget = null;
+        }
+
+        function renderRajaTutorialStep() {
+            const step = RAJA_TUTORIAL_STEPS[rajaTutorialIndex];
+            if (!step) return closeRajaTutorial(false);
+            clearRajaTutorialFocus();
+
+            const stepEl = document.getElementById('rajaTutorialStep');
+            const titleEl = document.getElementById('rajaTutorialTitle');
+            const textEl = document.getElementById('rajaTutorialText');
+            const backBtn = document.getElementById('rajaTutorialBack');
+            const nextBtn = document.getElementById('rajaTutorialNext');
+
+            if (stepEl) stepEl.innerText = `STEP ${rajaTutorialIndex + 1} OF ${RAJA_TUTORIAL_STEPS.length}`;
+            if (titleEl) titleEl.innerText = step.title;
+            if (textEl) textEl.innerText = step.text;
+            if (backBtn) backBtn.style.visibility = rajaTutorialIndex === 0 ? 'hidden' : 'visible';
+            if (nextBtn) nextBtn.innerText = rajaTutorialIndex === RAJA_TUTORIAL_STEPS.length - 1 ? 'FINISH' : 'NEXT';
+
+            const target = document.querySelector(step.selector);
+            if (target) {
+                rajaTutorialTarget = target;
+                target.classList.add('raja-tutorial-focus');
+                try { target.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' }); } catch (_) {}
+            }
+        }
+
+        function startRajaTutorial(force=false) {
+            if (!isUserVerified) return;
+            if (!force && localStorage.getItem(RAJA_TUTORIAL_KEY) === '1') return;
+            if (rajaAppIsLocked) return;
+            rajaTutorialIndex = 0;
+            const overlay = document.getElementById('rajaTutorialOverlay');
+            if (overlay) {
+                overlay.classList.add('visible');
+                overlay.setAttribute('aria-hidden','false');
+            }
+            setTimeout(renderRajaTutorialStep, 120);
+        }
+
+        function closeRajaTutorial(markSeen=true) {
+            clearRajaTutorialFocus();
+            const overlay = document.getElementById('rajaTutorialOverlay');
+            if (overlay) {
+                overlay.classList.remove('visible');
+                overlay.setAttribute('aria-hidden','true');
+            }
+            if (markSeen) localStorage.setItem(RAJA_TUTORIAL_KEY, '1');
+        }
+
+        function rajaTutorialNext() {
+            if (rajaTutorialIndex >= RAJA_TUTORIAL_STEPS.length - 1) {
+                closeRajaTutorial(true);
+                return;
+            }
+            rajaTutorialIndex += 1;
+            renderRajaTutorialStep();
+        }
+
+        function rajaTutorialBack() {
+            if (rajaTutorialIndex <= 0) return;
+            rajaTutorialIndex -= 1;
+            renderRajaTutorialStep();
+        }
+
+        function initializeRajaAppFeatures() {
+            if (!isUserVerified) return;
+            updateRajaAppFeatureStatus();
+
+            if (!rajaFeaturesInitializedForSession) {
+                rajaFeaturesInitializedForSession = true;
+                setTimeout(() => {
+                    if (rajaLockEnabled()) showRajaLock();
+                    else startRajaTutorial(false);
+                }, 450);
+            }
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                rajaHiddenAt = Date.now();
+                return;
+            }
+            if (rajaLockEnabled() && isUserVerified && rajaHiddenAt && (Date.now() - rajaHiddenAt) >= 10000) {
+                showRajaLock();
+            }
+            rajaHiddenAt = 0;
+        });
+
+        window.addEventListener('pageshow', () => {
+            if (rajaLockEnabled() && isUserVerified && rajaFeaturesInitializedForSession) {
+                setTimeout(showRajaLock, 60);
+            }
+            updateRajaAppFeatureStatus();
+        });
 
     </script>
 </body>
