@@ -866,11 +866,14 @@
         .tf-chip.tf-selected::after { content:"SELECTED"; position:absolute; top:3px; right:3px; color:#60efff; font-size:5px; font-weight:900; }
 
         /* Scan telemetry strip */
-        .scan-telemetry { grid-column:1/-1; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; margin-top:2px; }
+        .scan-telemetry { grid-column:1/-1; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin-top:2px; }
         .scan-telemetry-card { border:1px solid rgba(96,239,255,.12); border-radius:8px; background:rgba(2,10,20,.72); padding:7px; text-align:left; }
         .scan-telemetry-card small { display:block; color:#6f879f; font-size:6.5px; text-transform:uppercase; letter-spacing:.5px; }
         .scan-telemetry-card strong { display:block; color:#00ff87; font-size:10px; margin-top:3px; }
         .scan-telemetry-card.live strong::before { content:"● "; animation:pulseDot 1s infinite; }
+        .scan-telemetry-card.countdown { border-color:rgba(0,255,135,.30); box-shadow:inset 0 0 14px rgba(0,255,135,.04); }
+        .scan-telemetry-card.countdown strong { color:#60efff; font-variant-numeric:tabular-nums; letter-spacing:.6px; }
+
 
         /* Right rail sound alerts */
         .sound-alert-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
@@ -1309,6 +1312,7 @@
                                         <div class="scan-telemetry-card"><small>Scan Progress</small><strong id="scanTelemetryProgress">8%</strong></div>
                                         <div class="scan-telemetry-card"><small>Current Phase</small><strong id="scanTelemetryStage">Collecting Data</strong></div>
                                         <div class="scan-telemetry-card"><small>Elapsed</small><strong id="scanElapsedValue">00:00</strong></div>
+                                        <div class="scan-telemetry-card countdown"><small>Est. Time Left</small><strong id="scanCountdownValue">00:12</strong></div>
                                     </div>
                                     <div class="scan-live-footer">
                                         <div id="liveScanConsole" class="live-scan-console"><div class="live-scan-row scanning">Synchronizing closed candles and multi-timeframe filters...</div></div>
@@ -1851,6 +1855,32 @@
             }
         }
 
+        function formatScanClock(totalSeconds) {
+            const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds || 0)));
+            const mins = Math.floor(safeSeconds / 60);
+            const secs = safeSeconds % 60;
+            return String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+        }
+
+        function updateScanCountdown(progressPercent) {
+            const el = document.getElementById('scanCountdownValue');
+            if (!el) return;
+
+            if (!scanSessionState.running || !scanSessionState.startedAt) {
+                el.innerText = '00:00';
+                return;
+            }
+
+            const elapsed = Math.max(0.25, (Date.now() - scanSessionState.startedAt) / 1000);
+            const progress = Math.max(8, Math.min(96, Number(progressPercent || scanSessionState.progress || 8)));
+
+            // Dynamic ETA derived from elapsed time and current scan progress.
+            // It is intentionally labeled "EST. TIME LEFT" because API/network speed can vary.
+            const estimatedTotal = Math.max(12, Math.min(90, elapsed / (progress / 100)));
+            const remaining = Math.max(1, Math.ceil(estimatedTotal - elapsed));
+            el.innerText = formatScanClock(remaining);
+        }
+
         function setScanProgress(percent) {
             let safe = Math.max(0, Math.min(100, Number(percent || 0)));
             if (scanSessionState.running && safe < Number(scanSessionState.progress || 0) && safe < 100) {
@@ -1871,7 +1901,8 @@
             if (scanSessionState.running && scanSessionState.startedAt) {
                 const elapsed = Math.max(0, Math.floor((Date.now() - scanSessionState.startedAt) / 1000));
                 const elapsedEl = document.getElementById('scanElapsedValue');
-                if (elapsedEl) elapsedEl.innerText = String(Math.floor(elapsed / 60)).padStart(2,'0') + ':' + String(elapsed % 60).padStart(2,'0');
+                if (elapsedEl) elapsedEl.innerText = formatScanClock(elapsed);
+                updateScanCountdown(safe);
             }
             updateScanSessionChip();
             updateSetupBuildMeterProgress(safe);
@@ -1912,6 +1943,8 @@
             if (assetsEl) assetsEl.innerText = String(Number(pairCount || 0));
             const elapsedEl = document.getElementById('scanElapsedValue');
             if (elapsedEl) elapsedEl.innerText = '00:00';
+            const countdownEl = document.getElementById('scanCountdownValue');
+            if (countdownEl) countdownEl.innerText = '00:12';
             primaryViewState = 'scanning';
             updateScanSessionChip();
             setScanProgress(8);
@@ -1923,6 +1956,8 @@
             scanAnimationInterval = null;
             scanSessionState.running = false;
             scanSessionState.progress = 100;
+            const countdownEl = document.getElementById('scanCountdownValue');
+            if (countdownEl) countdownEl.innerText = '00:00';
             primaryViewState = finalView || 'ready';
             updateScanSessionChip();
         }
