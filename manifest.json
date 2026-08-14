@@ -1,1 +1,31 @@
 
+{
+  "id": "/",
+  "name": "RAJA AI PREMIUM",
+  "short_name": "RAJA AI",
+  "description": "RAJA AI Premium multi-timeframe market scanner and trading dashboard.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#020712",
+  "theme_color": "#050b16",
+  "icons": [
+    {
+      "src": "/raja-ai-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/raja-ai-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
