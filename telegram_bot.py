@@ -414,6 +414,8 @@ def welcome_text(user):
         status_line = "\n\n⏳ <b>Status:</b> Pending admin verification."
     elif status == "REJECTED":
         status_line = "\n\n❌ <b>Status:</b> Verification was not approved. Contact admin if you need help."
+    elif status == "EXPIRED":
+        status_line = "\n\n⌛ <b>Status:</b> Your trial/VIP license has expired. Contact admin to renew access."
     return (
         "👑 <b>RAJA AI PREMIUM</b>\n"
         "Multi-Broker AI Service\n\n"
@@ -608,6 +610,124 @@ def _run_scan(user, services):
         send_message(chat_id, "⚠️ Scan could not complete right now. Please try again shortly.", markup([[btn("🔁 TRY AGAIN", "scan:run")], [btn("🏠 MAIN MENU", "menu:home")]]))
 
 
+
+def _telegram_user_ref(user):
+    """Use the same user reference that was used when the license was approved/issued."""
+    submitted = str(user.get("submitted_id") or "").strip()
+    if submitted:
+        return submitted
+    username = str(user.get("username") or "").strip()
+    if username:
+        return "@" + username
+    return str(user.get("telegram_id") or "").strip()
+
+
+def refresh_license_status(user, services):
+    """Turn ACTIVE into EXPIRED when the underlying web/VIP license is no longer valid."""
+    if str(user.get("status") or "").upper() != "ACTIVE":
+        return user
+    key = str(user.get("license_key") or "").strip()
+    valid = False
+    if key:
+        try:
+            valid = bool(services["validate_license"](key, _telegram_user_ref(user)))
+        except Exception as exc:
+            print(f"Telegram license validation warning: {exc}")
+    if not valid:
+        user["status"] = "EXPIRED"
+        user["stage"] = "EXPIRED"
+        save_user(user)
+    return user
+
+
+
+def _format_remaining(seconds):
+    seconds = max(0, int(seconds or 0))
+    hours, rem = divmod(seconds, 3600)
+    minutes = rem // 60
+    if hours:
+        return f"{hours}h {minutes}m"
+    return f"{minutes}m"
+
+
+def trial_expiry_reminder_worker(services):
+    """
+    Background Telegram reminder:
+    - one reminder when a FREE TRIAL has <= 2 hours remaining
+    - one expiry notification when the trial expires
+    Persistent meta markers stop repeated messages after restarts.
+    """
+    interval = max(30, int(os.environ.get("RAJA_TRIAL_REMINDER_INTERVAL", "60")))
+    while True:
+        try:
+            info_fn = services.get("license_info")
+            if not callable(info_fn):
+                time.sleep(interval)
+                continue
+
+            now = int(time.time())
+            for user in approved_users(500):
+                if str(user.get("status") or "").upper() != "ACTIVE":
+                    continue
+                key = str(user.get("license_key") or "").strip()
+                if not key:
+                    continue
+
+                try:
+                    info = info_fn(key, _telegram_user_ref(user)) or {}
+                except Exception as exc:
+                    print(f"Trial reminder license-info warning: {exc}")
+                    continue
+
+                plan = str(info.get("plan") or "").strip().upper()
+                expires_at = int(info.get("expires_at") or 0)
+                if plan != "FREE TRIAL" or not expires_at:
+                    continue
+
+                remaining = expires_at - now
+                marker_base = f"{user.get('telegram_id')}:{key}"
+
+                # Send once when <= 2 hours remain.
+                if 0 < remaining <= 7200:
+                    reminder_key = "trial_reminder_2h:" + marker_base
+                    if not get_meta(reminder_key, ""):
+                        try:
+                            send_message(
+                                user["chat_id"],
+                                "⏳ <b>FREE TRIAL EXPIRY REMINDER</b>\\n\\n"
+                                f"Your RAJA AI free trial has approximately <b>{_format_remaining(remaining)}</b> remaining.\\n\\n"
+                                "If you want to continue after expiry, contact admin for VIP access.",
+                                markup([[btn("💬 CONTACT ADMIN", url=contact_url())]])
+                            )
+                            set_meta(reminder_key, str(now))
+                        except Exception as exc:
+                            print(f"Trial reminder send warning: {exc}")
+
+                # Expire Telegram access automatically and notify once.
+                if remaining <= 0:
+                    expired_key = "trial_expired_notice:" + marker_base
+                    if str(user.get("status") or "").upper() == "ACTIVE":
+                        user["status"] = "EXPIRED"
+                        user["stage"] = "EXPIRED"
+                        save_user(user)
+                    if not get_meta(expired_key, ""):
+                        try:
+                            send_message(
+                                user["chat_id"],
+                                "⌛ <b>FREE TRIAL EXPIRED</b>\\n\\n"
+                                "Your RAJA AI free trial has ended. Market scanning is now locked for this trial.\\n\\n"
+                                "Contact admin if you want to activate VIP access.",
+                                markup([[btn("💬 CONTACT ADMIN", url=contact_url())]])
+                            )
+                            set_meta(expired_key, str(now))
+                        except Exception as exc:
+                            print(f"Trial expiry notice warning: {exc}")
+        except Exception as exc:
+            print(f"Trial expiry worker warning: {exc}")
+
+        time.sleep(interval)
+
+
 def handle_message(message, services):
     chat = message.get("chat") or {}
     sender = message.get("from") or {}
@@ -615,6 +735,7 @@ def handle_message(message, services):
         return
     chat_id = int(chat.get("id"))
     user = sync_identity(sender, chat_id)
+    user = refresh_license_status(user, services)
     text = str(message.get("text") or "").strip()
 
     if text.split(maxsplit=1)[0].lower() in {"/licenses", "/keys", "/approved"}:
@@ -692,6 +813,7 @@ def handle_callback(query, services):
     chat_id = int(chat["id"])
     message_id = int(message.get("message_id") or 0)
     user = sync_identity(sender, chat_id)
+    user = refresh_license_status(user, services)
     data = str(query.get("data") or "")
 
     # Admin actions are always checked against the numeric admin Telegram ID.
@@ -777,6 +899,28 @@ def handle_callback(query, services):
             answer_callback(callback_id, "Rejected")
             send_message(chat_id, f"❌ Rejected Telegram user <code>{target_id}</code>.")
             return
+
+    # All market/scanning callbacks require a currently valid license.
+    protected = (
+        data == "menu:scan"
+        or data.startswith("mkt:")
+        or data.startswith("pairs:")
+        or data == "pair:back"
+        or data.startswith("pairauto:")
+        or (data.startswith("pair:") and data != "pair:back")
+        or data.startswith("exp:")
+        or data == "scan:expiry"
+        or data == "scan:run"
+    )
+    if protected and str(user.get("status") or "").upper() != "ACTIVE":
+        answer_callback(callback_id, "Trial/VIP access expired or inactive", True)
+        send_message(
+            chat_id,
+            "⌛ <b>RAJA AI ACCESS EXPIRED / INACTIVE</b>\n\n"
+            "Your trial or VIP license is no longer active. Contact admin to renew access.",
+            markup([[btn("💬 CONTACT ADMIN", url=contact_url())]])
+        )
+        return
 
     if data == "access:uid":
         user["stage"] = "AWAITING_UID"
@@ -999,6 +1143,13 @@ def register_telegram_routes(app, services):
                 configure_webhook()
             except Exception as exc:
                 print(f"Telegram webhook setup warning: {exc}")
+
         threading.Thread(target=delayed_setup, daemon=True).start()
+        threading.Thread(
+            target=trial_expiry_reminder_worker,
+            args=(services,),
+            daemon=True,
+            name="raja-trial-expiry-reminder",
+        ).start()
     else:
         print("Telegram integration loaded but TELEGRAM_BOT_TOKEN is not set.")
