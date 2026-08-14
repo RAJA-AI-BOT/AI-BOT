@@ -1312,7 +1312,7 @@
                                         <div class="scan-telemetry-card"><small>Scan Progress</small><strong id="scanTelemetryProgress">8%</strong></div>
                                         <div class="scan-telemetry-card"><small>Current Phase</small><strong id="scanTelemetryStage">Collecting Data</strong></div>
                                         <div class="scan-telemetry-card"><small>Elapsed</small><strong id="scanElapsedValue">00:00</strong></div>
-                                        <div class="scan-telemetry-card countdown"><small>Est. Time Left</small><strong id="scanCountdownValue">00:12</strong></div>
+                                        <div class="scan-telemetry-card countdown"><small id="scanCandleLabel">Current 1M Candle</small><strong id="scanCandleTimer">01:00</strong></div>
                                     </div>
                                     <div class="scan-live-footer">
                                         <div id="liveScanConsole" class="live-scan-console"><div class="live-scan-row scanning">Synchronizing closed candles and multi-timeframe filters...</div></div>
@@ -1686,6 +1686,7 @@
         let primaryViewState = 'ready';
         let scanSessionState = { running: false, progress: 0, startedAt: 0, autoTriggered: false, pairCount: 0 };
         let scanAnimationInterval = null;
+        let scanCandleInterval = null;
         let marketNewsLoadedAt = 0;
 
         // Auto Scan pair rotation: avoid feeding the same pair repeatedly.
@@ -1862,23 +1863,31 @@
             return String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
         }
 
-        function updateScanCountdown(progressPercent) {
-            const el = document.getElementById('scanCountdownValue');
-            if (!el) return;
+        function updateScanCandleTimer() {
+            const timerEl = document.getElementById('scanCandleTimer');
+            const labelEl = document.getElementById('scanCandleLabel');
+            if (!timerEl) return;
 
-            if (!scanSessionState.running || !scanSessionState.startedAt) {
-                el.innerText = '00:00';
-                return;
-            }
+            const candleSeconds = Math.max(1, getExpirySeconds(selectedExpiry));
+            const nowSec = Math.floor(Date.now() / 1000);
+            const secIntoCandle = nowSec % candleSeconds;
+            const secondsToClose = secIntoCandle === 0
+                ? candleSeconds
+                : candleSeconds - secIntoCandle;
 
-            const elapsed = Math.max(0.25, (Date.now() - scanSessionState.startedAt) / 1000);
-            const progress = Math.max(8, Math.min(96, Number(progressPercent || scanSessionState.progress || 8)));
+            timerEl.innerText = formatScanClock(secondsToClose);
+            if (labelEl) labelEl.innerText = 'Current ' + String(selectedExpiry || '1m').toUpperCase() + ' Candle';
+        }
 
-            // Dynamic ETA derived from elapsed time and current scan progress.
-            // It is intentionally labeled "EST. TIME LEFT" because API/network speed can vary.
-            const estimatedTotal = Math.max(12, Math.min(90, elapsed / (progress / 100)));
-            const remaining = Math.max(1, Math.ceil(estimatedTotal - elapsed));
-            el.innerText = formatScanClock(remaining);
+        function startScanCandleTimer() {
+            if (scanCandleInterval) clearInterval(scanCandleInterval);
+            updateScanCandleTimer();
+            scanCandleInterval = setInterval(updateScanCandleTimer, 250);
+        }
+
+        function stopScanCandleTimer() {
+            if (scanCandleInterval) clearInterval(scanCandleInterval);
+            scanCandleInterval = null;
         }
 
         function setScanProgress(percent) {
@@ -1902,7 +1911,6 @@
                 const elapsed = Math.max(0, Math.floor((Date.now() - scanSessionState.startedAt) / 1000));
                 const elapsedEl = document.getElementById('scanElapsedValue');
                 if (elapsedEl) elapsedEl.innerText = formatScanClock(elapsed);
-                updateScanCountdown(safe);
             }
             updateScanSessionChip();
             updateSetupBuildMeterProgress(safe);
@@ -1943,11 +1951,10 @@
             if (assetsEl) assetsEl.innerText = String(Number(pairCount || 0));
             const elapsedEl = document.getElementById('scanElapsedValue');
             if (elapsedEl) elapsedEl.innerText = '00:00';
-            const countdownEl = document.getElementById('scanCountdownValue');
-            if (countdownEl) countdownEl.innerText = '00:12';
             primaryViewState = 'scanning';
             updateScanSessionChip();
             setScanProgress(8);
+            startScanCandleTimer();
             startScanAnimation();
         }
 
@@ -1956,8 +1963,7 @@
             scanAnimationInterval = null;
             scanSessionState.running = false;
             scanSessionState.progress = 100;
-            const countdownEl = document.getElementById('scanCountdownValue');
-            if (countdownEl) countdownEl.innerText = '00:00';
+            stopScanCandleTimer();
             primaryViewState = finalView || 'ready';
             updateScanSessionChip();
         }
@@ -2642,6 +2648,7 @@
             document.querySelectorAll('.expiry-btn').forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
             selectedExpiry = time;
+            updateScanCandleTimer();
 
             // Changing expiry means the old signal-entry window no longer applies.
             // Show the live candle countdown for the newly selected timeframe and
