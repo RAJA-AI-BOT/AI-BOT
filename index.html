@@ -420,7 +420,7 @@
         .holo-core strong { display:block; font-size:35px; line-height:1; color:#eaffff; }
         .holo-core span { display:block; margin-top:6px; color:#60efff; font-size:9px; font-weight:900; letter-spacing:1.2px; }
         .holo-platform { position:absolute; width:190px; height:48px; bottom:18px; border-radius:50%; border:2px solid rgba(0,242,254,.5); box-shadow:0 0 22px rgba(0,242,254,.45),inset 0 0 22px rgba(0,255,135,.18); transform:perspective(140px) rotateX(66deg); animation:platformPulse 1.6s ease-in-out infinite; }
-        .holo-radar-beam { position:absolute; z-index:3; width:190px; height:265px; border-radius:50%; background:conic-gradient(from 0deg,transparent 0 77%,rgba(0,255,135,.05) 80%,rgba(96,239,255,.7) 87%,transparent 90%); animation:scannerOrbit 2.8s linear infinite; filter:drop-shadow(0 0 8px #60efff); }
+        .holo-radar-beam { position:absolute; z-index:3; width:190px; height:220px; border-radius:50%; background:conic-gradient(from 0deg,transparent 0 77%,rgba(0,255,135,.05) 80%,rgba(96,239,255,.7) 87%,transparent 90%); animation:scannerOrbit 2.8s linear infinite; filter:drop-shadow(0 0 8px #60efff); }
         .holo-candle-strip { position:absolute; z-index:5; top:32px; left:8%; right:8%; height:54px; display:flex; align-items:end; justify-content:space-around; opacity:.82; pointer-events:none; }
         .holo-candle-strip i { display:block; width:3px; border-radius:2px; background:#00ff87; box-shadow:0 0 8px currentColor; animation:candlePulse 1.4s ease-in-out infinite alternate; }
         .holo-candle-strip i:nth-child(3n) { background:#ff4f76; }
@@ -1104,12 +1104,10 @@
             height:190px;
             margin:8px 0;
             border:1px solid rgba(96,239,255,.25);
-            background:
-                radial-gradient(circle at 50% 20%,rgba(34,211,238,.045),transparent 46%),
-                linear-gradient(180deg,#020814,#05101d);
+            background:linear-gradient(180deg,#151a26,#101520);
             border-radius:10px;
             overflow:hidden;
-            box-shadow:inset 0 0 26px rgba(34,211,238,.035);
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.015);
         }
         .mini-chart-wrap canvas {
             width:100%;
@@ -1169,14 +1167,14 @@
             .status-grid { grid-template-columns:1fr !important; }
             .mode-buttons { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .custom-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
-            .mini-chart-wrap { height:225px; }
+            .mini-chart-wrap { height:190px; }
         }
         @media (max-width:540px) {
             .daily-performance-grid,.admin-analytics-grid,.profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
             .guard-grid,.stability-strip { grid-template-columns:1fr; }
             .custom-controls { grid-template-columns:1fr 1fr; }
             .mode-btn { padding:8px 3px; }
-            .mini-chart-wrap { height:195px; }
+            .mini-chart-wrap { height:170px; }
             .signal-entry-window { width:100%; }
         }
         @media (max-width:360px) {
@@ -1429,7 +1427,7 @@
                                         <div id="tradeAlert" class="signal-entry-alert">⏳ WAIT FOR CANDLE CLOSE</div>
                                     </div>
 
-                                    <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · AUTO ZOOM</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><canvas id="signalMiniChart"></canvas></div>
+                                    <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · 15 CANDLES</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><canvas id="signalMiniChart"></canvas></div>
 
                                     <section class="ai-explain-card" id="aiExplainCard">
                                         <div class="intel-title-row"><div class="intel-title">✦ AI EXPLANATION · WHY THIS SIGNAL</div><div class="intel-caption">Based on current closed-candle indicators</div></div>
@@ -3237,6 +3235,9 @@
 
             if (clean.length < 2) return;
 
+            // User-facing preview: always show the latest 15 candles.
+            const data = clean.slice(-15);
+
             const rect = canvas.getBoundingClientRect();
             if (!rect.width || !rect.height) return;
 
@@ -3251,13 +3252,10 @@
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             ctx.clearRect(0, 0, cssW, cssH);
 
-            // Keep candles readable instead of squeezing every historical bar into the canvas.
-            const maxVisible = cssW < 520 ? 14 : (cssW < 900 ? 16 : 20);
-            const data = clean.slice(-maxVisible);
-
-            const pad = { l: 14, r: 64, t: 28, b: 18 };
-            const plotW = Math.max(80, cssW - pad.l - pad.r);
-            const plotH = Math.max(60, cssH - pad.t - pad.b);
+            // Clean trading-platform spacing.
+            const pad = { l: 16, r: 62, t: 26, b: 20 };
+            const plotW = Math.max(120, cssW - pad.l - pad.r);
+            const plotH = Math.max(70, cssH - pad.t - pad.b);
 
             const lows = data.map(c => c.l);
             const highs = data.map(c => c.h);
@@ -3282,220 +3280,172 @@
             let hi = Math.max(...highs);
             if (!Number.isFinite(lo) || !Number.isFinite(hi)) return;
 
-            let rawRange = hi - lo;
-            if (rawRange <= 0) rawRange = Math.max(Math.abs(hi) * 0.001, 0.00001);
-            lo -= rawRange * 0.13;
-            hi += rawRange * 0.13;
+            let range = hi - lo;
+            if (range <= 0) range = Math.max(Math.abs(hi) * 0.001, 0.00001);
+
+            // Slight headroom/footroom just like broker charts.
+            lo -= range * 0.10;
+            hi += range * 0.10;
 
             const y = price => pad.t + ((hi - price) / (hi - lo)) * plotH;
-            const xStep = plotW / data.length;
-            const bodyW = Math.max(7, Math.min(22, xStep * 0.68));
+            const step = plotW / data.length;
+            const bodyW = Math.max(7, Math.min(13, step * 0.46));
 
-            const priceDecimals = (() => {
-                const v = Math.max(Math.abs(hi), Math.abs(lo));
-                if (v >= 10000) return 1;
-                if (v >= 1000) return 2;
-                if (v >= 100) return 3;
-                if (v >= 10) return 4;
-                if (v >= 1) return 5;
-                return 6;
-            })();
+            const absMax = Math.max(Math.abs(hi), Math.abs(lo));
+            const decimals =
+                absMax >= 10000 ? 1 :
+                absMax >= 1000  ? 2 :
+                absMax >= 100   ? 3 :
+                absMax >= 10    ? 4 :
+                absMax >= 1     ? 5 : 6;
 
-            const fmtPrice = value => Number(value).toFixed(priceDecimals);
+            const fmtPrice = value => Number(value).toFixed(decimals);
 
-            const roundedRect = (x, yy, w, h, r) => {
-                const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
-                ctx.beginPath();
-                ctx.moveTo(x + rr, yy);
-                ctx.lineTo(x + w - rr, yy);
-                ctx.quadraticCurveTo(x + w, yy, x + w, yy + rr);
-                ctx.lineTo(x + w, yy + h - rr);
-                ctx.quadraticCurveTo(x + w, yy + h, x + w - rr, yy + h);
-                ctx.lineTo(x + rr, yy + h);
-                ctx.quadraticCurveTo(x, yy + h, x, yy + h - rr);
-                ctx.lineTo(x, yy + rr);
-                ctx.quadraticCurveTo(x, yy, x + rr, yy);
-                ctx.closePath();
-            };
-
-            // Subtle chart area fill.
+            // --- BACKGROUND ---
             const bg = ctx.createLinearGradient(0, pad.t, 0, pad.t + plotH);
-            bg.addColorStop(0, 'rgba(13,36,58,.16)');
-            bg.addColorStop(1, 'rgba(2,8,18,.02)');
+            bg.addColorStop(0, '#151a26');
+            bg.addColorStop(1, '#101520');
             ctx.fillStyle = bg;
             ctx.fillRect(pad.l, pad.t, plotW, plotH);
 
-            // Horizontal grid + right-side price scale.
-            ctx.font = '600 8px Segoe UI, sans-serif';
-            ctx.textAlign = 'left';
-            ctx.textBaseline = 'middle';
-            for (let i = 0; i < 5; i++) {
-                const ratio = i / 4;
-                const yy = pad.t + ratio * plotH;
-                const price = hi - ratio * (hi - lo);
-
-                ctx.strokeStyle = i === 2
-                    ? 'rgba(96,239,255,.11)'
-                    : 'rgba(96,239,255,.095)';
-                ctx.lineWidth = 1;
-                ctx.setLineDash(i === 2 ? [3, 4] : []);
+            // --- GRID ---
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 5; i++) {
+                const yy = Math.round(pad.t + (plotH * i / 5)) + 0.5;
+                ctx.strokeStyle = 'rgba(130,145,165,.20)';
                 ctx.beginPath();
                 ctx.moveTo(pad.l, yy);
                 ctx.lineTo(pad.l + plotW, yy);
                 ctx.stroke();
-
-                ctx.setLineDash([]);
-                ctx.fillStyle = 'rgba(190,220,235,.82)';
-                ctx.fillText(fmtPrice(price), pad.l + plotW + 7, yy);
             }
 
-            // Vertical grid for a more platform-like chart.
             for (let i = 0; i <= 6; i++) {
-                const xx = pad.l + (plotW * i / 6);
-                ctx.strokeStyle = 'rgba(96,239,255,.045)';
-                ctx.lineWidth = 1;
+                const xx = Math.round(pad.l + (plotW * i / 6)) + 0.5;
+                ctx.strokeStyle = 'rgba(130,145,165,.13)';
                 ctx.beginPath();
                 ctx.moveTo(xx, pad.t);
                 ctx.lineTo(xx, pad.t + plotH);
                 ctx.stroke();
             }
 
-            // Latest-candle focus band.
-            const latestX = pad.l + xStep * (data.length - 0.5);
-            ctx.fillStyle = 'rgba(96,239,255,.065)';
-            ctx.fillRect(
-                Math.max(pad.l, latestX - xStep * 0.48),
-                pad.t,
-                Math.min(xStep * 0.96, pad.l + plotW - Math.max(pad.l, latestX - xStep * 0.48)),
-                plotH
-            );
+            // --- RIGHT PRICE SCALE ---
+            ctx.font = '600 8px Segoe UI, sans-serif';
+            ctx.fillStyle = 'rgba(205,215,228,.82)';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
 
+            for (let i = 0; i <= 4; i++) {
+                const ratio = i / 4;
+                const price = hi - ratio * (hi - lo);
+                const yy = pad.t + ratio * plotH;
+                ctx.fillText(fmtPrice(price), pad.l + plotW + 7, yy);
+            }
+
+            // --- CANDLES ---
             data.forEach((c, i) => {
-                const x = pad.l + xStep * (i + 0.5);
+                const x = pad.l + step * (i + 0.5);
                 const up = c.c >= c.o;
-                const color = up ? '#18f59a' : '#ff5b7d';
-                const wickColor = up ? 'rgba(24,245,154,.88)' : 'rgba(255,91,125,.88)';
-                const isLatest = i === data.length - 1;
+
+                // Quotex-like clean colors: no heavy neon glow.
+                const bodyColor = up ? '#16b96e' : '#e85b4e';
+                const wickColor = up ? '#1fc77a' : '#ef685a';
 
                 const highY = y(c.h);
                 const lowY = y(c.l);
                 const openY = y(c.o);
                 const closeY = y(c.c);
 
-                // Wick
+                // Wick: crisp 1.5px line.
                 ctx.save();
                 ctx.strokeStyle = wickColor;
-                ctx.lineWidth = isLatest ? 2.6 : 2.0;
-                ctx.shadowColor = isLatest ? color : 'transparent';
-                ctx.shadowBlur = isLatest ? 7 : 0;
+                ctx.lineWidth = 1.5;
                 ctx.beginPath();
-                ctx.moveTo(x, highY);
-                ctx.lineTo(x, lowY);
+                ctx.moveTo(Math.round(x) + 0.5, highY);
+                ctx.lineTo(Math.round(x) + 0.5, lowY);
                 ctx.stroke();
                 ctx.restore();
 
-                // Body
+                // Body: real OHLC shape, minimum 2.5px so doji remains visible.
                 let top = Math.min(openY, closeY);
                 let bodyH = Math.abs(openY - closeY);
-                if (bodyH < 5) {
-                    top -= (5 - bodyH) / 2;
-                    bodyH = 5;
+                if (bodyH < 2.5) {
+                    top -= (2.5 - bodyH) / 2;
+                    bodyH = 2.5;
                 }
 
-                ctx.save();
-                ctx.fillStyle = color;
-                ctx.shadowColor = color;
-                ctx.shadowBlur = isLatest ? 13 : 3;
-                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(3.5, bodyW * 0.22));
-                ctx.fill();
-                ctx.restore();
+                const left = Math.round(x - bodyW / 2);
+                const width = Math.max(2, Math.round(bodyW));
 
-                // Fine outline makes small candle bodies easier to read.
-                ctx.strokeStyle = up ? 'rgba(175,255,223,.42)' : 'rgba(255,197,210,.35)';
-                ctx.lineWidth = 1.0;
-                roundedRect(x - bodyW / 2, top, bodyW, bodyH, Math.min(3.5, bodyW * 0.22));
-                ctx.stroke();
+                ctx.fillStyle = bodyColor;
+                ctx.fillRect(left, top, width, bodyH);
+
+                // Fine body edge for clarity.
+                ctx.strokeStyle = up ? 'rgba(130,255,190,.35)' : 'rgba(255,180,165,.32)';
+                ctx.lineWidth = 0.75;
+                ctx.strokeRect(left + 0.5, top + 0.5, Math.max(1, width - 1), Math.max(1, bodyH - 1));
             });
 
+            // --- ENTRY LINE ---
             const last = data[data.length - 1].c;
             const entry = Number.isFinite(entryNum) ? entryNum : last;
-            const signalColor = isBuy ? '#18f59a' : '#ff5b7d';
+            const signalColor = isBuy ? '#16b96e' : '#e85b4e';
             const entryY = y(entry);
 
-            // Entry line.
             ctx.save();
             ctx.setLineDash([6, 5]);
             ctx.strokeStyle = signalColor;
-            ctx.lineWidth = 1.25;
-            ctx.globalAlpha = 0.88;
+            ctx.lineWidth = 1.15;
             ctx.beginPath();
             ctx.moveTo(pad.l, entryY);
             ctx.lineTo(pad.l + plotW, entryY);
             ctx.stroke();
             ctx.restore();
 
-            // Entry label badge.
+            // Entry label.
             const entryText = isBuy ? '▲ ENTRY / UP' : '▼ ENTRY / DOWN';
             ctx.font = '800 9px Segoe UI, sans-serif';
-            const entryLabelW = Math.ceil(ctx.measureText(entryText).width) + 12;
-            const entryLabelY = Math.max(pad.t + 3, Math.min(pad.t + plotH - 18, entryY - 20));
-
-            ctx.fillStyle = 'rgba(2,10,19,.92)';
-            roundedRect(pad.l + 4, entryLabelY, entryLabelW, 16, 4);
-            ctx.fill();
-            ctx.strokeStyle = isBuy ? 'rgba(24,245,154,.45)' : 'rgba(255,91,125,.45)';
-            ctx.lineWidth = 1;
-            roundedRect(pad.l + 4, entryLabelY, entryLabelW, 16, 4);
-            ctx.stroke();
-            ctx.fillStyle = signalColor;
             ctx.textAlign = 'left';
             ctx.textBaseline = 'middle';
-            ctx.fillText(entryText, pad.l + 10, entryLabelY + 8);
 
-            // Current/latest price marker on the right.
+            const labelW = Math.ceil(ctx.measureText(entryText).width) + 12;
+            const labelY = Math.max(pad.t + 3, Math.min(pad.t + plotH - 18, entryY - 18));
+
+            ctx.fillStyle = '#0c111a';
+            ctx.fillRect(pad.l + 4, labelY, labelW, 16);
+            ctx.strokeStyle = signalColor;
+            ctx.lineWidth = 1;
+            ctx.strokeRect(pad.l + 4.5, labelY + 0.5, labelW - 1, 15);
+            ctx.fillStyle = signalColor;
+            ctx.fillText(entryText, pad.l + 10, labelY + 8);
+
+            // --- CURRENT PRICE BADGE ---
             const lastY = y(last);
             const lastText = fmtPrice(last);
             ctx.font = '800 8px Segoe UI, sans-serif';
-            const lastBoxW = Math.max(58, Math.ceil(ctx.measureText(lastText).width) + 14);
-            const lastBoxX = pad.l + plotW + 4;
-            const lastBoxY = Math.max(pad.t, Math.min(pad.t + plotH - 17, lastY - 8));
+            const badgeW = Math.max(54, Math.ceil(ctx.measureText(lastText).width) + 12);
+            const badgeX = pad.l + plotW + 3;
+            const badgeY = Math.max(pad.t, Math.min(pad.t + plotH - 18, lastY - 9));
 
-            ctx.fillStyle = 'rgba(7,24,36,.96)';
-            roundedRect(lastBoxX, lastBoxY, lastBoxW, 17, 4);
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(96,239,255,.28)';
-            roundedRect(lastBoxX, lastBoxY, lastBoxW, 17, 4);
-            ctx.stroke();
-            ctx.fillStyle = '#b9f5ff';
+            ctx.fillStyle = '#2086d4';
+            ctx.fillRect(badgeX, badgeY, badgeW, 18);
+            ctx.fillStyle = '#ffffff';
             ctx.textAlign = 'center';
-            ctx.fillText(lastText, lastBoxX + lastBoxW / 2, lastBoxY + 8.5);
+            ctx.fillText(lastText, badgeX + badgeW / 2, badgeY + 9);
 
-            // Latest candle marker.
-            ctx.fillStyle = '#8defff';
-            ctx.font = '800 7px Segoe UI, sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('LATEST', latestX, pad.t + 8);
-
-            // Optional replay exit line.
+            // Optional exit marker for replay.
             if (Number.isFinite(exitNum)) {
                 const exitY = y(exitNum);
                 ctx.save();
-                ctx.strokeStyle = '#facc15';
-                ctx.lineWidth = 1.15;
                 ctx.setLineDash([4, 4]);
+                ctx.strokeStyle = '#f3c14b';
+                ctx.lineWidth = 1;
                 ctx.beginPath();
                 ctx.moveTo(pad.l, exitY);
                 ctx.lineTo(pad.l + plotW, exitY);
                 ctx.stroke();
                 ctx.restore();
-
-                ctx.fillStyle = '#facc15';
-                ctx.font = '800 8px Segoe UI, sans-serif';
-                ctx.textAlign = 'right';
-                ctx.fillText('EXIT', pad.l + plotW - 4, Math.max(pad.t + 8, exitY - 7));
             }
 
-            // Save chart state so a fullscreen/window resize redraws sharply.
             canvas.__rajaChartState = {
                 candles: clean,
                 isBuy: !!isBuy,
