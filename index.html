@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RAJA AI PREMIUM - PREMIUM UI V12 CLEAN SIGNAL</title>
+    <title>RAJA AI PREMIUM - SMART TRADING DASHBOARD</title>
+    <meta name="theme-color" content="#050b16">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
@@ -894,6 +899,87 @@
             .signal-entry-status,.signal-entry-alert { text-align:center; }
             .signal-entry-timer { justify-self:center; min-width:116px; }
         }
+    
+
+        /* ===== RAJA AI V14 SMART DASHBOARD UPGRADES ===== */
+        .upgrade-card { background:linear-gradient(180deg,rgba(8,18,33,.96),rgba(4,11,22,.98)); border:1px solid rgba(96,239,255,.22); border-radius:12px; padding:10px; min-width:0; }
+        .upgrade-title { color:#60efff; font-size:10px; font-weight:950; letter-spacing:.7px; text-transform:uppercase; margin-bottom:7px; }
+        .daily-performance-grid,.admin-analytics-grid,.profile-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
+        .perf-cell,.analytics-cell,.profile-cell { background:rgba(2,8,18,.72); border:1px solid rgba(96,239,255,.14); border-radius:8px; padding:7px; min-width:0; text-align:center; }
+        .perf-cell small,.analytics-cell small,.profile-cell small { display:block; color:#8ea8bd; font-size:7.5px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
+        .perf-cell strong,.analytics-cell strong,.profile-cell strong { display:block; color:#fff; font-size:11px; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mode-panel { margin-top:8px; background:rgba(2,8,18,.7); border:1px solid rgba(96,239,255,.18); border-radius:9px; padding:8px; }
+        .mode-buttons { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+        .mode-btn { border:1px solid rgba(96,239,255,.28); background:rgba(96,239,255,.06); color:#c9f7ff; border-radius:7px; padding:7px 4px; font-size:8.5px; font-weight:950; cursor:pointer; }
+        .mode-btn.active { background:linear-gradient(135deg,#00ff87,#60efff); color:#031019; border-color:transparent; box-shadow:0 0 14px rgba(0,255,135,.22); }
+        .mode-copy { color:#8ea8bd; font-size:8px; line-height:1.4; margin-top:6px; }
+        .custom-controls { display:none; margin-top:7px; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+        .custom-controls.visible { display:grid; }
+        .custom-controls label { display:block; font-size:7px; color:#8ea8bd; font-weight:850; text-transform:uppercase; }
+        .custom-controls input { width:100%; margin-top:2px; padding:6px; border-radius:6px; border:1px solid rgba(96,239,255,.22); background:#050b16; color:#fff; font-size:9px; }
+        .stability-strip { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin:7px 0; }
+        .stability-chip { border-radius:8px; padding:7px; border:1px solid rgba(255,255,255,.10); background:rgba(2,8,18,.72); text-align:center; }
+        .stability-chip small { display:block; color:#8ea8bd; font-size:7px; text-transform:uppercase; font-weight:900; }
+        .stability-chip strong { display:block; margin-top:2px; font-size:10px; }
+        .stability-low strong { color:#00ff87; }.stability-medium strong { color:#facc15; }.stability-high strong { color:#ff5d7d; }
+        .mini-chart-wrap { position:relative; width:100%; height:170px; margin:8px 0; border:1px solid rgba(96,239,255,.22); background:linear-gradient(180deg,#030914,#06111e); border-radius:10px; overflow:hidden; }
+        .mini-chart-wrap canvas { width:100%; height:100%; display:block; }
+        .mini-chart-label { position:absolute; top:6px; left:8px; color:#60efff; font-size:8px; font-weight:950; letter-spacing:.6px; text-transform:uppercase; z-index:2; }
+        .replay-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+        .history-replay-btn { border:1px solid rgba(96,239,255,.35); background:rgba(96,239,255,.08); color:#60efff; font-size:7px; font-weight:900; padding:4px 6px; border-radius:5px; cursor:pointer; }
+        .settings-section { background:rgba(2,8,18,.72); border:1px solid rgba(96,239,255,.16); border-radius:9px; padding:8px; margin-bottom:7px; text-align:left; }
+        .settings-section h4 { color:#60efff; font-size:9px; margin-bottom:6px; text-transform:uppercase; }
+        .guard-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+        .guard-grid input { width:100%; padding:6px; border-radius:6px; border:1px solid rgba(96,239,255,.22); background:#050b16; color:#fff; font-size:9px; }
+        .switch-row { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#cbd5e1; font-size:9px; }
+        .switch-row input { accent-color:#00ff87; }
+        .guard-warning { display:none; margin-top:8px; padding:8px; border-radius:8px; background:rgba(255,51,102,.12); border:1px solid rgba(255,51,102,.35); color:#ff8da6; font-size:9px; font-weight:900; text-align:center; }
+        .guard-warning.visible { display:block; }
+        .install-btn { display:inline-flex; }
+        .profile-actions { display:flex; gap:6px; justify-content:center; margin-top:8px; flex-wrap:wrap; }
+        .profile-actions button { min-width:120px; }
+        .admin-analytics-grid { grid-template-columns:repeat(6,minmax(0,1fr)); margin-top:8px; }
+        .admin-license-meta .license-plan { color:#60efff; font-weight:900; }
+        .pwa-tip { color:#8ea8bd; font-size:8px; margin-top:4px; text-align:center; }
+        .chart-legend { position:absolute; right:8px; top:6px; display:flex; gap:6px; z-index:2; font-size:7px; font-weight:900; }
+        .chart-legend span { padding:2px 5px; border-radius:4px; background:rgba(2,8,18,.75); }
+
+        /* Fit laptop, iPad/tablet and mobile without horizontal overflow. */
+        html, body { width:100%; overflow-x:hidden; }
+        .container { max-width:min(1600px, calc(100vw - 12px)); }
+        .app-shell { width:100%; }
+        img,canvas,svg { max-width:100%; }
+        select,input,button { max-width:100%; }
+        @media (max-width:1100px) {
+            .daily-performance-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .admin-analytics-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .profile-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width:820px) {
+            body { padding:3px; }
+            .container { max-width:100%; padding:7px; border-radius:10px; }
+            .dashboard-topbar { align-items:stretch; }
+            .top-actions { width:100%; flex-wrap:wrap; }
+            .top-actions > * { flex:1 1 145px; }
+            .status-grid { grid-template-columns:1fr !important; }
+            .mode-buttons { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .custom-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .mini-chart-wrap { height:150px; }
+        }
+        @media (max-width:540px) {
+            .daily-performance-grid,.admin-analytics-grid,.profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .guard-grid,.stability-strip { grid-template-columns:1fr; }
+            .custom-controls { grid-template-columns:1fr 1fr; }
+            .mode-btn { padding:8px 3px; }
+            .mini-chart-wrap { height:138px; }
+            .signal-entry-window { width:100%; }
+        }
+        @media (max-width:360px) {
+            .daily-performance-grid,.profile-grid { grid-template-columns:1fr 1fr; }
+            .custom-controls { grid-template-columns:1fr; }
+            .top-actions > * { flex-basis:100%; }
+        }
+
     </style>
 
 </head>
@@ -922,7 +1008,7 @@
                 <div style="color: #cbd5e1;">Send your Telegram ID or UID.</div>
 
                 <div style="margin-top: 8px; color: #ff3366; font-weight: 800; font-size: 10px;">
-                    After verification your access will be activated. Note: Single device allowed per key! (Secured with Device-Binding)
+                    After verification your access will be activated. One active device per key — logging in on a new device automatically signs out the previous device.
                 </div>
                 <div style="margin-top: 6px; color: #cbd5e1; font-weight: bold; font-size: 11px;">
                     Official Telegram: <a href="https://t.me/RAJASIGNALAIPREMIUM" class="link-text" target="_blank">@RAJASIGNALAIPREMIUM</a>
@@ -950,6 +1036,7 @@
                         <button class="nav-item" onclick="openSettingsInline()">⚙ Settings</button>
                         <button class="nav-item" onclick="openNewsInline()">▤ News · LIVE</button>
                         <button class="nav-item" onclick="openRiskInline()">♢ Risk & Recovery</button>
+                        <button class="nav-item" onclick="openProfileInline()">👤 Profile</button>
                     </div>
                     <div class="premium-risk-mini" onclick="openRiskInline()" role="button" tabindex="0" title="Open Risk & Recovery">
                         <div class="premium-risk-mini-title"><span>Risk & Recovery Premium</span><b>LIVE</b></div>
@@ -979,6 +1066,7 @@
                                 <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
                                 <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
                             </button>
+                            <button id="installAppBtn" class="top-btn install-btn" onclick="installPWA()">⬇ INSTALL APP</button>
                             <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
                             <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
                         </div>
@@ -1096,6 +1184,12 @@
                                     </div>
 
                                     <div id="resModalMeta" class="signal-meta psr-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
+                                    <div class="stability-strip">
+                                        <div id="stabilityScoreChip" class="stability-chip stability-medium"><small>Market Stability</small><strong id="marketStabilityValue">--</strong></div>
+                                        <div id="riskLevelChip" class="stability-chip stability-medium"><small>Market Risk</small><strong id="marketRiskValue">--</strong></div>
+                                        <div class="stability-chip"><small>Volatility ATR%</small><strong id="marketVolatilityValue">--</strong></div>
+                                    </div>
+                                    <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · ENTRY LINE</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><canvas id="signalMiniChart"></canvas></div>
 
                                     <div class="signal-entry-window" id="signalEntryWindow">
                                         <div class="signal-entry-status" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE</div>
@@ -1120,8 +1214,23 @@
                             <div id="historyInlineView" class="inline-content-view">
                                 <div class="inline-title">📊 Live Signal History</div><div id="historyListBox" class="inline-list-box"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             </div>
+                            <div id="replayInlineView" class="inline-content-view">
+                                <div class="replay-header"><div class="inline-title" style="margin:0;">🎬 Signal Replay</div><button class="menu-back-btn" onclick="openHistoryInline()">← History</button></div>
+                                <div id="replaySummary" class="inline-list-box" style="max-height:none;">Select a historical signal.</div>
+                                <div class="mini-chart-wrap"><div class="mini-chart-label">SIGNAL SNAPSHOT + OUTCOME</div><canvas id="replayMiniChart"></canvas></div>
+                                <div id="replayTimeframes" class="tf-breakdown"></div>
+                            </div>
+                            <div id="profileInlineView" class="inline-content-view">
+                                <div class="inline-title">👤 User Profile</div>
+                                <div id="profileGrid" class="profile-grid"><div class="profile-cell"><small>Status</small><strong>Loading...</strong></div></div>
+                                <div class="profile-actions"><button class="menu-back-btn" onclick="loadUserProfile()">↻ Refresh</button><button class="menu-back-btn" onclick="logoutSession()">🚪 Logout</button><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
+                            </div>
                             <div id="settingsInlineView" class="inline-content-view">
-                                <div class="inline-title">⚙️ AI Engine Settings</div><div class="inline-list-box"><div class="inline-item"><span>Active Indicators:</span><span style="color:#00ff87;">8 Layers Active ✔</span></div><div class="inline-item"><span>Multi-TF Confirmation:</span><span style="color:#00ff87;">4 of 6 + Selected Expiry ✔</span></div><div class="inline-item"><span>Auto Pair Reuse:</span><span style="color:#00ff87;">5 Minute Cooldown ✔</span></div><div class="inline-item"><span>Auto Re-Scan:</span><span style="color:#00ff87;">5 Minutes ✔</span></div><div class="inline-item"><span>OTC Result:</span><span style="color:#00ff87;">QX WIN/LOSS Required ✔</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                                <div class="inline-title">⚙️ AI Engine Settings</div>
+                                <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
+                                <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
+                                <div class="settings-section"><h4>Voice Alerts</h4><div class="switch-row"><span>Speak signal aloud (example: “USD CAD, Down signal, one minute”)</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div></div>
+                                <div class="inline-list-box"><div class="inline-item"><span>Active Indicators:</span><span style="color:#00ff87;">8 Layers Active ✔</span></div><div class="inline-item"><span>Multi-TF Engine:</span><span id="settingsModeStatus" style="color:#00ff87;">BALANCED ✔</span></div><div class="inline-item"><span>Auto Re-Scan:</span><span style="color:#00ff87;">5 Minutes ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Underlying proxy feed</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             </div>
                             <div id="newsInlineView" class="inline-content-view">
                                 <div class="inline-title">📰 Live Economic News / Calendar</div>
@@ -1159,13 +1268,25 @@
                         <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong>Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
                     </div>
 
+                    <section class="upgrade-card" id="dailyPerformancePanel">
+                        <div class="upgrade-title">📊 Daily Performance · This Device/User</div>
+                        <div class="daily-performance-grid">
+                            <div class="perf-cell"><small>Signals Today</small><strong id="perfSignalsToday">0</strong></div>
+                            <div class="perf-cell"><small>Completed</small><strong id="perfCompletedToday">0</strong></div>
+                            <div class="perf-cell"><small>Wins / Losses</small><strong id="perfWinLoss">0 / 0</strong></div>
+                            <div class="perf-cell"><small>Best Pair</small><strong id="perfBestPair">--</strong></div>
+                            <div class="perf-cell"><small>Best Session</small><strong id="perfBestSession">--</strong></div>
+                        </div>
+                        <div id="guardWarningDashboard" class="guard-warning">⛔ Trading session limit reached — scanning is paused by Daily Stop Guard.</div>
+                    </section>
+
                     <section class="config-panel">
                         <div class="config-title">TRADING CONFIGURATION</div>
                         <div class="config-grid">
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div>
+                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn active" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Balanced: standard strict multi-timeframe filtering.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this,'15s')">15s</button><button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this,'30s')">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button></div>
                             </div>
@@ -1177,7 +1298,7 @@
                 <aside class="right-rail">
                     <section class="rail-card"><div class="rail-title">MARKET OVERVIEW</div><div class="overview-row"><span>Crypto Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Crypto OTC Proxy</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex Live</span><span class="ready-tag">READY</span></div><div class="overview-row"><span>Forex OTC Proxy</span><span class="ready-tag">READY</span></div></section>
                     <section class="rail-card"><div class="rail-title">RECENT SCAN HISTORY</div><div id="dashboardRecentHistory" class="recent-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div></section>
-                    <section class="rail-card"><div class="rail-title">QUICK ACTIONS</div><div class="rail-actions"><button class="rail-action" onclick="openHistoryInline()">📈 View Performance / History</button><button class="rail-action" onclick="openRiskInline()">🛡 Risk & Recovery</button><button class="rail-action" onclick="openSettingsInline()">⚙ Bot Settings</button><button class="rail-action" onclick="openNewsInline()">📰 Live News / Calendar</button></div></section>
+                    <section class="rail-card"><div class="rail-title">QUICK ACTIONS</div><div class="rail-actions"><button class="rail-action" onclick="openHistoryInline()">📈 View Performance / History</button><button class="rail-action" onclick="openRiskInline()">🛡 Risk & Recovery</button><button class="rail-action" onclick="openSettingsInline()">⚙ Bot Settings</button><button class="rail-action" onclick="openNewsInline()">📰 Live News / Calendar</button><button class="rail-action" onclick="openProfileInline()">👤 My Profile</button></div></section>
                     <section class="rail-card"><div class="rail-title">SOUND + SIGNAL ALERTS</div><div class="sound-alert-grid"><div class="sound-alert-tile buy"><strong>↑ UP (BUY)</strong><div class="sound-wave"></div><span>Ascending tone</span></div><div class="sound-alert-tile sell"><strong>↓ DOWN (SELL)</strong><div class="sound-wave"></div><span>Descending tone</span></div></div><div id="soundAlertStatusText" class="sound-alert-status">● Alerts active · flashing + movement enabled</div></section>
                 </aside>
             </div>
@@ -1190,6 +1311,7 @@
 
             <div style="margin-top: 10px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
                 <input type="text" id="adminTelegramId" class="input-field" placeholder="User Telegram ID / UID">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;"><select id="adminPlan" class="input-field"><option value="VIP">VIP</option><option value="VIP GOLD">VIP GOLD</option><option value="VIP PLATINUM">VIP PLATINUM</option></select><select id="adminDurationDays" class="input-field"><option value="0">Lifetime</option><option value="7">7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option><option value="365">365 Days</option></select></div>
                 <button class="action-btn" onclick="generateKey()">GENERATE NEW LICENSE KEY</button>
                 <p id="generatedKeyDisplay" style="margin-top: 10px; font-weight: bold; text-align: center; font-size: 11px; color: #00ff87; word-break: break-all;"></p>
                 <button id="copyKeyBtn" class="copy-key-btn" onclick="copyGeneratedKey()">📋 COPY LICENSE KEY</button>
@@ -1197,7 +1319,7 @@
 
             <div style="margin-top: 14px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
                 <h4 style="color: #00ff87; font-size: 11px; margin-bottom: 6px; text-transform: uppercase;">👥 ALL GENERATED LICENSES</h4>
-                <div class="admin-summary-grid"><div class="admin-summary-card"><small>Total</small><strong id="adminSummaryTotal">0</strong></div><div class="admin-summary-card"><small>Active</small><strong id="adminSummaryActive">0</strong></div><div class="admin-summary-card"><small>Bound</small><strong id="adminSummaryBound">0</strong></div><div class="admin-summary-card"><small>Online</small><strong id="adminSummaryOnline">0</strong></div><div class="admin-summary-card"><small>Free</small><strong id="adminSummaryUnbound">0</strong></div></div>
+                <div class="admin-summary-grid"><div class="admin-summary-card"><small>Total</small><strong id="adminSummaryTotal">0</strong></div><div class="admin-summary-card"><small>Active</small><strong id="adminSummaryActive">0</strong></div><div class="admin-summary-card"><small>Bound</small><strong id="adminSummaryBound">0</strong></div><div class="admin-summary-card"><small>Online</small><strong id="adminSummaryOnline">0</strong></div><div class="admin-summary-card"><small>Free</small><strong id="adminSummaryUnbound">0</strong></div></div><div class="admin-analytics-grid"><div class="analytics-cell"><small>Scans Today</small><strong id="adminScansToday">0</strong></div><div class="analytics-cell"><small>Signals Today</small><strong id="adminSignalsToday">0</strong></div><div class="analytics-cell"><small>Online Users</small><strong id="adminOnlineUsers">0</strong></div><div class="analytics-cell"><small>Active Licenses</small><strong id="adminActiveLicenses">0</strong></div><div class="analytics-cell"><small>Top Customer</small><strong id="adminTopCustomer">--</strong></div><div class="analytics-cell"><small>Top Market</small><strong id="adminTopMarket">--</strong></div></div>
                 <div id="adminUsersList" class="admin-users-box"><div style="color: #94a3b8; text-align: center; padding: 4px;">Enter admin password and click LOAD / REFRESH LICENSES.</div></div>
                 <button class="utility-btn" style="width:100%;margin-top:8px;" onclick="resetAllDeviceBindings()">🔓 RESET ALL DEVICE BINDINGS</button>
                 <button class="action-btn" style="margin-top:8px; background:#7f1d1d;" onclick="clearAllLicenses()">🗑 CLEAR ALL LICENSE KEYS</button>
@@ -1206,7 +1328,7 @@
     </div>
 
     <script>
-        const KEY_VERSION = "v5-persistent-license";
+        const KEY_VERSION = "v14-smart-dashboard";
 
         // Never clear the full browser storage on a frontend update. Clearing it used to
         // regenerate the device UID and could make a valid device-bound license look like
@@ -1236,6 +1358,102 @@
         let activeSignalEntryEpochMs = null;
         let activeTrackedSignalId = null;
         let backendTrackedHistory = [];
+        let scanMode = (localStorage.getItem('raja_scan_mode') || 'BALANCED').toUpperCase();
+        let voiceAlertEnabled = localStorage.getItem('raja_voice_alert') === 'true';
+        let guardSettings = safeJsonParse(localStorage.getItem('raja_guard_settings'), { enabled:true, maxTrades:20, maxLosses:5 });
+        let customScanSettings = safeJsonParse(localStorage.getItem('raja_custom_scan_settings'), { min_tf:4, min_agreement:66.7, min_score:65, vol_min:0, vol_max:3 });
+        let deferredInstallPrompt = null;
+        let historyRefreshInterval = null;
+
+        function getSessionToken(key = null) {
+            const activeKey = key || localStorage.getItem('raja_active_key');
+            return activeKey ? (localStorage.getItem('raja_token_' + activeKey) || '') : '';
+        }
+
+        function getAuthPayload() {
+            const key = localStorage.getItem('raja_active_key') || '';
+            return { key, user: localStorage.getItem('raja_active_user') || '', device: deviceSessionId, session_token: getSessionToken(key) };
+        }
+
+        function getScanOptions() {
+            if (scanMode === 'CUSTOM') return { mode:'CUSTOM', ...customScanSettings };
+            return { mode: scanMode };
+        }
+
+        function setScanMode(mode) {
+            scanMode = ['SAFE','BALANCED','AGGRESSIVE','CUSTOM'].includes(String(mode).toUpperCase()) ? String(mode).toUpperCase() : 'BALANCED';
+            localStorage.setItem('raja_scan_mode', scanMode);
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === scanMode));
+            const copy = {
+                SAFE:'Safe: 5-of-6, stronger agreement and higher score threshold.',
+                BALANCED:'Balanced: standard strict multi-timeframe filtering.',
+                AGGRESSIVE:'Aggressive: more opportunities, but still requires 4-of-6 and expiry confirmation.',
+                CUSTOM:'Custom: uses your advanced TF, agreement, score and volatility limits.'
+            };
+            const desc = document.getElementById('modeDescription'); if (desc) desc.innerText = copy[scanMode] || copy.BALANCED;
+            const status = document.getElementById('settingsModeStatus'); if (status) status.innerText = scanMode + ' ✔';
+        }
+
+        function saveCustomScanSettings() {
+            const n = (id, fallback) => { const el=document.getElementById(id); const v=Number(el && el.value); return Number.isFinite(v) ? v : fallback; };
+            customScanSettings = { min_tf:Math.max(4,Math.min(6,Math.round(n('customMinTf',4)))), min_agreement:Math.max(60,Math.min(100,n('customMinAgreement',66.7))), min_score:Math.max(50,Math.min(95,n('customMinScore',65))), vol_min:Math.max(0,Math.min(5,n('customVolMin',0))), vol_max:Math.max(.01,Math.min(10,n('customVolMax',3))) };
+            customScanSettings.vol_max=Math.max(customScanSettings.vol_min,customScanSettings.vol_max); localStorage.setItem('raja_custom_scan_settings', JSON.stringify(customScanSettings));
+        }
+
+        function saveGuardSettings() {
+            const enabledEl=document.getElementById('guardEnabled'), tradesEl=document.getElementById('guardMaxTrades'), lossesEl=document.getElementById('guardMaxLosses');
+            guardSettings = { enabled: enabledEl ? enabledEl.checked : guardSettings.enabled, maxTrades:Math.max(1,Math.min(100,Number(tradesEl?.value || guardSettings.maxTrades || 20))), maxLosses:Math.max(1,Math.min(50,Number(lossesEl?.value || guardSettings.maxLosses || 5))) };
+            localStorage.setItem('raja_guard_settings', JSON.stringify(guardSettings));
+            updateDailyPerformance();
+        }
+
+        function toggleVoiceAlert(enabled) {
+            voiceAlertEnabled = Boolean(enabled);
+            localStorage.setItem('raja_voice_alert', voiceAlertEnabled ? 'true' : 'false');
+        }
+
+        function speakSignal(signalData, isBuy) {
+            if (!voiceAlertEnabled || !('speechSynthesis' in window)) return;
+            try {
+                window.speechSynthesis.cancel();
+                const pair = String(signalData.pair || '').replace('/', ' ');
+                const direction = isBuy ? 'Up buy' : 'Down sell';
+                const expiry = String(selectedExpiry || '').replace('m',' minute').replace('s',' second');
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance(`${pair}, ${direction} signal, ${expiry}`));
+            } catch(e) {}
+        }
+
+        function localDayKey(epochSeconds) {
+            const d = new Date(Number(epochSeconds || 0) * 1000); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+        }
+        function sessionName(epochSeconds) {
+            const h = new Date(Number(epochSeconds || 0)*1000).getHours();
+            return h < 8 ? 'ASIAN' : (h < 13 ? 'LONDON' : (h < 18 ? 'NEW YORK' : 'LATE'));
+        }
+        function todayHistory() { const today=localDayKey(Date.now()/1000); return backendTrackedHistory.filter(x => localDayKey(x.created_at) === today); }
+        function guardReached() {
+            if (!guardSettings.enabled) return false;
+            const completed=todayHistory().filter(x=>x.status==='COMPLETED' && x.result);
+            const losses=completed.filter(x=>x.result==='LOSS').length;
+            return completed.length >= Number(guardSettings.maxTrades||20) || losses >= Number(guardSettings.maxLosses||5);
+        }
+        function updateDailyPerformance() {
+            const today=todayHistory(); const completed=today.filter(x=>x.status==='COMPLETED' && x.result); const wins=completed.filter(x=>x.result==='WIN').length; const losses=completed.filter(x=>x.result==='LOSS').length;
+            const pairStats={}; const sessionStats={};
+            completed.forEach(x=>{ const p=x.pair||'--'; pairStats[p]=pairStats[p]||{w:0,n:0}; pairStats[p].n++; if(x.result==='WIN') pairStats[p].w++; const s=sessionName(x.created_at); sessionStats[s]=sessionStats[s]||{w:0,n:0}; sessionStats[s].n++; if(x.result==='WIN') sessionStats[s].w++; });
+            const best=(obj)=>Object.entries(obj).sort((a,b)=>(b[1].w/Math.max(1,b[1].n))-(a[1].w/Math.max(1,a[1].n)) || b[1].n-a[1].n)[0]?.[0] || '--';
+            const set=(id,v)=>{const el=document.getElementById(id);if(el)el.innerText=String(v)};
+            set('perfSignalsToday',today.length); set('perfCompletedToday',completed.length); set('perfWinLoss',`${wins} / ${losses}`); set('perfBestPair',best(pairStats)); set('perfBestSession',best(sessionStats));
+            const reached=guardReached(); ['guardWarningDashboard','guardWarningSettings'].forEach(id=>document.getElementById(id)?.classList.toggle('visible',reached));
+            const btn=document.getElementById('scanBtn'); if(btn && !scanSessionState.running){ btn.disabled=reached; btn.innerText=reached?'⛔ TRADING SESSION LIMIT REACHED':'▶ START AI MARKET SCAN'; }
+        }
+
+        function formatDateTime(epoch) { if(!epoch) return '--'; try{return new Date(Number(epoch)*1000).toLocaleString();}catch(e){return '--';} }
+        function formatExpiryDate(epoch) { return epoch ? formatDateTime(epoch) : 'Lifetime'; }
+
+        window.addEventListener('beforeinstallprompt', (event) => { event.preventDefault(); deferredInstallPrompt=event; const b=document.getElementById('installAppBtn'); if(b)b.style.display='inline-flex'; });
+        async function installPWA(){ if(!deferredInstallPrompt){ alert('On mobile, use your browser menu and choose “Install app” or “Add to Home Screen”.'); return; } deferredInstallPrompt.prompt(); await deferredInstallPrompt.userChoice; deferredInstallPrompt=null; const b=document.getElementById('installAppBtn'); if(b)b.style.display='none'; }
+        if ('serviceWorker' in navigator) window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 
         // Primary-view navigation and live scan session state. A scan continues while
         // History / News / Settings are open; returning to Dashboard restores the
@@ -1505,30 +1723,31 @@
         }
 
         async function heartbeatLicense() {
-            const key = localStorage.getItem('raja_active_key');
-            const user = localStorage.getItem('raja_active_user');
-            if (!key || !user || !isUserVerified) return;
+            const auth = getAuthPayload();
+            if (!auth.key || !auth.user || !auth.session_token || !isUserVerified) return;
             try {
-                const response = await fetch('/verify-license', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key, user, device: deviceSessionId, device_label: getCurrentDeviceLabel(), heartbeat: true })
-                });
-                if (response.status === 403 || response.status === 401 || response.status === 409) {
-                    isUserVerified = false;
-                    localStorage.removeItem('raja_active_key');
-                    localStorage.removeItem('raja_active_user');
-                    localStorage.removeItem('raja_session_' + key);
-                    checkRoute();
+                const response = await fetch('/verify-license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...auth, device_label:getCurrentDeviceLabel(), heartbeat:true }) });
+                const result = await response.json().catch(()=>null);
+                if (!response.ok || !result || result.status !== 'success') {
+                    if ([401,403,409].includes(response.status)) {
+                        const oldKey=auth.key; isUserVerified=false;
+                        localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); localStorage.removeItem('raja_session_'+oldKey); localStorage.removeItem('raja_token_'+oldKey);
+                        if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval); licenseHeartbeatInterval=null; if(historyRefreshInterval)clearInterval(historyRefreshInterval); historyRefreshInterval=null;
+                        checkRoute();
+                        const msg=document.getElementById('verifyMessage'); if(msg){msg.style.display='block';msg.style.color='#fff';msg.style.background='#ff3366';msg.innerText='⚠️ This account was signed in on another device. Please login again here if you want to take over.';}
+                    }
                 }
-            } catch (e) {}
+            } catch(e) {}
         }
 
         function startLicenseHeartbeat() {
             if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval);
+            if (historyRefreshInterval) clearInterval(historyRefreshInterval);
             heartbeatLicense();
-            licenseHeartbeatInterval = setInterval(heartbeatLicense, 60000);
+            licenseHeartbeatInterval = setInterval(heartbeatLicense, 5000);
+            historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 30000);
         }
+
 
         function toggleSound() {
             soundEnabled = !soundEnabled;
@@ -1551,25 +1770,15 @@
         async function logoutSession() {
             playClickSound();
             if (!confirm("Are you sure you want to logout?")) return;
-            const activeKey = localStorage.getItem('raja_active_key');
-            const activeUser = localStorage.getItem('raja_active_user');
-            if (activeKey && activeUser) {
-                try {
-                    await fetch('/logout-license', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key: activeKey, user: activeUser, device: deviceSessionId })
-                    });
-                } catch (e) {}
-                localStorage.removeItem('raja_session_' + activeKey);
+            const auth=getAuthPayload();
+            if (auth.key && auth.user) {
+                try { await fetch('/logout-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(auth)}); } catch(e) {}
+                localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key);
             }
-            if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval);
-            licenseHeartbeatInterval = null;
-            localStorage.removeItem('raja_active_key');
-            localStorage.removeItem('raja_active_user');
-            isUserVerified = false;
-            checkRoute();
+            if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval); licenseHeartbeatInterval=null; if(historyRefreshInterval)clearInterval(historyRefreshInterval); historyRefreshInterval=null;
+            localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); isUserVerified=false; checkRoute();
         }
+
 
         function playClickSound() {
             if (!soundEnabled) return;
@@ -1641,63 +1850,24 @@
 
         async function checkRoute() {
             const isAdminRoute = String(window.location.hash || '').trim().toLowerCase() === '#admin';
-            const adminPanel = document.getElementById('adminPanel');
-            const mainApp = document.getElementById('mainAppContent');
-            const activation = document.getElementById('activationScreen');
-
+            const adminPanel=document.getElementById('adminPanel'), mainApp=document.getElementById('mainAppContent'), activation=document.getElementById('activationScreen');
             if (!adminPanel || !mainApp || !activation) return;
-
-            if (isAdminRoute) {
-                setOuterHeaderVisible(true);
-                adminPanel.style.display = "block";
-                mainApp.style.display = "none";
-                activation.style.display = "none";
-                return;
-            }
-
-            adminPanel.style.display = "none";
-            isUserVerified = false;
-            const savedKey = localStorage.getItem('raja_active_key');
-            const savedUser = localStorage.getItem('raja_active_user');
-            const savedSession = savedKey ? localStorage.getItem('raja_session_' + savedKey) : null;
-
-            // Re-check saved access against the backend. This means a revoked/deleted key
-            // stops working even if an old browser session is still present locally.
-            if (savedKey && savedUser && savedSession === deviceSessionId) {
+            if (isAdminRoute) { setOuterHeaderVisible(true); adminPanel.style.display='block'; mainApp.style.display='none'; activation.style.display='none'; return; }
+            adminPanel.style.display='none'; isUserVerified=false;
+            const auth=getAuthPayload(); const savedSession=auth.key ? localStorage.getItem('raja_session_'+auth.key) : null;
+            if (auth.key && auth.user && auth.session_token && savedSession===deviceSessionId) {
                 try {
-                    const response = await fetch('/verify-license', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ key: savedKey, user: savedUser, device: deviceSessionId, device_label: getCurrentDeviceLabel(), heartbeat: true })
-                    });
-                    const result = await response.json().catch(() => null);
-                    isUserVerified = Boolean(response.ok && result && result.status === 'success');
-                } catch (error) {
-                    // A temporary network/cold-start error should not destroy the saved key;
-                    // keep the login screen visible and allow the user to retry.
-                    isUserVerified = false;
-                }
+                    const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...auth,device_label:getCurrentDeviceLabel(),heartbeat:true})});
+                    const result=await response.json().catch(()=>null); isUserVerified=Boolean(response.ok && result && result.status==='success');
+                    if (!isUserVerified && [401,403,409].includes(response.status)) { localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key); }
+                } catch(error){ isUserVerified=false; }
             }
-
             if (isUserVerified) {
-                setOuterHeaderVisible(false);
-                mainApp.style.display = "block";
-                activation.style.display = "none";
-                updateBrokerAssets();
-                startTimer();
-                restoreAutoRescanSchedule();
-                updateAutoRescanUI();
-                updateScanSessionChip();
-                startLicenseHeartbeat();
-                renderPrimaryView();
-                installHistoryMirror();
-                refreshTrackedHistory();
-            } else {
-                setOuterHeaderVisible(true);
-                mainApp.style.display = "none";
-                activation.style.display = "block";
-            }
+                setOuterHeaderVisible(false); mainApp.style.display='block'; activation.style.display='none'; updateBrokerAssets(); startTimer(); restoreAutoRescanSchedule(); updateAutoRescanUI(); updateScanSessionChip(); startLicenseHeartbeat(); renderPrimaryView(); installHistoryMirror();
+                setScanMode(scanMode); hydrateUpgradeSettings(); await refreshTrackedHistory(); loadUserProfile();
+            } else { setOuterHeaderVisible(true); mainApp.style.display='none'; activation.style.display='block'; }
         }
+
 
         window.addEventListener('hashchange', checkRoute);
         window.addEventListener('pageshow', checkRoute);
@@ -1709,119 +1879,27 @@
 
         async function verifyAccess() {
             playClickSound();
-
-            const uInput = document.getElementById('verifyUserInput').value.trim();
-            const key = document.getElementById('verifyLicenseKey').value.trim();
-            const msgBox = document.getElementById('verifyMessage');
-
-            if (!uInput || !key) {
-                msgBox.style.color = "#fff";
-                msgBox.style.background = "#ff3366";
-                msgBox.innerText = "❌ Please enter Telegram ID & License Key.";
-                msgBox.style.display = "block";
-                return;
-            }
-
-            msgBox.style.display = "block";
-            msgBox.style.color = "#030712";
-            msgBox.style.background = "#60efff";
-            msgBox.innerText = "🔄 Verifying license with secure backend...";
-
+            const uInput=document.getElementById('verifyUserInput').value.trim(), key=document.getElementById('verifyLicenseKey').value.trim(), msgBox=document.getElementById('verifyMessage');
+            if(!uInput||!key){msgBox.style.color='#fff';msgBox.style.background='#ff3366';msgBox.innerText='❌ Please enter Telegram ID / UID & License Key.';msgBox.style.display='block';return;}
+            msgBox.style.display='block';msgBox.style.color='#030712';msgBox.style.background='#60efff';msgBox.innerText='🔄 Verifying license and switching active device...';
             try {
-                const response = await fetch('/verify-license', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        key: key,
-                        user: uInput,
-                        device: deviceSessionId,
-                        device_label: getCurrentDeviceLabel()
-                    })
-                });
-
-                const result = await response.json();
-
-                if (!response.ok || !result || result.status !== 'success') {
-                    throw new Error((result && result.message) || 'License verification failed.');
-                }
-
-                localStorage.setItem('raja_active_key', key);
-                localStorage.setItem('raja_active_user', uInput);
-                localStorage.setItem('raja_session_' + key, deviceSessionId);
-
-                let allActiveUsers = JSON.parse(localStorage.getItem('raja_active_users_list')) || {};
-                allActiveUsers[key] = {
-                    user: uInput,
-                    device: deviceSessionId,
-                    time: new Date().toLocaleTimeString()
-                };
-                localStorage.setItem('raja_active_users_list', JSON.stringify(allActiveUsers));
-
-                msgBox.style.color = "#030712";
-                msgBox.style.background = "#00ff87";
-                msgBox.innerText = "✅ License verified by backend & device bound.";
-
-                isUserVerified = true;
-                checkRoute();
-                startTimer();
-
-            } catch (error) {
-                localStorage.removeItem('raja_active_key');
-                localStorage.removeItem('raja_session_' + key);
-
-                msgBox.style.color = "#fff";
-                msgBox.style.background = "#ff3366";
-                msgBox.innerText = "❌ " + error.message;
-                msgBox.style.display = "block";
-            }
+                const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,user:uInput,device:deviceSessionId,device_label:getCurrentDeviceLabel()})});
+                const result=await response.json(); if(!response.ok||!result||result.status!=='success') throw new Error((result&&result.message)||'License verification failed.');
+                localStorage.setItem('raja_active_key',key); localStorage.setItem('raja_active_user',result.user||uInput); localStorage.setItem('raja_session_'+key,deviceSessionId); localStorage.setItem('raja_token_'+key,result.session_token||'');
+                msgBox.style.color='#030712';msgBox.style.background='#00ff87';msgBox.innerText=result.replaced_previous_device?'✅ Login successful. Previous device has been signed out.':'✅ License verified. This device is now active.';
+                isUserVerified=true; await checkRoute(); startTimer();
+            } catch(error){ localStorage.removeItem('raja_active_key');localStorage.removeItem('raja_session_'+key);localStorage.removeItem('raja_token_'+key);msgBox.style.color='#fff';msgBox.style.background='#ff3366';msgBox.innerText='❌ '+error.message;msgBox.style.display='block'; }
         }
+
 
         async function generateKey() {
-            const tId = document.getElementById('adminTelegramId').value.trim();
-            const pass = document.getElementById('adminPasswordInput').value;
-            const display = document.getElementById('generatedKeyDisplay');
-            const copyBtn = document.getElementById('copyKeyBtn');
-
-            if (!tId || !pass) {
-                display.innerText = "❌ Enter User Telegram ID / UID and admin password.";
-                display.style.color = "#ff3366";
-                copyBtn.style.display = "none";
-                return;
-            }
-
-            display.innerText = "🔄 Creating key through backend...";
-            display.style.color = "#60efff";
-            copyBtn.style.display = "none";
-
-            try {
-                const response = await fetch('/admin/generate-key', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        password: pass,
-                        user: tId
-                    })
-                });
-
-                const result = await response.json();
-
-                if (!response.ok || !result || result.status !== 'success') {
-                    throw new Error((result && result.message) || 'Unable to generate license.');
-                }
-
-                latestGeneratedKey = result.key;
-                display.innerHTML = "User: " + result.user + "<br>Key: " + result.key;
-                display.style.color = "#00ff87";
-                copyBtn.style.display = "block";
-                await refreshAdminLicenses();
-
-            } catch (error) {
-                latestGeneratedKey = "";
-                display.innerText = "❌ " + error.message;
-                display.style.color = "#ff3366";
-                copyBtn.style.display = "none";
-            }
+            const tId=document.getElementById('adminTelegramId').value.trim(), pass=document.getElementById('adminPasswordInput').value, display=document.getElementById('generatedKeyDisplay'), copyBtn=document.getElementById('copyKeyBtn');
+            const plan=document.getElementById('adminPlan')?.value||'VIP', duration_days=Number(document.getElementById('adminDurationDays')?.value||0);
+            if(!tId||!pass){display.innerText='❌ Enter User Telegram ID / UID and admin password.';display.style.color='#ff3366';copyBtn.style.display='none';return;}
+            display.innerText='🔄 Creating key through backend...';display.style.color='#60efff';copyBtn.style.display='none';
+            try { const response=await fetch('/admin/generate-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass,user:tId,plan,duration_days})}); const result=await response.json(); if(!response.ok||!result||result.status!=='success') throw new Error((result&&result.message)||'Unable to generate license.'); latestGeneratedKey=result.key; display.innerHTML=`User: ${escapeHtml(result.user)}<br>Plan: ${escapeHtml(result.plan||plan)} · Expiry: ${escapeHtml(formatExpiryDate(result.expires_at))}<br>Key: ${escapeHtml(result.key)}`;display.style.color='#00ff87';copyBtn.style.display='block';await refreshAdminLicenses(); } catch(error){latestGeneratedKey='';display.innerText='❌ '+error.message;display.style.color='#ff3366';copyBtn.style.display='none';}
         }
+
 
         function copyGeneratedKey() {
             if (latestGeneratedKey) {
@@ -1837,44 +1915,19 @@
         }
 
         async function refreshAdminLicenses() {
-            const listContainer = document.getElementById('adminUsersList');
-            const pass = document.getElementById('adminPasswordInput').value;
-            if (!listContainer) return;
-
-            const setSummary = (s = {}) => {
-                const map = { adminSummaryTotal:'total', adminSummaryActive:'active', adminSummaryBound:'bound', adminSummaryOnline:'online', adminSummaryUnbound:'unbound' };
-                Object.entries(map).forEach(([id,key]) => { const el=document.getElementById(id); if(el) el.innerText=String(Number(s[key] || 0)); });
-            };
-            if (!pass) {
-                setSummary();
-                listContainer.innerHTML = `<div style="color:#ff3366;text-align:center;padding:4px;">Enter admin password first.</div>`;
-                return;
-            }
-
-            listContainer.innerHTML = `<div style="color:#60efff;text-align:center;padding:4px;">Loading licenses...</div>`;
+            const listContainer=document.getElementById('adminUsersList'), pass=document.getElementById('adminPasswordInput').value; if(!listContainer)return;
+            const setSummary=(s={})=>{const map={adminSummaryTotal:'total',adminSummaryActive:'active',adminSummaryBound:'bound',adminSummaryOnline:'online',adminSummaryUnbound:'unbound'};Object.entries(map).forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.innerText=String(Number(s[key]||0));});};
+            if(!pass){setSummary();listContainer.innerHTML='<div style="color:#ff3366;text-align:center;padding:4px;">Enter admin password first.</div>';return;}
+            listContainer.innerHTML='<div style="color:#60efff;text-align:center;padding:4px;">Loading licenses...</div>';
             try {
-                const response = await fetch('/admin/licenses', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pass}) });
-                const result = await response.json();
-                if (!response.ok || !result || result.status !== 'success') throw new Error((result && result.message) || 'Unable to load licenses.');
-                setSummary(result.summary || {});
-                const rows = Array.isArray(result.data) ? result.data : [];
-                if (!rows.length) {
-                    listContainer.innerHTML = `<div style="color:#94a3b8;text-align:center;padding:4px;">No license keys. Generate a new key.</div>`;
-                    return;
-                }
-                listContainer.innerHTML = rows.map(item => {
-                    const user = escapeHtml(item.user || 'Not assigned');
-                    const key = escapeHtml(item.key || '');
-                    const device = escapeHtml(item.device || '--');
-                    const deviceLabel = escapeHtml(item.device_label || 'No device logged in');
-                    const session = item.session_active ? '<span style="color:#00ff87;font-weight:900;">ONLINE</span>' : (item.device ? '<span style="color:#fbbf24;font-weight:900;">STALE/BOUND</span>' : '<span style="color:#94a3b8;font-weight:900;">FREE</span>');
-                    return `<div class="admin-user-row"><div style="min-width:0;overflow:hidden;flex:1;"><strong>${user}</strong><br><span style="color:#60efff;font-size:8.5px;word-break:break-all;">${key}</span><div class="admin-license-meta">${item.active ? 'ACTIVE' : 'INACTIVE'} · ${session}<br>Device: ${deviceLabel}<br>Device ID: ${device}</div></div><div class="admin-license-actions"><button class="admin-mini-btn copy-mini-btn" data-key="${key}" onclick="copyLicenseKeyFromList(this.dataset.key)">COPY</button><button class="admin-mini-btn reset-mini-btn" data-key="${key}" onclick="resetDeviceBinding(this.dataset.key)">RESET</button><button class="remove-user-btn" data-key="${key}" onclick="removeUserAccess(this.dataset.key)">REMOVE</button></div></div>`;
-                }).join('');
-            } catch (error) {
-                setSummary();
-                listContainer.innerHTML = `<div style="color:#ff3366;text-align:center;padding:4px;">❌ ${escapeHtml(error.message)}</div>`;
-            }
+                const [licenseResponse,analyticsResponse]=await Promise.all([fetch('/admin/licenses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})}),fetch('/admin/analytics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})})]);
+                const result=await licenseResponse.json(); const analytics=await analyticsResponse.json().catch(()=>null); if(!licenseResponse.ok||!result||result.status!=='success')throw new Error((result&&result.message)||'Unable to load licenses.'); setSummary(result.summary||{});
+                if(analyticsResponse.ok&&analytics&&analytics.status==='success'){const a=analytics.data||{};const vals={adminScansToday:a.scans_today,adminSignalsToday:a.signals_today,adminOnlineUsers:a.online_users,adminActiveLicenses:a.active_licenses,adminTopCustomer:a.most_active_customer,adminTopMarket:a.most_scanned_market};Object.entries(vals).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.innerText=String(v??'--');});}
+                const rows=Array.isArray(result.data)?result.data:[]; if(!rows.length){listContainer.innerHTML='<div style="color:#94a3b8;text-align:center;padding:4px;">No license keys. Generate a new key.</div>';return;}
+                listContainer.innerHTML=rows.map(item=>{const user=escapeHtml(item.user||'Not assigned'),key=escapeHtml(item.key||''),device=escapeHtml(item.device||'--'),deviceLabel=escapeHtml(item.device_label||'No device logged in'),session=item.session_active?'<span style="color:#00ff87;font-weight:900;">ONLINE</span>':(item.device?'<span style="color:#fbbf24;font-weight:900;">BOUND</span>':'<span style="color:#94a3b8;font-weight:900;">FREE</span>');const status=item.expired?'EXPIRED':(item.active?'ACTIVE':'INACTIVE');return `<div class="admin-user-row"><div style="min-width:0;overflow:hidden;flex:1;"><strong>${user}</strong><br><span style="color:#60efff;font-size:8.5px;word-break:break-all;">${key}</span><div class="admin-license-meta"><span class="license-plan">${escapeHtml(item.plan||'VIP')}</span> · ${status} · ${session}<br>Expiry: ${escapeHtml(formatExpiryDate(item.expires_at))}<br>Last Login: ${escapeHtml(formatDateTime(item.last_login_at))}<br>Device: ${deviceLabel}<br>Device ID: ${device}</div></div><div class="admin-license-actions"><button class="admin-mini-btn copy-mini-btn" data-key="${key}" onclick="copyLicenseKeyFromList(this.dataset.key)">COPY</button><button class="admin-mini-btn reset-mini-btn" data-key="${key}" onclick="resetDeviceBinding(this.dataset.key)">LOGOUT</button><button class="remove-user-btn" data-key="${key}" onclick="removeUserAccess(this.dataset.key)">REMOVE</button></div></div>`;}).join('');
+            } catch(error){setSummary();listContainer.innerHTML=`<div style="color:#ff3366;text-align:center;padding:4px;">❌ ${escapeHtml(error.message)}</div>`;}
         }
+
 
         function copyLicenseKeyFromList(key) {
             if (!key) return;
@@ -1975,7 +2028,7 @@
         });
 
         function hideAllHudViews() {
-            ['historyInlineView','settingsInlineView','newsInlineView','riskInlineView','scanView','signalView','noSignalView','defaultView'].forEach(id => {
+            ['historyInlineView','replayInlineView','profileInlineView','settingsInlineView','newsInlineView','riskInlineView','scanView','signalView','noSignalView','defaultView'].forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'none';
             });
@@ -2023,85 +2076,11 @@
         }
 
         function renderHistoryList() {
-            const listContainer = document.getElementById('historyListBox');
-            if (!listContainer) return;
-
-            if (backendTrackedHistory.length > 0) {
-                let html = "";
-
-                backendTrackedHistory.forEach((item, index) => {
-                    const score = Number(item.score || 0).toFixed(1) + "%";
-                    const isQxFinal = item.result_source === "quotex_manual";
-                    const isAwaitingQx = item.status === "AWAITING_QX" || item.result_source === "awaiting_quotex";
-                    const isYahooLive = item.result_source === "yahoo_live";
-
-                    let finalLabel = "[PENDING]";
-                    let resultColor = "#60efff";
-                    let sourceLabel = "";
-                    let sourceColor = "#94a3b8";
-
-                    if (isQxFinal && item.result) {
-                        finalLabel = `[${item.result}]`;
-                        resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
-                        sourceLabel = "QX";
-                        sourceColor = "#00ff87";
-                    } else if (isAwaitingQx) {
-                        finalLabel = "[QX RESULT?]";
-                        resultColor = "#60efff";
-                        sourceLabel = "OTC";
-                        sourceColor = "#60efff";
-                    } else if (isYahooLive && item.result) {
-                        finalLabel = `[${item.result}]`;
-                        resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
-                        sourceLabel = "LIVE";
-                        sourceColor = "#facc15";
-                    } else if (item.status === "DATA_UNAVAILABLE" || item.result_source === "yahoo_unavailable") {
-                        finalLabel = "[DATA N/A]";
-                        resultColor = "#94a3b8";
-                        sourceLabel = "YAHOO";
-                        sourceColor = "#94a3b8";
-                    } else if (item.result) {
-                        finalLabel = `[${item.result}]`;
-                        resultColor = item.result === "WIN" ? "#00ff87" : (item.result === "LOSS" ? "#ff3366" : "#facc15");
-                    }
-
-                    const proxyNote = item.yahoo_result
-                        ? `<span style="color:#94a3b8; font-size:7.5px;">Yahoo proxy:${item.yahoo_result}</span>`
-                        : "";
-                    const showQxButtons = String(item.pair || "").includes("(OTC)");
-
-                    html += `<div class="inline-item" style="gap:5px;">
-                        <span style="flex:1;">${index + 1}. ${item.pair} (${item.signal}) · ${item.expiry} · <strong style="color:#60efff;">${score}</strong><br>${proxyNote}</span>
-                        <span style="display:flex; align-items:center; gap:3px; flex-wrap:wrap; justify-content:flex-end;">
-                            ${sourceLabel ? `<span style="color:${sourceColor};font-size:7px;font-weight:900;">${sourceLabel}</span>` : ""}
-                            <span style="color:${resultColor}; font-weight:900;">${finalLabel}</span>
-                            ${showQxButtons ? `<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>` : ""}
-                        </span>
-                    </div>`;
-                });
-
-                listContainer.innerHTML = html;
-                return;
-            }
-
-            if (dynamicHistory.length === 0) {
-                listContainer.innerHTML = `<div class="inline-item"><span>No recent scans yet.</span> <span class="win-tag">--</span></div>`;
-                return;
-            }
-
-            let html = "";
-            dynamicHistory.forEach((item, index) => {
-                let resultLabel = item.result
-                    ? `<span style="color:${item.result === 'WIN' ? '#00ff87':'#ff3366'}; font-weight:bold;">[${item.result}]</span>`
-                    : `<span style="color:#94a3b8; font-weight:bold;">[LOCAL]</span>`;
-
-                html += `<div class="inline-item">
-                    <span>${index + 1}. ${item.pair} (${item.dir}) - <strong style="color:#60efff;">${item.acc}</strong></span>
-                    ${resultLabel}
-                </div>`;
-            });
-            listContainer.innerHTML = html;
+            const listContainer=document.getElementById('historyListBox'); if(!listContainer)return;
+            if(backendTrackedHistory.length>0){let html='';backendTrackedHistory.forEach((item,index)=>{const score=Number(item.score||0).toFixed(1)+'%',label=item.result?`[${item.result}]`:(item.status==='PENDING'?'[PENDING]':'[--]'),color=item.result==='WIN'?'#00ff87':(item.result==='LOSS'?'#ff3366':'#60efff'),showQx=String(item.pair||'').includes('(OTC)');html+=`<div class="inline-item" style="gap:5px;"><span style="flex:1;min-width:0;">${index+1}. ${escapeHtml(item.pair)} (${escapeHtml(item.signal)}) · ${escapeHtml(item.expiry)} · <strong style="color:#60efff;">${score}</strong><br><span style="font-size:7.5px;color:#94a3b8;">${escapeHtml(item.scan_mode||'BALANCED')} · Stability ${escapeHtml(item.market_stability_score??'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span></span><span style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end;"><span style="color:${color};font-weight:900;">${label}</span><button class="history-replay-btn" onclick="openSignalReplay('${item.id}')">REPLAY</button>${showQx?`<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>`:''}</span></div>`;});listContainer.innerHTML=html;return;}
+            listContainer.innerHTML='<div class="inline-item"><span>No recent tracked signals yet.</span><span class="win-tag">--</span></div>';
         }
+
 
         async function markBackendSignalResult(signalId, outcome) {
             playClickSound();
@@ -2109,7 +2088,7 @@
                 const response = await fetch('/signals/result', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ signal_id: signalId, result: outcome, client_id: deviceSessionId })
+                    body: JSON.stringify({ signal_id: signalId, result: outcome, client_id: deviceSessionId, ...getAuthPayload() })
                 });
                 const result = await response.json();
                 if (!response.ok || !result || result.status !== 'success') {
@@ -2496,26 +2475,10 @@
         // Yahoo/yfinance market data + backend indicators
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
-            if (!data || !data.signal || data.signal === 'NO SIGNAL' || Number(data.score || 0) <= 0) {
-                return null;
-            }
-            return {
-                pair: data.pair || fallbackPair,
-                confluence: Number(data.score || 0),
-                dir: data.signal === 'CALL' ? 'CALL (UP)' : 'PUT (DOWN)',
-                reason: data.reason || '',
-                rsi: data.rsi,
-                bullishPoints: data.bullish_points,
-                bearishPoints: data.bearish_points,
-                dataAge: data.data_age,
-                timeframeSummary: data.timeframe_summary || {},
-                alignedTimeframes: data.aligned_timeframes || [],
-                opposingTimeframes: data.opposing_timeframes || [],
-                multiTfAgreement: data.multi_tf_agreement,
-                confirmationMode: data.confirmation_mode || '4-of-6 Strong',
-                duplicateProtection: Boolean(data.duplicate_protection)
-            };
+            if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{}};
         }
+
 
         async function scanPairFromBackend(pair) {
             const controller = new AbortController();
@@ -2524,7 +2487,7 @@
                 const response = await fetch('/scan', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pair: pair, expiry: selectedExpiry, client_id: deviceSessionId }),
+                    body: JSON.stringify({ pair: pair, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', scan_options: getScanOptions(), ...getAuthPayload() }),
                     signal: controller.signal
                 });
 
@@ -2554,7 +2517,7 @@
                 const response = await fetch('/scan-batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId }),
+                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', scan_options: getScanOptions(), ...getAuthPayload() }),
                     signal: controller.signal
                 });
 
@@ -2583,6 +2546,7 @@
         }
 
         async function startDeepScan(autoTriggered = false) {
+            if (guardReached()) { updateDailyPerformance(); if(!autoTriggered) alert('⛔ Trading session limit reached. Change Daily Stop Guard settings or wait until the next day.'); return; }
             const existingScanBtn = document.getElementById('scanBtn');
             if (existingScanBtn && existingScanBtn.disabled) return;
             clearAutoRescanSchedule(true);
@@ -2730,11 +2694,11 @@
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
                             const unavailableOnly = Math.max(0, dataBad - skippedSlow);
-                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed the strict 4-of-6 + ${selectedExpiry} confirmation on the current closed candles.`;
+                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
                         }
                     } else {
                         titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
-                        descEl.innerText = `Current candles did not pass the 4-of-6 + ${selectedExpiry} confirmation.`;
+                        descEl.innerText = `Current candles did not pass ${scanMode} mode + ${selectedExpiry} confirmation.`;
                     }
                     if (currentSection === 'dashboard') renderPrimaryView();
                 }
@@ -2743,55 +2707,17 @@
 
 
         async function registerSignalForTracking(signalData) {
-            const direction = signalData.dir.includes("CALL") ? "CALL" : "PUT";
-
-            // Predict the next selected-timeframe candle boundary immediately;
-            // backend returns the authoritative epoch for 1m+ tracking.
-            const selectedTfMs = getExpirySeconds(selectedExpiry) * 1000;
-            activeSignalEntryEpochMs = (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
-            startTimer();
-
-            try {
-                const response = await fetch('/track-signal', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        pair: signalData.pair,
-                        signal: direction,
-                        score: signalData.confluence,
-                        expiry: selectedExpiry,
-                        timeframe_summary: signalData.timeframeSummary || {},
-                        client_id: deviceSessionId
-                    })
-                });
-
-                const result = await response.json();
-
-                if (result && result.status === 'success' && result.auto_tracking) {
-                    activeTrackedSignalId = result.signal_id;
-                    activeSignalEntryEpochMs = Number(result.entry_epoch) * 1000;
-                    startTimer();
-                } else if (result && result.status === 'success' && !result.auto_tracking) {
-                    activeTrackedSignalId = null;
-                }
-            } catch (error) {
-                console.error("Signal tracking error:", error);
-            }
+            const direction=signalData.dir.includes('CALL')?'CALL':'PUT'; const selectedTfMs=getExpirySeconds(selectedExpiry)*1000; activeSignalEntryEpochMs=(Math.floor(Date.now()/selectedTfMs)+1)*selectedTfMs; startTimer();
+            try { const response=await fetch('/track-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pair:signalData.pair,signal:direction,score:signalData.confluence,expiry:selectedExpiry,timeframe_summary:signalData.timeframeSummary||{},client_id:deviceSessionId,chart_preview:signalData.chartPreview||[],market_stability_score:signalData.marketStabilityScore,market_risk_level:signalData.marketRiskLevel,volatility_pct:signalData.volatilityPct,scan_mode:signalData.scanMode,market:document.getElementById('marketType')?.value||'',snapshot:{rsi:signalData.rsi,reason:signalData.reason,multi_tf_agreement:signalData.multiTfAgreement,confirmation_mode:signalData.confirmationMode},...getAuthPayload()})}); const result=await response.json(); if(result&&result.status==='success'&&result.auto_tracking){activeTrackedSignalId=result.signal_id;activeSignalEntryEpochMs=Number(result.entry_epoch)*1000;startTimer();}else if(result&&result.status==='success'){activeTrackedSignalId=null;} }
+            catch(error){console.error('Signal tracking error:',error);}
         }
+
 
         async function refreshTrackedHistory() {
-            try {
-                const response = await fetch('/signals/history?limit=20&client_id=' + encodeURIComponent(deviceSessionId));
-                const result = await response.json();
-
-                if (response.ok && result && result.status === 'success') {
-                    backendTrackedHistory = Array.isArray(result.data) ? result.data : [];
-                    renderHistoryList();
-                }
-            } catch (error) {
-                console.error("History refresh error:", error);
-            }
+            try { const auth=getAuthPayload(); if(!auth.key||!auth.session_token)return; const q=new URLSearchParams({...auth,limit:'60'}); const response=await fetch('/signals/history?'+q.toString()); const result=await response.json(); if(response.ok&&result&&result.status==='success'){backendTrackedHistory=Array.isArray(result.data)?result.data:[];renderHistoryList();updateDailyPerformance();} }
+            catch(error){console.error('History refresh error:',error);}
         }
+
 
         function renderTimeframeBreakdown(signalData) {
             const box = document.getElementById('tfBreakdown');
@@ -2878,10 +2804,36 @@
                 resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
                 resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
             }
+            updateStabilityUI(signalData);
+            speakSignal(signalData, isBuy);
             if (currentSection === 'dashboard') renderPrimaryView();
+            requestAnimationFrame(() => renderSignalChart(document.getElementById('signalMiniChart'), signalData.chartPreview || [], isBuy, null, null));
             startTimer();
+            setTimeout(refreshTrackedHistory, 700);
         }
     
+
+        function hydrateUpgradeSettings() {
+            setScanMode(scanMode);
+            const map={customMinTf:customScanSettings.min_tf,customMinAgreement:customScanSettings.min_agreement,customMinScore:customScanSettings.min_score,customVolMin:customScanSettings.vol_min,customVolMax:customScanSettings.vol_max,guardMaxTrades:guardSettings.maxTrades,guardMaxLosses:guardSettings.maxLosses};
+            Object.entries(map).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;}); const ge=document.getElementById('guardEnabled');if(ge)ge.checked=guardSettings.enabled!==false;const ve=document.getElementById('voiceAlertEnabled');if(ve)ve.checked=voiceAlertEnabled;updateDailyPerformance();
+        }
+
+        function updateStabilityUI(signalData) {
+            const score=Number(signalData.marketStabilityScore||0),risk=String(signalData.marketRiskLevel||'--').toUpperCase(),vol=Number(signalData.volatilityPct||0);
+            const set=(id,v)=>{const el=document.getElementById(id);if(el)el.innerText=v;};set('marketStabilityValue',score?score.toFixed(1)+'/100':'--');set('marketRiskValue',risk);set('marketVolatilityValue',Number.isFinite(vol)?vol.toFixed(4)+'%':'--');
+            const cls=risk==='LOW'?'stability-low':(risk==='HIGH'?'stability-high':'stability-medium'); ['stabilityScoreChip','riskLevelChip'].forEach(id=>{const el=document.getElementById(id);if(el){el.classList.remove('stability-low','stability-medium','stability-high');el.classList.add(cls);}});
+        }
+
+        function renderSignalChart(canvas, candles, isBuy=true, entryPrice=null, exitPrice=null) {
+            if(!canvas||!Array.isArray(candles)||candles.length<2)return; const rect=canvas.getBoundingClientRect(); const dpr=Math.max(1,window.devicePixelRatio||1); canvas.width=Math.max(320,Math.floor(rect.width*dpr));canvas.height=Math.max(120,Math.floor(rect.height*dpr));const ctx=canvas.getContext('2d');ctx.setTransform(dpr,0,0,dpr,0,0);const w=canvas.width/dpr,h=canvas.height/dpr;ctx.clearRect(0,0,w,h);const pad={l:12,r:12,t:24,b:16};const lows=candles.map(c=>Number(c.l)),highs=candles.map(c=>Number(c.h));if(entryPrice)lows.push(Number(entryPrice)),highs.push(Number(entryPrice));if(exitPrice)lows.push(Number(exitPrice)),highs.push(Number(exitPrice));let lo=Math.min(...lows),hi=Math.max(...highs);if(!Number.isFinite(lo)||!Number.isFinite(hi)||hi<=lo)return;const range=(hi-lo)||1;lo-=range*.08;hi+=range*.08;const y=p=>pad.t+(hi-p)/(hi-lo)*(h-pad.t-pad.b);ctx.strokeStyle='rgba(96,239,255,.10)';ctx.lineWidth=1;for(let i=0;i<5;i++){const yy=pad.t+i*(h-pad.t-pad.b)/4;ctx.beginPath();ctx.moveTo(pad.l,yy);ctx.lineTo(w-pad.r,yy);ctx.stroke();}const step=(w-pad.l-pad.r)/candles.length,body=Math.max(2,Math.min(9,step*.55));candles.forEach((c,i)=>{const x=pad.l+step*(i+.5),o=Number(c.o),cl=Number(c.c),hh=Number(c.h),ll=Number(c.l),up=cl>=o;ctx.strokeStyle=up?'#00ff87':'#ff5d7d';ctx.fillStyle=up?'#00ff87':'#ff5d7d';ctx.beginPath();ctx.moveTo(x,y(hh));ctx.lineTo(x,y(ll));ctx.stroke();const top=Math.min(y(o),y(cl)),bh=Math.max(1,Math.abs(y(o)-y(cl)));ctx.fillRect(x-body/2,top,body,bh);});const last=Number(candles[candles.length-1].c);const entry=entryPrice?Number(entryPrice):last;ctx.setLineDash([5,4]);ctx.strokeStyle=isBuy?'#00ff87':'#ff5d7d';ctx.beginPath();ctx.moveTo(pad.l,y(entry));ctx.lineTo(w-pad.r,y(entry));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle=isBuy?'#00ff87':'#ff5d7d';ctx.font='bold 9px Segoe UI';ctx.fillText(isBuy?'▲ ENTRY / UP':'▼ ENTRY / DOWN',pad.l+4,Math.max(12,y(entry)-5));if(exitPrice){ctx.strokeStyle='#facc15';ctx.setLineDash([3,3]);ctx.beginPath();ctx.moveTo(pad.l,y(Number(exitPrice)));ctx.lineTo(w-pad.r,y(Number(exitPrice)));ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#facc15';ctx.fillText('EXIT',w-pad.r-30,Math.max(12,y(Number(exitPrice))-4));}}
+
+        function openSignalReplay(signalId) {
+            const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');
+        }
+
+        async function openProfileInline(){currentSection='profile';hideAllHudViews();document.getElementById('profileInlineView').style.display='block';await loadUserProfile();}
+        async function loadUserProfile(){const grid=document.getElementById('profileGrid');if(!grid||!isUserVerified)return;grid.innerHTML='<div class="profile-cell"><small>Status</small><strong>Loading...</strong></div>';try{const response=await fetch('/user/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getAuthPayload())});const result=await response.json();if(!response.ok||!result||result.status!=='success')throw new Error((result&&result.message)||'Unable to load profile.');const p=result.data||{};grid.innerHTML=`<div class="profile-cell"><small>User / UID</small><strong>${escapeHtml(p.user||'--')}</strong></div><div class="profile-cell"><small>Plan</small><strong>${escapeHtml(p.plan||'VIP')}</strong></div><div class="profile-cell"><small>Expiry</small><strong>${escapeHtml(formatExpiryDate(p.expires_at))}</strong></div><div class="profile-cell"><small>Device</small><strong>${escapeHtml(p.device_label||'--')}</strong></div><div class="profile-cell"><small>Last Login</small><strong>${escapeHtml(formatDateTime(p.last_login_at))}</strong></div><div class="profile-cell"><small>Scans Today</small><strong>${Number(p.scans_today||0)}</strong></div><div class="profile-cell"><small>Total Scans</small><strong>${Number(p.total_scans||0)}</strong></div><div class="profile-cell"><small>Joined</small><strong>${escapeHtml(formatDateTime(p.created_at))}</strong></div>`;}catch(error){grid.innerHTML=`<div class="profile-cell"><small>Error</small><strong>${escapeHtml(error.message)}</strong></div>`;}}
 
         function installHistoryMirror() {
             const source = document.getElementById('historyListBox');
@@ -2892,7 +2844,7 @@
             new MutationObserver(sync).observe(source, { childList: true, subtree: true, characterData: true });
             source.dataset.mirrorInstalled = '1';
         }
-        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); });
+        document.addEventListener('DOMContentLoaded', () => { installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); });
 
     </script>
 </body>
