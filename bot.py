@@ -204,6 +204,13 @@ SIGNALS_FILE = DATA_DIR / "signals.json"
 signals_lock = threading.RLock()
 SCAN_EVENTS_FILE = DATA_DIR / "scan_events.json"
 scan_events_lock = threading.RLock()
+
+# Free-trial anti-abuse store.
+# A user/UID can claim a FREE TRIAL once, and after first login the device
+# is also permanently recorded as having used a trial.
+TRIAL_CLAIMS_FILE = DATA_DIR / "trial_claims.json"
+trial_claims_lock = threading.RLock()
+
 DEFAULT_LICENSE_PLAN = "VIP"
 AUTO_TRACK_EXPIRIES = {
     "1m": 60,
@@ -275,6 +282,15 @@ def initialize_license_store():
                         signal_found BOOLEAN NOT NULL DEFAULT FALSE
                     )
                 """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raja_trial_claims (
+                        claim_type TEXT NOT NULL,
+                        claim_value TEXT NOT NULL,
+                        license_key TEXT,
+                        created_at BIGINT NOT NULL,
+                        PRIMARY KEY (claim_type, claim_value)
+                    )
+                """)
 
                 # Preserve the existing one-time reset marker behavior; do not change the version
                 # during ordinary feature upgrades or existing customer keys would be deleted.
@@ -298,6 +314,8 @@ def initialize_license_store():
             LICENSE_FILE.write_text("{}", encoding="utf-8")
         if not SCAN_EVENTS_FILE.exists():
             SCAN_EVENTS_FILE.write_text("[]", encoding="utf-8")
+        if not TRIAL_CLAIMS_FILE.exists():
+            TRIAL_CLAIMS_FILE.write_text("{}", encoding="utf-8")
         if LICENSE_RESET_VERSION:
             marker_file = DATA_DIR / ".raja_license_reset_version"
             current_version = marker_file.read_text(encoding="utf-8").strip() if marker_file.exists() else ""
@@ -382,6 +400,90 @@ def save_licenses(data):
         temp = LICENSE_FILE.with_suffix(".tmp")
         temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
         temp.replace(LICENSE_FILE)
+
+
+
+def _trial_claim_key(claim_type, claim_value):
+    claim_type = str(claim_type or "").strip().lower()
+    claim_value = str(claim_value or "").strip()
+    if claim_type == "user":
+        claim_value = normalize_user_id(claim_value)
+    return claim_type, claim_value
+
+
+def get_trial_claim(claim_type, claim_value):
+    """Return the previous FREE TRIAL claim, if any."""
+    claim_type, claim_value = _trial_claim_key(claim_type, claim_value)
+    if not claim_type or not claim_value:
+        return None
+
+    if DATABASE_URL:
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT license_key, created_at FROM raja_trial_claims "
+                        "WHERE claim_type=%s AND claim_value=%s",
+                        (claim_type, claim_value),
+                    )
+                    row = cur.fetchone()
+            if row:
+                return {"license_key": row[0], "created_at": int(row[1] or 0)}
+            return None
+        except Exception as exc:
+            print(f"Trial claim DB read warning: {exc}")
+
+    with trial_claims_lock:
+        if not TRIAL_CLAIMS_FILE.exists():
+            TRIAL_CLAIMS_FILE.write_text("{}", encoding="utf-8")
+        try:
+            data = json.loads(TRIAL_CLAIMS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            data = {}
+        item = data.get(f"{claim_type}:{claim_value}")
+        return item if isinstance(item, dict) else None
+
+
+def record_trial_claim(claim_type, claim_value, license_key):
+    """Permanently record that a user/UID or device has consumed a FREE TRIAL."""
+    claim_type, claim_value = _trial_claim_key(claim_type, claim_value)
+    if not claim_type or not claim_value:
+        return False
+    license_key = str(license_key or "").strip()
+    now = int(time.time())
+
+    if DATABASE_URL:
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO raja_trial_claims(claim_type, claim_value, license_key, created_at)
+                        VALUES(%s,%s,%s,%s)
+                        ON CONFLICT(claim_type, claim_value) DO NOTHING
+                        """,
+                        (claim_type, claim_value, license_key, now),
+                    )
+            return True
+        except Exception as exc:
+            print(f"Trial claim DB write warning: {exc}")
+
+    with trial_claims_lock:
+        if not TRIAL_CLAIMS_FILE.exists():
+            TRIAL_CLAIMS_FILE.write_text("{}", encoding="utf-8")
+        try:
+            data = json.loads(TRIAL_CLAIMS_FILE.read_text(encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
+        except Exception:
+            data = {}
+        key = f"{claim_type}:{claim_value}"
+        if key not in data:
+            data[key] = {"license_key": license_key, "created_at": now}
+            temp = TRIAL_CLAIMS_FILE.with_suffix(".tmp")
+            temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            temp.replace(TRIAL_CLAIMS_FILE)
+    return True
 
 
 def license_is_expired(record, now=None):
@@ -1612,6 +1714,15 @@ def verify_license():
     if bound_user and bound_user != user:
         return jsonify({"status": "error", "message": "This key is assigned to another user/UID."}), 403
 
+    is_free_trial = str(record.get("plan") or "").strip().upper() == "FREE TRIAL"
+    if is_free_trial and not heartbeat:
+        device_claim = get_trial_claim("device", device)
+        if device_claim and str(device_claim.get("license_key") or "") != key:
+            return jsonify({
+                "status": "error",
+                "message": "This device has already used a free trial. Contact admin for VIP access."
+            }), 409
+
     if heartbeat:
         if str(record.get("device") or "") != device or not supplied_token or str(record.get("session_token") or "") != supplied_token:
             return jsonify({"status": "error", "message": "This session was replaced by a newer device login."}), 409
@@ -1638,6 +1749,8 @@ def verify_license():
     record["plan"] = record.get("plan") or DEFAULT_LICENSE_PLAN
     licenses[key] = record
     save_licenses(licenses)
+    if is_free_trial:
+        record_trial_claim("device", device, key)
     return jsonify({
         "status": "success", "message": "License verified successfully.", "user": user,
         "device_bound": True, "device_label": record.get("device_label"), "session_token": new_token,
@@ -1703,13 +1816,25 @@ def admin_generate_key():
     user = normalize_user_id(data.get("user", ""))
     plan = str(data.get("plan") or DEFAULT_LICENSE_PLAN).strip().upper()[:40]
     try:
-        duration_days = max(0, min(3650, int(data.get("duration_days") or 0)))
+        # Supports short trials too:
+        # 0.5 day = 12 hours, 1 day = 24 hours.
+        duration_days = max(0.0, min(3650.0, float(data.get("duration_days") or 0)))
     except Exception:
-        duration_days = 0
+        duration_days = 0.0
     if password != ADMIN_PASSWORD:
         return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
     if not user:
         return jsonify({"status": "error", "message": "User Telegram ID / UID is required."}), 400
+
+    is_free_trial = plan == "FREE TRIAL"
+    if is_free_trial:
+        previous_claim = get_trial_claim("user", user)
+        if previous_claim:
+            return jsonify({
+                "status": "error",
+                "message": "Free trial already used for this Telegram ID / UID. Create a VIP license instead."
+            }), 409
+
     licenses = load_licenses()
     while True:
         key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
@@ -1719,9 +1844,11 @@ def admin_generate_key():
     licenses[key] = {
         "active": True, "user": user, "device": None, "device_label": None,
         "session_token": None, "created_at": now, "last_verified_at": None,
-        "last_login_at": None, "plan": plan, "expires_at": now + duration_days * 86400 if duration_days else None,
+        "last_login_at": None, "plan": plan, "expires_at": now + int(duration_days * 86400) if duration_days else None,
     }
     save_licenses(licenses)
+    if is_free_trial:
+        record_trial_claim("user", user, key)
     return jsonify({"status": "success", "message": "License created.", "key": key, "user": user,
                     "plan": plan, "expires_at": licenses[key].get("expires_at")})
 
@@ -2072,8 +2199,32 @@ def validate_telegram_license(key, user_ref):
     record = load_licenses().get(key)
     if not record or not record.get("active", False):
         return False
+    # Important for short trials: Telegram access must stop when the license expires.
+    if license_is_expired(record):
+        return False
     bound_user = normalize_user_id(record.get("user", ""))
     return (not bound_user) or bound_user == user
+
+
+
+def telegram_license_info(key, user_ref):
+    """Return plan/expiry details for Telegram reminder and expiry automation."""
+    key = str(key or "").strip()
+    user = normalize_user_id(user_ref)
+    record = load_licenses().get(key) if key else None
+    if not isinstance(record, dict):
+        return {"exists": False, "valid": False, "plan": None, "expires_at": None}
+    bound_user = normalize_user_id(record.get("user", ""))
+    user_matches = (not bound_user) or (bound_user == user)
+    now = int(time.time())
+    return {
+        "exists": True,
+        "valid": bool(record.get("active", False)) and user_matches and not license_is_expired(record, now),
+        "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
+        "expires_at": record.get("expires_at"),
+        "active": bool(record.get("active", False)),
+        "user_matches": user_matches,
+    }
 
 
 def telegram_scan_pair(pair, selected_expiry):
@@ -2117,6 +2268,7 @@ try:
     register_telegram_routes(app, {
         "issue_license": issue_telegram_license,
         "validate_license": validate_telegram_license,
+        "license_info": telegram_license_info,
         "scan_pair": telegram_scan_pair,
         "scan_auto": telegram_scan_auto,
     })
