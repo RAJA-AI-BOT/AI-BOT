@@ -155,9 +155,10 @@ YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.3
 BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
 BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
 YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
-# Browser batch timeout is 90s; 78s gives the server more room than the old 68s while
-# still returning before the browser aborts.
-BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(85.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "78"))))
+# Browser batch timeout is 90s. Keep the backend deadline comfortably below that
+# so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
+# 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
+BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(75.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "58"))))
 
 market_cache = {}
 cache_lock = threading.RLock()
@@ -434,6 +435,85 @@ def save_licenses(data):
         temp.replace(LICENSE_FILE)
 
 
+def load_license_record(key):
+    """Load one license without scanning the full PostgreSQL table."""
+    key = str(key or "").strip()
+    if not key:
+        return None
+
+    if DATABASE_URL:
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT active, user_id, device_id, device_label, created_at,
+                           last_verified_at, session_token, plan, expires_at, last_login_at
+                    FROM raja_licenses
+                    WHERE license_key = %s
+                    LIMIT 1
+                """, (key,))
+                row = cur.fetchone()
+        if not row:
+            return None
+        (active, user, device, device_label, created_at, last_verified_at,
+         session_token, plan, expires_at, last_login_at) = row
+        return {
+            "active": bool(active),
+            "user": user,
+            "device": device,
+            "device_label": device_label,
+            "created_at": created_at,
+            "last_verified_at": last_verified_at,
+            "session_token": session_token,
+            "plan": plan or DEFAULT_LICENSE_PLAN,
+            "expires_at": expires_at,
+            "last_login_at": last_login_at,
+        }
+
+    return load_licenses().get(key)
+
+
+def save_license_record(key, record):
+    """Upsert one license record; never DELETE + rebuild the whole license table."""
+    key = str(key or "").strip()
+    if not key:
+        raise ValueError("License key is required")
+    record = record if isinstance(record, dict) else {}
+
+    if DATABASE_URL:
+        values = (
+            key, bool(record.get("active", False)), record.get("user"),
+            record.get("device"), record.get("device_label"), record.get("created_at"),
+            record.get("last_verified_at"), record.get("session_token"),
+            record.get("plan") or DEFAULT_LICENSE_PLAN, record.get("expires_at"),
+            record.get("last_login_at"),
+        )
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO raja_licenses
+                        (license_key, active, user_id, device_id, device_label, created_at,
+                         last_verified_at, session_token, plan, expires_at, last_login_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (license_key) DO UPDATE SET
+                        active = EXCLUDED.active,
+                        user_id = EXCLUDED.user_id,
+                        device_id = EXCLUDED.device_id,
+                        device_label = EXCLUDED.device_label,
+                        created_at = EXCLUDED.created_at,
+                        last_verified_at = EXCLUDED.last_verified_at,
+                        session_token = EXCLUDED.session_token,
+                        plan = EXCLUDED.plan,
+                        expires_at = EXCLUDED.expires_at,
+                        last_login_at = EXCLUDED.last_login_at
+                """, values)
+        return
+
+    with license_lock:
+        licenses = load_licenses()
+        licenses[key] = record
+        save_licenses(licenses)
+
+
 
 def _trial_claim_key(claim_type, claim_value):
     claim_type = str(claim_type or "").strip().lower()
@@ -678,8 +758,9 @@ def _auth_session(data):
     session_token = str(data.get("session_token", "")).strip()
     if not key or not user or not device or not session_token:
         return None, (jsonify({"status": "error", "message": "Active license session required."}), 401)
-    licenses = load_licenses()
-    record = licenses.get(key)
+
+    # Fast path: one indexed key lookup instead of loading every license row.
+    record = load_license_record(key)
     now = int(time.time())
     if not record or not record.get("active", False) or license_is_expired(record, now):
         return None, (jsonify({"status": "error", "message": "Invalid, expired or revoked license key."}), 401)
@@ -687,7 +768,7 @@ def _auth_session(data):
         return None, (jsonify({"status": "error", "message": "License is assigned to a different user."}), 403)
     if str(record.get("device") or "") != device or str(record.get("session_token") or "") != session_token:
         return None, (jsonify({"status": "error", "message": "This session was replaced by another device. Please login again."}), 409)
-    return {"key": key, "user": user, "device": device, "record": record, "licenses": licenses}, None
+    return {"key": key, "user": user, "device": device, "record": record}, None
 
 
 initialize_license_store()
@@ -1782,7 +1863,7 @@ def fetch_forex_factory_calendar():
             "Accept": "application/json",
         },
     )
-    with urlopen(req, timeout=10) as response:
+    with urlopen(req, timeout=6) as response:
         payload = response.read().decode("utf-8", errors="replace")
 
     raw_items = json.loads(payload)
@@ -2121,8 +2202,8 @@ def verify_license():
     if not key or not user or not device:
         return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
 
-    licenses = load_licenses()
-    record = licenses.get(key)
+    # One indexed row lookup. This removes the old full-table read on every login/heartbeat.
+    record = load_license_record(key)
     now = int(time.time())
     if not record or not record.get("active", False):
         return jsonify({"status": "error", "message": "Invalid or revoked license key."}), 401
@@ -2130,8 +2211,6 @@ def verify_license():
         return jsonify({"status": "error", "message": "This license has expired. Contact admin to renew access."}), 401
 
     bound_user = normalize_user_id(record.get("user", ""))
-    # @username and username are treated as the same identity. A genuinely different
-    # customer still cannot use someone else's key.
     if bound_user and bound_user != user:
         return jsonify({"status": "error", "message": "This key is assigned to another user/UID."}), 403
 
@@ -2148,8 +2227,7 @@ def verify_license():
         if str(record.get("device") or "") != device or not supplied_token or str(record.get("session_token") or "") != supplied_token:
             return jsonify({"status": "error", "message": "This session was replaced by a newer device login."}), 409
         record["last_verified_at"] = now
-        licenses[key] = record
-        save_licenses(licenses)
+        save_license_record(key, record)
         return jsonify({
             "status": "success", "message": "Session active.", "user": user,
             "device_bound": True, "device_label": record.get("device_label"),
@@ -2168,8 +2246,7 @@ def verify_license():
     record["last_verified_at"] = now
     record["last_login_at"] = now
     record["plan"] = record.get("plan") or DEFAULT_LICENSE_PLAN
-    licenses[key] = record
-    save_licenses(licenses)
+    save_license_record(key, record)
     if is_free_trial:
         record_trial_claim("device", device, key)
     return jsonify({
@@ -2190,8 +2267,8 @@ def logout_license():
     token = str(data.get("session_token", "")).strip()
     if not key or not user or not device:
         return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
-    licenses = load_licenses()
-    record = licenses.get(key)
+
+    record = load_license_record(key)
     if not record:
         return jsonify({"status": "success", "message": "Session already cleared."})
     if (normalize_user_id(record.get("user", "")) == user and record.get("device") == device
@@ -2200,8 +2277,7 @@ def logout_license():
         record["device_label"] = None
         record["last_verified_at"] = None
         record["session_token"] = None
-        licenses[key] = record
-        save_licenses(licenses)
+        save_license_record(key, record)
     return jsonify({"status": "success", "message": "Device session released."})
 
 
