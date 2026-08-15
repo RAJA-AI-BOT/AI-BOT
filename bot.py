@@ -1773,6 +1773,46 @@ def should_suppress_duplicate(pair, signal, timeframe_summary):
     return False
 
 
+def format_market_data_age(seconds):
+    """Human-readable market-data age for UI/status responses."""
+    try:
+        total = max(0, int(round(float(seconds or 0))))
+    except Exception:
+        return "--"
+
+    if total < 60:
+        return f"{total}s"
+
+    minutes = total // 60
+    if minutes < 60:
+        return f"{minutes}m"
+
+    hours, rem_minutes = divmod(minutes, 60)
+    if hours < 48:
+        return f"{hours}h {rem_minutes}m" if rem_minutes else f"{hours}h"
+
+    days, rem_hours = divmod(hours, 24)
+    return f"{days}d {rem_hours}h" if rem_hours else f"{days}d"
+
+
+def market_result_is_countable(result):
+    """Stale/unavailable feed attempts are operational checks, not trading scans."""
+    if not isinstance(result, dict):
+        return False
+    if result.get("exclude_from_performance") or result.get("exclude_from_history"):
+        return False
+    if result.get("source_stale"):
+        return False
+    if result.get("data_delayed") and result.get("scan_paused"):
+        return False
+    return True
+
+
+def batch_results_are_countable(results):
+    rows = [row for row in (results or []) if isinstance(row, dict)]
+    return any(market_result_is_countable(row) for row in rows)
+
+
 def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
     return {
         "pair": pair,
@@ -1876,15 +1916,33 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
 
     base_df, data_age, symbol = get_market_data(pair)
     if base_df is None or base_df.empty:
-        result = no_signal_result(pair, "Yahoo market data unavailable. Retry when the live source is reachable.", symbol=symbol, data_age=data_age)
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "data_delayed": True})
+        result = no_signal_result(
+            pair,
+            "Live reference data is temporarily unavailable. Scan safely paused; retry when the source responds.",
+            symbol=symbol,
+            data_age=data_age,
+        )
+        result.update({
+            "scan_mode": opts["mode"],
+            "scan_thresholds": opts,
+            "data_delayed": True,
+            "scan_paused": True,
+            "market_status": "UNAVAILABLE",
+            "data_status": "UNAVAILABLE",
+            "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
+            "data_age_label": format_market_data_age(data_age) if data_age is not None else "--",
+            "exclude_from_history": True,
+            "exclude_from_performance": True,
+            "scan_skip_reason": "market_data_unavailable",
+        })
         return result
 
     if data_age is not None and data_age > MAX_SOURCE_CANDLE_AGE_SECONDS:
-        age_min = max(1, int(round(float(data_age) / 60.0)))
+        age_label = format_market_data_age(data_age)
         result = no_signal_result(
             pair,
-            f"Latest Yahoo 1m candle is about {age_min} minute(s) old; live source is stale/market may be closed.",
+            f"BAD MARKET / STALE DATA — latest Yahoo 1m reference candle is {age_label} old. "
+            "The market may be closed or the OTC reference feed is not currently fresh.",
             symbol=symbol,
             data_age=data_age,
         )
@@ -1893,6 +1951,15 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
             "scan_thresholds": opts,
             "data_delayed": True,
             "source_stale": True,
+            "bad_market": True,
+            "scan_paused": True,
+            "market_status": "BAD",
+            "data_status": "STALE",
+            "data_age_seconds": round(float(data_age), 2),
+            "data_age_label": age_label,
+            "exclude_from_history": True,
+            "exclude_from_performance": True,
+            "scan_skip_reason": "stale_market_data",
         })
         return result
 
@@ -2833,7 +2900,8 @@ def scan_batch():
         if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
             payload = cached["payload"]
             found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
-            _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
+            if batch_results_are_countable(payload["data"]):
+                _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
             return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
     key_lock = _get_batch_key_lock(key)
     with key_lock:
@@ -2861,20 +2929,40 @@ def scan_batch():
             results_by_pair[pair] = no_signal_result(pair, "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.", symbol=YAHOO_SYMBOLS.get(pair))
         pool.shutdown(wait=False, cancel_futures=True)
         results = [results_by_pair[pair] for pair in pairs]
-        data_available = sum(1 for r in results if r.get("data_age") is not None); data_unavailable = len(results) - data_available
-        signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"}); elapsed = round(time.time() - batch_started, 2)
-        diagnostics = {"total_pairs": len(results), "completed_pairs": len(done), "timed_out_pairs": timed_out_pairs,
-                       "timed_out_pairs_count": len(timed_out_pairs), "partial_response": bool(timed_out_pairs),
-                       "data_available": data_available, "data_unavailable": data_unavailable, "signals_found": signals_found,
-                       "elapsed_seconds": elapsed, "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
-                       "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS, "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
-                       "batch_workers": workers, "scan_mode": opts["mode"]}
+        stale_pairs = [r for r in results if r.get("source_stale")]
+        delayed_pairs = [r for r in results if r.get("data_delayed")]
+        usable_rows = [r for r in results if not r.get("source_stale") and not r.get("data_delayed")]
+        data_available = sum(1 for r in usable_rows if r.get("data_age") is not None)
+        data_unavailable = len(results) - data_available
+        signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"})
+        elapsed = round(time.time() - batch_started, 2)
+        all_market_data_blocked = bool(results) and not batch_results_are_countable(results)
+        diagnostics = {
+            "total_pairs": len(results),
+            "completed_pairs": len(done),
+            "timed_out_pairs": timed_out_pairs,
+            "timed_out_pairs_count": len(timed_out_pairs),
+            "partial_response": bool(timed_out_pairs),
+            "data_available": data_available,
+            "data_unavailable": data_unavailable,
+            "stale_pairs_count": len(stale_pairs),
+            "delayed_pairs_count": len(delayed_pairs),
+            "all_market_data_blocked": all_market_data_blocked,
+            "signals_found": signals_found,
+            "elapsed_seconds": elapsed,
+            "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
+            "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
+            "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
+            "batch_workers": workers,
+            "scan_mode": opts["mode"],
+        }
         payload = {"data": results, "diagnostics": diagnostics}
         with batch_cache_lock:
             batch_cache[key] = {"timestamp": time.time(), "payload": payload}
             if len(batch_cache) > 40:
                 for old_key, _ in sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]: batch_cache.pop(old_key, None)
-        _append_scan_event(auth["user"], market, "AUTO", opts["mode"], signals_found > 0)
+        if batch_results_are_countable(results):
+            _append_scan_event(auth["user"], market, "AUTO", opts["mode"], signals_found > 0)
         return jsonify({"status": "success", "data": results, "diagnostics": diagnostics, "cache_hit": False})
 
 
@@ -2907,7 +2995,14 @@ def scan_markets():
         return jsonify({"status": "success", "data": result, "news_safety_lock": news_lock})
 
     result = calculate_live_indicators(selected_pair, selected_expiry, opts)
-    _append_scan_event(auth["user"], market, selected_pair, opts["mode"], result.get("signal") in {"CALL", "PUT"})
+    if market_result_is_countable(result):
+        _append_scan_event(
+            auth["user"],
+            market,
+            selected_pair,
+            opts["mode"],
+            result.get("signal") in {"CALL", "PUT"},
+        )
     return jsonify({"status": "success", "data": result})
 
 
