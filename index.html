@@ -2472,6 +2472,13 @@
                 font-size: 8.5px !important;
                 margin-top: 3px !important;
             }
+            body.raja-mobile-scanning .scan-live-left {
+                display: none !important;
+            }
+            body.raja-mobile-scanning .premium-intensity-hud {
+                grid-column: 1 / -1 !important;
+                margin: 0 !important;
+            }
 
             /* ---------- CONFIRMED SIGNAL RESULT ---------- */
             body.raja-mobile-result .intel-heatmap-shell,
@@ -2800,8 +2807,10 @@
                 z-index: 2147481600 !important;
             }
 
-            body.raja-mobile-scanning #mainAppContent .config-panel.raja-mobile-sheet-open {
-                display: none !important;
+            body.raja-mobile-scanning #mainAppContent .config-panel.raja-mobile-sheet-open,
+            body.raja-mobile-result #mainAppContent .config-panel.raja-mobile-sheet-open,
+            body.raja-mobile-nosignal #mainAppContent .config-panel.raja-mobile-sheet-open {
+                display: block !important;
             }
 
             .raja-mobile-sheet-head {
@@ -2849,6 +2858,30 @@
                 margin-top: 9px !important;
                 padding-top: 9px !important;
                 border-top: 1px solid rgba(96,239,255,.10);
+            }
+            .mobile-hub-grid {
+                display: none;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open .mobile-hub-grid {
+                display: grid !important;
+                grid-template-columns: repeat(3, minmax(0,1fr));
+                gap: 6px;
+                margin: 0 0 10px;
+                padding: 0 0 10px;
+                border-bottom: 1px solid rgba(96,239,255,.10);
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open .mobile-hub-btn {
+                min-height: 38px;
+                border-radius: 10px;
+                border: 1px solid rgba(96,239,255,.18);
+                background: linear-gradient(180deg,rgba(8,20,35,.98),rgba(5,13,24,.98));
+                color: #d7faff;
+                font-size: 10px;
+                font-weight: 800;
+                letter-spacing: .15px;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open .mobile-hub-btn:active {
+                transform: translateY(1px);
             }
 
             .raja-mobile-config-backdrop {
@@ -2916,6 +2949,9 @@
                 grid-template-columns: 116px minmax(0,1fr);
                 gap: 6px;
             }
+            .raja-mobile-command-actions.triple {
+                grid-template-columns: 88px 108px minmax(0,1fr);
+            }
             .raja-mobile-command-actions button {
                 min-height: 49px;
                 border-radius: 11px;
@@ -2923,6 +2959,11 @@
                 font-weight: 950;
                 letter-spacing: .15px;
                 touch-action: manipulation;
+            }
+            .raja-mobile-home-btn {
+                border: 1px solid rgba(96,239,255,.22);
+                background: linear-gradient(180deg,rgba(8,21,37,.98),rgba(5,14,26,.98));
+                color: #dff9ff;
             }
             .raja-mobile-settings-btn {
                 border: 1px solid rgba(96,239,255,.32);
@@ -2955,6 +2996,9 @@
         @media (max-width: 390px) {
             .raja-mobile-command-actions {
                 grid-template-columns: 104px minmax(0,1fr);
+            }
+            .raja-mobile-command-actions.triple {
+                grid-template-columns: 78px 94px minmax(0,1fr);
             }
             .raja-mobile-command-actions button {
                 font-size: 10.5px;
@@ -3097,8 +3141,9 @@
             <div id="rajaMobileConfigBackdrop" class="raja-mobile-config-backdrop" aria-hidden="true"></div>
             <div id="rajaMobileCommandBar" class="raja-mobile-command-bar" role="region" aria-label="Quick trading controls">
                 <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
-                <div class="raja-mobile-command-actions">
-                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ QUICK SETTINGS</button>
+                <div class="raja-mobile-command-actions triple">
+                    <button id="rajaMobileHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button>
+                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">☰ MENU</button>
                     <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
                 </div>
             </div>
@@ -3184,7 +3229,7 @@
                                     <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
                                     <div class="ready-copy">
                                         <div class="ready-title">AI Deep Scan Ready</div>
-                                        <div class="ready-sub">Choose market, pair mode and expiry below. Auto Re-Scan can run the next market scan after five minutes.</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use MENU / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
                                         <div class="scan-stage-list" style="margin-top:18px;">
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
@@ -3526,6 +3571,14 @@
 
                     <section class="config-panel">
                         <div class="config-title">TRADING CONFIGURATION</div>
+                        <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
+                            <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                            <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
+                            <button type="button" class="mobile-hub-btn" onclick="openSettingsInline()">⚙ Settings</button>
+                            <button type="button" class="mobile-hub-btn" onclick="openNewsInline()">📰 News</button>
+                            <button type="button" class="mobile-hub-btn" onclick="openRiskInline()">🛡 Risk</button>
+                            <button type="button" class="mobile-hub-btn" onclick="openProfileInline()">👤 Profile</button>
+                        </div>
                         <div class="config-grid">
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option></select></div>
@@ -6726,8 +6779,7 @@
             const button = qs('rajaMobileSettingsBtn');
             if (!panel || !mobileQuery.matches) return;
 
-            const scanning = document.body.classList.contains('raja-mobile-scanning');
-            const nextOpen = Boolean(open) && !scanning;
+            const nextOpen = Boolean(open);
 
             panel.classList.toggle('raja-mobile-sheet-open', nextOpen);
             if (backdrop) {
@@ -6736,7 +6788,7 @@
             }
             if (button) {
                 button.classList.toggle('active', nextOpen);
-                button.textContent = nextOpen ? '✕ CLOSE SETTINGS' : '⚙ QUICK SETTINGS';
+                button.textContent = nextOpen ? '✕ CLOSE MENU' : '☰ MENU';
             }
 
             if (nextOpen) {
@@ -6778,13 +6830,12 @@
                 /IN PROGRESS/i.test(source.textContent || '');
 
             mobile.disabled = Boolean(source.disabled);
-            if (settings) settings.disabled = scanning;
+            if (settings) settings.disabled = false;
 
             if (scanning) {
                 const session = qs('scanSessionText');
                 const match = session ? String(session.textContent || '').match(/(\d{1,3})%/) : null;
                 mobile.textContent = match ? `⏳ SCANNING ${match[1]}%` : '⏳ SCANNING…';
-                if (configPanel()?.classList.contains('raja-mobile-sheet-open')) setConfigOpen(false);
             } else if (/AGAIN/i.test(source.textContent || '')) {
                 mobile.textContent = '↻ SCAN AGAIN';
             } else if (/PAUSED|LIMIT/i.test(source.textContent || '')) {
@@ -6808,10 +6859,16 @@
 
             const settings = qs('rajaMobileSettingsBtn');
             const scan = qs('rajaMobileScanBtn');
+            const home = qs('rajaMobileHomeBtn');
             const backdrop = qs('rajaMobileConfigBackdrop');
             const source = qs('scanBtn');
 
             if (settings) settings.addEventListener('click', toggleConfig);
+            if (home) home.addEventListener('click', function () {
+                setConfigOpen(false);
+                showDefaultView();
+                try { window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
+            });
             if (backdrop) backdrop.addEventListener('click', function () { setConfigOpen(false); });
 
             if (scan) {
@@ -6835,6 +6892,12 @@
                 });
             });
 
+            document.querySelectorAll('.mobile-hub-btn, .utility-btn').forEach(function (el) {
+                el.addEventListener('click', function () {
+                    setTimeout(function () { setConfigOpen(false); }, 30);
+                });
+            });
+
             if (source) {
                 const sourceObserver = new MutationObserver(updateActionButton);
                 sourceObserver.observe(source, {
@@ -6853,7 +6916,6 @@
             }
 
             const bodyObserver = new MutationObserver(function () {
-                if (document.body.classList.contains('raja-mobile-scanning')) setConfigOpen(false);
                 updateActionButton();
             });
             bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
