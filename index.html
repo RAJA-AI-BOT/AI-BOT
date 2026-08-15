@@ -2408,6 +2408,215 @@
         }
     </style>
 
+
+    <style id="raja-mobile-quick-controls-v16">
+        /* =========================================================
+           RAJA AI MOBILE QUICK CONTROLS V16
+           - Scan / Scan Again always reachable
+           - Trading configuration opens as a bottom sheet
+           - Current Market / Pair / Mode / Expiry always visible
+           ========================================================= */
+        .raja-mobile-command-bar,
+        .raja-mobile-config-backdrop,
+        .raja-mobile-sheet-head {
+            display: none;
+        }
+
+        @media (max-width: 820px) {
+            body,
+            body.raja-mobile-scanning,
+            body.raja-mobile-result,
+            body.raja-mobile-nosignal {
+                padding-bottom: calc(108px + env(safe-area-inset-bottom)) !important;
+            }
+
+            /* The old in-page scan control is replaced by the command bar. */
+            #mainAppContent #scanBtn {
+                display: none !important;
+                position: static !important;
+                transform: none !important;
+            }
+
+            /* Trading Configuration is no longer buried at the bottom of the page. */
+            #mainAppContent .config-panel {
+                display: none !important;
+            }
+
+            #mainAppContent .config-panel.raja-mobile-sheet-open {
+                display: block !important;
+                position: fixed !important;
+                left: 8px !important;
+                right: 8px !important;
+                bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+                width: auto !important;
+                max-width: 620px !important;
+                max-height: min(68dvh, 610px) !important;
+                margin: 0 auto !important;
+                padding: 10px !important;
+                overflow-y: auto !important;
+                overscroll-behavior: contain;
+                border: 1px solid rgba(96,239,255,.45) !important;
+                border-radius: 16px !important;
+                background: linear-gradient(180deg,rgba(7,18,33,.995),rgba(2,8,17,.995)) !important;
+                box-shadow: 0 -20px 60px rgba(0,0,0,.68), 0 0 28px rgba(34,211,238,.12) !important;
+                z-index: 2147481600 !important;
+            }
+
+            body.raja-mobile-scanning #mainAppContent .config-panel.raja-mobile-sheet-open {
+                display: none !important;
+            }
+
+            .raja-mobile-sheet-head {
+                position: sticky;
+                top: -10px;
+                z-index: 5;
+                margin: -10px -10px 9px;
+                padding: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                background: rgba(4,12,24,.98);
+                border-bottom: 1px solid rgba(96,239,255,.16);
+            }
+            .raja-mobile-sheet-head strong {
+                color: #e9fbff;
+                font-size: 12px;
+                letter-spacing: .35px;
+            }
+            .raja-mobile-sheet-close {
+                min-width: 72px;
+                min-height: 34px;
+                border: 1px solid rgba(96,239,255,.30);
+                border-radius: 9px;
+                background: #071524;
+                color: #7deaff;
+                font-size: 10px;
+                font-weight: 900;
+            }
+
+            #mainAppContent .config-panel.raja-mobile-sheet-open .config-title {
+                display: none !important;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open .config-grid {
+                display: block !important;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open .config-field {
+                margin-bottom: 8px !important;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open .mode-panel {
+                margin: 6px 0 8px !important;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open .utility-grid {
+                margin-top: 9px !important;
+                padding-top: 9px !important;
+                border-top: 1px solid rgba(96,239,255,.10);
+            }
+
+            .raja-mobile-config-backdrop {
+                position: fixed;
+                inset: 0;
+                display: none;
+                background: rgba(0,3,9,.70);
+                backdrop-filter: blur(3px);
+                -webkit-backdrop-filter: blur(3px);
+                z-index: 2147481400;
+            }
+            .raja-mobile-config-backdrop.visible {
+                display: block;
+            }
+
+            .raja-mobile-command-bar {
+                position: fixed;
+                left: 8px;
+                right: 8px;
+                bottom: max(7px, env(safe-area-inset-bottom));
+                z-index: 2147482000;
+                display: block;
+                max-width: 620px;
+                margin: 0 auto;
+                padding: 7px;
+                border: 1px solid rgba(96,239,255,.34);
+                border-radius: 15px;
+                background: linear-gradient(180deg,rgba(5,16,29,.97),rgba(2,8,17,.99));
+                box-shadow: 0 12px 38px rgba(0,0,0,.62), 0 0 26px rgba(34,211,238,.10);
+                backdrop-filter: blur(14px);
+                -webkit-backdrop-filter: blur(14px);
+            }
+
+            .raja-mobile-command-summary {
+                min-width: 0;
+                padding: 0 4px 6px;
+                color: #9db3c8;
+                font-size: 9.5px;
+                line-height: 1.25;
+                font-weight: 800;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                text-align: center;
+            }
+            .raja-mobile-command-summary b {
+                color: #55f0cf;
+            }
+
+            .raja-mobile-command-actions {
+                display: grid;
+                grid-template-columns: 116px minmax(0,1fr);
+                gap: 6px;
+            }
+            .raja-mobile-command-actions button {
+                min-height: 49px;
+                border-radius: 11px;
+                font-size: 11.5px;
+                font-weight: 950;
+                letter-spacing: .15px;
+                touch-action: manipulation;
+            }
+            .raja-mobile-settings-btn {
+                border: 1px solid rgba(96,239,255,.32);
+                background: #071625;
+                color: #a8edff;
+            }
+            .raja-mobile-settings-btn.active {
+                color: #07111d;
+                border-color: transparent;
+                background: linear-gradient(135deg,#60efff,#22d3ee);
+            }
+            .raja-mobile-scan-btn {
+                border: 0;
+                color: #03110e;
+                background: linear-gradient(90deg,#12e8aa,#27d9dd,#3ba7ff);
+                box-shadow: 0 0 18px rgba(0,255,135,.16);
+            }
+            .raja-mobile-scan-btn:disabled,
+            .raja-mobile-settings-btn:disabled {
+                opacity: .60;
+                filter: saturate(.65);
+            }
+
+            /* Keep the global TradingView credit above the new command bar. */
+            #rajaTradingViewAttribution {
+                margin-bottom: calc(112px + env(safe-area-inset-bottom)) !important;
+            }
+        }
+
+        @media (max-width: 390px) {
+            .raja-mobile-command-actions {
+                grid-template-columns: 104px minmax(0,1fr);
+            }
+            .raja-mobile-command-actions button {
+                font-size: 10.5px;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open {
+                left: 5px !important;
+                right: 5px !important;
+                bottom: calc(94px + env(safe-area-inset-bottom)) !important;
+                max-height: 66dvh !important;
+            }
+        }
+    </style>
+
 </head>
 <body>
 
@@ -2533,6 +2742,16 @@
         </div>
 
         <div id="mainAppContent" style="display: none;">
+
+            <div id="rajaMobileConfigBackdrop" class="raja-mobile-config-backdrop" aria-hidden="true"></div>
+            <div id="rajaMobileCommandBar" class="raja-mobile-command-bar" role="region" aria-label="Quick trading controls">
+                <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
+                <div class="raja-mobile-command-actions">
+                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ QUICK SETTINGS</button>
+                    <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
+                </div>
+            </div>
+
             <div class="app-shell">
                 <aside class="side-panel">
                     <div class="brand"><span class="brand-mark">♛</span><span>RAJA AI PREMIUM</span><span class="vip-pill">VIP</span></div>
@@ -6003,6 +6222,216 @@
             document.addEventListener('DOMContentLoaded', bindRajaMobileState, { once: true });
         } else {
             bindRajaMobileState();
+        }
+    })();
+    </script>
+
+
+    <script id="raja-mobile-quick-controller-v16">
+    (function () {
+        const mobileQuery = window.matchMedia('(max-width: 820px)');
+
+        function qs(id) { return document.getElementById(id); }
+
+        function cleanLabel(value) {
+            return String(value || '')
+                .replace(/[✨🪙🟢⚡🛡⚖⚙]/g, '')
+                .replace(/\(Broker\)/gi, '')
+                .replace(/\bMarket\b/gi, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function currentPairLabel() {
+            const pair = qs('pairSelect');
+            if (!pair) return 'Pair';
+            const raw = pair.selectedOptions && pair.selectedOptions[0]
+                ? pair.selectedOptions[0].textContent
+                : pair.value;
+            return /auto scan/i.test(raw || '') ? 'Auto Pair' : cleanLabel(raw);
+        }
+
+        function currentModeLabel() {
+            const active = document.querySelector('.mode-btn.active');
+            return active && active.dataset.mode ? active.dataset.mode : 'BALANCED';
+        }
+
+        function currentExpiryLabel() {
+            const active = document.querySelector('.expiry-btn.active');
+            return (active && (active.dataset.time || active.textContent.trim())) || '1m';
+        }
+
+        function updateSummary() {
+            const summary = qs('rajaMobileCommandSummary');
+            if (!summary) return;
+
+            const market = qs('marketType');
+            const marketText = cleanLabel(
+                market && market.selectedOptions && market.selectedOptions[0]
+                    ? market.selectedOptions[0].textContent
+                    : (market ? market.value : 'Market')
+            );
+
+            summary.innerHTML =
+                `${marketText || 'Market'} · ${currentPairLabel()} · ${currentModeLabel()} · <b>${currentExpiryLabel()}</b>`;
+        }
+
+        function configPanel() {
+            return document.querySelector('#mainAppContent .config-panel');
+        }
+
+        function setConfigOpen(open) {
+            const panel = configPanel();
+            const backdrop = qs('rajaMobileConfigBackdrop');
+            const button = qs('rajaMobileSettingsBtn');
+            if (!panel || !mobileQuery.matches) return;
+
+            const scanning = document.body.classList.contains('raja-mobile-scanning');
+            const nextOpen = Boolean(open) && !scanning;
+
+            panel.classList.toggle('raja-mobile-sheet-open', nextOpen);
+            if (backdrop) {
+                backdrop.classList.toggle('visible', nextOpen);
+                backdrop.setAttribute('aria-hidden', nextOpen ? 'false' : 'true');
+            }
+            if (button) {
+                button.classList.toggle('active', nextOpen);
+                button.textContent = nextOpen ? '✕ CLOSE SETTINGS' : '⚙ QUICK SETTINGS';
+            }
+
+            if (nextOpen) {
+                setTimeout(function () {
+                    try { panel.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) {}
+                }, 20);
+            }
+        }
+
+        function toggleConfig() {
+            const panel = configPanel();
+            if (!panel) return;
+            setConfigOpen(!panel.classList.contains('raja-mobile-sheet-open'));
+        }
+
+        function ensureSheetHeader() {
+            const panel = configPanel();
+            if (!panel || panel.querySelector('.raja-mobile-sheet-head')) return;
+
+            const head = document.createElement('div');
+            head.className = 'raja-mobile-sheet-head';
+            head.innerHTML =
+                '<strong>⚙ QUICK TRADING SETTINGS</strong>' +
+                '<button type="button" class="raja-mobile-sheet-close">DONE</button>';
+            panel.insertBefore(head, panel.firstChild);
+
+            const close = head.querySelector('.raja-mobile-sheet-close');
+            if (close) close.addEventListener('click', function () { setConfigOpen(false); });
+        }
+
+        function updateActionButton() {
+            const source = qs('scanBtn');
+            const mobile = qs('rajaMobileScanBtn');
+            const settings = qs('rajaMobileSettingsBtn');
+            if (!source || !mobile) return;
+
+            const scanning =
+                document.body.classList.contains('raja-mobile-scanning') ||
+                /IN PROGRESS/i.test(source.textContent || '');
+
+            mobile.disabled = Boolean(source.disabled);
+            if (settings) settings.disabled = scanning;
+
+            if (scanning) {
+                const session = qs('scanSessionText');
+                const match = session ? String(session.textContent || '').match(/(\d{1,3})%/) : null;
+                mobile.textContent = match ? `⏳ SCANNING ${match[1]}%` : '⏳ SCANNING…';
+                if (configPanel()?.classList.contains('raja-mobile-sheet-open')) setConfigOpen(false);
+            } else if (/AGAIN/i.test(source.textContent || '')) {
+                mobile.textContent = '↻ SCAN AGAIN';
+            } else if (/PAUSED|LIMIT/i.test(source.textContent || '')) {
+                mobile.textContent = source.textContent.trim();
+            } else {
+                mobile.textContent = '▶ SCAN NOW';
+            }
+        }
+
+        function syncMobileControls() {
+            if (!mobileQuery.matches) {
+                setConfigOpen(false);
+                return;
+            }
+            updateSummary();
+            updateActionButton();
+        }
+
+        function bind() {
+            ensureSheetHeader();
+
+            const settings = qs('rajaMobileSettingsBtn');
+            const scan = qs('rajaMobileScanBtn');
+            const backdrop = qs('rajaMobileConfigBackdrop');
+            const source = qs('scanBtn');
+
+            if (settings) settings.addEventListener('click', toggleConfig);
+            if (backdrop) backdrop.addEventListener('click', function () { setConfigOpen(false); });
+
+            if (scan) {
+                scan.addEventListener('click', function () {
+                    if (!source || source.disabled) return;
+                    setConfigOpen(false);
+                    source.click();
+                });
+            }
+
+            ['brokerSelect', 'marketType', 'pairSelect'].forEach(function (id) {
+                const el = qs(id);
+                if (el) el.addEventListener('change', function () {
+                    setTimeout(updateSummary, 0);
+                });
+            });
+
+            document.querySelectorAll('.mode-btn, .expiry-btn').forEach(function (el) {
+                el.addEventListener('click', function () {
+                    setTimeout(updateSummary, 0);
+                });
+            });
+
+            if (source) {
+                const sourceObserver = new MutationObserver(updateActionButton);
+                sourceObserver.observe(source, {
+                    attributes: true,
+                    attributeFilter: ['disabled', 'class'],
+                    childList: true,
+                    characterData: true,
+                    subtree: true
+                });
+            }
+
+            const session = qs('scanSessionText');
+            if (session) {
+                const sessionObserver = new MutationObserver(updateActionButton);
+                sessionObserver.observe(session, { childList: true, characterData: true, subtree: true });
+            }
+
+            const bodyObserver = new MutationObserver(function () {
+                if (document.body.classList.contains('raja-mobile-scanning')) setConfigOpen(false);
+                updateActionButton();
+            });
+            bodyObserver.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+            mobileQuery.addEventListener?.('change', syncMobileControls);
+            window.addEventListener('resize', syncMobileControls, { passive: true });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape') setConfigOpen(false);
+            });
+
+            syncMobileControls();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bind, { once: true });
+        } else {
+            bind();
         }
     })();
     </script>
