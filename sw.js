@@ -1,6 +1,6 @@
-const CACHE_VERSION = 'raja-ai-pwa-v9-stable-shell';
+const CACHE_VERSION = 'raja-ai-pwa-v10-stable-shell';
 const STABLE_SHELL_CACHE = 'raja-ai-pwa-stable-shell';
-const ASSET_CACHE = 'raja-ai-pwa-v9-assets';
+const ASSET_CACHE = 'raja-ai-pwa-v10-assets';
 
 const STATIC_ASSETS = [
   '/manifest.json',
@@ -15,6 +15,9 @@ const API_PREFIXES = [
   '/health',
   '/app-state',
   '/market-news',
+  '/logout-license',
+  '/track-signal',
+  '/user/profile',
   '/admin/',
   '/telegram/'
 ];
@@ -69,8 +72,6 @@ self.addEventListener('install', (event) => {
       )
     );
 
-    // Best effort only.
-    // Render waking ho to installation fail nahi hogi.
     try {
       const response = await fetch('/', {
         cache: 'no-store'
@@ -100,8 +101,6 @@ self.addEventListener('activate', (event) => {
       STABLE_SHELL_CACHE
     );
 
-    // Previous working dashboard ko preserve karo
-    // before deleting old versioned caches.
     const alreadySaved = await stable.match('/');
 
     if (!alreadySaved) {
@@ -145,8 +144,6 @@ self.addEventListener('activate', (event) => {
         .map((key) => caches.delete(key))
     );
 
-    // Browser network request ko SW boot ke sath hi
-    // start kar sakta hai.
     try {
       if (
         self.registration.navigationPreload
@@ -174,8 +171,6 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Third-party resources ko service worker
-  // intercept nahi karega.
   if (
     url.origin !== self.location.origin
   ) {
@@ -198,12 +193,6 @@ self.addEventListener('fetch', (event) => {
 
   // ------------------------------------------------------
   // NAVIGATION
-  //
-  // Returning user:
-  // cached dashboard immediately show hoga.
-  //
-  // Background:
-  // Render wake + latest dashboard refresh.
   // ------------------------------------------------------
 
   if (request.mode === 'navigate') {
@@ -251,14 +240,10 @@ self.addEventListener('fetch', (event) => {
         const cached =
           await stable.match('/');
 
-        // Repeat opens:
-        // dashboard instantly load.
         if (cached) {
           return cached;
         }
 
-        // First ever visit:
-        // server response ka wait.
         const network =
           await networkRefresh;
 
@@ -348,7 +333,6 @@ p {
 
   // ------------------------------------------------------
   // STATIC PWA ASSETS
-  // Cache first + background refresh.
   // ------------------------------------------------------
 
   if (
@@ -415,7 +399,6 @@ p {
 
   // ------------------------------------------------------
   // EVERYTHING ELSE
-  // Network first.
   // ------------------------------------------------------
 
   event.respondWith(
