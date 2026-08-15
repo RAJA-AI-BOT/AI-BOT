@@ -4856,6 +4856,24 @@
         }
     </style>
 
+
+    <style id="raja-scanning-market-fallback-v3">
+        .raja-scanning-market-badge{display:flex;align-items:center;justify-content:center;gap:7px;width:fit-content;max-width:100%;margin:0 auto 10px;padding:7px 11px;border-radius:999px;border:1px solid rgba(0,255,154,.48);background:linear-gradient(90deg,rgba(0,255,154,.10),rgba(96,239,255,.08));color:#9fffe0;font-size:8px;font-weight:950;letter-spacing:.7px;text-transform:uppercase;box-shadow:0 0 20px rgba(0,255,154,.10),inset 0 0 18px rgba(96,239,255,.035);animation:rajaMarketBadgeFlash 1.05s ease-in-out infinite}
+        .raja-scanning-market-badge strong{color:#fff;font-size:9px;text-shadow:0 0 12px rgba(96,239,255,.75);white-space:nowrap}
+        .raja-scanning-market-dot{width:7px;height:7px;border-radius:50%;background:#00ff9a;box-shadow:0 0 12px #00ff9a;animation:rajaMarketDotPulse .8s ease-in-out infinite;flex:0 0 auto}
+        @keyframes rajaMarketBadgeFlash{0%,100%{opacity:.72;transform:translateY(0);border-color:rgba(0,255,154,.28)}50%{opacity:1;transform:translateY(-1px);border-color:rgba(96,239,255,.72);box-shadow:0 0 25px rgba(0,255,154,.20),inset 0 0 20px rgba(96,239,255,.07)}}
+        @keyframes rajaMarketDotPulse{0%,100%{transform:scale(.85);opacity:.65}50%{transform:scale(1.25);opacity:1}}
+        .raja-otc-fallback-panel{margin-top:9px;padding:10px;border:1px solid rgba(250,204,21,.30);border-radius:10px;background:radial-gradient(circle at 10% 0%,rgba(250,204,21,.08),transparent 40%),rgba(17,14,4,.52);box-shadow:inset 0 0 22px rgba(250,204,21,.025)}
+        .raja-otc-fallback-kicker{color:#ffd86b;font-size:6.4px;font-weight:950;letter-spacing:.65px;text-transform:uppercase}
+        .raja-otc-fallback-title{margin-top:4px;color:#fff5c2;font-size:9px;font-weight:950;letter-spacing:.35px}
+        .raja-otc-fallback-copy{margin-top:5px;color:#9b9272;font-size:6.5px;line-height:1.5;font-weight:760}
+        .raja-otc-fallback-btn{width:100%;margin-top:8px;padding:9px 8px;border:1px solid rgba(250,204,21,.42);border-radius:8px;background:linear-gradient(90deg,rgba(250,204,21,.18),rgba(245,158,11,.13));color:#ffe68b;font-size:7.2px;font-weight:950;cursor:pointer;text-transform:uppercase}
+        .raja-otc-fallback-btn:hover,.raja-otc-fallback-btn:active{border-color:#facc15;background:linear-gradient(90deg,rgba(250,204,21,.28),rgba(245,158,11,.20))}
+        .raja-otc-fallback-btn:disabled{opacity:.50;cursor:not-allowed}
+        .raja-otc-fallback-meta{margin-top:6px;color:#837b61;font-size:6.1px;line-height:1.45;font-weight:800}
+        @media(max-width:820px){.raja-scanning-market-badge{width:100%;margin-bottom:8px;padding:7px 8px;font-size:7.2px}.raja-scanning-market-badge strong{font-size:8px}.raja-otc-fallback-panel{padding:10px 9px}.raja-otc-fallback-btn{min-height:36px;font-size:7.5px}}
+    </style>
+
 </head>
 <body>
 
@@ -5148,6 +5166,11 @@
                                             </div>
                                         </div>
                                         <div class="premium-intensity-right">
+                                            <div class="raja-scanning-market-badge" id="rajaScanningMarketBadge">
+                                                <span class="raja-scanning-market-dot"></span>
+                                                <span>SCANNING NOW:</span>
+                                                <strong id="rajaScanningMarketName">--</strong>
+                                            </div>
                                             <div class="premium-intensity-kicker">
                                                 <div class="premium-intensity-title">LIVE SCAN INTENSITY</div>
                                                 <div class="premium-live-pill">STREAMING MARKET DATA</div>
@@ -5401,6 +5424,18 @@
 
                         <div id="rajaScanReadyList" class="raja-market-ready-list">
                             <div class="raja-scan-ready-empty">Checking market availability…</div>
+                        </div>
+
+                        <div id="rajaOtcFallbackPanel" class="raja-otc-fallback-panel" style="display:none;">
+                            <div class="raja-otc-fallback-kicker">⚡ ALL 4 NORMAL MARKETS = 0 READY</div>
+                            <div class="raja-otc-fallback-title">QUOTEX OTC FALLBACK</div>
+                            <div class="raja-otc-fallback-copy">
+                                Normal RAJA AI reference feeds are currently unavailable. This fallback appears only after Crypto Live, Crypto OTC, Forex Live and Forex OTC have all been checked and none has fresh scan-ready data.
+                            </div>
+                            <button type="button" id="rajaOtcFallbackBtn" class="raja-otc-fallback-btn">
+                                ⚡ OPEN QUOTEX OTC FALLBACK
+                            </button>
+                            <div id="rajaOtcFallbackMeta" class="raja-otc-fallback-meta">Checking fallback connection…</div>
                         </div>
 
                         <div class="raja-scan-ready-footer">
@@ -7552,6 +7587,12 @@
             let broker = document.getElementById('brokerSelect').value;
             let market = document.getElementById('marketType').value;
             let selectedPair = document.getElementById('pairSelect').value;
+
+            try {
+                if (typeof window.rajaSetScanningMarketBadge === 'function') {
+                    window.rajaSetScanningMarketBadge(market);
+                }
+            } catch (_) {}
             const isAutoScan = selectedPair.includes('Auto Scan') || selectedPair === '';
 
             // ---------------------------------------------------------
@@ -10615,6 +10656,56 @@
         const CACHE_MS = 3 * 60 * 1000;
         const MARKETS = ['CryptoLive', 'CryptoOTC', 'ForexLive', 'ForexOTC'];
         const LIVE_PRIORITY = { CryptoLive:4, ForexLive:3, CryptoOTC:2, ForexOTC:1 };
+        let otcFallbackConfig = null;
+
+        function setScanningMarketBadge(market) {
+            const nameEl = document.getElementById('rajaScanningMarketName');
+            if (nameEl) nameEl.textContent = marketLabel(market);
+        }
+
+        async function loadOtcFallbackConfig(force = false) {
+            if (otcFallbackConfig && !force) return otcFallbackConfig;
+            try {
+                const auth = (typeof getAuthPayload === 'function') ? getAuthPayload() : {};
+                const qs = new URLSearchParams({
+                    key:String(auth.key || ''),
+                    user:String(auth.user || ''),
+                    device:String(auth.device || ''),
+                    session_token:String(auth.session_token || '')
+                });
+                const response = await fetch('/otc-fallback-config?' + qs.toString(), { cache:'no-store' });
+                const payload = await response.json().catch(() => null);
+                if (!response.ok || !payload || payload.status !== 'success') {
+                    throw new Error((payload && payload.message) || 'Fallback configuration unavailable.');
+                }
+                otcFallbackConfig = payload.data || {};
+            } catch (error) {
+                otcFallbackConfig = {enabled:false,companion_connected:false,launch_url:'',message:String(error?.message || 'Fallback configuration unavailable.')};
+            }
+            return otcFallbackConfig;
+        }
+
+        async function openOtcFallback() {
+            const btn = document.getElementById('rajaOtcFallbackBtn');
+            const meta = document.getElementById('rajaOtcFallbackMeta');
+            if (btn) btn.disabled = true;
+
+            const cfg = await loadOtcFallbackConfig(true);
+            if (cfg && cfg.launch_url) {
+                try { window.open(String(cfg.launch_url), '_blank', 'noopener,noreferrer'); }
+                catch (_) { window.location.href = String(cfg.launch_url); }
+            }
+
+            if (meta) {
+                meta.textContent = cfg?.companion_connected
+                    ? 'Configured Quotex OTC companion launcher opened.'
+                    : 'Quotex opened. Direct Quotex candle scanning is not connected in this build; RAJA AI will not fake OTC candles.';
+            }
+            if (btn) {
+                btn.disabled = false;
+                btn.textContent = cfg?.companion_connected ? '⚡ OPEN QUOTEX OTC COMPANION' : '⚡ OPEN QUOTEX OTC';
+            }
+        }
 
         let refreshPromise = null;
         let refreshGeneration = 0;
@@ -10827,6 +10918,9 @@
             const bestBtn = document.getElementById('rajaBestAvailableBtn');
             const bestMeta = document.getElementById('rajaBestAvailableMeta');
             const refreshBtn = document.getElementById('rajaRefreshMarketsBtn');
+            const fallbackPanel = document.getElementById('rajaOtcFallbackPanel');
+            const fallbackBtn = document.getElementById('rajaOtcFallbackBtn');
+            const fallbackMeta = document.getElementById('rajaOtcFallbackMeta');
             if (!countEl || !summaryEl || !listEl || !updatedEl || !statusEl || !bestBtn) return;
 
             const store = readStore();
@@ -10840,6 +10934,27 @@
 
             const totalReady = freshRows.reduce((sum, item) => sum + snapshotReadyCount(item.snapshot), 0);
             countEl.textContent = String(totalReady);
+
+            const allFourChecked = MARKETS.every(market => isFreshSnapshot(store[market]));
+            const allFourZeroReady = allFourChecked && MARKETS.every(market => snapshotReadyCount(store[market]) === 0);
+
+            if (fallbackPanel) {
+                fallbackPanel.style.display = (!checkingMarkets.size && allFourZeroReady) ? 'block' : 'none';
+            }
+
+            if (!checkingMarkets.size && allFourZeroReady) {
+                loadOtcFallbackConfig(false).then(cfg => {
+                    if (fallbackMeta) {
+                        fallbackMeta.textContent = cfg?.companion_connected
+                            ? 'All normal markets are unavailable. Configured Quotex OTC companion is ready to launch.'
+                            : 'All normal markets are unavailable. Quotex can be opened, but direct OTC candle scanning needs a companion/data bridge.';
+                    }
+                    if (fallbackBtn) {
+                        fallbackBtn.disabled = !cfg?.enabled;
+                        fallbackBtn.textContent = cfg?.companion_connected ? '⚡ OPEN QUOTEX OTC COMPANION' : '⚡ OPEN QUOTEX OTC';
+                    }
+                }).catch(() => {});
+            }
 
             const best = bestAvailableMarket(store);
             if (best) {
@@ -10952,6 +11067,7 @@
 
             marketSelect.value = market;
             try { updatePairs(); } catch (_) {}
+            try { setScanningMarketBadge(market); } catch (_) {}
 
             if (pairSelect.options.length) pairSelect.selectedIndex = 0;
             try { syncTargetPairDisplay(); } catch (_) {}
@@ -11054,8 +11170,17 @@
                 refreshBtn.dataset.bound = '1';
                 refreshBtn.addEventListener('click', () => refreshAllMarkets(true));
             }
+
+            const fallbackBtn = document.getElementById('rajaOtcFallbackBtn');
+            if (fallbackBtn && !fallbackBtn.dataset.bound) {
+                fallbackBtn.dataset.bound = '1';
+                fallbackBtn.addEventListener('click', openOtcFallback);
+            }
+
+            try { setScanningMarketBadge(currentMarket()); } catch (_) {}
         }
 
+        window.rajaSetScanningMarketBadge = setScanningMarketBadge;
         window.rajaRefreshAvailableMarkets = refreshAllMarkets;
         window.rajaScanAvailableMarket = scanAvailableMarket;
         window.rajaScanBestAvailableMarket = scanBestAvailableMarket;
