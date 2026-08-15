@@ -288,6 +288,18 @@ def initialize_license_store():
                     )
                 """)
                 cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raja_signals (
+                        signal_id TEXT PRIMARY KEY,
+                        user_id TEXT,
+                        created_at BIGINT NOT NULL,
+                        payload TEXT NOT NULL
+                    )
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_raja_signals_user_created
+                    ON raja_signals(user_id, created_at DESC)
+                """)
+                cur.execute("""
                     CREATE TABLE IF NOT EXISTS raja_trial_claims (
                         claim_type TEXT NOT NULL,
                         claim_value TEXT NOT NULL,
@@ -671,7 +683,29 @@ initialize_license_store()
 # =========================================================
 
 def load_signals():
+    """Load tracked signals from PostgreSQL when available, otherwise local JSON."""
     with signals_lock:
+        if DATABASE_URL:
+            try:
+                with _db_connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "SELECT payload FROM raja_signals "
+                            "ORDER BY created_at DESC LIMIT 5000"
+                        )
+                        rows = cur.fetchall()
+                items = []
+                for row in rows:
+                    try:
+                        item = json.loads(str(row[0]))
+                        if isinstance(item, dict):
+                            items.append(item)
+                    except Exception:
+                        continue
+                return items
+            except Exception as exc:
+                print(f"Signal DB read warning: {exc}")
+
         if not SIGNALS_FILE.exists():
             SIGNALS_FILE.write_text("[]", encoding="utf-8")
             return []
@@ -684,9 +718,38 @@ def load_signals():
 
 
 def save_signals(items):
+    """Persist the current tracked-signal set."""
     with signals_lock:
+        clean_items = [x for x in (items or []) if isinstance(x, dict)][:5000]
+
+        if DATABASE_URL:
+            try:
+                rows = []
+                for item in clean_items:
+                    signal_id = str(item.get("id") or "").strip()
+                    if not signal_id:
+                        continue
+                    rows.append((
+                        signal_id,
+                        normalize_user_id(item.get("user", "")),
+                        int(item.get("created_at") or 0),
+                        json.dumps(item, separators=(",", ":"), ensure_ascii=False),
+                    ))
+                with _db_connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("DELETE FROM raja_signals")
+                        if rows:
+                            cur.executemany(
+                                "INSERT INTO raja_signals(signal_id,user_id,created_at,payload) "
+                                "VALUES(%s,%s,%s,%s)",
+                                rows,
+                            )
+                return
+            except Exception as exc:
+                print(f"Signal DB write warning: {exc}")
+
         temp = SIGNALS_FILE.with_suffix(".tmp")
-        temp.write_text(json.dumps(items, indent=2), encoding="utf-8")
+        temp.write_text(json.dumps(clean_items, indent=2), encoding="utf-8")
         temp.replace(SIGNALS_FILE)
 
 
@@ -776,52 +839,81 @@ def resolve_tracked_signal(item):
     return True
 
 
+def tracked_signal_phase(item, now=None):
+    """Return the live lifecycle phase used by the browser Signal Flow UI."""
+    item = item or {}
+    now = int(now or time.time())
+    result = str(item.get("result") or "").upper()
+    status = str(item.get("status") or "").upper()
+
+    if result in {"WIN", "LOSS", "DRAW"} or status == "COMPLETED":
+        return "COMPLETED"
+    if status == "AWAITING_QX":
+        return "QX_VERIFY"
+
+    entry_epoch = int(item.get("entry_epoch") or 0)
+    expiry_epoch = int(item.get("expiry_epoch") or 0)
+    if entry_epoch and now < entry_epoch:
+        return "WAITING_ENTRY"
+    if entry_epoch and now <= entry_epoch + 4:
+        return "ENTRY_OPEN"
+    if expiry_epoch and now < expiry_epoch:
+        return "TRACKING"
+    if expiry_epoch:
+        return "RESOLVING"
+    return "PENDING"
+
+
+def resolve_due_signals(items, now=None):
+    """Resolve all due outcomes once. Returns True when stored data changed."""
+    changed = False
+    now = int(now or time.time())
+
+    for item in items:
+        item_status = str(item.get("status") or "").upper()
+        if item_status not in {"PENDING", "AWAITING_QX"}:
+            continue
+        if item_status == "AWAITING_QX" and item.get("yahoo_result"):
+            continue
+
+        expiry_epoch = int(item.get("expiry_epoch") or 0)
+        if not expiry_epoch or now < expiry_epoch + 8:
+            continue
+
+        pair = str(item.get("pair", ""))
+
+        # Yahoo is not the Quotex OTC price feed. For OTC we calculate a
+        # clearly-labelled Yahoo proxy result, but actual WIN/LOSS remains
+        # a manual Quotex confirmation.
+        if "(OTC)" in pair:
+            proxy_item = dict(item)
+            if resolve_tracked_signal(proxy_item):
+                for field in (
+                    "entry_price", "exit_price", "entry_candle_epoch",
+                    "exit_candle_epoch", "yahoo_result"
+                ):
+                    if field in proxy_item:
+                        item[field] = proxy_item.get(field)
+            item["status"] = "AWAITING_QX"
+            item["result"] = None
+            item["result_source"] = "awaiting_quotex"
+            item["resolved_at"] = now
+            changed = True
+            continue
+
+        if resolve_tracked_signal(item):
+            changed = True
+
+    return changed
+
+
 def signal_outcome_worker():
     while True:
         try:
             with signals_lock:
                 items = load_signals()
-                changed = False
-                now = int(time.time())
-
-                for item in items:
-                    item_status = str(item.get("status") or "")
-                    if item_status not in {"PENDING", "AWAITING_QX"}:
-                        continue
-                    if item_status == "AWAITING_QX" and item.get("yahoo_result"):
-                        continue
-
-                    expiry_epoch = int(item.get("expiry_epoch", 0))
-                    if now < expiry_epoch + 8:
-                        continue
-
-                    pair = str(item.get("pair", ""))
-
-                    # Yahoo is not the Quotex OTC price feed. For OTC we calculate
-                    # a clearly-labelled Yahoo proxy outcome for visibility, but we do NOT
-                    # count it as the customer's actual Quotex WIN/LOSS until QX confirmation.
-                    if "(OTC)" in pair:
-                        proxy_item = dict(item)
-                        if resolve_tracked_signal(proxy_item):
-                            for field in (
-                                "entry_price", "exit_price", "entry_candle_epoch",
-                                "exit_candle_epoch", "yahoo_result"
-                            ):
-                                if field in proxy_item:
-                                    item[field] = proxy_item.get(field)
-                        item["status"] = "AWAITING_QX"
-                        item["result"] = None
-                        item["result_source"] = "awaiting_quotex"
-                        item["resolved_at"] = now
-                        changed = True
-                        continue
-
-                    if resolve_tracked_signal(item):
-                        changed = True
-
-                if changed:
+                if resolve_due_signals(items):
                     save_signals(items)
-
         except Exception as e:
             print(f"Signal outcome worker error: {e}")
 
@@ -2361,25 +2453,65 @@ def set_signal_result():
 
 @app.route("/signals/history", methods=["GET"])
 def signals_history():
-    try: limit = max(1, min(int(request.args.get("limit", 30)), 100))
-    except Exception: limit = 30
+    try:
+        limit = max(1, min(int(request.args.get("limit", 30)), 100))
+    except Exception:
+        limit = 30
+
     auth_data = {k: request.args.get(k, "") for k in ("key", "user", "device", "session_token")}
     auth, error = _auth_session(auth_data)
-    if error: return error
-    items = load_signals()
+    if error:
+        return error
+
+    # Do one on-demand resolution pass before returning history. This prevents
+    # WIN/LOSS from appearing stuck when the background worker has not ticked yet.
+    with signals_lock:
+        items = load_signals()
+        if resolve_due_signals(items):
+            save_signals(items)
+
     user_items = [x for x in items if normalize_user_id(x.get("user", "")) == auth["user"]]
     # Backward compatibility: include old same-device history records that predate user tagging.
-    user_items.extend([x for x in items if not x.get("user") and str(x.get("client_id", "")) == auth["device"] and x not in user_items])
+    user_items.extend([
+        x for x in items
+        if not x.get("user")
+        and str(x.get("client_id", "")) == auth["device"]
+        and x not in user_items
+    ])
     user_items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
-    return jsonify({"status": "success", "data": user_items[:limit], "stats": signal_stats(user_items)})
+
+    now = int(time.time())
+    view_items = []
+    for raw in user_items[:limit]:
+        item = dict(raw)
+        item["phase"] = tracked_signal_phase(item, now)
+        entry_epoch = int(item.get("entry_epoch") or 0)
+        expiry_epoch = int(item.get("expiry_epoch") or 0)
+        item["seconds_to_entry"] = max(0, entry_epoch - now) if entry_epoch else None
+        item["seconds_to_expiry"] = max(0, expiry_epoch - now) if expiry_epoch else None
+        view_items.append(item)
+
+    return jsonify({
+        "status": "success",
+        "data": view_items,
+        "stats": signal_stats(user_items),
+        "server_epoch": now,
+    })
 
 
 @app.route("/signals/stats", methods=["GET"])
 def signals_stats():
     auth_data = {k: request.args.get(k, "") for k in ("key", "user", "device", "session_token")}
     auth, error = _auth_session(auth_data)
-    if error: return error
-    items = [x for x in load_signals() if normalize_user_id(x.get("user", "")) == auth["user"]]
+    if error:
+        return error
+
+    with signals_lock:
+        all_items = load_signals()
+        if resolve_due_signals(all_items):
+            save_signals(all_items)
+
+    items = [x for x in all_items if normalize_user_id(x.get("user", "")) == auth["user"]]
     return jsonify({"status": "success", "stats": signal_stats(items)})
 
 
