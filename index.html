@@ -4327,6 +4327,69 @@
         html[data-raja-theme="light"] .v31-system-chip b { color:#07895b !important; }
     </style>
 
+
+    <style id="raja-bad-market-v34-style">
+        .raja-bad-market-panel{
+            width:min(100%,760px);
+            margin:8px auto 10px;
+            padding:12px;
+            border:1px solid rgba(255,184,77,.45);
+            border-radius:12px;
+            background:
+                radial-gradient(circle at 8% 10%,rgba(255,80,100,.10),transparent 38%),
+                linear-gradient(180deg,rgba(35,18,14,.90),rgba(8,11,20,.96));
+            box-shadow:0 12px 34px rgba(0,0,0,.22),inset 0 0 24px rgba(255,184,77,.035);
+            text-align:left;
+        }
+        .raja-bad-market-kicker{
+            color:#ffcf75;font-size:7px;font-weight:950;letter-spacing:.9px;text-transform:uppercase;
+            margin-bottom:8px;
+        }
+        .raja-bad-market-status-grid{
+            display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;
+        }
+        .raja-bad-market-status-grid>div{
+            min-width:0;padding:8px;border:1px solid rgba(255,255,255,.08);border-radius:8px;
+            background:rgba(255,255,255,.025);
+        }
+        .raja-bad-market-status-grid span{
+            display:block;color:#8398aa;font-size:6.5px;font-weight:900;letter-spacing:.5px;
+        }
+        .raja-bad-market-status-grid b{
+            display:block;margin-top:4px;color:#ffbd59;font-size:12px;font-weight:1000;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+        }
+        #rajaBadMarketStatus{color:#ff6b7f}
+        #rajaBadDataStatus{color:#ffbd59}
+        #rajaBadDataAge{color:#eef9ff}
+        .raja-bad-market-message{
+            margin-top:8px;padding:9px 10px;border-radius:8px;border-left:3px solid #ffbd59;
+            background:rgba(255,189,89,.055);color:#dce8ef;font-size:9px;line-height:1.5;font-weight:750;
+        }
+        .raja-bad-market-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:9px}
+        .raja-bad-market-actions button{
+            min-height:36px;border-radius:8px;font-size:8px;font-weight:950;letter-spacing:.35px;cursor:pointer;
+        }
+        .raja-bad-retry-btn{
+            border:1px solid rgba(0,255,135,.52);background:linear-gradient(135deg,rgba(0,255,135,.18),rgba(0,242,254,.12));color:#5fffc3;
+        }
+        .raja-bad-change-btn{
+            border:1px solid rgba(96,239,255,.40);background:rgba(96,239,255,.07);color:#9cf3ff;
+        }
+        html[data-raja-theme="light"] .raja-bad-market-panel{
+            background:linear-gradient(180deg,#fff8ee,#fff);border-color:#e9b85e;
+        }
+        html[data-raja-theme="light"] .raja-bad-market-status-grid>div{background:#fff;border-color:#dfe7eb}
+        html[data-raja-theme="light"] .raja-bad-market-message{color:#30414d;background:#fff8e8}
+        @media(max-width:820px){
+            .raja-bad-market-panel{padding:10px;margin-top:7px}
+            .raja-bad-market-status-grid{grid-template-columns:1fr 1fr 1fr;gap:4px}
+            .raja-bad-market-status-grid>div{padding:7px 5px}
+            .raja-bad-market-status-grid b{font-size:10px}
+            .raja-bad-market-actions{grid-template-columns:1fr}
+        }
+    </style>
+
 </head>
 <body>
 
@@ -4828,6 +4891,23 @@
                             <div id="noSignalView" class="no-signal-view">
                                 <div style="font-size:14px;color:#ff5d7d;font-weight:900;text-transform:uppercase;margin-bottom:6px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
                                 <div style="font-size:10px;color:#a9bad0;margin-bottom:5px;" id="noSignalDesc">Current filters did not converge safely.</div>
+
+                                <div id="rajaBadMarketPanel" class="raja-bad-market-panel" style="display:none;">
+                                    <div class="raja-bad-market-kicker">RAJA AI MARKET SAFETY</div>
+                                    <div class="raja-bad-market-status-grid">
+                                        <div><span>MARKET STATUS</span><b id="rajaBadMarketStatus">BAD</b></div>
+                                        <div><span>DATA STATUS</span><b id="rajaBadDataStatus">STALE</b></div>
+                                        <div><span>DATA AGE</span><b id="rajaBadDataAge">--</b></div>
+                                    </div>
+                                    <div id="rajaBadMarketMessage" class="raja-bad-market-message">
+                                        Reference feed is stale — scan safely paused. No signal generated.
+                                    </div>
+                                    <div class="raja-bad-market-actions">
+                                        <button type="button" class="raja-bad-retry-btn" onclick="retryRajaMarketData()">↻ RETRY DATA</button>
+                                        <button type="button" class="raja-bad-change-btn" onclick="changeRajaMarketFromBadData()">⇄ CHANGE MARKET</button>
+                                    </div>
+                                </div>
+
                                 <div id="noTradeReasonBox" class="no-trade-reason-box" style="display:none;"></div>
                                 <button class="menu-back-btn" onclick="playClickSound(); resetPrimaryView()">↻ Back to Dashboard</button>
                             </div>
@@ -5655,24 +5735,46 @@
             scanAnimationInterval = null;
 
             const isError = finalView === 'error';
-            const terminalProgress = isError ? 0 : ((finalView === 'signal' || finalView === 'nosignal') ? 100 : 0);
+            const isBadMarket = finalView === 'badmarket';
+            const terminalProgress = (isError || isBadMarket)
+                ? 0
+                : ((finalView === 'signal' || finalView === 'nosignal') ? 100 : 0);
+
             // Update every progress widget before marking the session inactive.
             if (scanSessionState.running) setScanProgress(terminalProgress);
             scanSessionState.running = false;
             scanSessionState.progress = terminalProgress;
             stopScanCandleTimer();
-            primaryViewState = isError ? 'nosignal' : (finalView || 'ready');
-            if (finalView === 'signal' || finalView === 'nosignal') {
+            primaryViewState = (isError || isBadMarket) ? 'nosignal' : (finalView || 'ready');
+
+            if (finalView === 'signal' || finalView === 'nosignal' || isBadMarket) {
                 rajaHasCompletedScan = true;
             }
+
             updateScanSessionChip();
-            if (finalView === 'nosignal' && typeof v23SmartAlert === 'function') v23SmartAlert('no-trade');
-            if (typeof v23SetHeroStatus === 'function') {
-                v23SetHeroStatus(finalView === 'signal' ? 'SIGNAL CONFIRMED' : (finalView === 'nosignal' ? 'NO TRADE · SAFETY FILTERED' : (isError ? 'MARKET DATA DELAYED · RETRY READY' : 'READY FOR DEEP SCAN')));
+
+            // BAD MARKET / STALE DATA is not a trading NO TRADE event.
+            if (finalView === 'nosignal' && typeof v23SmartAlert === 'function') {
+                v23SmartAlert('no-trade');
             }
+
+            if (typeof v23SetHeroStatus === 'function') {
+                v23SetHeroStatus(
+                    finalView === 'signal'
+                        ? 'SIGNAL CONFIRMED'
+                        : (isBadMarket
+                            ? 'BAD MARKET · STALE DATA'
+                            : (finalView === 'nosignal'
+                                ? 'NO TRADE · SAFETY FILTERED'
+                                : (isError ? 'MARKET DATA DELAYED · RETRY READY' : 'READY FOR DEEP SCAN')))
+                );
+            }
+
             const scanBtn = document.getElementById('scanBtn');
             if (scanBtn && !scanBtn.disabled && !guardReached()) {
-                scanBtn.innerText = rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN';
+                scanBtn.innerText = isBadMarket
+                    ? '↻ RETRY DATA'
+                    : (rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN');
             }
         }
 
@@ -6658,6 +6760,10 @@
                             'Current market conditions did not pass the safety gate.'
                         );
                         rajaLatestNewsLock = result.data.news_safety_lock || null;
+                        rajaLatestMarketState = captureRajaMarketState(
+                            result.data,
+                            document.getElementById('marketType')?.value || ''
+                        );
                     }
 
                     return normalizeBackendSignal(result.data, pair);
@@ -6710,11 +6816,38 @@
                 }
 
                 const rejectedRows = result.data.filter(row => row && row.signal === 'NO SIGNAL');
+                const marketRows = result.data.filter(row => row && typeof row === 'object');
+                const blockedRows = marketRows.filter(row => row.source_stale || (row.data_delayed && row.scan_paused));
+                const allBlocked = marketRows.length > 0 && blockedRows.length === marketRows.length;
+                const allStale = allBlocked && blockedRows.every(row => row.source_stale || row.bad_market);
+
+                if (allBlocked) {
+                    const ageRows = blockedRows
+                        .map(row => Number(row.data_age_seconds ?? row.data_age ?? 0))
+                        .filter(age => Number.isFinite(age) && age > 0);
+                    const representative = { ...blockedRows[0] };
+                    if (ageRows.length) {
+                        const freshestBlockedAge = Math.min(...ageRows);
+                        representative.data_age_seconds = freshestBlockedAge;
+                        representative.data_age = freshestBlockedAge;
+                        representative.data_age_label = formatRajaMarketAge(freshestBlockedAge);
+                    }
+                    representative.source_stale = allStale;
+                    representative.bad_market = allStale;
+                    representative.scan_paused = true;
+                    representative.market_status = allStale ? 'BAD' : 'UNAVAILABLE';
+                    representative.data_status = allStale ? 'STALE' : 'UNAVAILABLE';
+                    rajaLatestMarketState = captureRajaMarketState(
+                        representative,
+                        document.getElementById('marketType')?.value || ''
+                    );
+                }
+
                 const newsRow = rejectedRows.find(row => row.news_safety_lock);
                 if (newsRow) {
                     rajaLatestNewsLock = newsRow.news_safety_lock;
                     rajaLatestNoTradeReason = String(newsRow.no_trade_reason || newsRow.reason || 'High-impact news safety lock is active.');
-                } else if (rejectedRows.length) {
+                } else if (!rajaLatestMarketState && rejectedRows.length) {
                     const meaningful = rejectedRows.find(row => row.no_trade_reason || row.reason);
                     if (meaningful) rajaLatestNoTradeReason = String(meaningful.no_trade_reason || meaningful.reason || '');
                 }
@@ -6777,6 +6910,8 @@
         async function startDeepScan(autoTriggered = false) {
             rajaLatestNoTradeReason = '';
             rajaLatestNewsLock = null;
+            rajaLatestMarketState = null;
+            hideRajaBadMarketPanel();
 
             const existingScanBtn = document.getElementById('scanBtn');
 
@@ -6945,8 +7080,11 @@
                     scanDiagnostics = batch.diagnostics || null;
                     const eligibleSet = new Set(eligiblePairs);
                     const rawResults = batch.results;
-                    updatePremiumMarketSnapshot(rawResults);
-                    if (typeof v23UpdateFreshnessFromRaw === 'function') v23UpdateFreshnessFromRaw(rawResults, scanDiagnostics, batch.cacheHit);
+                    const rankableResults = rawResults.filter(row =>
+                        row && !row.source_stale && !(row.data_delayed && row.scan_paused)
+                    );
+                    updatePremiumMarketSnapshot(rankableResults);
+                    if (typeof v23UpdateFreshnessFromRaw === 'function') v23UpdateFreshnessFromRaw(rankableResults, scanDiagnostics, batch.cacheHit);
                     if (typeof v23RenderTop3 === 'function') v23RenderTop3();
                     let processed = 0;
 
@@ -7019,14 +7157,22 @@
                     if (isAutoScan) rememberAutoPair(bestSignalFound.pair);
                     displaySignalResult(bestSignalFound);
                 } else {
-                    completeScanSession(scanFailureMessage ? 'error' : 'nosignal');
+                    completeScanSession(
+                        rajaLatestMarketState
+                            ? 'badmarket'
+                            : (scanFailureMessage ? 'error' : 'nosignal')
+                    );
                     syncTargetPairDisplay();
                     const titleEl = document.getElementById('noSignalTitle');
                     const descEl = document.getElementById('noSignalDesc');
 
                     const reasonBox = document.getElementById('noTradeReasonBox');
                     if (reasonBox) { reasonBox.style.display = 'none'; reasonBox.innerText = ''; }
-                    if (scanFailureMessage) {
+                    hideRajaBadMarketPanel();
+
+                    if (rajaLatestMarketState) {
+                        renderRajaBadMarketState(rajaLatestMarketState);
+                    } else if (scanFailureMessage) {
                         const isBatchDelay = /exceeded .*seconds|timed out|safety window|failed to fetch|network|temporarily unavailable/i.test(String(scanFailureMessage));
                         titleEl.innerText = isBatchDelay ? '⚠️ MARKET DATA DELAYED · RETRY READY' : '⚠️ SCAN REQUEST FAILED';
                         descEl.innerText = isBatchDelay
@@ -8178,6 +8324,7 @@
 
         let rajaLatestNoTradeReason = '';
         let rajaLatestNewsLock = null;
+        let rajaLatestMarketState = null;
         let rajaAppControlState = { maintenance:false, maintenance_message:'', broadcast:null };
         let rajaAppControlTimer = null;
         let rajaExpiryTimer = null;
@@ -8213,7 +8360,138 @@
             if (meta) meta.setAttribute('content', theme === 'light' ? '#eef4f8' : '#050b16');
         }
 
+        function formatRajaMarketAge(seconds) {
+            const total = Math.max(0, Math.round(Number(seconds || 0)));
+            if (!Number.isFinite(total) || total <= 0) return '--';
+            if (total < 60) return total + 's';
+            const minutes = Math.floor(total / 60);
+            if (minutes < 60) return minutes + 'm';
+            const hours = Math.floor(minutes / 60);
+            const remMinutes = minutes % 60;
+            if (hours < 48) return hours + 'h' + (remMinutes ? ' ' + remMinutes + 'm' : '');
+            const days = Math.floor(hours / 24);
+            const remHours = hours % 24;
+            return days + 'd' + (remHours ? ' ' + remHours + 'h' : '');
+        }
+
+        function hideRajaBadMarketPanel() {
+            const panel = document.getElementById('rajaBadMarketPanel');
+            if (panel) panel.style.display = 'none';
+        }
+
+        function captureRajaMarketState(row, marketValue) {
+            if (!row || typeof row !== 'object') return null;
+
+            const isStale = Boolean(row.source_stale || row.bad_market);
+            const isUnavailable = Boolean(row.data_delayed && row.scan_paused);
+
+            if (!isStale && !isUnavailable) return null;
+
+            const ageSeconds = Number(row.data_age_seconds ?? row.data_age ?? 0);
+            const ageLabel = String(
+                row.data_age_label ||
+                (ageSeconds > 0 ? formatRajaMarketAge(ageSeconds) : '--')
+            );
+
+            const marketLabel = String(marketValue || document.getElementById('marketType')?.value || 'MARKET');
+            const otc = marketLabel.includes('OTC') || String(row.pair || '').includes('(OTC)');
+
+            return {
+                badMarket: isStale,
+                stale: isStale,
+                unavailable: !isStale && isUnavailable,
+                pair: String(row.pair || ''),
+                market: marketLabel,
+                otc: otc,
+                marketStatus: String(row.market_status || (isStale ? 'BAD' : 'UNAVAILABLE')).toUpperCase(),
+                dataStatus: String(row.data_status || (isStale ? 'STALE' : 'UNAVAILABLE')).toUpperCase(),
+                ageSeconds: ageSeconds,
+                ageLabel: ageLabel,
+                message: String(
+                    row.no_trade_reason ||
+                    row.reason ||
+                    (isStale
+                        ? 'Reference feed is stale — scan safely paused. No signal generated.'
+                        : 'Live reference data is temporarily unavailable. Scan safely paused.')
+                )
+            };
+        }
+
+        function renderRajaBadMarketState(state) {
+            const s = state || rajaLatestMarketState;
+            if (!s) return false;
+
+            const titleEl = document.getElementById('noSignalTitle');
+            const descEl = document.getElementById('noSignalDesc');
+            const reasonBox = document.getElementById('noTradeReasonBox');
+            const panel = document.getElementById('rajaBadMarketPanel');
+
+            if (titleEl) {
+                titleEl.innerText = s.badMarket
+                    ? '⚠ BAD MARKET / STALE DATA'
+                    : '⚠ MARKET DATA UNAVAILABLE';
+            }
+
+            if (descEl) {
+                const label = s.otc ? 'Forex OTC scan paused.' : 'Live market scan paused.';
+                descEl.innerText = s.badMarket
+                    ? label + ' Fresh data is required before RAJA AI can generate a signal.'
+                    : label + ' The live reference source did not return usable data.';
+            }
+
+            const marketStatus = document.getElementById('rajaBadMarketStatus');
+            const dataStatus = document.getElementById('rajaBadDataStatus');
+            const dataAge = document.getElementById('rajaBadDataAge');
+            const message = document.getElementById('rajaBadMarketMessage');
+
+            if (marketStatus) marketStatus.innerText = s.marketStatus || (s.badMarket ? 'BAD' : 'UNAVAILABLE');
+            if (dataStatus) dataStatus.innerText = s.dataStatus || (s.badMarket ? 'STALE' : 'UNAVAILABLE');
+            if (dataAge) dataAge.innerText = s.ageLabel || '--';
+            if (message) {
+                message.innerText = s.badMarket
+                    ? 'Reference feed is stale — scan safely paused. No signal generated for your safety.'
+                    : 'Live reference data is unavailable — scan safely paused. No signal generated.';
+            }
+
+            if (reasonBox) {
+                reasonBox.style.display = 'block';
+                reasonBox.innerText = s.message;
+            }
+
+            if (panel) panel.style.display = 'block';
+            return true;
+        }
+
+        function retryRajaMarketData() {
+            try { playClickSound(); } catch (_) {}
+            hideRajaBadMarketPanel();
+            rajaLatestMarketState = null;
+            rajaLatestNoTradeReason = '';
+            rajaLatestNewsLock = null;
+            startDeepScan(false);
+        }
+
+        function changeRajaMarketFromBadData() {
+            try { playClickSound(); } catch (_) {}
+            rajaLatestMarketState = null;
+            hideRajaBadMarketPanel();
+            resetPrimaryView();
+
+            try {
+                if (typeof openSettingsInline === 'function') openSettingsInline();
+            } catch (_) {}
+
+            setTimeout(() => {
+                const market = document.getElementById('marketType');
+                if (!market) return;
+                try { market.scrollIntoView({ behavior:'smooth', block:'center' }); } catch (_) {}
+                try { market.focus({ preventScroll:true }); } catch (_) { try { market.focus(); } catch (_) {} }
+            }, 120);
+        }
+
         function showRajaNoTradeView(title, reason) {
+            rajaLatestMarketState = null;
+            hideRajaBadMarketPanel();
             completeScanSession('nosignal');
             currentSection = 'dashboard';
             primaryViewState = 'nosignal';
