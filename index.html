@@ -4542,6 +4542,133 @@
         }
     </style>
 
+
+    <style id="raja-nosignal-ready-layout-v2">
+        /* Laptop/Desktop: unavailable state + market safety + scan-ready pairs together. */
+        #noSignalView {
+            display:none;
+            width:100%;
+            text-align:left;
+        }
+
+        .raja-nosignal-workspace {
+            width:100%;
+            display:grid;
+            grid-template-columns:minmax(130px,.42fr) minmax(360px,1.35fr) minmax(250px,.85fr);
+            gap:12px;
+            align-items:stretch;
+        }
+
+        .raja-nosignal-summary {
+            min-width:0;
+            padding:12px 8px;
+            align-self:center;
+            text-align:left;
+        }
+
+        .raja-nosignal-safety-column {
+            min-width:0;
+            display:flex;
+            flex-direction:column;
+        }
+
+        .raja-nosignal-safety-column .raja-bad-market-panel {
+            width:100%;
+            max-width:none;
+            margin:0;
+            flex:0 0 auto;
+        }
+
+        .raja-nosignal-safety-column .no-trade-reason-box {
+            width:100%;
+            max-width:none;
+            margin:8px 0 0;
+        }
+
+        .raja-scan-ready-inline {
+            min-width:0;
+            width:100%;
+            min-height:100%;
+            margin:0;
+            padding:12px;
+            display:none; /* shown with BAD/STALE/UNAVAILABLE state */
+            align-self:stretch;
+        }
+
+        .raja-scan-ready-inline .raja-scan-ready-list {
+            max-height:220px;
+        }
+
+        .raja-nosignal-back-row {
+            width:100%;
+            display:flex;
+            justify-content:flex-end;
+            margin-top:10px;
+        }
+
+        .raja-nosignal-back-row .menu-back-btn {
+            min-width:120px;
+        }
+
+        /* Medium laptop / tablet landscape */
+        @media (max-width:1180px) {
+            .raja-nosignal-workspace {
+                grid-template-columns:minmax(0,1fr) minmax(240px,.72fr);
+            }
+            .raja-nosignal-summary {
+                grid-column:1 / -1;
+                padding:5px 2px 3px;
+            }
+            .raja-nosignal-safety-column {
+                grid-column:1;
+            }
+            .raja-scan-ready-inline {
+                grid-column:2;
+            }
+        }
+
+        /* Tablet portrait + mobile: stack in the same unavailable/result area. */
+        @media (max-width:820px) {
+            body.raja-mobile-nosignal .no-signal-view {
+                padding:10px 6px !important;
+            }
+
+            .raja-nosignal-workspace {
+                display:grid;
+                grid-template-columns:1fr;
+                gap:8px;
+            }
+
+            .raja-nosignal-summary,
+            .raja-nosignal-safety-column,
+            .raja-scan-ready-inline {
+                grid-column:1;
+                width:100%;
+            }
+
+            .raja-nosignal-summary {
+                padding:3px 2px;
+            }
+
+            .raja-scan-ready-inline {
+                min-height:0;
+            }
+
+            .raja-scan-ready-inline .raja-scan-ready-list {
+                max-height:190px;
+            }
+
+            .raja-nosignal-back-row {
+                justify-content:stretch;
+                margin-top:8px;
+            }
+
+            .raja-nosignal-back-row .menu-back-btn {
+                width:100%;
+            }
+        }
+    </style>
+
 </head>
 <body>
 
@@ -5041,27 +5168,54 @@
                             </div>
 
                             <div id="noSignalView" class="no-signal-view">
-                                <div style="font-size:14px;color:#ff5d7d;font-weight:900;text-transform:uppercase;margin-bottom:6px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
-                                <div style="font-size:10px;color:#a9bad0;margin-bottom:5px;" id="noSignalDesc">Current filters did not converge safely.</div>
+                                <div class="raja-nosignal-workspace">
+                                    <div class="raja-nosignal-summary">
+                                        <div style="font-size:14px;color:#ff5d7d;font-weight:900;text-transform:uppercase;margin-bottom:6px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
+                                        <div style="font-size:10px;color:#a9bad0;margin-bottom:5px;" id="noSignalDesc">Current filters did not converge safely.</div>
+                                    </div>
 
-                                <div id="rajaBadMarketPanel" class="raja-bad-market-panel" style="display:none;">
-                                    <div class="raja-bad-market-kicker">RAJA AI MARKET SAFETY</div>
-                                    <div class="raja-bad-market-status-grid">
-                                        <div><span>MARKET STATUS</span><b id="rajaBadMarketStatus">BAD</b></div>
-                                        <div><span>DATA STATUS</span><b id="rajaBadDataStatus">STALE</b></div>
-                                        <div><span>DATA AGE</span><b id="rajaBadDataAge">--</b></div>
+                                    <div class="raja-nosignal-safety-column">
+                                        <div id="rajaBadMarketPanel" class="raja-bad-market-panel" style="display:none;">
+                                            <div class="raja-bad-market-kicker">RAJA AI MARKET SAFETY</div>
+                                            <div class="raja-bad-market-status-grid">
+                                                <div><span>MARKET STATUS</span><b id="rajaBadMarketStatus">BAD</b></div>
+                                                <div><span>DATA STATUS</span><b id="rajaBadDataStatus">STALE</b></div>
+                                                <div><span>DATA AGE</span><b id="rajaBadDataAge">--</b></div>
+                                            </div>
+                                            <div id="rajaBadMarketMessage" class="raja-bad-market-message">
+                                                Reference feed is stale — scan safely paused. No signal generated.
+                                            </div>
+                                            <div class="raja-bad-market-actions">
+                                                <button type="button" class="raja-bad-retry-btn" onclick="retryRajaMarketData()">↻ RETRY DATA</button>
+                                                <button type="button" class="raja-bad-change-btn" onclick="changeRajaMarketFromBadData()">⇄ CHANGE MARKET</button>
+                                            </div>
+                                        </div>
+
+                                        <div id="noTradeReasonBox" class="no-trade-reason-box" style="display:none;"></div>
                                     </div>
-                                    <div id="rajaBadMarketMessage" class="raja-bad-market-message">
-                                        Reference feed is stale — scan safely paused. No signal generated.
-                                    </div>
-                                    <div class="raja-bad-market-actions">
-                                        <button type="button" class="raja-bad-retry-btn" onclick="retryRajaMarketData()">↻ RETRY DATA</button>
-                                        <button type="button" class="raja-bad-change-btn" onclick="changeRajaMarketFromBadData()">⇄ CHANGE MARKET</button>
-                                    </div>
+
+                                    <section class="rail-card raja-scan-ready-card raja-scan-ready-inline" id="rajaScanReadyCard">
+                        <div class="raja-scan-ready-head">
+                            <div>
+                                <div class="rail-title raja-scan-ready-title">🟢 SCAN READY NOW</div>
+                                <div id="rajaScanReadyMarket" class="raja-scan-ready-market">Selected market</div>
+                            </div>
+                            <span id="rajaScanReadyCount" class="raja-scan-ready-count">--</span>
+                        </div>
+                        <div id="rajaScanReadySummary" class="raja-scan-ready-summary">Run Auto Scan once to verify which pairs currently have fresh, usable market data.</div>
+                        <div id="rajaScanReadyList" class="raja-scan-ready-list">
+                            <div class="raja-scan-ready-empty">Waiting for authenticated market check…</div>
+                        </div>
+                        <div class="raja-scan-ready-footer">
+                            <span id="rajaScanReadyUpdated">Not verified yet</span>
+                            <span id="rajaScanReadyStatus" class="raja-scan-ready-status">WAITING</span>
+                        </div>
+                    </section>
                                 </div>
 
-                                <div id="noTradeReasonBox" class="no-trade-reason-box" style="display:none;"></div>
-                                <button class="menu-back-btn" onclick="playClickSound(); resetPrimaryView()">↻ Back to Dashboard</button>
+                                <div class="raja-nosignal-back-row">
+                                    <button class="menu-back-btn" onclick="playClickSound(); resetPrimaryView()">↻ Back to Dashboard</button>
+                                </div>
                             </div>
 
                             <div id="historyInlineView" class="inline-content-view">
@@ -5232,23 +5386,7 @@
                 <aside class="right-rail">
                     <section class="rail-card"><div class="rail-title">RECENT RESULTS</div><div id="dashboardRecentHistory" class="recent-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div></section>
                     <section class="rail-card"><div class="rail-title">SOUND + SIGNAL ALERTS</div><div class="sound-alert-grid"><div class="sound-alert-tile buy"><strong>↑ UP (BUY)</strong><div class="sound-wave"></div><span>Ascending tone</span></div><div class="sound-alert-tile sell"><strong>↓ DOWN (SELL)</strong><div class="sound-wave"></div><span>Descending tone</span></div></div><div id="soundAlertStatusText" class="sound-alert-status">● Alerts active · flashing + movement enabled</div></section>
-                    <section class="rail-card raja-scan-ready-card" id="rajaScanReadyCard">
-                        <div class="raja-scan-ready-head">
-                            <div>
-                                <div class="rail-title raja-scan-ready-title">🟢 SCAN READY NOW</div>
-                                <div id="rajaScanReadyMarket" class="raja-scan-ready-market">Selected market</div>
-                            </div>
-                            <span id="rajaScanReadyCount" class="raja-scan-ready-count">--</span>
-                        </div>
-                        <div id="rajaScanReadySummary" class="raja-scan-ready-summary">Run Auto Scan once to verify which pairs currently have fresh, usable market data.</div>
-                        <div id="rajaScanReadyList" class="raja-scan-ready-list">
-                            <div class="raja-scan-ready-empty">Waiting for authenticated market check…</div>
-                        </div>
-                        <div class="raja-scan-ready-footer">
-                            <span id="rajaScanReadyUpdated">Not verified yet</span>
-                            <span id="rajaScanReadyStatus" class="raja-scan-ready-status">WAITING</span>
-                        </div>
-                    </section>
+                    
                 </aside>
             </div>
         </div>
@@ -8655,6 +8793,8 @@
         function hideRajaBadMarketPanel() {
             const panel = document.getElementById('rajaBadMarketPanel');
             if (panel) panel.style.display = 'none';
+            const readyPanel = document.getElementById('rajaScanReadyCard');
+            if (readyPanel) readyPanel.style.display = 'none';
         }
 
         function captureRajaMarketState(row, marketValue) {
@@ -8737,6 +8877,12 @@
             }
 
             if (panel) panel.style.display = 'block';
+
+            // Keep SCAN READY NOW beside the unavailable/stale signal state
+            // on laptop, tablet and mobile. Its own renderer controls content.
+            const readyPanel = document.getElementById('rajaScanReadyCard');
+            if (readyPanel) readyPanel.style.display = 'flex';
+
             return true;
         }
 
