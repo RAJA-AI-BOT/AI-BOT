@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v7-ui-refresh';
+const CACHE_VERSION = 'raja-ai-pwa-v8-fast-shell';
 
 const APP_SHELL = [
   '/',
@@ -13,6 +13,37 @@ const API_PATHS = [
   '/health',
   '/app-state'
 ];
+
+function isApiPath(pathname) {
+  return API_PATHS.some((path) => pathname.startsWith(path));
+}
+
+async function putIfUsable(cache, key, response) {
+  if (!response || !response.ok) return response;
+
+  try {
+    await cache.put(key, response.clone());
+  } catch (_) {}
+
+  return response;
+}
+
+function offlineJson() {
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      offline: true,
+      message: 'RAJA AI is offline.'
+    }),
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-store'
+      }
+    }
+  );
+}
 
 // ======================================================
 // INSTALL
@@ -33,24 +64,34 @@ self.addEventListener('install', (event) => {
 });
 
 // ======================================================
-// ACTIVATE + REMOVE OLD RAJA AI CACHES
+// ACTIVATE
 // ======================================================
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter(
-              (key) =>
-                key.startsWith('raja-ai-pwa-') &&
-                key !== CACHE_VERSION
-            )
-            .map((key) => caches.delete(key))
-        )
-      )
-      .then(() => self.clients.claim())
+    (async () => {
+      const keys = await caches.keys();
+
+      await Promise.all(
+        keys
+          .filter(
+            (key) =>
+              key.startsWith('raja-ai-pwa-') &&
+              key !== CACHE_VERSION
+          )
+          .map((key) => caches.delete(key))
+      );
+
+      // Navigation preload starts the network request while the
+      // service worker boots. Cached UI can still be returned first.
+      try {
+        if (self.registration.navigationPreload) {
+          await self.registration.navigationPreload.enable();
+        }
+      } catch (_) {}
+
+      await self.clients.claim();
+    })()
   );
 });
 
@@ -65,66 +106,125 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
 
-  // Do not interfere with third-party requests.
+  // Never intercept third-party resources.
   if (url.origin !== self.location.origin) return;
 
-  const isApi = API_PATHS.some((path) =>
-    url.pathname.startsWith(path)
-  );
+  // ------------------------------------------------------
+  // LIVE / AUTHENTICATED APIs:
+  // Always network-only. Never serve stale trading data.
+  // ------------------------------------------------------
+  if (isApiPath(url.pathname)) {
+    event.respondWith(
+      fetch(request, { cache: 'no-store' })
+        .catch(() => offlineJson())
+    );
+    return;
+  }
 
   // ------------------------------------------------------
-  // LIVE / AUTHENTICATED API:
-  // Always network. Never return stale cached trading data.
+  // NAVIGATION:
+  // FAST SHELL FIRST.
+  //
+  // If '/' is already cached, return it immediately so the UI
+  // opens even while Render is waking. In parallel, refresh the
+  // cached HTML from the network. That background request also
+  // wakes the backend without blocking the visible app.
   // ------------------------------------------------------
-  if (isApi) {
+  if (request.mode === 'navigate') {
+    const refreshPromise = (async () => {
+      try {
+        const preload = await event.preloadResponse;
+
+        const response =
+          preload ||
+          await fetch(request, { cache: 'no-store' });
+
+        if (response && response.ok) {
+          const cache = await caches.open(CACHE_VERSION);
+          await putIfUsable(cache, '/', response);
+        }
+
+        return response || null;
+      } catch (_) {
+        return null;
+      }
+    })();
+
+    event.waitUntil(
+      refreshPromise
+        .then(() => undefined)
+        .catch(() => undefined)
+    );
+
     event.respondWith(
-      fetch(request, { cache: 'no-store' }).catch(() =>
-        new Response(
-          JSON.stringify({
-            status: 'error',
-            offline: true,
-            message: 'RAJA AI is offline.'
-          }),
+      (async () => {
+        const cache = await caches.open(CACHE_VERSION);
+        const cached = await cache.match('/');
+
+        // Repeat opens: instant shell.
+        if (cached) return cached;
+
+        // First controlled load: wait for network/preload.
+        const network = await refreshPromise;
+
+        if (network) return network;
+
+        return new Response(
+          'RAJA AI is offline and no saved app shell is available yet.',
           {
             status: 503,
             headers: {
-              'Content-Type': 'application/json; charset=utf-8',
+              'Content-Type': 'text/plain; charset=utf-8',
               'Cache-Control': 'no-store'
             }
           }
-        )
-      )
+        );
+      })()
     );
 
     return;
   }
 
   // ------------------------------------------------------
-  // MAIN APP PAGE:
-  // Network first so new UI/CSS/JS is picked up after deploy.
-  // Save the latest successful page only for offline fallback.
+  // APP SHELL STATIC FILES:
+  // Cache-first + background refresh.
   // ------------------------------------------------------
-  if (request.mode === 'navigate') {
+  if (APP_SHELL.includes(url.pathname)) {
+    const refreshPromise = fetch(request, {
+      cache: 'no-cache'
+    })
+      .then(async (response) => {
+        if (response && response.ok) {
+          const cache = await caches.open(CACHE_VERSION);
+
+          await putIfUsable(
+            cache,
+            request,
+            response
+          );
+        }
+
+        return response;
+      })
+      .catch(() => null);
+
+    event.waitUntil(
+      refreshPromise
+        .then(() => undefined)
+        .catch(() => undefined)
+    );
+
     event.respondWith(
-      fetch(request, { cache: 'no-store' })
-        .then((response) => {
-          if (response && response.ok) {
-            const copy = response.clone();
+      caches.match(request)
+        .then(async (cached) => {
+          if (cached) return cached;
 
-            caches.open(CACHE_VERSION)
-              .then((cache) => cache.put('/', copy))
-              .catch(() => {});
-          }
-
-          return response;
-        })
-        .catch(async () => {
-          const cached = await caches.match('/');
+          const network = await refreshPromise;
 
           return (
-            cached ||
+            network ||
             new Response(
-              'RAJA AI is offline and no saved app shell is available yet.',
+              'RAJA AI asset unavailable while offline.',
               {
                 status: 503,
                 headers: {
@@ -141,85 +241,74 @@ self.addEventListener('fetch', (event) => {
   }
 
   // ------------------------------------------------------
-  // PWA STATIC FILES:
-  // Serve cache immediately, then refresh in background.
-  // ------------------------------------------------------
-  if (APP_SHELL.includes(url.pathname)) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        const networkPromise = fetch(request, { cache: 'no-cache' })
-          .then((response) => {
-            if (response && response.ok) {
-              caches.open(CACHE_VERSION)
-                .then((cache) =>
-                  cache.put(request, response.clone())
-                )
-                .catch(() => {});
-            }
-
-            return response;
-          })
-          .catch(() => cached);
-
-        return cached || networkPromise;
-      })
-    );
-
-    return;
-  }
-
-  // ------------------------------------------------------
   // EVERYTHING ELSE:
-  // Network first. No stale trading/application resources.
+  // Network first.
+  // Do not cache live/application responses.
   // ------------------------------------------------------
   event.respondWith(
-    fetch(request).catch(() =>
-      new Response(
-        'RAJA AI is temporarily offline. Please reconnect to use live data.',
-        {
-          status: 503,
-          headers: {
-            'Content-Type': 'text/plain; charset=utf-8',
-            'Cache-Control': 'no-store'
+    fetch(request, {
+      cache: 'no-cache'
+    })
+      .catch(() =>
+        new Response(
+          'RAJA AI is temporarily offline. Please reconnect to use live data.',
+          {
+            status: 503,
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'Cache-Control': 'no-store'
+            }
           }
-        }
+        )
       )
-    )
   );
 });
 
 // ======================================================
-// SERVICE-WORKER MESSAGES + SYSTEM NOTIFICATIONS
+// MESSAGES + SYSTEM NOTIFICATIONS
 // ======================================================
 
 self.addEventListener('message', (event) => {
   const data = event.data || {};
 
-  // Optional manual update support from the page.
   if (data.type === 'SKIP_WAITING') {
-    event.waitUntil(self.skipWaiting());
+    event.waitUntil(
+      self.skipWaiting()
+    );
+
     return;
   }
 
-  if (data.type !== 'RAJA_SHOW_NOTIFICATION') return;
+  if (data.type !== 'RAJA_SHOW_NOTIFICATION') {
+    return;
+  }
 
   const payload = data.payload || {};
-  const title = String(payload.title || 'RAJA AI');
+
+  const title = String(
+    payload.title || 'RAJA AI'
+  );
 
   const options = Object.assign(
     {
       icon: '/raja-ai-icon-192.png',
       badge: '/raja-ai-icon-192.png',
+
       tag: 'raja-ai-alert',
+
       data: {
         url: '/'
       }
     },
+
     payload.options || {}
   );
 
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    self.registration.showNotification(
+      title,
+      options
+    )
   );
 });
 
@@ -231,8 +320,10 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const targetUrl =
-    (event.notification.data &&
-      event.notification.data.url) ||
+    (
+      event.notification.data &&
+      event.notification.data.url
+    ) ||
     '/';
 
   event.waitUntil(
@@ -241,6 +332,7 @@ self.addEventListener('notificationclick', (event) => {
         type: 'window',
         includeUncontrolled: true
       })
+
       .then(async (clientList) => {
         for (const client of clientList) {
           try {
@@ -251,9 +343,7 @@ self.addEventListener('notificationclick', (event) => {
             if ('focus' in client) {
               return client.focus();
             }
-          } catch (_) {
-            // Try the next available client.
-          }
+          } catch (_) {}
         }
 
         if (clients.openWindow) {
