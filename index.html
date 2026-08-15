@@ -3813,7 +3813,7 @@
                         <div class="v23-command-deck">
                             <div class="v23-command-label">QUICK SCAN PRESETS</div>
                             <div class="v23-presets">
-                                <button type="button" onclick="applyRajaPreset('SAFE','1m',this)">🛡 SAFE <b>1m</b></button>
+                                <button type="button" onclick="applyRajaModePreset('SAFE',this)">🛡 SAFE</button>
                                 <button type="button" onclick="applyRajaPreset('BALANCED','1m',this)" class="active">⚖ BALANCED <b>1m</b></button>
                                 <button type="button" onclick="applyRajaPreset('BALANCED','5m',this)">🎯 TREND <b>5m</b></button>
                             </div>
@@ -3828,8 +3828,8 @@
                     <section class="main-panel-card">
                         <div class="scan-heading-row">
                             <div>
-                                <div class="scan-heading">📈 AI MARKET SCAN</div>
-                                <div class="scan-sub">Real-time multi-timeframe analysis across the selected market</div>
+                                <div class="scan-heading">🤖 RAJA AI BOT</div>
+                                <div class="scan-sub">Premium multi-timeframe market intelligence · live opportunity scanning</div>
                             </div>
                             <div class="shared-pill">👥 SHARED MULTI-USER SCAN</div>
                         </div>
@@ -3967,7 +3967,7 @@
                             <div id="signalView" class="signal-view">
                                 <div id="signal3dShell" class="premium-signal-result signal-live-buy">
                                     <div class="psr-topline">
-                                        <div class="psr-title"><span class="psr-ai-badge">AI</span><div><strong>AI MARKET SCAN · LIVE SIGNAL</strong><small>Real-time multi-timeframe analysis across the selected asset</small></div></div>
+                                        <div class="psr-title"><span class="psr-ai-badge">AI</span><div><strong>RAJA AI BOT · LIVE SIGNAL</strong><small>Real-time multi-timeframe analysis across the selected asset</small></div></div>
                                         <div class="psr-shared">👥 SHARED MULTI-USER SCAN</div>
                                     </div>
 
@@ -7699,6 +7699,17 @@
         document.getElementById('v23CompactBtn')?.classList.toggle('active',mode==='compact');
         document.getElementById('v23ProBtn')?.classList.toggle('active',mode==='pro');
         playClickSound?.();
+    }
+
+    function applyRajaModePreset(mode, button){
+        try{
+            setScanMode(mode);
+            document.querySelectorAll('.v23-presets button').forEach(btn=>btn.classList.toggle('active',btn===button));
+            v23SetHeroStatus(mode+' MODE READY');
+            const settings=document.getElementById('rajaMobileSettingsBtn');
+            if(settings) settings.dispatchEvent(new Event('change'));
+            playClickSound?.();
+        }catch(e){ console.warn('RAJA mode preset warning',e); }
     }
 
     function applyRajaPreset(mode, expiry, button){
