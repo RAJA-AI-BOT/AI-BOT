@@ -2006,6 +2006,408 @@
         }
     </style>
 
+
+    <style id="raja-mobile-ui-v15">
+        /* =========================================================
+           RAJA AI MOBILE UI V15
+           Compact ACTIVE SCAN + RESULT states.
+           Keeps the idle dashboard readable while removing the long
+           stacked layout that appeared only after scanning started.
+           ========================================================= */
+        @media (max-width: 820px) {
+            /* ---------- ACTIVE SCAN ---------- */
+            body.raja-mobile-scanning {
+                padding-bottom: 8px !important;
+            }
+            body.raja-mobile-scanning #scanBtn {
+                display: none !important;
+            }
+            body.raja-mobile-scanning .intel-heatmap-shell,
+            body.raja-mobile-scanning .setup-build-shell,
+            body.raja-mobile-scanning .status-grid,
+            body.raja-mobile-scanning #dailyPerformancePanel,
+            body.raja-mobile-scanning .mobile-opportunity-card,
+            body.raja-mobile-scanning .config-panel {
+                display: none !important;
+            }
+            body.raja-mobile-scanning .main-panel-card,
+            body.raja-mobile-scanning .ai-hud-box {
+                padding: 6px !important;
+                margin-bottom: 0 !important;
+            }
+            body.raja-mobile-scanning .scan-view {
+                padding: 0 !important;
+            }
+            body.raja-mobile-scanning .scan-live-grid {
+                grid-template-columns: 1fr !important;
+                gap: 6px !important;
+            }
+            body.raja-mobile-scanning .holo-market-scanner {
+                display: none !important;
+            }
+            body.raja-mobile-scanning .scan-live-left {
+                display: grid !important;
+                grid-template-columns: 70px minmax(0,1fr) !important;
+                grid-template-rows: auto auto !important;
+                align-items: center !important;
+                gap: 5px 9px !important;
+                padding: 7px !important;
+                min-height: 82px !important;
+            }
+            body.raja-mobile-scanning .scan-live-kicker {
+                grid-column: 2 !important;
+                grid-row: 1 !important;
+                text-align: left !important;
+                font-size: 10px !important;
+                line-height: 1.25 !important;
+            }
+            body.raja-mobile-scanning .scan-live-left .scan-ring {
+                grid-column: 1 !important;
+                grid-row: 1 / span 2 !important;
+                width: 62px !important;
+                margin: 0 !important;
+            }
+            body.raja-mobile-scanning .scan-live-left .scan-ring-value {
+                font-size: 20px !important;
+            }
+            body.raja-mobile-scanning .scan-live-left .scan-ring-label {
+                font-size: 7px !important;
+            }
+            body.raja-mobile-scanning .scan-intensity {
+                grid-column: 2 !important;
+                grid-row: 2 !important;
+                border-top: 0 !important;
+                padding-top: 0 !important;
+            }
+            body.raja-mobile-scanning .scan-intensity-label {
+                font-size: 8px !important;
+                margin-bottom: 3px !important;
+            }
+            body.raja-mobile-scanning .scan-intensity-wave {
+                height: 18px !important;
+            }
+            body.raja-mobile-scanning .scan-process-panel {
+                padding: 7px !important;
+            }
+            body.raja-mobile-scanning .scan-stage-title {
+                font-size: 11px !important;
+                margin-bottom: 6px !important;
+            }
+            body.raja-mobile-scanning .scan-process-panel .scan-stage-list {
+                gap: 3px !important;
+                margin-bottom: 0 !important;
+            }
+            body.raja-mobile-scanning .scan-process-panel .scan-stage {
+                min-height: 22px !important;
+                padding: 2px 0 !important;
+                font-size: 9px !important;
+                line-height: 1.25 !important;
+            }
+            body.raja-mobile-scanning .scan-stage-status {
+                font-size: 7px !important;
+            }
+            body.raja-mobile-scanning .scan-telemetry {
+                grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+                gap: 5px !important;
+                margin-top: 0 !important;
+            }
+            body.raja-mobile-scanning .scan-telemetry-card {
+                padding: 6px 5px !important;
+                min-height: 48px !important;
+            }
+            body.raja-mobile-scanning .scan-telemetry-card small {
+                font-size: 7px !important;
+                line-height: 1.2 !important;
+            }
+            body.raja-mobile-scanning .scan-telemetry-card strong {
+                font-size: 10.5px !important;
+            }
+            body.raja-mobile-scanning .scan-live-footer {
+                margin-top: 0 !important;
+            }
+            body.raja-mobile-scanning .live-scan-console {
+                max-height: 62px !important;
+                font-size: 8px !important;
+                padding: 5px !important;
+            }
+            body.raja-mobile-scanning #scanStepText {
+                font-size: 8.5px !important;
+                margin-top: 3px !important;
+            }
+
+            /* ---------- CONFIRMED SIGNAL RESULT ---------- */
+            body.raja-mobile-result .intel-heatmap-shell,
+            body.raja-mobile-result .setup-build-shell,
+            body.raja-mobile-result .status-grid,
+            body.raja-mobile-result #dailyPerformancePanel,
+            body.raja-mobile-result .mobile-opportunity-card,
+            body.raja-mobile-nosignal .intel-heatmap-shell,
+            body.raja-mobile-nosignal .setup-build-shell,
+            body.raja-mobile-nosignal .status-grid,
+            body.raja-mobile-nosignal #dailyPerformancePanel,
+            body.raja-mobile-nosignal .mobile-opportunity-card {
+                display: none !important;
+            }
+            body.raja-mobile-result .main-panel-card,
+            body.raja-mobile-nosignal .main-panel-card {
+                padding: 6px !important;
+            }
+            body.raja-mobile-result .ai-hud-box,
+            body.raja-mobile-nosignal .ai-hud-box {
+                padding: 4px !important;
+                min-height: 0 !important;
+            }
+            body.raja-mobile-result .signal-view {
+                padding: 0 !important;
+            }
+            body.raja-mobile-result .premium-signal-result {
+                min-height: 0 !important;
+                padding: 6px !important;
+                border-radius: 13px !important;
+            }
+            body.raja-mobile-result .psr-topline {
+                padding: 0 0 5px !important;
+            }
+            body.raja-mobile-result .psr-ai-badge {
+                width: 26px !important;
+                height: 26px !important;
+                border-radius: 8px !important;
+            }
+            body.raja-mobile-result .psr-title {
+                gap: 6px !important;
+            }
+            body.raja-mobile-result .psr-title strong {
+                font-size: 10.5px !important;
+            }
+            body.raja-mobile-result .psr-title small,
+            body.raja-mobile-result .psr-shared,
+            body.raja-mobile-result .psr-live-chip,
+            body.raja-mobile-result .psr-volume-bars,
+            body.raja-mobile-result .psr-orbit-2,
+            body.raja-mobile-result .psr-orbit-3,
+            body.raja-mobile-result .psr-floor-1,
+            body.raja-mobile-result .psr-floor-2 {
+                display: none !important;
+            }
+            body.raja-mobile-result .psr-hero {
+                min-height: 232px !important;
+                border-radius: 12px !important;
+            }
+            body.raja-mobile-result .psr-market-lines {
+                inset: 5px 0 15px !important;
+                opacity: .48 !important;
+            }
+            body.raja-mobile-result .psr-orb-stage {
+                inset: 4px 0 29px !important;
+            }
+            body.raja-mobile-result .psr-energy-orb {
+                width: 148px !important;
+                max-width: 48vw !important;
+            }
+            body.raja-mobile-result .psr-energy-orb::after {
+                inset: -16px !important;
+            }
+            body.raja-mobile-result .psr-orbit-1 {
+                width: 172px !important;
+                height: 172px !important;
+                max-width: 56vw !important;
+                max-height: 56vw !important;
+            }
+            body.raja-mobile-result .psr-floor-3 {
+                width: 142px !important;
+                height: 38px !important;
+                max-width: 48vw !important;
+                bottom: 27px !important;
+            }
+            body.raja-mobile-result .psr-confirmed {
+                font-size: 7px !important;
+                margin-bottom: 3px !important;
+            }
+            body.raja-mobile-result .psr-asset {
+                font-size: 18px !important;
+            }
+            body.raja-mobile-result .psr-subasset {
+                font-size: 6.5px !important;
+            }
+            body.raja-mobile-result .psr-energy-orb #resModalDirection {
+                font-size: 18px !important;
+                margin: 5px 0 3px !important;
+            }
+            body.raja-mobile-result .psr-confidence-value {
+                font-size: 20px !important;
+            }
+            body.raja-mobile-result .psr-strength {
+                margin-top: 4px !important;
+                padding: 2px 8px !important;
+            }
+            body.raja-mobile-result .psr-selected-expiry {
+                bottom: 5px !important;
+                min-width: 108px !important;
+                padding: 4px 10px 5px !important;
+            }
+            body.raja-mobile-result .psr-selected-expiry span {
+                font-size: 6px !important;
+            }
+            body.raja-mobile-result .psr-selected-expiry strong {
+                font-size: 18px !important;
+            }
+            body.raja-mobile-result .psr-meta,
+            body.raja-mobile-result .signal-meta {
+                font-size: 10px !important;
+                line-height: 1.3 !important;
+                margin: 5px 0 !important;
+            }
+            body.raja-mobile-result .stability-strip {
+                grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+                gap: 5px !important;
+                margin: 5px 0 !important;
+            }
+            body.raja-mobile-result .stability-chip {
+                padding: 6px 3px !important;
+                min-height: 48px !important;
+            }
+            body.raja-mobile-result .stability-chip small {
+                font-size: 7px !important;
+                line-height: 1.15 !important;
+            }
+            body.raja-mobile-result .stability-chip strong {
+                font-size: 10.5px !important;
+            }
+            body.raja-mobile-result .signal-entry-window {
+                display: grid !important;
+                grid-template-columns: auto minmax(0,1fr) !important;
+                gap: 4px 8px !important;
+                padding: 7px 8px !important;
+                text-align: center !important;
+            }
+            body.raja-mobile-result .signal-entry-status {
+                grid-column: 1 / -1 !important;
+                font-size: 8.5px !important;
+                line-height: 1.3 !important;
+            }
+            body.raja-mobile-result .signal-entry-timer {
+                min-width: 82px !important;
+                font-size: 22px !important;
+                padding: 4px 7px !important;
+            }
+            body.raja-mobile-result .signal-entry-alert {
+                align-self: center !important;
+                font-size: 8.5px !important;
+                line-height: 1.3 !important;
+            }
+            body.raja-mobile-result .mini-chart-wrap {
+                height: 154px !important;
+                margin-top: 6px !important;
+            }
+            body.raja-mobile-result .mini-chart-credit,
+            body.raja-mobile-result .signal-intel-bottom {
+                display: none !important;
+            }
+            body.raja-mobile-result .ai-explain-card {
+                padding: 7px !important;
+                margin-top: 6px !important;
+            }
+            body.raja-mobile-result .ai-explain-grid {
+                grid-template-columns: 1fr 1fr !important;
+                gap: 5px !important;
+            }
+            body.raja-mobile-result .ai-factor {
+                padding: 6px !important;
+            }
+            body.raja-mobile-result .ai-factor:last-child {
+                grid-column: 1 / -1 !important;
+            }
+            body.raja-mobile-result .ai-factor small {
+                font-size: 7.5px !important;
+            }
+            body.raja-mobile-result .ai-factor strong {
+                font-size: 10px !important;
+            }
+            body.raja-mobile-result .ai-factor span,
+            body.raja-mobile-result .ai-summary {
+                font-size: 8.5px !important;
+                line-height: 1.35 !important;
+            }
+            body.raja-mobile-result .advanced-filters {
+                font-size: 7.5px !important;
+                padding: 4px !important;
+                white-space: nowrap !important;
+                overflow-x: auto !important;
+                justify-content: flex-start !important;
+            }
+            body.raja-mobile-result .psr-mtf-heading {
+                margin: 6px 0 4px !important;
+                font-size: 8px !important;
+            }
+            body.raja-mobile-result .tf-breakdown {
+                grid-template-columns: repeat(5, minmax(62px,1fr)) !important;
+                gap: 4px !important;
+                margin-top: 4px !important;
+                overflow-x: auto !important;
+            }
+            body.raja-mobile-result .tf-chip {
+                min-width: 62px !important;
+                min-height: 54px !important;
+                padding: 5px 3px !important;
+            }
+            body.raja-mobile-result .tf-chip .tf-dir {
+                font-size: 10px !important;
+            }
+            body.raja-mobile-result .tf-summary-line {
+                font-size: 8.5px !important;
+                line-height: 1.3 !important;
+                margin-top: 4px !important;
+            }
+
+            /* No-signal screen should also return to the controls quickly. */
+            body.raja-mobile-nosignal .no-signal-view {
+                padding: 12px 7px !important;
+            }
+
+            /* Chart attribution is moved out of the chart on mobile so it no
+               longer overlays the candles. The global credit remains visible. */
+            .mini-chart-credit {
+                display: none !important;
+            }
+            #rajaTradingViewAttribution {
+                display: block !important;
+                text-align: center;
+                margin: 8px 0 calc(68px + env(safe-area-inset-bottom));
+                font-size: 7.5px;
+                color: #6f879f;
+                opacity: .78;
+            }
+            #rajaTradingViewAttribution a {
+                color: #7fa6bf;
+                text-decoration: none;
+            }
+        }
+
+        @media (max-width: 390px) {
+            body.raja-mobile-scanning .scan-telemetry {
+                grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+            }
+            body.raja-mobile-result .psr-hero {
+                min-height: 220px !important;
+            }
+            body.raja-mobile-result .psr-energy-orb {
+                width: 138px !important;
+            }
+            body.raja-mobile-result .stability-chip small {
+                font-size: 6.5px !important;
+            }
+            body.raja-mobile-result .signal-entry-window {
+                grid-template-columns: 1fr !important;
+            }
+            body.raja-mobile-result .signal-entry-status,
+            body.raja-mobile-result .signal-entry-timer,
+            body.raja-mobile-result .signal-entry-alert {
+                grid-column: 1 !important;
+                justify-self: stretch !important;
+            }
+        }
+    </style>
+
 </head>
 <body>
 
@@ -5532,6 +5934,76 @@
                 event.preventDefault();
             }
         }, { passive: false });
+    })();
+    </script>
+
+
+    <script id="raja-mobile-state-v15">
+    (function () {
+        let lastMobileState = '';
+        const mobileQuery = window.matchMedia('(max-width: 820px)');
+
+        function visible(el) {
+            return !!el && window.getComputedStyle(el).display !== 'none';
+        }
+
+        function ensureTradingViewCredit() {
+            const container = document.querySelector('.container');
+            if (!container || document.getElementById('rajaTradingViewAttribution')) return;
+            const credit = document.createElement('div');
+            credit.id = 'rajaTradingViewAttribution';
+            credit.innerHTML = 'Charts powered by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a>';
+            container.appendChild(credit);
+        }
+
+        function syncRajaMobileState() {
+            const body = document.body;
+            if (!body) return;
+
+            const scanView = document.getElementById('scanView');
+            const signalView = document.getElementById('signalView');
+            const noSignalView = document.getElementById('noSignalView');
+            const isMobile = mobileQuery.matches;
+
+            const scanning = isMobile && visible(scanView);
+            const result = isMobile && visible(signalView);
+            const noSignal = isMobile && visible(noSignalView);
+
+            body.classList.toggle('raja-mobile-scanning', scanning);
+            body.classList.toggle('raja-mobile-result', result);
+            body.classList.toggle('raja-mobile-nosignal', noSignal);
+
+            const state = scanning ? 'scanning' : (result ? 'result' : (noSignal ? 'nosignal' : 'ready'));
+            if (isMobile && state !== lastMobileState) {
+                lastMobileState = state;
+                if (state === 'scanning' || state === 'result' || state === 'nosignal') {
+                    setTimeout(function () {
+                        const hud = document.getElementById('hudBoxContainer');
+                        if (hud) {
+                            try { hud.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+                        }
+                    }, 80);
+                }
+            }
+        }
+
+        function bindRajaMobileState() {
+            ensureTradingViewCredit();
+            const observer = new MutationObserver(syncRajaMobileState);
+            ['scanView', 'signalView', 'noSignalView', 'defaultView'].forEach(function (id) {
+                const el = document.getElementById(id);
+                if (el) observer.observe(el, { attributes: true, attributeFilter: ['style', 'class'] });
+            });
+            mobileQuery.addEventListener?.('change', syncRajaMobileState);
+            window.addEventListener('resize', syncRajaMobileState, { passive: true });
+            syncRajaMobileState();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', bindRajaMobileState, { once: true });
+        } else {
+            bindRajaMobileState();
+        }
     })();
     </script>
 
