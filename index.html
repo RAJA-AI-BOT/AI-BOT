@@ -2731,25 +2731,7 @@
             body.raja-mobile-nosignal .no-signal-view {
                 padding: 12px 7px !important;
             }
-
-            /* Chart attribution is moved out of the chart on mobile so it no
-               longer overlays the candles. The global credit remains visible. */
-            .mini-chart-credit {
-                display: none !important;
-            }
-            #rajaTradingViewAttribution {
-                display: block !important;
-                text-align: center;
-                margin: 8px 0 calc(68px + env(safe-area-inset-bottom));
-                font-size: 7.5px;
-                color: #6f879f;
-                opacity: .78;
-            }
-            #rajaTradingViewAttribution a {
-                color: #7fa6bf;
-                text-decoration: none;
-            }
-        }
+}
 
         @media (max-width: 390px) {
             body.raja-mobile-scanning .scan-telemetry {
@@ -3017,12 +2999,7 @@
                 opacity: .60;
                 filter: saturate(.65);
             }
-
-            /* Keep the global TradingView credit above the new command bar. */
-            #rajaTradingViewAttribution {
-                margin-bottom: calc(112px + env(safe-area-inset-bottom)) !important;
-            }
-        }
+}
 
         @media (max-width: 390px) {
             .raja-mobile-command-actions {
@@ -3614,6 +3591,216 @@
         html[data-raja-theme="light"] .v24-lifecycle .v23-life-step span { color:#163746 !important; }
         html[data-raja-theme="light"] .v24-outcome.pending { color:#496879 !important; background:#edf5f8 !important; border-color:#bfd6e0 !important; }
         html[data-raja-theme="light"] .v24-heatmap-empty { color:#4f6f80 !important; background:#f7fbfd !important; border-color:#bfd6e0 !important; }
+    </style>
+
+
+    <style id="raja-v26-readability">
+        /* =========================================================
+           V26 READABILITY PASS
+           Bigger typography + stronger contrast in Dark / Light mode
+           ========================================================= */
+        body, button, input, select, textarea {
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* ---------- Dark mode: clearer primary + secondary text ---------- */
+        html:not([data-raja-theme="light"]) body { color:#f3f9fd !important; }
+        html:not([data-raja-theme="light"]) .scan-sub,
+        html:not([data-raja-theme="light"]) .ready-sub,
+        html:not([data-raja-theme="light"]) .market-banner,
+        html:not([data-raja-theme="light"]) .intel-caption,
+        html:not([data-raja-theme="light"]) .snapshot-cell small,
+        html:not([data-raja-theme="light"]) .scan-stage,
+        html:not([data-raja-theme="light"]) .metric-note,
+        html:not([data-raja-theme="light"]) .ai-factor span,
+        html:not([data-raja-theme="light"]) .pwa-tip,
+        html:not([data-raja-theme="light"]) .app-feature-status,
+        html:not([data-raja-theme="light"]) .v23-welcome-sub,
+        html:not([data-raja-theme="light"]) .v23-welcome-eyebrow,
+        html:not([data-raja-theme="light"]) .v23-winner-reason {
+            color:#a8bfd1 !important;
+        }
+        html:not([data-raja-theme="light"]) .settings-section h4,
+        html:not([data-raja-theme="light"]) .label-text,
+        html:not([data-raja-theme="light"]) .custom-controls label,
+        html:not([data-raja-theme="light"]) .config-field label,
+        html:not([data-raja-theme="light"]) .selection-card label,
+        html:not([data-raja-theme="light"]) .card-label,
+        html:not([data-raja-theme="light"]) .intel-title,
+        html:not([data-raja-theme="light"]) .inline-title,
+        html:not([data-raja-theme="light"]) .rail-title {
+            color:#79e8ff !important;
+        }
+        html:not([data-raja-theme="light"]) .nav-item,
+        html:not([data-raja-theme="light"]) .utility-btn,
+        html:not([data-raja-theme="light"]) .rail-action,
+        html:not([data-raja-theme="light"]) .switch-row {
+            color:#c8dbea !important;
+        }
+        html:not([data-raja-theme="light"]) .app-feature-card small { color:#9cb5c8 !important; }
+        html:not([data-raja-theme="light"]) .app-feature-card strong { color:#f3fbff !important; }
+
+        /* ---------- Slightly larger text across the app ---------- */
+        .market-banner { font-size:12px !important; }
+        .nav-item { font-size:12.5px !important; }
+        .scan-heading { font-size:19px !important; }
+        .scan-sub { font-size:11px !important; line-height:1.5 !important; }
+        .ready-sub { font-size:11.5px !important; line-height:1.65 !important; }
+        .scan-stage-title { font-size:12.5px !important; }
+        .scan-stage { font-size:10.5px !important; }
+        .card-label { font-size:10px !important; }
+        .selected-pair-label { font-size:9.5px !important; }
+        .selected-pair-name { font-size:17.5px !important; }
+        .snapshot-cell small { font-size:8.5px !important; }
+        .snapshot-cell strong { font-size:10.8px !important; }
+        .config-title { font-size:11.5px !important; }
+        .config-field label, .selection-card label { font-size:9px !important; }
+        .config-field select, select { font-size:10.5px !important; }
+        .mode-btn, .expiry-btn { font-size:9.5px !important; }
+        .utility-btn, .rail-action { font-size:9px !important; }
+        .rail-title { font-size:10.5px !important; }
+        .recent-list .inline-item { font-size:8.8px !important; line-height:1.4 !important; }
+        .intel-title { font-size:10px !important; }
+        .intel-caption { font-size:8px !important; }
+        .heat-pair { font-size:9px !important; }
+        .heat-meta { font-size:7.5px !important; }
+        .setup-stage { font-size:7px !important; }
+        .setup-stage strong { font-size:7.8px !important; }
+        .settings-section h4 { font-size:10.5px !important; letter-spacing:.2px; }
+        .custom-controls label { font-size:8.5px !important; }
+        .custom-controls input, .guard-grid input { font-size:10px !important; min-height:32px; }
+        .label-text { font-size:10px !important; }
+        .switch-row { font-size:10px !important; line-height:1.4; }
+        .pwa-tip { font-size:9px !important; line-height:1.45; }
+        .app-feature-card small { font-size:8px !important; }
+        .app-feature-card strong { font-size:10px !important; }
+        .app-feature-status { font-size:8.5px !important; line-height:1.5 !important; }
+        .app-feature-actions button { font-size:8.5px !important; }
+        .raja-theme-segment button { font-size:9px !important; }
+        .v23-welcome-eyebrow { font-size:9px !important; }
+        .v23-welcome-title { font-size:24px !important; }
+        .v23-welcome-sub { font-size:10.5px !important; }
+        .v23-fresh-chip small { font-size:7px !important; }
+        .v23-fresh-chip strong { font-size:9px !important; }
+        .v23-command-label { font-size:8px !important; }
+        .v23-presets button, .v23-view-toggle button { font-size:8.3px !important; }
+        .premium-progress-sub { font-size:7.8px !important; }
+        .premium-level-copy span { font-size:7.8px !important; }
+        .ai-factor small { font-size:7px !important; }
+        .ai-factor strong { font-size:8.8px !important; }
+        .ai-factor span, .ai-summary { font-size:7.2px !important; }
+
+        /* ---------- Light mode: strong, non-washed-out text ---------- */
+        html[data-raja-theme="light"] body { color:#0b2230 !important; }
+        html[data-raja-theme="light"] .scan-heading,
+        html[data-raja-theme="light"] .ready-title,
+        html[data-raja-theme="light"] .scan-stage-title,
+        html[data-raja-theme="light"] .config-title,
+        html[data-raja-theme="light"] .brand,
+        html[data-raja-theme="light"] .intel-title,
+        html[data-raja-theme="light"] .rail-title,
+        html[data-raja-theme="light"] .settings-section h4,
+        html[data-raja-theme="light"] .card-label,
+        html[data-raja-theme="light"] .selection-card label,
+        html[data-raja-theme="light"] .config-field label,
+        html[data-raja-theme="light"] .custom-controls label,
+        html[data-raja-theme="light"] .label-text,
+        html[data-raja-theme="light"] .app-feature-card strong,
+        html[data-raja-theme="light"] .v23-section-head strong,
+        html[data-raja-theme="light"] .v23-rank-main strong {
+            color:#092536 !important;
+            text-shadow:none !important;
+        }
+        html[data-raja-theme="light"] .settings-section h4,
+        html[data-raja-theme="light"] .card-label,
+        html[data-raja-theme="light"] .config-field label,
+        html[data-raja-theme="light"] .selection-card label,
+        html[data-raja-theme="light"] .custom-controls label,
+        html[data-raja-theme="light"] .label-text,
+        html[data-raja-theme="light"] .inline-title,
+        html[data-raja-theme="light"] .selected-pair-label {
+            color:#075f7e !important;
+        }
+        html[data-raja-theme="light"] .scan-sub,
+        html[data-raja-theme="light"] .ready-sub,
+        html[data-raja-theme="light"] .market-banner,
+        html[data-raja-theme="light"] .intel-caption,
+        html[data-raja-theme="light"] .snapshot-cell small,
+        html[data-raja-theme="light"] .scan-stage,
+        html[data-raja-theme="light"] .metric-note,
+        html[data-raja-theme="light"] .ai-factor span,
+        html[data-raja-theme="light"] .pwa-tip,
+        html[data-raja-theme="light"] .app-feature-status,
+        html[data-raja-theme="light"] .switch-row,
+        html[data-raja-theme="light"] .v23-welcome-sub,
+        html[data-raja-theme="light"] .v23-welcome-eyebrow,
+        html[data-raja-theme="light"] .v23-section-head > span,
+        html[data-raja-theme="light"] .v23-winner-reason {
+            color:#35566b !important;
+        }
+        html[data-raja-theme="light"] .app-feature-card small { color:#476879 !important; }
+        html[data-raja-theme="light"] .snapshot-cell strong,
+        html[data-raja-theme="light"] .selected-pair-name,
+        html[data-raja-theme="light"] .metric-note,
+        html[data-raja-theme="light"] .ready-tag {
+            color:#007b58 !important;
+        }
+        html[data-raja-theme="light"] .nav-item,
+        html[data-raja-theme="light"] .utility-btn,
+        html[data-raja-theme="light"] .rail-action,
+        html[data-raja-theme="light"] .app-feature-actions button,
+        html[data-raja-theme="light"] .raja-theme-segment button {
+            color:#123f55 !important;
+            font-weight:850 !important;
+        }
+        html[data-raja-theme="light"] select,
+        html[data-raja-theme="light"] input,
+        html[data-raja-theme="light"] textarea {
+            color:#0b2230 !important;
+            font-weight:700 !important;
+        }
+        html[data-raja-theme="light"] input::placeholder,
+        html[data-raja-theme="light"] textarea::placeholder { color:#667f90 !important; opacity:1 !important; }
+        html[data-raja-theme="light"] .inline-item,
+        html[data-raja-theme="light"] .live-scan-row { color:#2f5267 !important; }
+        html[data-raja-theme="light"] .v23-fresh-chip small { color:#496b7d !important; }
+        html[data-raja-theme="light"] .v23-fresh-chip strong { color:#0a3243 !important; }
+
+        /* Neon scan/result panels intentionally remain dark in Light Mode. */
+        html[data-raja-theme="light"] .premium-intensity-hud,
+        html[data-raja-theme="light"] .premium-signal-result,
+        html[data-raja-theme="light"] .scan-process-panel,
+        html[data-raja-theme="light"] .ai-explain-card,
+        html[data-raja-theme="light"] .perf-heatmap-card,
+        html[data-raja-theme="light"] .replay-spotlight-card {
+            color:#f2fbff !important;
+        }
+        html[data-raja-theme="light"] .premium-intensity-hud .premium-level-copy span,
+        html[data-raja-theme="light"] .premium-intensity-hud .premium-progress-sub,
+        html[data-raja-theme="light"] .premium-signal-result .psr-title small,
+        html[data-raja-theme="light"] .ai-explain-card .ai-factor span,
+        html[data-raja-theme="light"] .ai-explain-card .ai-summary {
+            color:#b2c9d8 !important;
+        }
+
+        @media (max-width:820px) {
+            .nav-item { font-size:9.5px !important; }
+            .market-banner { font-size:10.5px !important; }
+            .scan-heading { font-size:18px !important; }
+            .scan-sub { font-size:10.5px !important; }
+            .ready-title { font-size:20px !important; }
+            .ready-sub { font-size:11px !important; }
+            .settings-section h4 { font-size:11px !important; }
+            .custom-controls label { font-size:9px !important; }
+            .custom-controls input, .guard-grid input { font-size:11px !important; }
+            .switch-row { font-size:10.5px !important; }
+            .app-feature-card small { font-size:8.5px !important; }
+            .app-feature-card strong { font-size:10.5px !important; }
+            .app-feature-status { font-size:9px !important; }
+            .v23-welcome-title { font-size:22px !important; }
+            .v23-welcome-sub { font-size:10.5px !important; }
+        }
     </style>
 
 </head>
@@ -4915,7 +5102,7 @@
             if (historyRefreshInterval) clearInterval(historyRefreshInterval);
             heartbeatLicense();
             licenseHeartbeatInterval = setInterval(heartbeatLicense, 5000);
-            historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 10000);
+            historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 3000);
         }
 
 
@@ -5250,24 +5437,50 @@
         }
 
         function renderHistoryList() {
-            const listContainer=document.getElementById('historyListBox'); if(!listContainer)return;
-            if(backendTrackedHistory.length>0){
-                let html='';
-                backendTrackedHistory.forEach((item,index)=>{
-                    const score=Number(item.score||0).toFixed(1)+'%';
-                    const otc=String(item.pair||'').includes('(OTC)');
-                    const awaiting=String(item.status||'').toUpperCase()==='AWAITING_QX';
-                    const proxy=String(item.yahoo_result||'').toUpperCase();
-                    const label=item.result?`[${item.result}]`:(awaiting?(proxy?`[PROXY ${proxy} · QX VERIFY]`:'[QX VERIFY]'):(item.status==='PENDING'?'[PENDING]':'[--]'));
-                    const resultKey=String(item.result||proxy||'').toUpperCase();
-                    const color=resultKey==='WIN'?'#00ff87':(resultKey==='LOSS'?'#ff3366':(awaiting?'#f7d36a':'#60efff'));
-                    const showQx=otc && !item.result;
-                    html+=`<div class="inline-item" style="gap:5px;"><span style="flex:1;min-width:0;">${index+1}. ${escapeHtml(item.pair)} (${escapeHtml(item.signal)}) · ${escapeHtml(item.expiry)} · <strong style="color:#60efff;">${score}</strong><br><span style="font-size:7.5px;color:#94a3b8;">${escapeHtml(item.scan_mode||'BALANCED')} · Stability ${escapeHtml(item.market_stability_score??'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span></span><span style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end;"><span style="color:${color};font-weight:900;">${label}</span><button class="history-replay-btn" onclick="openSignalReplay('${item.id}')">REPLAY</button>${showQx?`<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>`:''}</span></div>`;
+            const listContainer = document.getElementById('historyListBox');
+            if (!listContainer) return;
+
+            if (backendTrackedHistory.length > 0) {
+                let html = '';
+                backendTrackedHistory.forEach((item, index) => {
+                    const score = Number(item.score || 0).toFixed(1) + '%';
+                    const otc = String(item.pair || '').includes('(OTC)');
+                    const awaiting = String(item.status || '').toUpperCase() === 'AWAITING_QX';
+                    const proxy = String(item.yahoo_result || '').toUpperCase();
+                    const phase = String(item.phase || '').toUpperCase();
+                    const result = String(item.result || '').toUpperCase();
+
+                    let label = '[TRACKING]';
+                    let color = '#60efff';
+
+                    if (result === 'WIN' || result === 'LOSS' || result === 'DRAW') {
+                        label = `[${result}]`;
+                        color = result === 'WIN' ? '#00ff87' : (result === 'LOSS' ? '#ff3366' : '#f7d36a');
+                    } else if (awaiting || phase === 'QX_VERIFY') {
+                        label = proxy ? `[PROXY ${proxy} · QX VERIFY]` : '[QX RESULT REQUIRED]';
+                        color = '#f7d36a';
+                    } else if (phase === 'WAITING_ENTRY') {
+                        label = '[WAITING ENTRY]';
+                    } else if (phase === 'ENTRY_OPEN') {
+                        label = '[ENTRY OPEN]';
+                        color = '#00ff87';
+                    } else if (phase === 'RESOLVING') {
+                        label = '[RESOLVING]';
+                        color = '#f7d36a';
+                    } else if (phase === 'TRACKING') {
+                        label = '[TRACKING]';
+                    } else if (String(item.status || '').toUpperCase() === 'PENDING') {
+                        label = '[PENDING]';
+                    }
+
+                    const showQx = otc && !item.result && (awaiting || phase === 'QX_VERIFY');
+                    html += `<div class="inline-item" style="gap:5px;"><span style="flex:1;min-width:0;">${index+1}. ${escapeHtml(item.pair)} (${escapeHtml(item.signal)}) · ${escapeHtml(item.expiry)} · <strong style="color:#60efff;">${score}</strong><br><span style="font-size:7.5px;color:#94a3b8;">${escapeHtml(item.scan_mode||'BALANCED')} · Stability ${escapeHtml(item.market_stability_score??'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span></span><span style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end;"><span style="color:${color};font-weight:900;">${label}</span><button class="history-replay-btn" onclick="openSignalReplay('${item.id}')">REPLAY</button>${showQx?`<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>`:''}</span></div>`;
                 });
-                listContainer.innerHTML=html;
+                listContainer.innerHTML = html;
                 return;
             }
-            listContainer.innerHTML='<div class="inline-item"><span>No recent tracked signals yet.</span><span class="win-tag">--</span></div>';
+
+            listContainer.innerHTML = '<div class="inline-item"><span>No recent tracked signals yet.</span><span class="win-tag">--</span></div>';
         }
 
 
@@ -5637,11 +5850,12 @@
                         if (typeof v23EntryOpenOnce === 'function') v23EntryOpenOnce(activeTrackedSignalId || activeSignalEntryEpochMs || tfLabel);
                         if (typeof v23SetLifecycle === 'function') v23SetLifecycle('entry');
                     } else {
-                        candleStatus.innerText = "ENTRY WINDOW PASSED:";
-                        tradeAlert.innerText = "⚠️ ENTRY MISSED — RESCAN FOR A FRESH SIGNAL";
+                        candleStatus.innerText = "ENTRY WINDOW CLOSED — MODEL OUTCOME TRACKING:";
+                        tradeAlert.innerText = "◆ TRACKING SIGNAL RESULT";
                         tradeAlert.style.display = "block";
-                        tradeAlert.style.color = "#ff3366";
-                        if (typeof v23SetLifecycle === 'function') v23SetLifecycle('missed');
+                        tradeAlert.style.color = "#60efff";
+                        if (typeof v23SetLifecycle === 'function') v23SetLifecycle('tracking');
+                        if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('TRACKING','pending');
                     }
                 } else {
                     candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — WAIT FOR CLOSE:`;
@@ -5948,9 +6162,61 @@
 
 
         async function registerSignalForTracking(signalData) {
-            const direction=signalData.dir.includes('CALL')?'CALL':'PUT'; const selectedTfMs=getExpirySeconds(selectedExpiry)*1000; activeSignalEntryEpochMs=(Math.floor(Date.now()/selectedTfMs)+1)*selectedTfMs; startTimer();
-            try { const response=await fetch('/track-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pair:signalData.pair,signal:direction,score:signalData.confluence,expiry:selectedExpiry,timeframe_summary:signalData.timeframeSummary||{},client_id:deviceSessionId,chart_preview:signalData.chartPreview||[],market_stability_score:signalData.marketStabilityScore,market_risk_level:signalData.marketRiskLevel,volatility_pct:signalData.volatilityPct,scan_mode:signalData.scanMode,market:document.getElementById('marketType')?.value||'',snapshot:{rsi:signalData.rsi,reason:signalData.reason,multi_tf_agreement:signalData.multiTfAgreement,confirmation_mode:signalData.confirmationMode},...getAuthPayload()})}); const result=await response.json(); if(result&&result.status==='success'&&result.auto_tracking){activeTrackedSignalId=result.signal_id;activeSignalEntryEpochMs=Number(result.entry_epoch)*1000;if(typeof v23SetTrackingBadge==='function')v23SetTrackingBadge(true);startTimer();}else if(result&&result.status==='success'){activeTrackedSignalId=null;if(typeof v23SetTrackingBadge==='function')v23SetTrackingBadge(false);} }
-            catch(error){console.error('Signal tracking error:',error);}
+            const direction = signalData.dir.includes('CALL') ? 'CALL' : 'PUT';
+            const selectedTfMs = getExpirySeconds(selectedExpiry) * 1000;
+            activeSignalEntryEpochMs = (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
+
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
+            if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('WAITING ENTRY','pending');
+            startTimer();
+
+            try {
+                const response = await fetch('/track-signal', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pair: signalData.pair,
+                        signal: direction,
+                        score: signalData.confluence,
+                        expiry: selectedExpiry,
+                        timeframe_summary: signalData.timeframeSummary || {},
+                        client_id: deviceSessionId,
+                        chart_preview: signalData.chartPreview || [],
+                        market_stability_score: signalData.marketStabilityScore,
+                        market_risk_level: signalData.marketRiskLevel,
+                        volatility_pct: signalData.volatilityPct,
+                        scan_mode: signalData.scanMode,
+                        market: document.getElementById('marketType')?.value || '',
+                        snapshot: {
+                            rsi: signalData.rsi,
+                            reason: signalData.reason,
+                            multi_tf_agreement: signalData.multiTfAgreement,
+                            confirmation_mode: signalData.confirmationMode
+                        },
+                        ...getAuthPayload()
+                    })
+                });
+                const result = await response.json();
+
+                if (result && result.status === 'success' && result.auto_tracking) {
+                    activeTrackedSignalId = result.signal_id;
+                    activeSignalEntryEpochMs = Number(result.entry_epoch) * 1000;
+                    if (typeof v23SetTrackingBadge === 'function') v23SetTrackingBadge(true);
+                    startTimer();
+                    await refreshTrackedHistory();
+                    if (typeof v24SyncActiveOutcome === 'function') v24SyncActiveOutcome();
+                } else if (result && result.status === 'success') {
+                    activeTrackedSignalId = null;
+                    if (typeof v23SetTrackingBadge === 'function') v23SetTrackingBadge(false);
+                    if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('MANUAL RESULT','verify');
+                } else {
+                    throw new Error((result && result.message) || 'Signal tracking could not start.');
+                }
+            } catch (error) {
+                console.error('Signal tracking error:', error);
+                if (typeof v23SetTrackingBadge === 'function') v23SetTrackingBadge(false);
+                if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('TRACKING ERROR','verify');
+            }
         }
 
 
@@ -7370,12 +7636,10 @@
         }
 
         function ensureTradingViewCredit() {
-            const container = document.querySelector('.container');
-            if (!container || document.getElementById('rajaTradingViewAttribution')) return;
-            const credit = document.createElement('div');
-            credit.id = 'rajaTradingViewAttribution';
-            credit.innerHTML = 'Charts powered by <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a>';
-            container.appendChild(credit);
+            // V25: no page-level TradingView footer.
+            // Chart-specific attribution remains handled inside the chart components.
+            const existing = document.getElementById('rajaTradingViewAttribution');
+            if (existing) existing.remove();
         }
 
         function syncRajaMobileState() {
@@ -7659,30 +7923,71 @@
     }
 
     function v24SyncActiveOutcome(){
-        const id=activeTrackedSignalId;
-        if(!id){ v24SetOutcomeBadge('PENDING','pending'); return; }
-        const item=(backendTrackedHistory||[]).find(x=>String(x?.id||'')===String(id));
-        if(!item){ v24SetOutcomeBadge('TRACKING','pending'); return; }
+        const rows = Array.isArray(backendTrackedHistory) ? backendTrackedHistory : [];
+        let item = activeTrackedSignalId
+            ? rows.find(x => String(x?.id || '') === String(activeTrackedSignalId))
+            : null;
 
-        const result=String(item.result||'').toUpperCase();
-        const proxy=String(item.yahoo_result||'').toUpperCase();
-        const status=String(item.status||'').toUpperCase();
+        // Recover the active tracked signal after a quick refresh/navigation.
+        if (!item) {
+            const currentPair = String(document.getElementById('targetPairDisplay')?.textContent || '').trim();
+            item = rows.find(x => {
+                const status = String(x?.status || '').toUpperCase();
+                return (!currentPair || String(x?.pair || '').trim() === currentPair) &&
+                       (status === 'PENDING' || status === 'AWAITING_QX');
+            }) || null;
+            if (item?.id) activeTrackedSignalId = item.id;
+        }
 
-        if(result==='WIN' || result==='LOSS' || result==='DRAW'){
-            v24SetOutcomeBadge(result, result.toLowerCase());
-            if(typeof v23SetLifecycle==='function')v23SetLifecycle('tracking');
+        if (!item) {
+            v24SetOutcomeBadge('PENDING','pending');
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
             return;
         }
-        if(status==='AWAITING_QX'){
-            if(proxy==='WIN' || proxy==='LOSS' || proxy==='DRAW'){
-                v24SetOutcomeBadge('PROXY '+proxy+' · QX VERIFY','verify');
+
+        const result = String(item.result || '').toUpperCase();
+        const proxy = String(item.yahoo_result || '').toUpperCase();
+        const status = String(item.status || '').toUpperCase();
+        let phase = String(item.phase || '').toUpperCase();
+
+        if (!phase && status === 'PENDING') {
+            const now = Math.floor(Date.now() / 1000);
+            const entry = Number(item.entry_epoch || 0);
+            const expiry = Number(item.expiry_epoch || 0);
+            phase = entry && now < entry ? 'WAITING_ENTRY'
+                : (entry && now <= entry + 4 ? 'ENTRY_OPEN'
+                : (expiry && now < expiry ? 'TRACKING' : 'RESOLVING'));
+        }
+
+        if (result === 'WIN' || result === 'LOSS' || result === 'DRAW') {
+            v24SetOutcomeBadge(result, result.toLowerCase());
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('completed');
+            return;
+        }
+
+        if (status === 'AWAITING_QX' || phase === 'QX_VERIFY') {
+            if (proxy === 'WIN' || proxy === 'LOSS' || proxy === 'DRAW') {
+                v24SetOutcomeBadge('PROXY ' + proxy + ' · QX VERIFY','verify');
             } else {
                 v24SetOutcomeBadge('QX RESULT REQUIRED','verify');
             }
-            if(typeof v23SetLifecycle==='function')v23SetLifecycle('tracking');
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('completed');
             return;
         }
-        v24SetOutcomeBadge(status==='PENDING'?'PENDING':'TRACKING','pending');
+
+        if (phase === 'WAITING_ENTRY') {
+            v24SetOutcomeBadge('WAITING ENTRY','pending');
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
+        } else if (phase === 'ENTRY_OPEN') {
+            v24SetOutcomeBadge('ENTRY OPEN','win');
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('entry');
+        } else if (phase === 'RESOLVING') {
+            v24SetOutcomeBadge('RESOLVING','verify');
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('tracking');
+        } else {
+            v24SetOutcomeBadge('TRACKING','pending');
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('tracking');
+        }
     }
     </script>
 
@@ -7781,13 +8086,32 @@
         badge.style.borderColor=on?'rgba(0,240,168,.28)':'rgba(92,236,255,.14)';
     }
     function v23SetLifecycle(state){
-        const steps=[...document.querySelectorAll('#v23Lifecycle .v23-life-step')]; if(!steps.length)return;
-        steps.forEach(x=>x.classList.remove('done','active','missed'));
-        const map={scanning:-1,waiting:2,entry:3,missed:2,tracking:4}; const idx=map[state]??2;
-        if(state==='scanning') return;
-        steps.forEach((x,i)=>{ if(i<idx)x.classList.add('done'); else if(i===idx)x.classList.add(state==='missed'?'missed':'active'); });
-        if(state==='entry'){ steps[0]?.classList.add('done');steps[1]?.classList.add('done');steps[2]?.classList.add('done'); }
-        if(state==='tracking') steps.forEach(x=>x.classList.add('done'));
+        const steps = [...document.querySelectorAll('#v23Lifecycle .v23-life-step')];
+        if (!steps.length) return;
+
+        steps.forEach(x => x.classList.remove('done','active','missed'));
+
+        const map = {
+            detected: 0,
+            confirmed: 1,
+            waiting: 2,
+            entry: 3,
+            tracking: 4,
+            completed: 5,
+            scanning: -1
+        };
+        const idx = Object.prototype.hasOwnProperty.call(map, state) ? map[state] : 2;
+
+        if (state === 'scanning') return;
+        if (state === 'completed') {
+            steps.forEach(x => x.classList.add('done'));
+            return;
+        }
+
+        steps.forEach((step, i) => {
+            if (i < idx) step.classList.add('done');
+            else if (i === idx) step.classList.add('active');
+        });
     }
 
     function v23RenderWinnerReason(signal){
