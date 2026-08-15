@@ -19,6 +19,7 @@
     "finance",
     "productivity"
   ],
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/raja-ai-icon-192.png",
