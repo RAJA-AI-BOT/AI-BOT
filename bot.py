@@ -1,2294 +1,5064 @@
-from flask import Flask, request, jsonify, send_from_directory
-from flask_cors import CORS
-import yfinance as yf
-import os
-import time
-import json
-import secrets
-import threading
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait
-from collections import Counter
-from datetime import datetime, timezone
-from urllib.request import Request as UrlRequest, urlopen
-
-try:
-    import psycopg
-except Exception:
-    psycopg = None
-
-app = Flask(__name__, static_folder=".", template_folder=".")
-CORS(app)
-
-# =========================================================
-# RAJA AI MULTI-TIMEFRAME BACKEND
-# Yahoo Finance 1-minute OHLCV is the base/reference feed.
-# 2m, 5m, 10m, 15m and 30m are built from the same Yahoo
-# 1-minute candles so every timeframe stays synchronized.
-#
-# IMPORTANT: "(OTC)" assets are underlying-market proxies.
-# They are NOT exact Quotex OTC quotes.
-# =========================================================
-
-YAHOO_SYMBOLS = {
-    # ---------------- Crypto Live ----------------
-    "BTC-USD": "BTC-USD",
-    "ETH-USD": "ETH-USD",
-    "SOL-USD": "SOL-USD",
-    "LTC-USD": "LTC-USD",
-    "XRP-USD": "XRP-USD",
-    "ADA-USD": "ADA-USD",
-    "DOGE-USD": "DOGE-USD",
-
-    # ---------------- Crypto OTC proxies ----------------
-    # Yahoo underlying-market proxies; not exact Quotex OTC quotes.
-    "Bitcoin (OTC)": "BTC-USD",
-    "Ethereum (OTC)": "ETH-USD",
-    "Litecoin (OTC)": "LTC-USD",
-    "Ripple (OTC)": "XRP-USD",
-    "Solana (OTC)": "SOL-USD",
-    "Toncoin (OTC)": "TON-USD",
-    "Ethereum Classic (OTC)": "ETC-USD",
-    "Axie Infinity (OTC)": "AXS-USD",
-    "Binance Coin (OTC)": "BNB-USD",
-    "Polkadot (OTC)": "DOT-USD",
-    "Avalanche (OTC)": "AVAX-USD",
-    "Chainlink (OTC)": "LINK-USD",
-    "Bitcoin Cash (OTC)": "BCH-USD",
-    "Zcash (OTC)": "ZEC-USD",
-    "Cosmos (OTC)": "ATOM-USD",
-
-    # ---------------- Forex Live ----------------
-    "EUR/USD": "EURUSD=X",
-    "GBP/USD": "GBPUSD=X",
-    "USD/JPY": "USDJPY=X",
-    "AUD/USD": "AUDUSD=X",
-    "USD/CAD": "USDCAD=X",
-    "USD/CHF": "USDCHF=X",
-    "NZD/USD": "NZDUSD=X",
-    "EUR/GBP": "EURGBP=X",
-    "EUR/JPY": "EURJPY=X",
-    "GBP/JPY": "GBPJPY=X",
-    "AUD/JPY": "AUDJPY=X",
-    "EUR/AUD": "EURAUD=X",
-    "GBP/AUD": "GBPAUD=X",
-    "CAD/JPY": "CADJPY=X",
-    "EUR/CAD": "EURCAD=X",
-    "GBP/CAD": "GBPCAD=X",
-    "NZD/JPY": "NZDJPY=X",
-    "AUD/NZD": "AUDNZD=X",
-    "EUR/CHF": "EURCHF=X",
-    "GBP/CHF": "GBPCHF=X",
-    # Gold live reference uses Yahoo gold futures because the old spot-style symbol returned 404.
-    "XAUUSD": "GC=F",
-
-    # ---------------- Current Quotex Forex OTC list ----------------
-    # These are Yahoo underlying/FX proxies; exact Quotex OTC candles can differ.
-    "USD/BRL (OTC)": "USDBRL=X",
-    "NZD/CHF (OTC)": "NZDCHF=X",
-    "NZD/JPY (OTC)": "NZDJPY=X",
-    "USD/COP (OTC)": "USDCOP=X",
-    "USD/MXN (OTC)": "USDMXN=X",
-    "AUD/NZD (OTC)": "AUDNZD=X",
-    "USD/BDT (OTC)": "USDBDT=X",
-    "USD/DZD (OTC)": "USDDZD=X",
-    "USD/NGN (OTC)": "USDNGN=X",
-    "USD/PHP (OTC)": "USDPHP=X",
-    "USD/PKR (OTC)": "USDPKR=X",
-    "USD/ZAR (OTC)": "USDZAR=X",
-    "USD/INR (OTC)": "USDINR=X",
-    "USD/EGP (OTC)": "USDEGP=X",
-    "USD/IDR (OTC)": "USDIDR=X",
-    "USD/ARS (OTC)": "USDARS=X",
-    "GBP/NZD (OTC)": "GBPNZD=X",
-    "EUR/NZD (OTC)": "EURNZD=X",
-    "NZD/USD (OTC)": "NZDUSD=X",
-    "NZD/CAD (OTC)": "NZDCAD=X",
-    "CAD/CHF (OTC)": "CADCHF=X",
-}
-
-ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
-UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
-
-TIMEFRAMES = {
-    "1m": 1,
-    "2m": 2,
-    "5m": 5,
-    "10m": 10,
-    "15m": 15,
-    "30m": 30,
-}
-
-# Selected trade expiry must be confirmed by the matching analysis timeframe.
-# 15s/30s are intentionally excluded because the base Yahoo feed is 1-minute.
-EXPIRY_CONFIRMATION_TIMEFRAME = {
-    "1m": "1m",
-    "2m": "2m",
-    "5m": "5m",
-    "15m": "15m",
-    "30m": "30m",
-}
-
-# One Yahoo 1m download per unique symbol; all higher TFs are resampled.
-CACHE_DURATION = int(os.environ.get("RAJA_CACHE_SECONDS", "90"))
-STALE_CACHE_MAX_AGE = int(os.environ.get("RAJA_STALE_CACHE_SECONDS", "180"))
-YAHOO_FAILURE_COOLDOWN = int(os.environ.get("RAJA_YAHOO_FAILURE_COOLDOWN", "180"))
-# Keep three Yahoo fetches in flight to match the default three batch workers; this reduces
-# partial 21-pair scans without opening an aggressive request storm.
-YAHOO_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "3"))))
-YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
-BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
-BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
-YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
-# Browser batch timeout is 90s; 78s gives the server more room than the old 68s while
-# still returning before the browser aborts.
-BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(85.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "78"))))
-
-market_cache = {}
-cache_lock = threading.RLock()
-
-symbol_fetch_locks = {}
-symbol_fetch_locks_guard = threading.Lock()
-failed_symbol_until = {}
-failed_symbol_lock = threading.Lock()
-
-yahoo_fetch_semaphore = threading.BoundedSemaphore(YAHOO_FETCH_CONCURRENCY)
-yahoo_pace_lock = threading.Lock()
-last_yahoo_fetch_started = 0.0
-
-batch_cache = {}
-batch_cache_lock = threading.RLock()
-batch_key_locks = {}
-batch_key_locks_guard = threading.Lock()
-
-# Forex Factory exposes an official weekly JSON export from the calendar page.
-# Proxy it through this backend so the browser avoids cross-origin issues and
-# can keep a short cache instead of hitting the source on every click.
-FOREX_FACTORY_CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-MARKET_NEWS_CACHE_SECONDS = max(30, int(os.environ.get("RAJA_NEWS_CACHE_SECONDS", "60")))
-market_news_cache = {"timestamp": 0.0, "data": []}
-market_news_lock = threading.RLock()
-
-# Duplicate rotation is handled client-side per browser, so one customer's
-# scan never suppresses another customer's signal.
-recent_signal_lock = threading.Lock()
-recent_signals = {}
-DUPLICATE_SIGNAL_COOLDOWN = 0
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RAJA AI PREMIUM</title>
+    <meta name="theme-color" content="#050b16">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="application-name" content="RAJA AI PREMIUM">
+    <meta name="apple-mobile-web-app-title" content="RAJA AI">
+    <meta name="format-detection" content="telephone=no">
+    <link rel="icon" type="image/png" sizes="192x192" href="/raja-ai-icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/raja-ai-icon-512.png">
+    <link rel="apple-touch-icon" sizes="192x192" href="/raja-ai-icon-192.png">
 
 
-# =========================================================
-# LICENSE STORE
-# =========================================================
+    <script id="raja-theme-bootstrap-v2">
+        try {
+            const savedTheme = localStorage.getItem('raja_theme_v2') || 'dark';
+            document.documentElement.dataset.rajaTheme = savedTheme === 'light' ? 'light' : 'dark';
+        } catch (_) {
+            document.documentElement.dataset.rajaTheme = 'dark';
+        }
+    </script>
 
-BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = Path(os.environ.get("RAJA_DATA_DIR", str(BASE_DIR))).resolve()
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
+        .container { width: 100%; max-width: 440px; background: linear-gradient(135deg, rgba(13, 20, 38, 0.95) 0%, rgba(4, 7, 15, 0.98) 100%); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 16px; padding: 12px; box-shadow: 0 0 40px rgba(0, 242, 254, 0.12); backdrop-filter: blur(12px); margin-top: 4px; margin-bottom: 10px; transition: all 0.3s ease; }
+        h2 { text-align: center; font-size: 16px; background: linear-gradient(135deg, #00ff87 0%, #60efff 50%, #ff3366 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px; letter-spacing: 1px; font-weight: 900; text-transform: uppercase; }
+        
+        .market-notice { background: rgba(0, 242, 254, 0.08); border: 1px dashed rgba(0, 242, 254, 0.3); border-radius: 6px; padding: 5px; text-align: center; font-size: 9.5px; color: #60efff; font-weight: 700; margin-bottom: 8px; }
 
-LICENSE_FILE = DATA_DIR / "licenses.json"
-license_lock = threading.RLock()
+        @keyframes screenFlash {
+            0% { box-shadow: 0 0 5px rgba(0, 255, 135, 0.2); }
+            50% { box-shadow: 0 0 50px rgba(0, 255, 135, 0.8), inset 0 0 30px rgba(0, 255, 135, 0.5); }
+            100% { box-shadow: 0 0 20px rgba(0, 255, 135, 0.3); }
+        }
+        .alert-flash { animation: screenFlash 0.6s ease-in-out 2; }
 
-ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
+        .instruction-box { background: rgba(13, 20, 36, 0.75); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 10px; padding: 10px; font-size: 11px; line-height: 1.5; margin-bottom: 10px; text-align: left; }
+        .step-title { color: #00ff87; font-weight: 900; margin-top: 6px; font-size: 12px; }
+        .step-title:first-child { margin-top: 0; }
+        .link-text { color: #60efff; text-decoration: underline; word-break: break-all; font-weight: 600; }
+        .label-text { display: block; color: #60efff; font-size: 10px; font-weight: 800; margin: 6px 0 2px 0; text-transform: uppercase; text-align: left; }
+        
+        .ai-hud-box { position: relative; background: linear-gradient(180deg, rgba(6, 10, 20, 0.95) 0%, rgba(11, 17, 32, 0.95) 100%); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 12px; padding: 10px 8px; margin-bottom: 8px; text-align: center; overflow: hidden; display: flex; flex-direction: column; align-items: center; min-height: 150px; justify-content: center; transition: all 0.3s ease; }
+        .ai-hud-box.glow-buy { border-color: #00ff87; box-shadow: inset 0 0 25px rgba(0, 255, 135, 0.35), 0 0 25px rgba(0, 255, 135, 0.4); }
+        .ai-hud-box.glow-sell { border-color: #ff3366; box-shadow: inset 0 0 25px rgba(255, 51, 102, 0.35), 0 0 25px rgba(255, 51, 102, 0.4); }
+        
+        .vortex-container { position: relative; width: 52px; height: 52px; margin: 0 auto 4px auto; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle, rgba(0, 242, 254, 0.15) 0%, rgba(0, 0, 0, 0) 70%); }
+        .vortex-icon { width: 40px; height: 40px; border-radius: 50%; background-color: #00f2fe; background-size: cover; background-position: center; border: 1.5px solid rgba(0, 255, 135, 0.6); animation: spinVortex 6s linear infinite; }
+        @keyframes spinVortex { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(180deg) scale(1.05); } 100% { transform: rotate(360deg) scale(1); } }
+        
+        .hud-stats { display: flex; justify-content: center; width: 100%; padding: 4px 8px 0 8px; border-top: 1px solid rgba(0, 242, 254, 0.15); margin-top: 6px; font-size: 9px; font-weight: 700; }
+        .hud-stats span:nth-child(1) { color: #00ff87; }
+        .scan-view, .signal-view, .inline-content-view, .no-signal-view { display: none; width: 100%; text-align: center; }
+        .default-view { display: flex; flex-direction: column; align-items: center; width: 100%; }
+        
+        .inline-title { font-size: 11px; color: #60efff; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .inline-list-box { background: rgba(4, 8, 18, 0.9); border: 1px solid rgba(0, 242, 254, 0.25); border-radius: 6px; padding: 6px; max-height: 110px; overflow-y: auto; text-align: left; font-size: 10px; color: #cbd5e1; margin-bottom: 6px; width: 100%; }
+        .inline-item { padding: 3px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; align-items: center; }
+        .inline-item:last-child { border-bottom: none; }
+        .win-tag { color: #00ff87; font-weight: 800; }
+        
+        .action-result-btns { display: flex; gap: 4px; }
+        .win-action-btn { background: rgba(0, 255, 135, 0.2); border: 1px solid #00ff87; color: #00ff87; font-size: 8px; padding: 2px 5px; border-radius: 3px; cursor: pointer; font-weight: bold; }
+        .loss-action-btn { background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff3366; font-size: 8px; padding: 2px 5px; border-radius: 3px; cursor: pointer; font-weight: bold; }
 
-# Permanent license storage:
-# - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
-# - If DATABASE_URL is absent, the app falls back to licenses.json. Render Free local files
-#   are ephemeral, so the fallback is for local development/testing only.
-DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("RAJA_DATABASE_URL") or "").strip()
-LICENSE_STORE_MODE = "postgres" if DATABASE_URL else "file"
-DEVICE_SESSION_TTL_SECONDS = max(120, int(os.environ.get("RAJA_DEVICE_SESSION_TTL", "300")))
-# User requested a one-time reset of all previously generated keys. This marker makes
-# the reset run only once per persistent database. Change/empty the env var to control it.
-LICENSE_RESET_VERSION = os.environ.get("RAJA_LICENSE_RESET_VERSION", "2026-08-12-v8-clean-slate").strip()
+        .menu-back-btn { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #030712; font-size: 9.5px; font-weight: 900; padding: 5px 12px; border: none; border-radius: 5px; cursor: pointer; text-transform: uppercase; margin-top: 2px; }
+        
+        .live-scan-console { background: linear-gradient(180deg, #03060c 0%, #060a16 100%); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 8px; padding: 8px; margin: 6px 0; max-height: 100px; overflow-y: auto; text-align: left; font-size: 9.5px; width: 100%; font-family: 'Courier New', Courier, monospace; box-shadow: inset 0 0 10px rgba(0, 242, 254, 0.1); }
+        .live-scan-row { display: flex; justify-content: space-between; padding: 3px 6px; margin-bottom: 2px; border-radius: 4px; background: rgba(255, 255, 255, 0.02); color: #94a3b8; }
+        .live-scan-row.scanning { color: #60efff; background: rgba(0, 242, 254, 0.08); font-weight: bold; border-left: 2px solid #60efff; }
+        .live-scan-row.passed { color: #00ff87; background: rgba(0, 255, 135, 0.08); font-weight: bold; border-left: 2px solid #00ff87; }
+        .live-scan-row.rejected { color: #ff3366; background: rgba(255, 51, 102, 0.05); opacity: 0.7; border-left: 2px solid #ff3366; }
 
-SIGNALS_FILE = DATA_DIR / "signals.json"
-signals_lock = threading.RLock()
-SCAN_EVENTS_FILE = DATA_DIR / "scan_events.json"
-scan_events_lock = threading.RLock()
+        .scan-graph { width: 100%; height: 45px; background: #040812; border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 6px; margin: 4px 0; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+        .graph-line { width: 100%; height: 100%; background-image: linear-gradient(to right, rgba(0, 242, 254, 0.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 242, 254, 0.05) 1px, transparent 1px); background-size: 10px 10px; position: relative; }
+        .graph-svg { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        
+        .signal-light-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: none; }
+        .signal-light-overlay.buy-active { display: block; background: linear-gradient(0deg, rgba(0, 255, 135, 0) 0%, rgba(0, 255, 135, 0.3) 50%, rgba(0, 255, 135, 0) 100%); animation: moveLightUp 1.2s ease-in-out infinite; }
+        @keyframes moveLightUp { 0% { transform: translateY(100%); opacity: 0.2; } 50% { opacity: 0.8; } 100% { transform: translateY(-100%); opacity: 0.2; } }
+        .signal-light-overlay.sell-active { display: block; background: linear-gradient(180deg, rgba(255, 51, 102, 0) 0%, rgba(255, 51, 102, 0.3) 50%, rgba(255, 51, 102, 0) 100%); animation: moveLightDown 1.2s ease-in-out infinite; }
+        @keyframes moveLightDown { 0% { transform: translateY(-100%); opacity: 0.2; } 50% { opacity: 0.9; } 100% { transform: translateY(100%); opacity: 0.2; } }
+        
+        .scan-progress-container { width: 100%; background: rgba(255, 255, 255, 0.08); border-radius: 6px; height: 6px; margin: 4px 0; overflow: hidden; position: relative; border: 1px solid rgba(0, 242, 254, 0.2); }
+        .scan-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #00ff87, #00f2fe); border-radius: 6px; transition: width 0.1s linear; box-shadow: 0 0 10px #00ff87; }
+        
+        .signal-direction { font-size: 20px; font-weight: 900; letter-spacing: 1px; margin: 2px 0; text-transform: uppercase; }
+        .signal-expiry-badge { display:inline-block; margin-left:6px; padding:2px 6px; border:1px solid currentColor; border-radius:5px; font-size:10px; line-height:1.2; vertical-align:middle; letter-spacing:.4px; }
+        .dir-up { color: #00ff87; text-shadow: 0 0 14px rgba(0, 255, 135, 0.8); }
+        .dir-down { color: #ff3366; text-shadow: 0 0 14px rgba(255, 51, 102, 0.8); }
+        .signal-meta { font-size: 9px; color: #cbd5e1; margin-bottom: 2px; font-weight: 600; }
+        .tf-breakdown { width:100%; margin-top:5px; display:flex; flex-wrap:wrap; justify-content:center; gap:4px; }
+        .tf-chip { font-size:7.5px; font-weight:800; padding:3px 5px; border-radius:4px; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.04); }
+        .tf-call { color:#00ff87; border-color:rgba(0,255,135,.45); }
+        .tf-put { color:#ff3366; border-color:rgba(255,51,102,.45); }
+        .tf-none { color:#94a3b8; border-color:rgba(148,163,184,.25); }
+        .tf-summary-line { font-size:9px; color:#60efff; font-weight:800; margin-top:4px; }
 
-# Free-trial anti-abuse store.
-# A user/UID can claim a FREE TRIAL once, and after first login the device
-# is also permanently recorded as having used a trial.
-TRIAL_CLAIMS_FILE = DATA_DIR / "trial_claims.json"
-trial_claims_lock = threading.RLock()
+        .advanced-filters { background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(0, 242, 254, 0.2); border-radius: 5px; padding: 3px 6px; margin-top: 4px; font-size: 7.5px; color: #60efff; display: flex; justify-content: center; gap: 3px; font-weight: bold; flex-wrap: wrap; }
+        
+        .selected-pair-box { background: linear-gradient(135deg, rgba(0, 242, 254, 0.12), rgba(0, 255, 135, 0.08)); border: 1px solid rgba(0, 242, 254, 0.4); border-radius: 8px; padding: 6px 10px; margin-bottom: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        .selected-pair-box.pair-glow-buy { border-color: #00ff87; box-shadow: 0 0 15px rgba(0, 255, 135, 0.3); }
+        .selected-pair-box.pair-glow-sell { border-color: #ff3366; box-shadow: 0 0 15px rgba(255, 51, 102, 0.3); }
+        .selected-pair-label { font-size: 9px; color: #60efff; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 1px; }
+        .selected-pair-name { font-size: 12px; color: #00ff87; font-weight: 900; letter-spacing: 0.5px; }
+        
+        .timer-section { background: rgba(8, 13, 24, 0.95); border-radius: 8px; padding: 8px; text-align: center; border: 1px solid rgba(0, 242, 254, 0.2); margin-bottom: 8px; }
+        .candle-info { font-size: 9.5px; color: #60efff; font-weight: 700; margin-bottom: 2px; text-transform: uppercase; }
+        .timer-display { font-size: 20px; color: #00ff87; font-weight: 900; letter-spacing: 1px; }
+        .trade-alert { font-size: 10px; color: #ff3366; font-weight: 800; margin-top: 2px; display: none; text-transform: uppercase; }
+        
+        .selection-card { background: rgba(13, 20, 36, 0.75); border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+        .selection-card label { display: block; color: #60efff; font-size: 9.5px; font-weight: 700; margin-bottom: 3px; text-transform: uppercase; }
+        select { width: 100%; padding: 8px; background: #050811; color: #fff; border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 6px; font-size: 11px; font-weight: 600; outline: none; cursor: pointer; }
+        
+        .expiry-container { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 3px; }
+        .expiry-btn { background: rgba(18, 27, 48, 0.9); color: #fff; border: 1px solid rgba(255, 255, 255, 0.1); padding: 6px 0; border-radius: 5px; font-size: 9.5px; font-weight: 700; cursor: pointer; }
+        .expiry-btn.active { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #030712; border-color: transparent; }
+        
+        .utility-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 8px; }
+        .utility-btn { background: rgba(16, 24, 43, 0.9); border: 1px solid rgba(0, 242, 254, 0.3); color: #60efff; padding: 7px 4px; border-radius: 5px; font-size: 8.5px; font-weight: 800; cursor: pointer; text-transform: uppercase; text-align: center; }
+        
+        .scan-btn { background: linear-gradient(135deg, #00ff87 0%, #60efff 100%); color: #030712; font-size: 12px; font-weight: 900; padding: 10px; border: none; border-radius: 8px; cursor: pointer; width: 100%; text-transform: uppercase; box-shadow: 0 4px 15px rgba(0, 255, 135, 0.4); letter-spacing: 0.5px; }
+        .input-field { padding: 8px; width: 100%; background: #050811; border: 1px solid rgba(0, 242, 254, 0.4); color: #fff; border-radius: 6px; outline: none; font-size: 11px; font-weight: bold; margin-top: 3px; }
+        .panel-box { background: #0d1426; border: 1px dashed #60efff; border-radius: 8px; padding: 12px; margin-top: 8px; display: none; }
+        .action-btn { background: #ff3366; color: #fff; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 800; width: 100%; margin-top: 8px; text-transform: uppercase; font-size: 11px; }
+        .copy-key-btn { background: #00ff87; color: #030712; border: none; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 900; width: 100%; margin-top: 6px; text-transform: uppercase; font-size: 10px; display: none; }
+        
+        .admin-users-box { margin-top: 12px; background: rgba(4, 8, 18, 0.95); border: 1px solid rgba(0, 242, 254, 0.3); border-radius: 8px; padding: 8px; max-height: 180px; overflow-y: auto; text-align: left; }
+        .admin-user-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 4px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); font-size: 10px; }
+        .admin-user-row:last-child { border-bottom: none; }
+        .remove-user-btn { background: rgba(255, 51, 102, 0.2); border: 1px solid #ff3366; color: #ff3366; font-size: 8px; padding: 3px 6px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+    
 
-DEFAULT_LICENSE_PLAN = "VIP"
-AUTO_TRACK_EXPIRIES = {
-    "1m": 60,
-    "2m": 120,
-    "5m": 300,
-    "15m": 900,
-    "30m": 1800,
-}
+        /* =========================================================
+           V15 PREMIUM MARKET INTELLIGENCE
+           Heatmap · Build Meter · Opportunity Queue · AI Explanation
+           Performance Heatmap · Replay Playback
+           ========================================================= */
+        .intel-heatmap-shell,.setup-build-shell,.ai-explain-card,.perf-heatmap-card,.replay-spotlight-card {
+            border:1px solid rgba(83,177,255,.16); background:linear-gradient(180deg,rgba(3,12,24,.82),rgba(2,8,18,.94));
+            border-radius:12px; box-shadow:inset 0 0 28px rgba(34,211,238,.025); position:relative; overflow:hidden;
+        }
+        .intel-heatmap-shell { padding:10px; margin-bottom:8px; }
+        .intel-title-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:7px; }
+        .intel-title { color:#dff7ff; font-size:9px; font-weight:950; letter-spacing:.65px; text-transform:uppercase; }
+        .intel-caption { color:#6f8ba5; font-size:7px; font-weight:750; text-align:right; }
+        .market-heatmap-grid { display:grid; grid-template-columns:repeat(7,minmax(78px,1fr)); gap:5px; }
+        .heat-tile { min-width:0; border:1px solid rgba(120,164,205,.16); background:rgba(5,15,28,.8); border-radius:8px; padding:8px; cursor:pointer; transition:.18s ease; text-align:left; }
+        .heat-tile:hover { transform:translateY(-1px); border-color:rgba(96,239,255,.45); }
+        .heat-tile.bull { border-color:rgba(0,255,135,.35); background:linear-gradient(180deg,rgba(0,255,135,.08),rgba(3,13,24,.84)); }
+        .heat-tile.bear { border-color:rgba(255,93,125,.38); background:linear-gradient(180deg,rgba(255,51,102,.08),rgba(3,13,24,.84)); }
+        .heat-tile.weak { opacity:.72; }
+        .heat-pair { color:#e7f6ff; font-size:8px; font-weight:950; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .heat-score { margin-top:4px; font-size:14px; line-height:1; font-weight:950; }
+        .heat-tile.bull .heat-score { color:#00ff9a; } .heat-tile.bear .heat-score { color:#ff5d7d; } .heat-tile.weak .heat-score { color:#91a6ba; }
+        .heat-meta { margin-top:4px; display:flex; justify-content:space-between; gap:5px; color:#7d94aa; font-size:6.7px; font-weight:800; }
+        .heat-bars { height:13px; margin-top:5px; display:flex; align-items:flex-end; gap:1px; opacity:.9; }
+        .heat-bars i { flex:1; min-width:1px; height:var(--h,35%); background:currentColor; border-radius:1px 1px 0 0; opacity:.65; }
+        .heat-tile.bull .heat-bars { color:#00ff87; } .heat-tile.bear .heat-bars { color:#ff5d7d; } .heat-tile.weak .heat-bars { color:#6c8197; }
+
+        .setup-build-shell { padding:9px 10px; margin-bottom:9px; }
+        .setup-build-grid { display:grid; grid-template-columns:minmax(0,1fr) 92px; gap:10px; align-items:center; }
+        .setup-track { position:relative; display:grid; grid-template-columns:repeat(5,1fr); gap:5px; padding-top:8px; }
+        .setup-track::before { content:""; position:absolute; left:5%; right:5%; top:13px; height:2px; background:linear-gradient(90deg,#00ff87,#60efff,rgba(96,239,255,.12)); box-shadow:0 0 12px rgba(0,255,135,.18); }
+        .setup-stage { position:relative; z-index:1; text-align:center; color:#6f879e; font-size:6.5px; font-weight:850; }
+        .setup-stage-dot { width:12px; height:12px; margin:0 auto 4px; border-radius:50%; border:2px solid #345069; background:#07111e; }
+        .setup-stage.done { color:#c9fef2; } .setup-stage.done .setup-stage-dot { border-color:#00ff9a; background:#00a879; box-shadow:0 0 9px rgba(0,255,135,.55); }
+        .setup-stage strong { display:block; color:#dceef8; font-size:6.9px; margin-bottom:1px; }
+        .setup-score-box { border:1px solid rgba(0,255,135,.24); background:rgba(0,255,135,.06); border-radius:9px; text-align:center; padding:7px 4px; }
+        .setup-score-box strong { display:block; color:#00ff9a; font-size:22px; line-height:1; font-weight:950; text-shadow:0 0 14px rgba(0,255,135,.3); }
+        .setup-score-box span { display:block; color:#60efff; font-size:6.8px; margin-top:4px; font-weight:950; letter-spacing:.6px; }
+
+        .opportunity-list { display:grid; gap:6px; }
+        .mobile-opportunity-card { display:none; }
+        .opp-item { display:grid; grid-template-columns:22px minmax(0,1fr) 38px; gap:7px; align-items:center; padding:8px 7px; border:1px solid rgba(83,177,255,.11); background:rgba(255,255,255,.018); border-radius:8px; }
+        .opp-dir { width:22px; height:22px; border-radius:7px; display:grid; place-items:center; font-size:12px; font-weight:950; }
+        .opp-dir.bull { color:#00ff87; background:rgba(0,255,135,.09); } .opp-dir.bear { color:#ff5d7d; background:rgba(255,51,102,.09); } .opp-dir.weak { color:#94a3b8; background:rgba(148,163,184,.08); }
+        .opp-main { min-width:0; } .opp-main strong { display:block; color:#e7f4ff; font-size:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .opp-main span { display:block; color:#748ca2; font-size:6.7px; margin-top:2px; font-weight:800; }
+        .opp-score { width:34px; height:34px; border-radius:50%; border:2px solid rgba(0,255,135,.35); display:grid; place-items:center; color:#aefde8; font-size:7px; font-weight:950; }
+
+        .ai-explain-card { padding:9px; margin-top:8px; text-align:left; }
+        .ai-explain-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
+        .ai-factor { border:1px solid rgba(96,239,255,.10); background:rgba(255,255,255,.018); border-radius:7px; padding:7px; min-width:0; }
+        .ai-factor small { display:block; color:#6f8aa2; font-size:6.2px; text-transform:uppercase; font-weight:900; }
+        .ai-factor strong { display:block; margin-top:3px; color:#dff7ff; font-size:8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .ai-factor span { display:block; margin-top:2px; color:#7da1b8; font-size:6px; line-height:1.25; }
+        .ai-summary { margin-top:6px; border-top:1px solid rgba(96,239,255,.10); padding-top:6px; color:#a9c1d3; font-size:7px; line-height:1.5; }
+        .ai-summary b { color:#60efff; }
+
+        .signal-intel-bottom { display:grid; grid-template-columns:1.25fr .75fr; gap:8px; margin-top:8px; }
+        .perf-heatmap-card,.replay-spotlight-card { padding:9px; text-align:left; }
+        .perf-table-wrap { overflow:auto; }
+        .perf-table { width:100%; border-collapse:separate; border-spacing:3px; min-width:370px; }
+        .perf-table th { color:#7891a8; font-size:6.2px; font-weight:900; text-transform:uppercase; padding:3px; }
+        .perf-table td { text-align:center; border-radius:5px; padding:6px 4px; background:rgba(255,255,255,.025); color:#8da3b8; font-size:7px; font-weight:900; }
+        .perf-table td.pair { text-align:left; color:#d9eafa; background:rgba(96,239,255,.035); }
+        .perf-table td.good { color:#bfffe9; background:rgba(0,255,135,.18); } .perf-table td.mid { color:#ffe9a8; background:rgba(250,204,21,.16); } .perf-table td.bad { color:#ffd1da; background:rgba(255,51,102,.16); }
+        .perf-note { color:#647c92; font-size:6.2px; margin-top:5px; }
+        .replay-spotlight-body { border:1px solid rgba(255,93,125,.14); background:rgba(255,51,102,.035); border-radius:8px; padding:8px; }
+        .replay-spotlight-body strong { color:#eef8ff; font-size:10px; } .replay-spotlight-body span { color:#7f96aa; font-size:6.8px; }
+        .replay-outcome { margin-top:6px; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+        .replay-outcome b { font-size:13px; } .replay-outcome b.win { color:#00ff87; } .replay-outcome b.loss { color:#ff5d7d; } .replay-outcome b.pending { color:#facc15; }
+        .replay-open-btn { border:1px solid rgba(96,239,255,.28); background:rgba(96,239,255,.07); color:#60efff; border-radius:6px; padding:6px 8px; font-size:7px; font-weight:900; cursor:pointer; }
+        .replay-controls { display:flex; justify-content:center; align-items:center; gap:6px; margin-top:7px; }
+        .replay-control-btn { border:1px solid rgba(96,239,255,.22); background:#071221; color:#b8edff; border-radius:7px; min-width:35px; padding:7px; font-size:8px; font-weight:900; cursor:pointer; }
+        .replay-control-btn.play { color:#001711; background:#00ff9a; border-color:#00ff9a; }
+        .replay-frame-label { text-align:center; color:#6f8aa2; font-size:7px; margin-top:4px; font-weight:800; }
+
+        @media (max-width:1180px) {
+            .market-heatmap-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
+            .ai-explain-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width:820px) {
+            .mobile-opportunity-card { display:block; }
+            .market-heatmap-grid { display:flex; overflow-x:auto; scroll-snap-type:x proximity; padding-bottom:2px; }
+            .heat-tile { min-width:115px; scroll-snap-align:start; }
+            .setup-build-grid { grid-template-columns:1fr 72px; }
+            .setup-score-box strong { font-size:18px; }
+            .signal-intel-bottom { grid-template-columns:1fr; }
+            .ai-explain-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+        }
+        @media (max-width:520px) {
+            .intel-heatmap-shell,.setup-build-shell { padding:7px; }
+            .setup-stage strong { font-size:6.2px; } .setup-stage { font-size:5.7px; }
+            .setup-stage-dot { width:10px; height:10px; }
+            .ai-explain-grid { grid-template-columns:1fr 1fr; }
+            .ai-factor:last-child { grid-column:1/-1; }
+        }
+
+    
+        /* =========================================================
+           FULL SCREEN CONTROL
+           Browser Fullscreen API + WebKit fallback for supported mobile browsers.
+           ========================================================= */
+        .raja-fullscreen-btn {
+            position: fixed;
+            top: 10px;
+            right: 12px;
+            z-index: 99999;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 34px;
+            padding: 7px 11px;
+            border: 1px solid rgba(96, 239, 255, 0.62);
+            border-radius: 8px;
+            background: rgba(3, 9, 18, 0.90);
+            color: #60efff;
+            font-size: 9px;
+            font-weight: 900;
+            letter-spacing: .35px;
+            text-transform: uppercase;
+            cursor: pointer;
+            box-shadow: 0 0 18px rgba(0, 242, 254, 0.18);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            user-select: none;
+            -webkit-user-select: none;
+            transition: transform .18s ease, border-color .18s ease, color .18s ease, background .18s ease;
+        }
+        .raja-fullscreen-btn:hover {
+            transform: translateY(-1px);
+            border-color: #00ff87;
+            color: #00ff87;
+            background: rgba(4, 18, 25, 0.96);
+        }
+        .raja-fullscreen-btn:active { transform: scale(.97); }
+        .raja-fullscreen-btn .fs-icon { font-size: 14px; line-height: 1; }
+        .raja-fullscreen-btn.is-fullscreen {
+            border-color: rgba(0, 255, 135, .70);
+            color: #00ff87;
+        }
+        @media (max-width: 700px) {
+            .raja-fullscreen-btn {
+                top: 7px;
+                right: 7px;
+                min-height: 31px;
+                padding: 6px 8px;
+                font-size: 8px;
+            }
+            .raja-fullscreen-btn .fs-label { display: none; }
+            .raja-fullscreen-btn .fs-icon { font-size: 16px; }
+        }
+
+    
+        /* PWA installed mode */
+        @media (display-mode: standalone) {
+            html, body {
+                width: 100%;
+                min-height: 100%;
+                overscroll-behavior-y: contain;
+            }
+            #installAppBtn { display: none !important; }
+        }
+
+    </style>
+
+    <style id="raja-dashboard-v5">
+        body { display:block; padding:0; background:#020712; color:#f8fafc; }
+        .container { max-width:1480px; width:100%; margin:0 auto; padding:14px; background:transparent; border:0; box-shadow:none; }
+        #activationScreen, #adminPanel { max-width:460px; margin:18px auto; background:linear-gradient(180deg,rgba(9,17,31,.98),rgba(4,9,18,.98)); border:1px solid rgba(34,211,238,.28); border-radius:18px; padding:16px; box-shadow:0 24px 70px rgba(0,0,0,.42); }
+        .app-shell { display:grid; grid-template-columns:220px minmax(0,1fr) 270px; gap:14px; min-height:calc(100vh - 28px); }
+        .side-panel,.right-rail,.main-panel-card,.scan-summary-card,.config-panel,.top-status-card { background:linear-gradient(180deg,rgba(8,18,33,.96),rgba(4,11,22,.98)); border:1px solid rgba(83,177,255,.18); box-shadow:0 16px 44px rgba(0,0,0,.24); }
+        .side-panel { border-radius:18px; padding:18px 12px; display:flex; flex-direction:column; }
+        .brand { display:flex; align-items:center; gap:10px; padding:2px 8px 18px; font-size:16px; font-weight:900; letter-spacing:.5px; }
+        .brand-mark { width:32px; height:32px; border-radius:10px; display:grid; place-items:center; color:#07111d; background:linear-gradient(135deg,#00ff87,#38bdf8); box-shadow:0 0 24px rgba(0,255,135,.24); }
+        .vip-pill { font-size:9px; color:#00ff87; border:1px solid rgba(0,255,135,.35); padding:3px 6px; border-radius:6px; }
+        .nav-list { display:flex; flex-direction:column; gap:8px; }
+        .nav-item { border:1px solid transparent; background:transparent; color:#a9bad0; border-radius:10px; padding:11px 12px; text-align:left; font-weight:700; cursor:pointer; font-size:12px; }
+        .nav-item:hover,.nav-item.active { color:#eaffff; background:linear-gradient(90deg,rgba(0,255,135,.17),rgba(56,189,248,.13)); border-color:rgba(34,211,238,.28); box-shadow:inset 3px 0 #22d3ee; }
+        .engine-mini { margin-top:auto; border:1px solid rgba(34,211,238,.18); border-radius:12px; padding:12px; color:#9fb1c7; font-size:10px; line-height:1.7; background:rgba(0,0,0,.15); }
+        .engine-mini strong { color:#00ff87; }
+        .main-column { min-width:0; display:flex; flex-direction:column; gap:14px; }
+        .dashboard-topbar { min-height:58px; display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-radius:14px; background:rgba(5,13,25,.78); border:1px solid rgba(83,177,255,.14); }
+        .market-banner { color:#9fb3c8; font-size:11px; }
+        .market-banner strong { color:#22e6c3; }
+        .top-actions { display:flex; align-items:center; gap:8px; }
+        .top-btn { background:rgba(3,15,28,.9); border:1px solid rgba(34,211,238,.28); color:#32e6bf; padding:8px 12px; border-radius:8px; font-size:10px; font-weight:900; cursor:pointer; }
+        .top-btn.logout { color:#ff5d7d; border-color:rgba(255,93,125,.35); }
+        .rescan-card { min-width:172px; text-align:left; background:linear-gradient(135deg,rgba(0,255,135,.10),rgba(56,189,248,.08)); border:1px solid rgba(0,255,135,.28); color:#eaffff; border-radius:10px; padding:8px 11px; cursor:pointer; }
+        .rescan-card .rescan-title { display:block; color:#00ff87; font-size:10px; font-weight:900; }
+        .rescan-card .rescan-time { display:block; margin-top:2px; color:#a9bad0; font-size:9px; }
+        .main-panel-card { border-radius:18px; padding:18px; position:relative; overflow:hidden; }
+        .main-panel-card::before { content:""; position:absolute; inset:-30% 48% auto -20%; height:240px; background:radial-gradient(circle,rgba(0,255,135,.12),transparent 70%); pointer-events:none; }
+        .scan-heading-row { position:relative; display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:14px; }
+        .scan-heading { font-size:18px; font-weight:900; letter-spacing:.2px; }
+        .scan-sub { margin-top:4px; color:#8ca2bb; font-size:10px; }
+        .shared-pill { color:#62d5ff; border:1px solid rgba(56,189,248,.28); background:rgba(56,189,248,.07); padding:7px 10px; border-radius:8px; font-size:9px; font-weight:900; }
+        .ai-hud-box { min-height:310px; margin:0; padding:18px; border:1px solid rgba(34,211,238,.16); background:linear-gradient(180deg,rgba(5,14,27,.98),rgba(3,10,20,.98)); border-radius:14px; box-shadow:none; display:flex; justify-content:center; }
+        .ai-hud-box.glow-buy { border-color:rgba(0,255,135,.6); box-shadow:0 0 30px rgba(0,255,135,.14), inset 0 0 28px rgba(0,255,135,.08); }
+        .ai-hud-box.glow-sell { border-color:rgba(255,51,102,.6); box-shadow:0 0 30px rgba(255,51,102,.12), inset 0 0 28px rgba(255,51,102,.08); }
+        .scan-workspace { display:grid; grid-template-columns:220px minmax(0,1fr); gap:22px; align-items:center; width:100%; }
+        .scan-ring { --p:0; width:180px; aspect-ratio:1; border-radius:50%; margin:auto; display:grid; place-items:center; background:conic-gradient(#16e5c0 calc(var(--p)*1%), #28a8ff calc(var(--p)*1.02%), rgba(45,70,100,.22) 0); box-shadow:0 0 35px rgba(34,211,238,.18); position:relative; }
+        .scan-ring::before { content:""; position:absolute; inset:13px; border-radius:50%; background:radial-gradient(circle at 50% 40%,#0b2135,#05101d 70%); border:1px solid rgba(94,234,212,.18); }
+        .scan-ring-center { position:relative; z-index:1; text-align:center; }
+        .scan-ring-value { font-size:36px; line-height:1; font-weight:900; color:#fff; }
+        .scan-ring-label { color:#00ff87; font-size:10px; font-weight:900; margin-top:7px; letter-spacing:1px; }
+        .scan-stage-title { color:#dff8ff; font-size:12px; font-weight:900; margin-bottom:9px; text-transform:uppercase; }
+        .scan-stage-list { display:grid; gap:7px; margin-bottom:12px; }
+        .scan-stage { display:flex; gap:9px; align-items:center; color:#97abc2; font-size:10px; }
+        .scan-dot { width:10px; height:10px; border-radius:50%; border:1px solid #48627d; }
+        .scan-stage.done .scan-dot { background:#10d9a4; border-color:#10d9a4; box-shadow:0 0 10px rgba(16,217,164,.55); }
+        .scan-stage.active { color:#61e6ff; font-weight:800; }
+        .scan-stage.active .scan-dot { background:#00ff87; border-color:#00ff87; box-shadow:0 0 12px rgba(0,255,135,.65); animation:pulseDot 1.2s infinite; }
+        @keyframes pulseDot { 50% { transform:scale(1.35); opacity:.65; } }
+        .live-scan-console { max-height:118px; font-family:inherit; font-size:9px; background:rgba(2,8,16,.7); border-color:rgba(34,211,238,.15); }
+        .scan-progress-container { height:8px; margin:10px 0 5px; }
+        .scan-progress-bar { transition:width .35s ease; }
+        .default-view,.scan-view,.signal-view,.inline-content-view,.no-signal-view { width:100%; }
+        .default-view { display:flex; }
+        .ready-copy { text-align:left; }
+        .ready-title { font-size:18px; font-weight:900; color:#f6fbff; }
+        .ready-sub { color:#8ea4bd; font-size:10px; margin-top:5px; line-height:1.5; }
+        .status-grid { display:grid; grid-template-columns:1fr 1.35fr .8fr; gap:12px; }
+        .scan-summary-card { border-radius:14px; padding:14px; min-height:128px; }
+        .card-label { color:#69cfff; font-size:9px; font-weight:900; letter-spacing:.4px; text-transform:uppercase; }
+        .selected-pair-box { margin:0; min-height:128px; border:0; background:none; padding:0; align-items:flex-start; text-align:left; justify-content:center; }
+        .selected-pair-label { color:#73d8ff; font-size:9px; }
+        .selected-pair-name { font-size:17px; margin-top:8px; color:#24efc1; }
+        .metric-note { margin-top:10px; color:#00ff87; font-size:9px; font-weight:800; }
+        .snapshot-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:9px; }
+        .snapshot-cell { background:rgba(2,9,18,.46); border:1px solid rgba(83,177,255,.12); border-radius:8px; padding:8px; }
+        .snapshot-cell small { display:block; color:#768da8; font-size:7.5px; }
+        .snapshot-cell strong { display:block; margin-top:4px; color:#26e7bd; font-size:10px; }
+        .timer-section { margin:0; min-height:128px; border:0; background:none; padding:12px; display:flex; flex-direction:column; justify-content:center; }
+        .timer-display { font-size:34px; }
+        .candle-info { color:#a8bbcf; font-size:8px; }
+        .config-panel { border-radius:14px; padding:15px; }
+        .config-title { font-weight:900; color:#d8e9f6; font-size:11px; margin-bottom:10px; }
+        .config-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+        .selection-card { display:contents; }
+        .config-field label { color:#6fcfff; font-size:8px; font-weight:800; display:block; margin-bottom:4px; }
+        .config-field select { padding:9px; font-size:10px; border-color:rgba(83,177,255,.18); background:#06101e; }
+        .expiry-wide { grid-column:1 / -1; }
+        .expiry-container { grid-template-columns:repeat(7,1fr); gap:6px; }
+        .expiry-btn { padding:8px 0; background:#071221; font-size:9px; }
+        .utility-grid { grid-column:1 / -1; grid-template-columns:repeat(4,1fr); margin-top:2px; }
+        .utility-btn { background:#071221; border-color:rgba(83,177,255,.15); color:#8fdcff; padding:9px 5px; }
+        .scan-btn { margin-top:12px; padding:12px; font-size:11px; background:linear-gradient(90deg,#13e9ac,#22d3ee,#3ba7ff); box-shadow:0 8px 24px rgba(34,211,238,.18); }
+        .right-rail { border-radius:18px; padding:14px; display:flex; flex-direction:column; gap:12px; }
+        .rail-card { border:1px solid rgba(83,177,255,.16); background:rgba(2,9,18,.42); border-radius:12px; padding:12px; }
+        .rail-title { color:#dceefa; font-size:10px; font-weight:900; margin-bottom:10px; }
+        .overview-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:9px 0; border-bottom:1px solid rgba(255,255,255,.05); font-size:9px; color:#a8b9cc; }
+        .overview-row:last-child { border-bottom:0; }
+        .ready-tag { color:#00ff87; font-size:8px; font-weight:900; }
+        .recent-list { display:grid; gap:7px; max-height:330px; overflow:auto; }
+        .recent-list .inline-item { background:rgba(255,255,255,.025); border:1px solid rgba(255,255,255,.04); border-radius:8px; padding:8px; font-size:8px; }
+        .rail-actions { display:grid; gap:7px; }
+        .rail-action { width:100%; border:1px solid rgba(83,177,255,.16); background:#071221; color:#aad2ed; border-radius:8px; padding:10px; text-align:left; font-size:9px; font-weight:800; cursor:pointer; }
+        .inline-content-view { padding:4px; }
+        .inline-list-box { max-height:170px; }
+        .no-signal-view { padding:22px 10px; }
+        .signal-view { padding:6px 4px; }
+        .scan-graph { height:64px !important; }
+
+        /* Live animated scanner: keeps the UI visibly active while backend/Yahoo work is running. */
+        .scan-session-chip { display:none; align-items:center; gap:7px; padding:8px 10px; border-radius:9px; border:1px solid rgba(0,255,135,.32); background:rgba(0,255,135,.08); color:#83ffe0; font-size:9px; font-weight:900; white-space:nowrap; }
+        .scan-session-chip.visible { display:flex; }
+        .scan-session-chip .session-pulse { width:8px; height:8px; border-radius:50%; background:#00ff87; box-shadow:0 0 12px rgba(0,255,135,.9); animation:pulseDot 1s infinite; }
+        .scan-view { position:relative; }
+        .scan-live-grid { width:100%; display:grid; grid-template-columns:150px minmax(260px,1fr) 220px; gap:14px; align-items:stretch; }
+        .scan-live-left,.scan-process-panel { border:1px solid rgba(56,189,248,.16); background:rgba(2,9,18,.48); border-radius:12px; padding:12px; }
+        .scan-live-left { display:flex; flex-direction:column; justify-content:center; gap:10px; }
+        .scan-live-kicker { color:#71e6ff; font-size:9px; font-weight:900; text-align:center; letter-spacing:.5px; text-transform:uppercase; }
+        .scan-live-left .scan-ring { width:124px; box-shadow:0 0 30px rgba(0,255,135,.18); }
+        .scan-live-left .scan-ring::after { content:""; position:absolute; inset:-7px; border-radius:50%; border:1px dashed rgba(96,239,255,.32); animation:scannerOrbit 6s linear infinite; }
+        .scan-live-left .scan-ring-value { font-size:30px; }
+        .scan-intensity { border-top:1px solid rgba(56,189,248,.12); padding-top:9px; }
+        .scan-intensity-label { color:#6edbff; font-size:8px; font-weight:900; text-transform:uppercase; margin-bottom:5px; }
+        .scan-intensity-wave { height:28px; position:relative; overflow:hidden; border-radius:6px; background:linear-gradient(180deg,rgba(0,255,135,.04),rgba(56,189,248,.04)); }
+        .scan-intensity-wave::before { content:""; position:absolute; left:-25%; top:50%; width:150%; height:2px; background:linear-gradient(90deg,transparent,#00ff87,#60efff,#8b5cf6,transparent); filter:drop-shadow(0 0 5px #00ff87); transform:skewY(-8deg); animation:waveSlide 2.3s linear infinite; }
+        .holo-market-scanner { min-height:244px; position:relative; overflow:hidden; border-radius:12px; border:1px solid rgba(34,211,238,.13); background:radial-gradient(circle at 50% 52%,rgba(0,130,255,.16),transparent 44%),linear-gradient(180deg,rgba(3,13,27,.72),rgba(2,7,16,.9)); display:grid; place-items:center; }
+        .holo-market-scanner::before { content:""; position:absolute; inset:0; opacity:.35; background-image:linear-gradient(rgba(56,189,248,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.05) 1px,transparent 1px); background-size:24px 24px; animation:gridDrift 10s linear infinite; }
+        .holo-market-scanner::after { content:""; position:absolute; left:5%; right:5%; height:2px; top:20%; background:linear-gradient(90deg,transparent,#00ff87,#60efff,transparent); box-shadow:0 0 18px #00f2fe; opacity:.8; animation:verticalScanner 2.4s ease-in-out infinite; }
+        .live-feed-pill { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:6; padding:5px 9px; border-radius:7px; background:rgba(2,13,25,.8); border:1px solid rgba(0,255,135,.25); color:#00ff87; font-size:8px; font-weight:900; }
+        .holo-globe { width:142px; aspect-ratio:1; border-radius:50%; position:relative; z-index:4; display:grid; place-items:center; background:radial-gradient(circle at 37% 30%,rgba(96,239,255,.34),rgba(0,103,207,.14) 36%,rgba(2,9,18,.88) 70%),repeating-radial-gradient(circle,rgba(96,239,255,.18) 0 1px,transparent 1px 9px); border:1px solid rgba(96,239,255,.55); box-shadow:0 0 32px rgba(0,242,254,.33),inset 0 0 28px rgba(0,180,255,.18); }
+        .holo-globe::before { content:""; position:absolute; inset:-22px; border:1px solid rgba(96,239,255,.3); border-radius:50%; border-left-color:#00ff87; border-right-color:#8b5cf6; animation:scannerOrbit 4.8s linear infinite; }
+        .holo-globe::after { content:""; position:absolute; inset:-40px; border:1px dashed rgba(56,189,248,.22); border-radius:50%; animation:scannerOrbitReverse 8s linear infinite; }
+        .holo-core { text-align:center; text-shadow:0 0 18px rgba(96,239,255,.8); }
+        .holo-core strong { display:block; font-size:35px; line-height:1; color:#eaffff; }
+        .holo-core span { display:block; margin-top:6px; color:#60efff; font-size:9px; font-weight:900; letter-spacing:1.2px; }
+        .holo-platform { position:absolute; width:190px; height:48px; bottom:18px; border-radius:50%; border:2px solid rgba(0,242,254,.5); box-shadow:0 0 22px rgba(0,242,254,.45),inset 0 0 22px rgba(0,255,135,.18); transform:perspective(140px) rotateX(66deg); animation:platformPulse 1.6s ease-in-out infinite; }
+        .holo-radar-beam { position:absolute; z-index:3; width:190px; height:220px; border-radius:50%; background:conic-gradient(from 0deg,transparent 0 77%,rgba(0,255,135,.05) 80%,rgba(96,239,255,.7) 87%,transparent 90%); animation:scannerOrbit 2.8s linear infinite; filter:drop-shadow(0 0 8px #60efff); }
+        .holo-candle-strip { position:absolute; z-index:5; top:32px; left:8%; right:8%; height:54px; display:flex; align-items:end; justify-content:space-around; opacity:.82; pointer-events:none; }
+        .holo-candle-strip i { display:block; width:3px; border-radius:2px; background:#00ff87; box-shadow:0 0 8px currentColor; animation:candlePulse 1.4s ease-in-out infinite alternate; }
+        .holo-candle-strip i:nth-child(3n) { background:#ff4f76; }
+        .holo-candle-strip i:nth-child(4n) { background:#60efff; }
+        .scan-process-panel { display:flex; flex-direction:column; justify-content:center; }
+        .scan-process-panel .scan-stage-list { margin-bottom:8px; }
+        .scan-stage-status { margin-left:auto; font-size:7px; font-weight:900; color:#5f7894; }
+        .scan-stage.done .scan-stage-status { color:#00ff87; }
+        .scan-stage.active .scan-stage-status { color:#60efff; }
+        .scan-live-footer { grid-column:1 / -1; margin-top:10px; }
+        .scan-progress-bar { position:relative; overflow:hidden; }
+        .scan-progress-bar::after { content:""; position:absolute; top:0; bottom:0; width:70px; left:-90px; background:linear-gradient(90deg,transparent,rgba(255,255,255,.75),transparent); animation:progressShine 1.6s linear infinite; }
+        .news-toolbar { display:flex; gap:6px; justify-content:space-between; align-items:center; margin-bottom:7px; }
+        .news-source { color:#8fa8bf; font-size:8px; text-align:left; line-height:1.4; }
+        .news-refresh { border:1px solid rgba(0,255,135,.3); color:#00ff87; background:rgba(0,255,135,.07); border-radius:6px; padding:5px 8px; font-size:8px; font-weight:900; cursor:pointer; }
+        .news-event { display:grid; grid-template-columns:58px 42px 1fr auto; gap:7px; align-items:center; padding:7px 5px; border-bottom:1px solid rgba(255,255,255,.055); text-align:left; }
+        .news-event:last-child { border-bottom:0; }
+        .news-time { color:#8ca4bc; font-size:8px; }
+        .news-currency { color:#60efff; font-size:9px; font-weight:900; }
+        .news-title { color:#e7f5ff; font-size:9px; font-weight:700; line-height:1.35; }
+        .news-values { color:#8fa8bf; font-size:7.5px; margin-top:2px; }
+        .impact-pill { min-width:42px; text-align:center; border-radius:5px; padding:3px 5px; font-size:7px; font-weight:900; border:1px solid rgba(148,163,184,.25); color:#94a3b8; }
+        .impact-high { color:#ff5577; border-color:rgba(255,85,119,.45); background:rgba(255,85,119,.08); }
+        .impact-medium { color:#fbbf24; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.07); }
+        .impact-low { color:#60efff; border-color:rgba(96,239,255,.28); background:rgba(96,239,255,.05); }
+        .impact-holiday { color:#c084fc; border-color:rgba(192,132,252,.35); background:rgba(192,132,252,.06); }
+        @keyframes scannerOrbit { to { transform:rotate(360deg); } }
+        @keyframes scannerOrbitReverse { to { transform:rotate(-360deg); } }
+        @keyframes verticalScanner { 0%,100% { top:16%; opacity:.2; } 50% { top:82%; opacity:1; } }
+        @keyframes gridDrift { to { background-position:24px 24px,24px 24px; } }
+        @keyframes platformPulse { 50% { opacity:.62; box-shadow:0 0 35px rgba(0,242,254,.7),inset 0 0 30px rgba(0,255,135,.28); } }
+        @keyframes waveSlide { to { transform:translateX(22%) skewY(7deg); } }
+        @keyframes progressShine { to { left:110%; } }
+        @keyframes candlePulse { from { transform:scaleY(.72); opacity:.55; } to { transform:scaleY(1.15); opacity:1; } }
+
+        @media (max-width:1250px) {
+            .app-shell { grid-template-columns:180px minmax(0,1fr) 235px; gap:10px; }
+            .container { padding:9px; }
+            .main-column { gap:10px; }
+            .main-panel-card { padding:13px; }
+            .ai-hud-box { min-height:286px; padding:13px; }
+            .status-grid { gap:9px; }
+            .scan-summary-card { min-height:108px; padding:11px; }
+            .selected-pair-box,.timer-section { min-height:108px; }
+            .config-panel { padding:11px; }
+            .config-grid { gap:7px; }
+            .config-field select { padding:7px; }
+            .expiry-btn { padding:6px 0; }
+            .utility-btn { padding:7px 4px; }
+            .scan-btn { margin-top:8px; padding:9px; }
+            .scan-live-grid { grid-template-columns:132px minmax(230px,1fr) 195px; gap:10px; }
+            .holo-market-scanner { min-height:220px; }
+            .holo-globe { width:126px; }
+        }
+        @media (max-width:1050px) {
+            .app-shell { grid-template-columns:180px minmax(0,1fr); }
+            .right-rail { grid-column:1 / -1; display:grid; grid-template-columns:1fr 1fr 1fr; }
+            .right-rail .rail-card:last-child { grid-column:auto; }
+        }
+        @media (max-width:760px) {
+            .container { padding:8px; }
+            .app-shell { display:block; }
+            .side-panel { display:none; }
+            .right-rail { display:none; }
+            .dashboard-topbar { flex-wrap:wrap; }
+            .market-banner { width:100%; text-align:center; }
+            .scan-workspace { grid-template-columns:1fr; }
+            .scan-live-grid { grid-template-columns:1fr; }
+            .scan-live-footer { grid-column:auto; }
+            .holo-market-scanner { min-height:220px; }
+            .scan-process-panel { min-height:0; }
+            .scan-ring { width:150px; }
+            .status-grid { grid-template-columns:1fr; }
+            .config-grid { grid-template-columns:1fr; }
+            .expiry-container { grid-template-columns:repeat(4,1fr); }
+            .utility-grid { grid-template-columns:repeat(2,1fr); }
+            .top-actions { width:100%; justify-content:center; flex-wrap:wrap; }
+            .rescan-card { min-width:150px; }
+        }
+    </style>
+
+    <style id="raja-responsive-v6">
+        /* V6 responsive shell: no horizontal overflow on desktop, laptop, iPad/tablet or phone. */
+        html, body { width:100%; max-width:100%; overflow-x:hidden; }
+        body { min-height:100dvh; }
+        .container { width:100%; max-width:1600px; margin:0 auto; padding:8px; }
+        #mainAppContent { width:100%; min-width:0; }
+        .app-shell { grid-template-columns:clamp(150px,11.5vw,190px) minmax(0,1fr) clamp(210px,16vw,245px); gap:8px; min-height:0; align-items:start; }
+        .main-column, .main-panel-card, .ai-hud-box, .scan-live-grid, .holo-market-scanner, .scan-process-panel, .config-panel { min-width:0; }
+        .side-panel, .right-rail { position:relative; min-width:0; }
+        .dashboard-topbar { min-height:48px; padding:7px 10px; }
+        .main-column { gap:8px; }
+        .main-panel-card { padding:10px; }
+        .scan-heading-row { margin-bottom:8px; }
+        .ai-hud-box { min-height:248px; padding:9px; }
+        .scan-live-grid { grid-template-columns:118px minmax(210px,1fr) 178px; gap:8px; }
+        .scan-live-left, .scan-process-panel { padding:8px; }
+        .scan-live-left .scan-ring { width:96px; }
+        .scan-live-left .scan-ring-value { font-size:24px; }
+        .holo-market-scanner { min-height:188px; }
+        .holo-globe { width:105px; }
+        .holo-globe::before { inset:-16px; }
+        .holo-globe::after { inset:-29px; }
+        .holo-radar-beam { width:145px; height:145px; }
+        .holo-platform { width:150px; height:38px; bottom:12px; }
+        .holo-candle-strip { top:22px; height:36px; }
+        .holo-core strong { font-size:28px; }
+        .scan-stage-list { gap:4px; margin-bottom:6px; }
+        .scan-stage { font-size:8.5px; gap:6px; }
+        .scan-dot { width:8px; height:8px; }
+        .scan-live-footer { margin-top:6px; }
+        .live-scan-console { max-height:76px; padding:5px; margin:4px 0; font-size:8px; }
+        .live-scan-row { padding:2px 5px; }
+        .scan-progress-container { margin:5px 0 3px; height:6px; }
+        .status-grid { gap:7px; }
+        .scan-summary-card { min-height:88px; padding:8px; }
+        .selected-pair-box, .timer-section { min-height:88px; padding:7px; }
+        .selected-pair-name { font-size:15px; margin-top:5px; }
+        .metric-note { margin-top:5px; }
+        .snapshot-grid { gap:5px; }
+        .snapshot-cell { padding:5px; }
+        .snapshot-cell strong { margin-top:2px; font-size:9px; }
+        .timer-display { font-size:28px; }
+        .config-panel { padding:9px; }
+        .config-title { margin-bottom:6px; }
+        .config-grid { gap:6px; }
+        .config-field label { margin-bottom:2px; }
+        .config-field select { padding:6px 7px; font-size:9px; }
+        .expiry-container { gap:4px; }
+        .expiry-btn { padding:5px 0; }
+        .utility-btn { padding:6px 4px; }
+        .scan-btn { margin-top:6px; padding:8px; }
+        .right-rail { padding:9px; gap:8px; }
+        .rail-card { padding:8px; }
+        .rail-title { margin-bottom:6px; }
+        .overview-row { padding:6px 0; }
+        .recent-list { gap:5px; max-height:245px; }
+        .recent-list .inline-item { padding:6px; }
+        .rail-action { padding:7px; }
+        .side-panel { padding:10px 8px; }
+        .brand { padding:1px 5px 10px; font-size:14px; gap:7px; }
+        .brand-mark { width:28px; height:28px; }
+        .nav-list { gap:4px; }
+        .nav-item { padding:8px 9px; font-size:10px; }
+        .engine-mini { padding:8px; font-size:8.5px; line-height:1.55; }
+
+        /* Typical desktop/laptop browser viewport: keep the working dashboard visible without huge vertical overflow. */
+        @media (min-width:1061px) and (max-height:920px) {
+            .container { padding:5px 7px; }
+            .app-shell { gap:7px; }
+            .dashboard-topbar { min-height:42px; padding:5px 8px; }
+            .market-banner { font-size:9px; }
+            .top-btn { padding:6px 9px; font-size:8.5px; }
+            .rescan-card { min-width:146px; padding:6px 8px; }
+            .rescan-card .rescan-title { font-size:8.5px; }
+            .rescan-card .rescan-time { font-size:7.5px; }
+            .main-column { gap:6px; }
+            .main-panel-card { padding:8px; border-radius:13px; }
+            .scan-heading-row { margin-bottom:5px; }
+            .scan-heading { font-size:15px; }
+            .scan-sub { font-size:8px; margin-top:2px; }
+            .shared-pill { padding:5px 7px; font-size:7.5px; }
+            .ai-hud-box { min-height:215px; padding:7px; }
+            .scan-live-grid { grid-template-columns:104px minmax(200px,1fr) 165px; gap:7px; }
+            .scan-live-left, .scan-process-panel { padding:7px; }
+            .scan-live-left .scan-ring { width:84px; }
+            .scan-live-left .scan-ring-value { font-size:22px; }
+            .scan-intensity { padding-top:5px; }
+            .scan-intensity-wave { height:20px; }
+            .holo-market-scanner { min-height:166px; }
+            .holo-globe { width:91px; }
+            .holo-radar-beam { width:126px; height:126px; }
+            .holo-platform { width:132px; height:32px; bottom:8px; }
+            .holo-candle-strip { top:17px; height:29px; }
+            .live-feed-pill { top:6px; padding:4px 7px; font-size:7px; }
+            .scan-stage-title { font-size:9px; margin-bottom:5px; }
+            .scan-stage { font-size:7.6px; }
+            .scan-live-footer { margin-top:4px; }
+            .live-scan-console { max-height:58px; margin:3px 0; font-size:7.4px; }
+            .scan-progress-container { margin:3px 0 2px; }
+            .status-grid { gap:5px; }
+            .scan-summary-card { min-height:73px; padding:6px; }
+            .selected-pair-box, .timer-section { min-height:73px; padding:5px; }
+            .card-label, .selected-pair-label { font-size:7.5px; }
+            .selected-pair-name { font-size:13px; margin-top:3px; }
+            .metric-note { font-size:7.5px; margin-top:3px; }
+            .snapshot-grid { gap:3px; }
+            .snapshot-cell { padding:4px; }
+            .snapshot-cell small { font-size:6.5px; }
+            .snapshot-cell strong { font-size:8px; }
+            .timer-display { font-size:24px; }
+            .candle-info { font-size:7px; }
+            .config-panel { padding:7px; }
+            .config-title { font-size:9px; margin-bottom:4px; }
+            .config-grid { gap:5px; }
+            .config-field label { font-size:7px; }
+            .config-field select { padding:5px 6px; font-size:8.5px; }
+            .expiry-btn { padding:4px 0; font-size:8px; }
+            .utility-grid { margin-top:1px; }
+            .utility-btn { padding:5px 3px; font-size:7.5px; }
+            .scan-btn { margin-top:5px; padding:7px; font-size:9.5px; }
+            .right-rail { padding:7px; gap:6px; border-radius:13px; }
+            .rail-card { padding:7px; }
+            .rail-title { font-size:8.5px; margin-bottom:4px; }
+            .overview-row { padding:4px 0; font-size:7.5px; }
+            .ready-tag { font-size:7px; }
+            .recent-list { max-height:182px; gap:4px; }
+            .recent-list .inline-item { padding:5px; font-size:7px; }
+            .rail-actions { gap:4px; }
+            .rail-action { padding:6px; font-size:7.5px; }
+            .side-panel { padding:8px 7px; border-radius:13px; }
+            .brand { padding-bottom:7px; font-size:12px; }
+            .brand-mark { width:25px; height:25px; }
+            .nav-list { gap:2px; }
+            .nav-item { padding:6px 7px; font-size:9px; }
+            .engine-mini { padding:6px; font-size:7.5px; }
+        }
+
+        /* Tablet / iPad landscape & portrait: compact top navigation and full-width content. */
+        @media (max-width:900px) {
+            .container { padding:6px; }
+            .app-shell { display:block; }
+            .side-panel { display:block; padding:7px; margin-bottom:7px; border-radius:12px; }
+            .brand { justify-content:center; padding-bottom:6px; }
+            .nav-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; }
+            .nav-item { text-align:center; padding:7px 4px; font-size:9px; }
+            .engine-mini { display:none; }
+            .main-column { gap:7px; }
+            .right-rail { margin-top:7px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; padding:7px; }
+            .right-rail .rail-card:last-child { grid-column:1 / -1; }
+            .rail-actions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .scan-live-grid { grid-template-columns:110px minmax(0,1fr) 170px; gap:7px; }
+            .holo-market-scanner { min-height:180px; }
+            .status-grid { grid-template-columns:1fr 1.2fr; }
+            .status-grid .scan-summary-card:last-child { grid-column:1 / -1; }
+            .config-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .config-field:nth-child(3), .expiry-wide, .utility-grid { grid-column:1 / -1; }
+        }
+
+        /* Phones and narrow tablets: single-column, touch-friendly, zero horizontal scrolling. */
+        @media (max-width:600px) {
+            body { background:#020712; }
+            .container { padding:4px; }
+            .side-panel, .right-rail { display:none; }
+            .dashboard-topbar { flex-direction:column; align-items:stretch; padding:6px; gap:6px; }
+            .market-banner { width:100%; text-align:center; font-size:8.5px; }
+            .top-actions { width:100%; display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+            .scan-session-chip, .rescan-card { min-width:0; width:100%; justify-content:center; }
+            .top-btn { width:100%; padding:7px 5px; }
+            .main-panel-card { padding:6px; border-radius:11px; }
+            .scan-heading-row { align-items:center; margin-bottom:6px; }
+            .scan-heading { font-size:14px; }
+            .scan-sub { font-size:7.5px; }
+            .shared-pill { font-size:6.5px; padding:4px 5px; }
+            .ai-hud-box { padding:6px; min-height:0; }
+            .scan-live-grid { grid-template-columns:1fr; gap:6px; }
+            .scan-live-left { display:grid; grid-template-columns:96px 1fr; align-items:center; gap:8px; }
+            .scan-live-kicker { text-align:left; }
+            .scan-live-left .scan-ring { width:82px; grid-row:1 / span 2; }
+            .scan-intensity { border-top:0; padding-top:0; }
+            .holo-market-scanner { min-height:160px; }
+            .holo-globe { width:88px; }
+            .holo-radar-beam { width:122px; height:122px; }
+            .holo-platform { width:126px; bottom:7px; }
+            .holo-candle-strip { top:16px; height:28px; }
+            .scan-process-panel { padding:7px; }
+            .scan-stage { font-size:8px; }
+            .live-scan-console { max-height:72px; }
+            .status-grid { grid-template-columns:1fr; }
+            .status-grid .scan-summary-card:last-child { grid-column:auto; }
+            .scan-summary-card, .selected-pair-box, .timer-section { min-height:72px; }
+            .config-grid { grid-template-columns:1fr; }
+            .config-field:nth-child(3), .expiry-wide, .utility-grid { grid-column:auto; }
+            .expiry-container { grid-template-columns:repeat(4,minmax(0,1fr)); gap:4px; }
+            .utility-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .news-event { grid-template-columns:48px 34px minmax(0,1fr) auto; gap:4px; padding:6px 3px; }
+            .news-title { font-size:8px; }
+            .impact-pill { min-width:36px; padding:3px; }
+        }
+
+        @media (max-width:390px) {
+            .top-actions { grid-template-columns:1fr; }
+            .scan-heading-row { flex-direction:column; align-items:flex-start; }
+            .shared-pill { align-self:flex-start; }
+            .expiry-container { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .news-event { grid-template-columns:44px 30px minmax(0,1fr); }
+            .impact-pill { grid-column:3; justify-self:start; }
+        }
+    </style>
+
+    <style id="raja-v8-upgrades">
+        /* ===== V8 3D confirmed-signal design ===== */
+        .signal-view { perspective:1200px; }
+        .signal3d-shell { --sig:#00ff87; position:relative; width:100%; padding:14px; border-radius:16px; overflow:hidden; border:1px solid color-mix(in srgb, var(--sig) 55%, transparent); background:radial-gradient(circle at 50% 26%,rgba(34,211,238,.12),transparent 38%),linear-gradient(180deg,rgba(3,13,27,.98),rgba(2,8,18,.99)); box-shadow:inset 0 0 38px color-mix(in srgb,var(--sig) 8%,transparent),0 0 28px color-mix(in srgb,var(--sig) 12%,transparent); transform-style:preserve-3d; }
+        .signal3d-shell.sell { --sig:#ff3366; }
+        .signal3d-shell::before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.34; background-image:linear-gradient(rgba(96,239,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(96,239,255,.05) 1px,transparent 1px); background-size:24px 24px; animation:gridDrift 10s linear infinite; }
+        .signal3d-shell::after { content:""; position:absolute; width:64%; height:38%; left:18%; top:9%; background:radial-gradient(ellipse,color-mix(in srgb,var(--sig) 16%,transparent),transparent 68%); filter:blur(20px); pointer-events:none; }
+        .signal3d-kicker { position:relative; z-index:2; color:#60efff; font-size:9px; font-weight:900; text-transform:uppercase; letter-spacing:1.4px; margin-bottom:10px; }
+        .signal3d-layout { position:relative; z-index:2; display:grid; grid-template-columns:190px minmax(0,1fr) 125px; gap:16px; align-items:center; }
+        .signal3d-ai { min-height:188px; display:grid; place-items:center; position:relative; transform-style:preserve-3d; }
+        .signal3d-orbit { width:142px; aspect-ratio:1; position:relative; display:grid; place-items:center; border-radius:50%; transform:rotateX(64deg) rotateZ(-8deg); border:1px solid rgba(96,239,255,.35); box-shadow:0 0 32px rgba(0,242,254,.2); animation:signalFloat 4s ease-in-out infinite; }
+        .signal3d-orbit::before,.signal3d-orbit::after { content:""; position:absolute; border-radius:50%; inset:-17px; border:1px dashed color-mix(in srgb,var(--sig) 55%,transparent); animation:scannerOrbit 7s linear infinite; }
+        .signal3d-orbit::after { inset:14px; border-style:solid; border-color:rgba(96,239,255,.26); animation:scannerOrbitReverse 4.5s linear infinite; }
+        .signal3d-core { width:92px; aspect-ratio:1; border-radius:50%; display:grid; place-items:center; align-content:center; transform:rotateX(-64deg) rotateZ(8deg); background:radial-gradient(circle at 35% 28%,rgba(96,239,255,.45),rgba(0,110,210,.16) 38%,rgba(2,9,18,.98) 72%); border:1px solid rgba(96,239,255,.58); box-shadow:inset 0 0 30px rgba(0,180,255,.23),0 0 25px color-mix(in srgb,var(--sig) 22%,transparent); }
+        .signal3d-core strong { color:#fff; font-size:29px; line-height:1; text-shadow:0 0 18px #60efff; }
+        .signal3d-core span { margin-top:7px; color:var(--sig); font-size:7px; font-weight:900; letter-spacing:1.2px; }
+        .signal3d-platform { position:absolute; width:150px; height:28px; bottom:8px; border-radius:50%; border:1px solid color-mix(in srgb,var(--sig) 58%,transparent); background:radial-gradient(ellipse,color-mix(in srgb,var(--sig) 22%,transparent),transparent 65%); box-shadow:0 0 24px color-mix(in srgb,var(--sig) 30%,transparent); animation:platformPulse 2s ease-in-out infinite; }
+        .signal3d-main { text-align:center; min-width:0; }
+        .signal3d-main #resModalAsset { font-size:24px !important; margin:3px 0 5px !important; text-shadow:0 0 15px rgba(255,255,255,.15); }
+        .signal3d-main .signal-direction { font-size:25px; margin:4px 0; }
+        .signal3d-main .scan-graph { height:58px !important; margin:8px 0 6px; background:linear-gradient(180deg,rgba(4,15,28,.88),rgba(3,9,18,.94)); }
+        .signal3d-confidence { --conf:0; width:105px; aspect-ratio:1; margin:auto; border-radius:50%; display:grid; place-items:center; position:relative; background:conic-gradient(var(--sig) calc(var(--conf)*1%),rgba(48,70,92,.28) 0); box-shadow:0 0 26px color-mix(in srgb,var(--sig) 22%,transparent); }
+        .signal3d-confidence::before { content:""; position:absolute; inset:9px; border-radius:50%; background:#06101e; border:1px solid rgba(96,239,255,.16); }
+        .signal3d-confidence > div { position:relative; z-index:1; }
+        .signal3d-confidence strong { display:block; font-size:20px; color:#fff; }
+        .signal3d-confidence span { display:block; color:var(--sig); font-size:7px; margin-top:4px; font-weight:900; letter-spacing:.6px; }
+        .mtf-heading { margin:11px 0 6px; font-size:8px; color:#8ca4bc; font-weight:900; letter-spacing:1.1px; text-transform:uppercase; }
+        .tf-breakdown { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:7px; margin-top:7px; }
+        .tf-chip { min-height:62px; padding:7px 5px; border-radius:9px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; font-size:8px; background:linear-gradient(180deg,rgba(7,18,34,.92),rgba(3,10,20,.95)); box-shadow:inset 0 0 15px rgba(255,255,255,.018); }
+        .tf-chip .tf-name { color:#8fa7bf; font-size:7px; font-weight:900; text-transform:uppercase; }
+        .tf-chip .tf-dir { font-size:11px; font-weight:900; letter-spacing:.2px; }
+        .tf-chip .tf-score { color:#e9fbff; font-size:9px; font-weight:800; }
+        .tf-call { color:#00ff87; border-color:rgba(0,255,135,.42); box-shadow:inset 0 0 18px rgba(0,255,135,.07),0 0 12px rgba(0,255,135,.05); }
+        .tf-put { color:#ff5577; border-color:rgba(255,85,119,.42); box-shadow:inset 0 0 18px rgba(255,85,119,.07),0 0 12px rgba(255,85,119,.05); }
+        .tf-none { color:#94a3b8; border-color:rgba(148,163,184,.22); }
+        .tf-summary-line { margin-top:7px; font-size:8px; }
+        @keyframes signalFloat { 0%,100%{transform:rotateX(64deg) rotateZ(-8deg) translateY(0)} 50%{transform:rotateX(64deg) rotateZ(-4deg) translateY(-7px)} }
+
+        /* ===== V8 Smart Risk & Recovery ===== */
+        .risk-form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; margin-bottom:8px; }
+        .risk-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin:7px 0 9px; }
+        .risk-metric-card { background:rgba(4,8,18,.92); border:1px solid rgba(0,242,254,.18); border-radius:9px; padding:9px 7px; text-align:center; }
+        .risk-metric-card small { display:block; color:#87a2bc; font-size:7px; text-transform:uppercase; letter-spacing:.4px; }
+        .risk-metric-card strong { display:block; color:#00ff87; font-size:11px; margin-top:5px; }
+        .risk-inline-note { color:#8ea4bd; font-size:8px; line-height:1.5; margin:0 0 8px; text-align:left; }
+        .risk-row { display:grid; grid-template-columns:52px 1fr 1fr 1fr; gap:7px; align-items:center; padding:6px 4px; border-bottom:1px solid rgba(255,255,255,.05); font-size:9px; }
+        .risk-row.header { color:#60efff; font-size:7px; font-weight:900; text-transform:uppercase; }
+        .risk-tag { display:inline-flex; align-items:center; justify-content:center; border-radius:999px; padding:3px 6px; font-size:8px; font-weight:900; }
+        .risk-tag.safe { color:#00ff87; border:1px solid rgba(0,255,135,.34); background:rgba(0,255,135,.08); }
+        .risk-tag.balanced { color:#fbbf24; border:1px solid rgba(251,191,36,.34); background:rgba(251,191,36,.08); }
+        .risk-tag.aggressive { color:#ff6688; border:1px solid rgba(255,102,136,.34); background:rgba(255,102,136,.08); }
+
+        /* ===== V8 Admin license manager ===== */
+        .admin-summary-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; margin:8px 0; }
+        .admin-summary-card { border:1px solid rgba(0,242,254,.15); background:rgba(4,8,18,.9); border-radius:8px; padding:7px 4px; text-align:center; }
+        .admin-summary-card small { display:block; color:#8ca4bc; font-size:7px; text-transform:uppercase; }
+        .admin-summary-card strong { display:block; color:#00ff87; font-size:12px; margin-top:3px; }
+        .admin-user-row { gap:8px; align-items:flex-start; padding:8px 4px; }
+        .admin-license-meta { margin-top:3px; color:#94a3b8; font-size:8px; line-height:1.45; word-break:break-word; }
+        .admin-license-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:4px; min-width:120px; }
+        .admin-mini-btn { border-radius:5px; padding:5px 6px; cursor:pointer; font-size:8px; font-weight:900; border:1px solid rgba(255,255,255,.12); background:#071221; }
+        .copy-mini-btn { color:#60efff; border-color:rgba(96,239,255,.3); }
+        .reset-mini-btn { color:#fbbf24; border-color:rgba(251,191,36,.3); }
+        .remove-user-btn { padding:5px 6px; }
+
+        @media (max-width:900px) {
+            .signal3d-layout { grid-template-columns:150px minmax(0,1fr) 105px; gap:10px; }
+            .signal3d-orbit { width:118px; }
+            .signal3d-core { width:78px; }
+            .signal3d-main #resModalAsset { font-size:20px !important; }
+            .tf-breakdown { gap:5px; }
+        }
+        @media (max-width:760px) {
+            .signal3d-shell { padding:10px; }
+            .signal3d-layout { grid-template-columns:1fr; }
+            .signal3d-ai { min-height:145px; }
+            .signal3d-confidence { width:92px; }
+            .tf-breakdown { grid-template-columns:repeat(5,minmax(62px,1fr)); overflow-x:auto; padding-bottom:4px; }
+            .tf-chip { min-width:62px; }
+            .risk-form-grid { grid-template-columns:1fr 1fr; }
+            .risk-metrics { grid-template-columns:1fr 1fr; }
+            .admin-summary-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width:520px) {
+            .risk-form-grid,.risk-metrics { grid-template-columns:1fr; }
+            .risk-row { grid-template-columns:46px 1fr 1fr; }
+            .risk-row span:nth-child(4),.risk-row.header span:nth-child(4) { display:none; }
+            .admin-license-actions { grid-template-columns:1fr; min-width:86px; }
+        }
+    </style>
 
 
-def normalize_user_id(value):
-    """Canonicalize Telegram/user IDs so @Name and name resolve to the same customer."""
-    user = str(value or "").strip()
-    if user.startswith("@"):
-        user = user[1:].strip()
-    return user.casefold()
+    <style id="raja-v9-premium-ui">
+        /* ===== V9 selected-dashboard visual upgrade ===== */
+        :root { --raja-cyan:#60efff; --raja-green:#00ff87; --raja-red:#ff3366; --raja-panel:#050d19; }
+
+        /* Direction-aware full dashboard flash */
+        @keyframes signalArrivalBuy { 0%{box-shadow:0 0 0 rgba(0,255,135,0)} 32%{box-shadow:0 0 65px rgba(0,255,135,.42),inset 0 0 35px rgba(0,255,135,.20)} 66%{box-shadow:0 0 24px rgba(96,239,255,.30)} 100%{box-shadow:0 0 0 rgba(0,255,135,0)} }
+        @keyframes signalArrivalSell { 0%{box-shadow:0 0 0 rgba(255,51,102,0)} 32%{box-shadow:0 0 65px rgba(255,51,102,.42),inset 0 0 35px rgba(255,51,102,.20)} 66%{box-shadow:0 0 24px rgba(255,125,150,.25)} 100%{box-shadow:0 0 0 rgba(255,51,102,0)} }
+        .signal-arrival-buy { animation:signalArrivalBuy .72s ease-in-out 2; }
+        .signal-arrival-sell { animation:signalArrivalSell .72s ease-in-out 2; }
+
+        /* Left premium risk snapshot */
+        .premium-risk-mini { margin-top:10px; border:1px solid rgba(0,255,135,.20); border-radius:13px; padding:10px; background:linear-gradient(180deg,rgba(1,18,26,.82),rgba(2,8,17,.94)); overflow:hidden; position:relative; }
+        .premium-risk-mini::after { content:""; position:absolute; width:120px; height:120px; right:-55px; top:-55px; border-radius:50%; background:radial-gradient(circle,rgba(0,255,135,.13),transparent 68%); pointer-events:none; }
+        .premium-risk-mini-title { color:#00ff87; font-size:8px; font-weight:900; letter-spacing:.8px; text-transform:uppercase; display:flex; justify-content:space-between; gap:5px; }
+        .premium-risk-mini-title b { color:#d9fff3; font-size:7px; border:1px solid rgba(0,255,135,.28); border-radius:999px; padding:2px 5px; }
+        .mini-pressure-wrap { display:grid; grid-template-columns:62px 1fr; gap:8px; align-items:center; margin-top:8px; }
+        .mini-pressure-gauge { --pressure:28; width:58px; height:34px; overflow:hidden; position:relative; }
+        .mini-pressure-gauge::before { content:""; position:absolute; width:58px; height:58px; border-radius:50%; background:conic-gradient(from 270deg,#00ff87 0 21%,#d7ef36 21% 32%,#ffb21a 32% 41%,#ff3366 41% 50%,transparent 50% 100%); }
+        .mini-pressure-gauge::after { content:""; position:absolute; width:42px; height:42px; left:8px; top:8px; border-radius:50%; background:#06101d; box-shadow:inset 0 0 10px rgba(96,239,255,.08); }
+        .mini-pressure-value { position:absolute; z-index:2; left:0; right:0; bottom:0; text-align:center; color:#00ff87; font-size:13px; font-weight:900; }
+        .mini-risk-copy small { color:#7990a8; font-size:7px; display:block; }
+        .mini-risk-copy strong { display:block; color:#e9fbff; font-size:9px; margin:2px 0; }
+        .mini-risk-copy span { color:#00ff87; font-size:7px; font-weight:900; }
+        .mini-risk-metrics { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-top:7px; }
+        .mini-risk-metric { border:1px solid rgba(96,239,255,.12); background:rgba(4,11,21,.68); border-radius:7px; padding:5px; }
+        .mini-risk-metric small { display:block; color:#758da5; font-size:6px; text-transform:uppercase; }
+        .mini-risk-metric strong { display:block; color:#dffcff; font-size:8px; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+        /* Selected signal/result hero */
+        .signal3d-shell { min-height:420px; padding:13px !important; background:
+            radial-gradient(circle at 50% 33%,rgba(0,126,255,.18),transparent 28%),
+            radial-gradient(circle at 50% 58%,rgba(0,255,135,.09),transparent 33%),
+            linear-gradient(180deg,#03101d 0%,#020812 100%) !important; }
+        .signal3d-shell.signal-live-buy { --sig:#00ff87; }
+        .signal3d-shell.signal-live-sell { --sig:#ff3366; }
+        .signal3d-shell.signal-live-buy,.signal3d-shell.signal-live-sell { animation:signalShellPulse 2.3s ease-in-out infinite; }
+        @keyframes signalShellPulse { 50% { box-shadow:inset 0 0 50px color-mix(in srgb,var(--sig) 10%,transparent),0 0 34px color-mix(in srgb,var(--sig) 22%,transparent); } }
+        .signal3d-kicker { text-align:left; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+        .signal3d-kicker::after { content:"● LIVE SIGNAL ENGINE"; color:#00ff87; font-size:7px; letter-spacing:.7px; }
+        .signal-hero-stage { position:relative; min-height:245px; display:grid; grid-template-columns:minmax(0,1fr) 180px; align-items:center; gap:12px; overflow:hidden; border-radius:14px; padding:8px; }
+        .signal-hero-stage::before { content:""; position:absolute; inset:0; opacity:.40; background-image:linear-gradient(rgba(56,189,248,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.05) 1px,transparent 1px); background-size:22px 22px; animation:gridDrift 10s linear infinite; }
+        .signal-market-motion { position:absolute; inset:22px 3% 28px; opacity:.75; pointer-events:none; }
+        .signal-market-motion::before,.signal-market-motion::after { content:""; position:absolute; left:0; right:0; height:2px; top:45%; background:linear-gradient(90deg,transparent 0%,#00ff87 15%,#60efff 34%,transparent 52%,#60efff 70%,#00ff87 88%,transparent 100%); filter:drop-shadow(0 0 6px #60efff); transform:skewY(-4deg); animation:marketWave 3.2s ease-in-out infinite alternate; }
+        .signal-market-motion::after { top:68%; opacity:.5; transform:skewY(5deg) scaleY(.7); animation-duration:4.6s; }
+        @keyframes marketWave { from{transform:translateY(-8px) skewY(-4deg)} to{transform:translateY(15px) skewY(4deg)} }
+        .signal-orb-wrap { position:relative; z-index:2; display:grid; place-items:center; min-height:230px; }
+        .signal-orb { width:min(225px,56vw); aspect-ratio:1; border-radius:50%; position:relative; display:grid; place-items:center; background:radial-gradient(circle at 35% 28%,rgba(96,239,255,.30),rgba(0,84,170,.16) 36%,rgba(1,10,21,.96) 70%); border:2px solid rgba(96,239,255,.65); box-shadow:0 0 22px rgba(96,239,255,.50),0 0 58px color-mix(in srgb,var(--sig) 28%,transparent),inset 0 0 38px rgba(0,150,255,.18); animation:orbBreath 1.8s ease-in-out infinite; }
+        .signal-orb::before,.signal-orb::after { content:""; position:absolute; border-radius:50%; border:1px solid color-mix(in srgb,var(--sig) 65%,transparent); animation:scannerOrbit 4.4s linear infinite; }
+        .signal-orb::before { inset:-18px; border-left-color:#60efff; border-right-color:#60efff; }
+        .signal-orb::after { inset:-37px; border-style:dashed; opacity:.48; animation-duration:8s; animation-direction:reverse; }
+        @keyframes orbBreath { 50%{transform:scale(1.025); filter:brightness(1.14)} }
+        .signal-ripple { position:absolute; width:310px; max-width:80vw; height:64px; bottom:5px; border-radius:50%; border:2px solid rgba(96,239,255,.34); box-shadow:0 0 18px rgba(96,239,255,.36),inset 0 0 16px color-mix(in srgb,var(--sig) 14%,transparent); transform:perspective(170px) rotateX(68deg); animation:ripplePulse 1.8s ease-in-out infinite; }
+        .signal-ripple::before,.signal-ripple::after { content:""; position:absolute; inset:9px 20px; border-radius:50%; border:1px solid color-mix(in srgb,var(--sig) 44%,transparent); }
+        .signal-ripple::after { inset:18px 42px; }
+        @keyframes ripplePulse { 50%{transform:perspective(170px) rotateX(68deg) scale(1.08);opacity:.58} }
+        .signal-orb-content { position:relative; z-index:3; width:78%; text-align:center; }
+        .signal-confirmed { color:#00ff87; font-size:8px; font-weight:900; letter-spacing:.7px; text-transform:uppercase; margin-bottom:5px; }
+        .signal-orb #resModalAsset { font-size:25px !important; margin:0 !important; color:#fff; }
+        .signal-orb #resModalDirection { font-size:26px; line-height:1.1; margin:7px 0; text-shadow:0 0 18px currentColor; }
+        .signal-orb .signal-expiry-badge { display:none; }
+        .signal-orb-confidence-label { color:#8ba0b7; font-size:7px; text-transform:uppercase; letter-spacing:.7px; }
+        .signal-orb #signalConfidenceValue { display:block; color:#fff; font-size:25px; font-weight:900; margin-top:1px; }
+        .signal-selected-expiry { position:relative; z-index:3; margin-top:-4px; min-width:165px; padding:7px 16px; border-radius:10px; border:1px solid color-mix(in srgb,var(--sig) 65%,transparent); background:linear-gradient(180deg,color-mix(in srgb,var(--sig) 13%,#06101d),#05101c); box-shadow:0 0 22px color-mix(in srgb,var(--sig) 24%,transparent); text-align:center; }
+        .signal-selected-expiry span { display:block; color:#95abc0; font-size:7px; font-weight:900; letter-spacing:.9px; text-transform:uppercase; }
+        .signal-selected-expiry strong { display:block; color:#f7ffff; font-size:25px; line-height:1.05; margin-top:2px; text-shadow:0 0 16px var(--sig); }
+        .signal-live-controls { position:relative; z-index:3; display:grid; gap:8px; align-self:center; }
+        .signal-live-control { border:1px solid rgba(96,239,255,.16); border-radius:9px; background:rgba(2,12,23,.80); padding:8px 9px; display:flex; align-items:center; gap:7px; color:#9bb2c7; font-size:8px; }
+        .signal-live-control i { width:8px; height:8px; border-radius:50%; background:#00ff87; box-shadow:0 0 10px #00ff87; animation:pulseDot 1s infinite; }
+        .signal-live-control strong { color:#00ff87; font-size:8px; margin-left:auto; }
+        .signal-meta-premium { position:relative; z-index:3; text-align:center; margin:3px 0 7px; color:#9bb1c7; font-size:8px; }
+        .signal-graph-premium { position:relative; z-index:3; max-width:900px; margin:0 auto 5px; }
+        .signal3d-confidence { display:none !important; }
+        .signal3d-layout { display:block !important; }
+        .signal3d-ai,.signal3d-main { display:contents !important; }
+        .signal3d-orbit,.signal3d-platform { display:none !important; }
+        .tf-breakdown { position:relative; z-index:3; }
+        .tf-chip { position:relative; transition:transform .2s ease,box-shadow .2s ease; }
+        .tf-chip.tf-selected { transform:translateY(-2px); outline:2px solid rgba(96,239,255,.72); box-shadow:0 0 20px rgba(96,239,255,.20),inset 0 0 18px rgba(96,239,255,.06); }
+        .tf-chip.tf-selected::after { content:"SELECTED"; position:absolute; top:3px; right:3px; color:#60efff; font-size:5px; font-weight:900; }
+
+        /* Scan telemetry strip */
+        .scan-telemetry { grid-column:1/-1; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:6px; margin-top:2px; }
+        .scan-telemetry-card { border:1px solid rgba(96,239,255,.12); border-radius:8px; background:rgba(2,10,20,.72); padding:7px; text-align:left; }
+        .scan-telemetry-card small { display:block; color:#6f879f; font-size:6.5px; text-transform:uppercase; letter-spacing:.5px; }
+        .scan-telemetry-card strong { display:block; color:#00ff87; font-size:10px; margin-top:3px; }
+        .scan-telemetry-card.live strong::before { content:"● "; animation:pulseDot 1s infinite; }
+        .scan-telemetry-card.countdown { border-color:rgba(0,255,135,.30); box-shadow:inset 0 0 14px rgba(0,255,135,.04); }
+        .scan-telemetry-card.countdown strong { color:#60efff; font-variant-numeric:tabular-nums; letter-spacing:.6px; }
 
 
-def _db_connect():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not configured")
-    if psycopg is None:
-        raise RuntimeError("psycopg is not installed; install requirements.txt")
-    return psycopg.connect(DATABASE_URL, connect_timeout=10)
+        /* Right rail sound alerts */
+        .sound-alert-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+        .sound-alert-tile { border-radius:9px; padding:9px 7px; text-align:center; font-size:7px; position:relative; overflow:hidden; }
+        .sound-alert-tile.buy { color:#00ff87; border:1px solid rgba(0,255,135,.32); background:rgba(0,255,135,.06); }
+        .sound-alert-tile.sell { color:#ff5577; border:1px solid rgba(255,85,119,.32); background:rgba(255,85,119,.06); }
+        .sound-alert-tile strong { display:block; font-size:9px; }
+        .sound-wave { height:20px; margin-top:5px; background:repeating-linear-gradient(90deg,currentColor 0 2px,transparent 2px 5px); mask-image:linear-gradient(to bottom,transparent,black 25%,black 75%,transparent); animation:soundWave .75s ease-in-out infinite alternate; transform-origin:center; }
+        @keyframes soundWave { from{transform:scaleY(.35);opacity:.55} to{transform:scaleY(1);opacity:1} }
+        .sound-alert-status { margin-top:7px; color:#00ff87; font-size:7px; text-align:center; font-weight:900; }
+
+        /* Premium Risk & Recovery detail page */
+        .risk-premium-shell { text-align:left; }
+        .risk-premium-hero { display:grid; grid-template-columns:1.15fr .85fr; gap:8px; margin-bottom:8px; }
+        .risk-guidance-card,.risk-pressure-card,.risk-input-card,.risk-table-card { border:1px solid rgba(96,239,255,.15); border-radius:10px; background:linear-gradient(180deg,rgba(4,14,26,.88),rgba(2,8,17,.92)); padding:10px; }
+        .risk-section-label { color:#60efff; font-size:7px; font-weight:900; letter-spacing:.7px; text-transform:uppercase; margin-bottom:6px; }
+        .risk-guidance-state { color:#00ff87; font-size:13px; font-weight:900; }
+        .risk-guidance-copy { color:#8da4ba; font-size:8px; line-height:1.55; margin-top:4px; }
+        .risk-guidance-list { display:grid; gap:4px; margin-top:7px; color:#bdd0df; font-size:8px; }
+        .risk-guidance-list span::before { content:"✓"; color:#00ff87; margin-right:6px; font-weight:900; }
+        .risk-pressure-meter { --pressure:28; width:150px; max-width:100%; height:86px; margin:0 auto; position:relative; overflow:hidden; }
+        .risk-pressure-meter::before { content:""; position:absolute; width:150px; height:150px; border-radius:50%; background:conic-gradient(from 270deg,#00ff87 0 22%,#c9ec38 22% 31%,#ffad1c 31% 40%,#ff3366 40% 50%,transparent 50% 100%); }
+        .risk-pressure-meter::after { content:""; position:absolute; width:108px; height:108px; left:21px; top:21px; border-radius:50%; background:#06101d; }
+        .risk-pressure-reading { position:absolute; z-index:2; left:0; right:0; bottom:3px; text-align:center; }
+        .risk-pressure-reading strong { display:block; color:#00ff87; font-size:23px; }
+        .risk-pressure-reading span { color:#86a0b7; font-size:7px; text-transform:uppercase; font-weight:900; }
+        .risk-form-grid.v9 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        .risk-metrics.v9 { grid-template-columns:repeat(6,minmax(0,1fr)); }
+        .risk-metrics.v9 .risk-metric-card { min-width:0; }
+        .risk-table-card { margin-top:8px; }
+        .risk-table-card .inline-list-box { max-height:265px !important; margin:0; }
+        .risk-note-premium { margin-top:7px; color:#71879e; font-size:7px; line-height:1.45; }
+
+        /* Better selected expiry visibility in configuration */
+        .expiry-btn.active { color:#fff !important; background:linear-gradient(180deg,#0e73ff,#074399) !important; border-color:#60efff !important; box-shadow:0 0 18px rgba(96,239,255,.55),inset 0 0 14px rgba(255,255,255,.08) !important; transform:translateY(-1px); }
+
+        @media (max-width:1100px) {
+            .signal-hero-stage { grid-template-columns:minmax(0,1fr) 150px; }
+            .signal-live-control { padding:7px; }
+            .risk-metrics.v9 { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width:900px) {
+            .premium-risk-mini { display:none; }
+            .signal-hero-stage { grid-template-columns:1fr; min-height:0; }
+            .signal-live-controls { grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; }
+            .signal-live-control { justify-content:center; }
+            .signal-live-control strong { margin-left:0; }
+            .risk-premium-hero { grid-template-columns:1fr 1fr; }
+        }
+        @media (max-width:600px) {
+            .signal3d-shell { min-height:0; padding:8px !important; }
+            .signal3d-kicker { font-size:7px; }
+            .signal3d-kicker::after { font-size:5.5px; }
+            .signal-orb { width:min(205px,66vw); }
+            .signal-orb #resModalAsset { font-size:21px !important; }
+            .signal-orb #resModalDirection { font-size:22px; }
+            .signal-selected-expiry { min-width:145px; padding:6px 12px; }
+            .signal-selected-expiry strong { font-size:22px; }
+            .signal-live-controls { grid-template-columns:1fr; gap:5px; }
+            .signal-live-control { padding:6px 7px; }
+            .scan-telemetry { grid-template-columns:1fr 1fr; }
+            .risk-premium-hero { grid-template-columns:1fr; }
+            .risk-form-grid.v9 { grid-template-columns:1fr; }
+            .risk-metrics.v9 { grid-template-columns:1fr 1fr; }
+            .risk-row { grid-template-columns:42px 1fr 1fr 1fr !important; font-size:8px; }
+            .risk-row span:nth-child(4),.risk-row.header span:nth-child(4) { display:block !important; }
+        }
+        @media (max-width:390px) {
+            .signal-orb { width:190px; }
+            .signal-market-motion { display:none; }
+            .risk-metrics.v9 { grid-template-columns:1fr; }
+            .scan-telemetry { grid-template-columns:1fr; }
+        }
+    </style>
 
 
-def initialize_license_store():
-    if DATABASE_URL:
-        # Persistent license + scan analytics storage.
-        with _db_connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raja_licenses (
-                        license_key TEXT PRIMARY KEY,
-                        active BOOLEAN NOT NULL DEFAULT TRUE,
-                        user_id TEXT,
-                        device_id TEXT,
-                        device_label TEXT,
-                        created_at BIGINT,
-                        last_verified_at BIGINT,
-                        session_token TEXT,
-                        plan TEXT,
-                        expires_at BIGINT,
-                        last_login_at BIGINT
-                    )
-                """)
-                for statement in [
-                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS device_label TEXT",
-                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS session_token TEXT",
-                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS plan TEXT",
-                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS expires_at BIGINT",
-                    "ALTER TABLE raja_licenses ADD COLUMN IF NOT EXISTS last_login_at BIGINT",
-                ]:
-                    cur.execute(statement)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raja_meta (
-                        meta_key TEXT PRIMARY KEY,
-                        meta_value TEXT
-                    )
-                """)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raja_scan_events (
-                        event_id BIGSERIAL PRIMARY KEY,
-                        created_at BIGINT NOT NULL,
-                        user_id TEXT,
-                        market TEXT,
-                        pair TEXT,
-                        mode TEXT,
-                        signal_found BOOLEAN NOT NULL DEFAULT FALSE
-                    )
-                """)
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS raja_trial_claims (
-                        claim_type TEXT NOT NULL,
-                        claim_value TEXT NOT NULL,
-                        license_key TEXT,
-                        created_at BIGINT NOT NULL,
-                        PRIMARY KEY (claim_type, claim_value)
-                    )
-                """)
+    <style id="raja-v10-selected-signal-design">
+        /* V10: selected neon-orb signal result — replaces the legacy result visual */
+        .premium-signal-result { --sig:#00ff87; position:relative; overflow:hidden; width:100%; min-height:590px; padding:12px; border-radius:18px; border:1px solid color-mix(in srgb,var(--sig) 58%,#0b2136); background:linear-gradient(180deg,#020916 0%,#020a13 56%,#01060d 100%); box-shadow:inset 0 0 70px rgba(0,126,255,.08),0 0 26px color-mix(in srgb,var(--sig) 18%,transparent); }
+        .premium-signal-result.signal-live-buy { --sig:#00ff87; }
+        .premium-signal-result.signal-live-sell { --sig:#ff335f; }
+        .premium-signal-result::before { content:""; position:absolute; inset:-20%; pointer-events:none; background:radial-gradient(circle at 50% 30%,rgba(0,159,255,.16),transparent 26%),radial-gradient(circle at 50% 46%,color-mix(in srgb,var(--sig) 10%,transparent),transparent 38%); animation:psrAura 2.4s ease-in-out infinite; }
+        @keyframes psrAura { 50%{filter:brightness(1.22);transform:scale(1.018)} }
+        .psr-topline { position:relative; z-index:20; display:flex; justify-content:space-between; align-items:center; gap:10px; padding:2px 2px 8px; }
+        .psr-title { display:flex; align-items:center; gap:8px; text-align:left; }
+        .psr-title strong { display:block; color:#eafcff; font-size:12px; letter-spacing:.55px; }
+        .psr-title small { display:block; margin-top:2px; color:#6f8ca7; font-size:7px; }
+        .psr-ai-badge { width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-weight:900;font-size:9px;color:#00131d;background:linear-gradient(145deg,#60efff,#00ff87);box-shadow:0 0 18px rgba(96,239,255,.4); }
+        .psr-shared { color:#60efff; border:1px solid rgba(96,239,255,.25); background:rgba(0,114,190,.08); border-radius:9px; padding:7px 10px; font-size:7px; font-weight:900; }
+        .psr-hero { position:relative; min-height:330px; border-radius:16px; overflow:hidden; isolation:isolate; background:radial-gradient(ellipse at 50% 69%,rgba(0,104,255,.17),transparent 45%),linear-gradient(180deg,rgba(1,8,19,.54),rgba(1,7,14,.92)); }
+        .psr-grid { position:absolute; inset:0; opacity:.33; background-image:linear-gradient(rgba(19,154,255,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(19,154,255,.055) 1px,transparent 1px); background-size:18px 18px; mask-image:linear-gradient(to bottom,black,transparent 94%); animation:gridDrift 13s linear infinite; }
+        .psr-market-lines { position:absolute; inset:14px 0 22px; width:100%; height:82%; opacity:.72; filter:drop-shadow(0 0 7px rgba(0,242,254,.28)); }
+        .psr-line { stroke-dasharray:9 5; animation:psrLineMove 5s linear infinite; }
+        .psr-line-b { animation-duration:7s; animation-direction:reverse; opacity:.72; }
+        @keyframes psrLineMove { to{stroke-dashoffset:-70} }
+        .psr-volume-bars { position:absolute; left:7%; right:7%; bottom:45px; height:88px; display:flex; gap:4px; align-items:flex-end; opacity:.46; mask-image:linear-gradient(90deg,transparent,black 12%,black 88%,transparent); }
+        .psr-volume-bars i { flex:1; height:var(--h); min-width:2px; background:linear-gradient(to top,rgba(0,255,135,.18),#00ff87 56%,#60efff); box-shadow:0 0 5px rgba(96,239,255,.48); transform-origin:bottom; animation:psrBars 1.15s ease-in-out infinite alternate; }
+        .psr-volume-bars i:nth-child(3n){animation-delay:-.35s}.psr-volume-bars i:nth-child(4n){animation-delay:-.7s}.psr-volume-bars i:nth-child(5n){animation-delay:-.5s}
+        @keyframes psrBars { from{transform:scaleY(.48);opacity:.45} to{transform:scaleY(1.06);opacity:.95} }
+        .psr-live-chip { position:absolute; z-index:12; top:82px; padding:8px 10px; border-radius:9px; border:1px solid color-mix(in srgb,var(--sig) 34%,rgba(96,239,255,.18)); background:rgba(2,13,24,.82); color:#b7d1e8; font-size:7px; font-weight:900; letter-spacing:.35px; box-shadow:0 0 16px rgba(0,0,0,.45); }
+        .psr-live-chip span { display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--sig);box-shadow:0 0 10px var(--sig);margin-right:5px;animation:pulseDot 1s infinite; }
+        .psr-live-left{left:9%}.psr-live-right{right:9%}
+        .psr-orb-stage { position:absolute; z-index:10; inset:8px 110px 4px 110px; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+        .psr-energy-orb { position:relative; z-index:8; width:235px; max-width:42vw; aspect-ratio:1; border-radius:50%; display:grid; place-items:center; background:radial-gradient(circle at 44% 40%,color-mix(in srgb,var(--sig) 16%,rgba(0,68,128,.42)),rgba(0,26,63,.70) 48%,rgba(0,5,14,.98) 73%); border:2px solid rgba(96,239,255,.82); box-shadow:0 0 18px #60efff,0 0 48px rgba(0,151,255,.58),0 0 92px color-mix(in srgb,var(--sig) 30%,transparent),inset 0 0 42px rgba(0,128,255,.28); animation:psrOrbBreathe 1.7s ease-in-out infinite; }
+        .psr-energy-orb::before { content:""; position:absolute; inset:-10px; border-radius:50%; border:2px solid transparent; border-top-color:#ffffff;border-right-color:#60efff;border-bottom-color:var(--sig);filter:drop-shadow(0 0 8px #60efff);animation:psrSpin 3.2s linear infinite; }
+        .psr-energy-orb::after { content:""; position:absolute; inset:-25px; border-radius:50%; border:1px dashed rgba(96,239,255,.48);box-shadow:0 0 24px rgba(96,239,255,.3);animation:psrSpin 8s linear infinite reverse; }
+        @keyframes psrOrbBreathe { 50%{transform:scale(1.035);filter:brightness(1.18)} }
+        @keyframes psrSpin { to{transform:rotate(360deg)} }
+        .psr-orbit { position:absolute; z-index:6; border-radius:50%; border:1px solid rgba(96,239,255,.33); pointer-events:none; }
+        .psr-orbit-1 { width:270px;height:270px;max-width:49vw;max-height:49vw;box-shadow:0 0 25px rgba(96,239,255,.16);animation:psrSpin 11s linear infinite; }
+        .psr-orbit-2 { width:295px;height:132px;max-width:54vw;border-color:color-mix(in srgb,var(--sig) 55%,transparent);transform:rotateX(67deg);box-shadow:0 0 23px color-mix(in srgb,var(--sig) 18%,transparent);animation:psrTiltPulse 2s ease-in-out infinite; }
+        .psr-orbit-3 { width:335px;height:158px;max-width:61vw;border-style:dashed;opacity:.43;transform:rotateX(67deg);animation:psrTiltPulse 3.3s ease-in-out infinite reverse; }
+        @keyframes psrTiltPulse { 50%{transform:rotateX(67deg) scale(1.08);opacity:.62} }
+        .psr-orb-sparks { position:absolute; inset:-19px; border-radius:50%; background:conic-gradient(from 0deg,transparent 0 7%,rgba(255,255,255,.95) 8%,transparent 9% 18%,#60efff 19%,transparent 20% 42%,var(--sig) 43%,transparent 44% 66%,#fff 67%,transparent 68% 82%,#60efff 83%,transparent 84%); filter:blur(.5px) drop-shadow(0 0 7px #60efff); animation:psrSpin 5.4s linear infinite; opacity:.8; }
+        .psr-orb-content { position:relative; z-index:12; text-align:center; width:78%; }
+        .psr-confirmed { color:#00ff87;font-size:8px;font-weight:900;letter-spacing:.7px;margin-bottom:4px;text-shadow:0 0 8px rgba(0,255,135,.5); }
+        .psr-asset { color:#fff;font-size:25px;font-weight:900;line-height:1.05;text-shadow:0 0 14px rgba(255,255,255,.22); }
+        .psr-subasset { color:#9db2c6;font-size:7px;margin-top:3px; }
+        .psr-energy-orb #resModalDirection { margin:7px 0 5px;font-size:27px;line-height:1.05;font-weight:950;text-shadow:0 0 10px currentColor,0 0 24px currentColor; }
+        .psr-energy-orb .signal-expiry-badge { display:none !important; }
+        .psr-confidence-label { color:#91a8bd;font-size:6.5px;letter-spacing:1px; }
+        .psr-confidence-value { display:block;color:#fff;font-size:25px;font-weight:950;line-height:1.05;margin-top:2px; }
+        .psr-strength { display:inline-block;margin-top:6px;padding:3px 11px;border-radius:999px;border:1px solid color-mix(in srgb,var(--sig) 65%,transparent);color:#eafff5;background:color-mix(in srgb,var(--sig) 10%,transparent);font-size:6px;font-weight:900;box-shadow:0 0 12px color-mix(in srgb,var(--sig) 14%,transparent); }
+        .psr-floor { position:absolute; z-index:5; bottom:31px; border-radius:50%; transform:perspective(220px) rotateX(70deg); border:1px solid rgba(96,239,255,.52); box-shadow:0 0 18px rgba(96,239,255,.36),inset 0 0 16px color-mix(in srgb,var(--sig) 15%,transparent); animation:psrFloor 1.7s ease-in-out infinite; }
+        .psr-floor-1{width:330px;height:95px;max-width:60vw}.psr-floor-2{width:270px;height:76px;max-width:50vw;animation-delay:-.55s}.psr-floor-3{width:205px;height:58px;max-width:38vw;animation-delay:-1.05s}
+        @keyframes psrFloor { 50%{transform:perspective(220px) rotateX(70deg) scale(1.08);opacity:.52} }
+        .psr-selected-expiry { position:absolute; z-index:15; bottom:8px; min-width:180px; padding:7px 18px 8px; border-radius:11px; border:1px solid color-mix(in srgb,var(--sig) 78%,#60efff); background:linear-gradient(180deg,color-mix(in srgb,var(--sig) 20%,#071521),#04101c); box-shadow:0 0 22px color-mix(in srgb,var(--sig) 35%,transparent),inset 0 0 17px color-mix(in srgb,var(--sig) 11%,transparent); }
+        .psr-selected-expiry span { display:block;color:#c9e9f7;font-size:6.5px;font-weight:900;letter-spacing:1px; }
+        .psr-selected-expiry strong { display:block;color:#fff;font-size:28px;line-height:1;margin-top:2px;text-shadow:0 0 16px var(--sig); }
+        .psr-alert-stack { display:none !important; }
+        .psr-alert { display:flex;align-items:center;gap:7px;padding:8px;border-radius:9px;border:1px solid rgba(96,239,255,.15);background:rgba(2,10,20,.82);box-shadow:0 0 12px rgba(0,0,0,.35); }
+        .psr-dot { width:8px;height:8px;border-radius:50%;background:var(--sig);box-shadow:0 0 11px var(--sig);animation:pulseDot .85s infinite; }
+        .psr-alert div{display:flex;align-items:center;justify-content:space-between;gap:8px;flex:1}.psr-alert small{color:#8aa4bb;font-size:6.5px}.psr-alert strong{color:var(--sig);font-size:7px}
+        .psr-meta { margin:5px auto 7px;color:#a7bfd3;font-size:8px;text-align:center;position:relative;z-index:20; }
+        .psr-live-chart { position:relative;z-index:20;height:72px;margin:0 auto 6px;max-width:980px;border-radius:9px;border:1px solid color-mix(in srgb,var(--sig) 34%,rgba(96,239,255,.2));background:#020a14;overflow:hidden; }
+        .psr-chart-label { position:absolute;z-index:4;left:8px;top:5px;color:#60efff;font-size:6px;font-weight:900;letter-spacing:.55px; }
+        .psr-live-chart .graph-line,.psr-live-chart .graph-svg,.psr-live-chart .signal-light-overlay{position:absolute;inset:0;width:100%;height:100%;}
+        .psr-mtf-heading { position:relative;z-index:20;margin-top:6px; }
+        .premium-signal-result .tf-breakdown,.premium-signal-result .tf-summary-line,.premium-signal-result .advanced-filters{position:relative;z-index:20;}
+        .premium-signal-result .tf-chip { min-height:66px;background:linear-gradient(180deg,rgba(5,18,30,.94),rgba(2,10,18,.96));border-width:1px; }
+        .premium-signal-result .tf-chip.tf-selected { transform:translateY(-3px);outline:2px solid #60efff;box-shadow:0 0 18px rgba(96,239,255,.28),inset 0 0 19px color-mix(in srgb,var(--sig) 7%,transparent); }
+        .premium-signal-result.signal-live-buy .tf-selected { border-color:#00ff87;box-shadow:0 0 22px rgba(0,255,135,.28),inset 0 0 17px rgba(0,255,135,.08); }
+        .premium-signal-result.signal-live-sell .tf-selected { border-color:#ff335f;box-shadow:0 0 22px rgba(255,51,95,.28),inset 0 0 17px rgba(255,51,95,.08); }
+        .signal-arrival-buy .premium-signal-result { animation:psrArrivalBuy .55s ease 3; }
+        .signal-arrival-sell .premium-signal-result { animation:psrArrivalSell .55s ease 3; }
+        @keyframes psrArrivalBuy{50%{box-shadow:0 0 80px rgba(0,255,135,.52),inset 0 0 58px rgba(0,255,135,.18);filter:brightness(1.19)}}
+        @keyframes psrArrivalSell{50%{box-shadow:0 0 80px rgba(255,51,95,.52),inset 0 0 58px rgba(255,51,95,.18);filter:brightness(1.19)}}
+        @media (max-width:1050px){.psr-orb-stage{inset:8px 82px 4px 82px}.psr-live-left{left:4%}.psr-live-right{right:4%}}
+        @media (max-width:760px){
+            .premium-signal-result{min-height:0;padding:8px}.psr-topline{align-items:flex-start}.psr-title small{display:none}.psr-shared{font-size:6px;padding:6px}.psr-hero{min-height:355px}.psr-orb-stage{inset:16px 0 34px}.psr-energy-orb{width:210px;max-width:66vw}.psr-orbit-1{max-width:72vw;max-height:72vw}.psr-orbit-2{max-width:84vw}.psr-orbit-3{max-width:94vw}.psr-floor-1{max-width:88vw}.psr-floor-2{max-width:72vw}.psr-floor-3{max-width:56vw}.psr-live-chip{top:18px;font-size:5.5px;padding:5px}.psr-live-left{left:6px}.psr-live-right{right:6px}.psr-volume-bars{bottom:54px;height:65px}.psr-selected-expiry{bottom:10px;min-width:145px}.psr-selected-expiry strong{font-size:23px}.psr-energy-orb #resModalDirection{font-size:23px}.psr-asset{font-size:22px}.psr-live-chart{height:62px}.premium-signal-result .tf-breakdown{grid-template-columns:repeat(5,minmax(70px,1fr));overflow-x:auto;padding-bottom:5px}.premium-signal-result .tf-chip{min-width:70px}}
+        @media (max-width:430px){.psr-hero{min-height:340px}.psr-energy-orb{width:188px}.psr-orb-stage{inset:14px 0 30px}.psr-selected-expiry{bottom:8px;min-width:130px}.psr-shared{display:none}.psr-title strong{font-size:10px}.psr-live-chip{display:none}}
+    </style>
+    <style id="raja-v13-timer-moved">
+        /* V13: old LIVE SIGNAL MOMENTUM graph stays removed.
+           The entry/candle timer now occupies that exact result-screen zone. */
+        .status-grid { grid-template-columns:minmax(220px,.85fr) minmax(0,1.65fr) !important; }
+        .status-grid .scan-summary-card { min-height:112px; }
+        .status-grid .scan-summary-card:nth-child(2) { width:100%; }
+        .status-grid .scan-summary-card:last-child { grid-column:auto !important; }
 
-                # Preserve the existing one-time reset marker behavior; do not change the version
-                # during ordinary feature upgrades or existing customer keys would be deleted.
-                if LICENSE_RESET_VERSION:
-                    cur.execute("SELECT meta_value FROM raja_meta WHERE meta_key = %s", ("license_reset_version",))
-                    row = cur.fetchone()
-                    current_version = str(row[0]) if row and row[0] is not None else ""
-                    if current_version != LICENSE_RESET_VERSION:
-                        cur.execute("DELETE FROM raja_licenses")
-                        cur.execute("""
-                            INSERT INTO raja_meta (meta_key, meta_value)
-                            VALUES (%s, %s)
-                            ON CONFLICT (meta_key) DO UPDATE SET meta_value = EXCLUDED.meta_value
-                        """, ("license_reset_version", LICENSE_RESET_VERSION))
-                        print(f"RAJA license reset applied once: {LICENSE_RESET_VERSION}")
-        print("RAJA license store: PostgreSQL (persistent)")
-        return
+        .signal-entry-window {
+            position:relative; z-index:24; max-width:980px; min-height:76px; margin:4px auto 8px;
+            display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:14px;
+            padding:10px 16px; border-radius:10px; overflow:hidden;
+            border:1px solid rgba(96,239,255,.32);
+            background:linear-gradient(180deg,rgba(3,16,29,.96),rgba(2,9,18,.98));
+            box-shadow:inset 0 0 26px rgba(34,211,238,.06),0 0 18px rgba(34,211,238,.06);
+        }
+        .signal-entry-window::before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.32;
+            background-image:linear-gradient(rgba(96,239,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(96,239,255,.05) 1px,transparent 1px);
+            background-size:18px 18px; }
+        .signal-entry-status { position:relative; z-index:1; color:#9bc6d8; font-size:9px; font-weight:900; letter-spacing:.65px; text-transform:uppercase; text-align:left; }
+        .signal-entry-timer { position:relative; z-index:1; min-width:108px; color:#00ff87; font-size:28px; line-height:1; font-weight:950; letter-spacing:2px; text-align:center;
+            text-shadow:0 0 16px rgba(0,255,135,.65); padding:7px 12px; border-radius:9px; border:1px solid rgba(0,255,135,.28); background:rgba(0,255,135,.055); }
+        .signal-entry-alert { position:relative; z-index:1; display:block; margin:0; color:#60efff; font-size:9px; font-weight:900; line-height:1.35; text-transform:uppercase; text-align:right; }
+        .signal-entry-window:has(.signal-entry-alert[style*="255, 51, 102"]) { border-color:rgba(255,51,102,.38); }
 
-    with license_lock:
-        if not LICENSE_FILE.exists():
-            LICENSE_FILE.write_text("{}", encoding="utf-8")
-        if not SCAN_EVENTS_FILE.exists():
-            SCAN_EVENTS_FILE.write_text("[]", encoding="utf-8")
-        if not TRIAL_CLAIMS_FILE.exists():
-            TRIAL_CLAIMS_FILE.write_text("{}", encoding="utf-8")
-        if LICENSE_RESET_VERSION:
-            marker_file = DATA_DIR / ".raja_license_reset_version"
-            current_version = marker_file.read_text(encoding="utf-8").strip() if marker_file.exists() else ""
-            if current_version != LICENSE_RESET_VERSION:
-                LICENSE_FILE.write_text("{}", encoding="utf-8")
-                marker_file.write_text(LICENSE_RESET_VERSION, encoding="utf-8")
-                print(f"RAJA local license reset applied once: {LICENSE_RESET_VERSION}")
-    print("WARNING: RAJA license store is using local file storage (not persistent on Render Free).")
+        @media (max-width:760px) {
+            .status-grid { grid-template-columns:1fr !important; }
+            .signal-entry-window { grid-template-columns:1fr; gap:7px; padding:9px 10px; text-align:center; }
+            .signal-entry-status,.signal-entry-alert { text-align:center; }
+            .signal-entry-timer { justify-self:center; min-width:116px; }
+        }
+    
+
+        /* ===== RAJA AI V14 SMART DASHBOARD UPGRADES ===== */
+        .upgrade-card { background:linear-gradient(180deg,rgba(8,18,33,.96),rgba(4,11,22,.98)); border:1px solid rgba(96,239,255,.22); border-radius:12px; padding:10px; min-width:0; }
+        .upgrade-title { color:#60efff; font-size:10px; font-weight:950; letter-spacing:.7px; text-transform:uppercase; margin-bottom:7px; }
+        .daily-performance-grid,.admin-analytics-grid,.profile-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; }
+        .perf-cell,.analytics-cell,.profile-cell { background:rgba(2,8,18,.72); border:1px solid rgba(96,239,255,.14); border-radius:8px; padding:7px; min-width:0; text-align:center; }
+        .perf-cell small,.analytics-cell small,.profile-cell small { display:block; color:#8ea8bd; font-size:7.5px; font-weight:800; text-transform:uppercase; letter-spacing:.4px; }
+        .perf-cell strong,.analytics-cell strong,.profile-cell strong { display:block; color:#fff; font-size:11px; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .mode-panel { margin-top:8px; background:rgba(2,8,18,.7); border:1px solid rgba(96,239,255,.18); border-radius:9px; padding:8px; }
+        .mode-buttons { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+        .mode-btn { border:1px solid rgba(96,239,255,.28); background:rgba(96,239,255,.06); color:#c9f7ff; border-radius:7px; padding:7px 4px; font-size:8.5px; font-weight:950; cursor:pointer; }
+        .mode-btn.active { background:linear-gradient(135deg,#00ff87,#60efff); color:#031019; border-color:transparent; box-shadow:0 0 14px rgba(0,255,135,.22); }
+        .mode-copy { color:#8ea8bd; font-size:8px; line-height:1.4; margin-top:6px; }
+        .custom-controls { display:none; margin-top:7px; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px; }
+        .custom-controls.visible { display:grid; }
+        .custom-controls label { display:block; font-size:7px; color:#8ea8bd; font-weight:850; text-transform:uppercase; }
+        .custom-controls input { width:100%; margin-top:2px; padding:6px; border-radius:6px; border:1px solid rgba(96,239,255,.22); background:#050b16; color:#fff; font-size:9px; }
+        .stability-strip { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; margin:7px 0; }
+        .stability-chip { border-radius:8px; padding:7px; border:1px solid rgba(255,255,255,.10); background:rgba(2,8,18,.72); text-align:center; }
+        .stability-chip small { display:block; color:#8ea8bd; font-size:7px; text-transform:uppercase; font-weight:900; }
+        .stability-chip strong { display:block; margin-top:2px; font-size:10px; }
+        .stability-low strong { color:#00ff87; }.stability-medium strong { color:#facc15; }.stability-high strong { color:#ff5d7d; }
+        .mini-chart-wrap {
+            position:relative;
+            width:100%;
+            height:190px;
+            margin:8px 0;
+            border:1px solid rgba(96,239,255,.25);
+            background:linear-gradient(180deg,#151a26,#101520);
+            border-radius:10px;
+            overflow:hidden;
+            box-shadow:inset 0 0 0 1px rgba(255,255,255,.015);
+        }
+        .mini-chart-wrap canvas {
+            width:100%;
+            height:100%;
+            display:block;
+            image-rendering:auto;
+        }
+        .mini-chart-host {
+            position:absolute;
+            inset:22px 0 0 0;
+            width:100%;
+            height:calc(100% - 22px);
+        }
+        .mini-chart-credit {
+            position:absolute;
+            right:8px;
+            bottom:3px;
+            z-index:4;
+            font-size:6px;
+            color:rgba(170,190,205,.62);
+            text-decoration:none;
+            pointer-events:auto;
+        }
+        .mini-chart-credit:hover { color:#9eeeff; }
+        .mini-chart-label {
+            position:absolute;
+            top:7px;
+            left:10px;
+            color:#8defff;
+            font-size:8px;
+            font-weight:950;
+            letter-spacing:.7px;
+            text-transform:uppercase;
+            z-index:2;
+            text-shadow:0 0 10px rgba(96,239,255,.25);
+            pointer-events:none;
+        }
+        .replay-header { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+        .history-replay-btn { border:1px solid rgba(96,239,255,.35); background:rgba(96,239,255,.08); color:#60efff; font-size:7px; font-weight:900; padding:4px 6px; border-radius:5px; cursor:pointer; }
+        .settings-section { background:rgba(2,8,18,.72); border:1px solid rgba(96,239,255,.16); border-radius:9px; padding:8px; margin-bottom:7px; text-align:left; }
+        .settings-section h4 { color:#60efff; font-size:9px; margin-bottom:6px; text-transform:uppercase; }
+        .guard-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
+        .guard-grid input { width:100%; padding:6px; border-radius:6px; border:1px solid rgba(96,239,255,.22); background:#050b16; color:#fff; font-size:9px; }
+        .switch-row { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#cbd5e1; font-size:9px; }
+        .switch-row input { accent-color:#00ff87; }
+        .guard-warning { display:none; margin-top:8px; padding:8px; border-radius:8px; background:rgba(255,51,102,.12); border:1px solid rgba(255,51,102,.35); color:#ff8da6; font-size:9px; font-weight:900; text-align:center; }
+        .guard-warning.visible { display:block; }
+        .install-btn { display:inline-flex; }
+        .profile-actions { display:flex; gap:6px; justify-content:center; margin-top:8px; flex-wrap:wrap; }
+        .profile-actions button { min-width:120px; }
+        .admin-analytics-grid { grid-template-columns:repeat(6,minmax(0,1fr)); margin-top:8px; }
+        .admin-license-meta .license-plan { color:#60efff; font-weight:900; }
+        .pwa-tip { color:#8ea8bd; font-size:8px; margin-top:4px; text-align:center; }
+        .chart-legend { position:absolute; right:9px; top:7px; display:flex; gap:7px; z-index:2; font-size:8px; font-weight:900; }
+        .chart-legend span { padding:2px 5px; border-radius:4px; background:rgba(2,8,18,.75); }
+
+        /* Fit laptop, iPad/tablet and mobile without horizontal overflow. */
+        html, body { width:100%; overflow-x:hidden; }
+        .container { max-width:min(1600px, calc(100vw - 12px)); }
+        .app-shell { width:100%; }
+        img,canvas,svg { max-width:100%; }
+        select,input,button { max-width:100%; }
+        @media (max-width:1100px) {
+            .daily-performance-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .admin-analytics-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .profile-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width:820px) {
+            body { padding:3px; }
+            .container { max-width:100%; padding:7px; border-radius:10px; }
+            .dashboard-topbar { align-items:stretch; }
+            .top-actions { width:100%; flex-wrap:wrap; }
+            .top-actions > * { flex:1 1 145px; }
+            .status-grid { grid-template-columns:1fr !important; }
+            .mode-buttons { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .custom-controls { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .mini-chart-wrap { height:190px; }
+        }
+        @media (max-width:540px) {
+            .daily-performance-grid,.admin-analytics-grid,.profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .guard-grid,.stability-strip { grid-template-columns:1fr; }
+            .custom-controls { grid-template-columns:1fr 1fr; }
+            .mode-btn { padding:8px 3px; }
+            .mini-chart-wrap { height:170px; }
+            .signal-entry-window { width:100%; }
+        }
+        @media (max-width:360px) {
+            .daily-performance-grid,.profile-grid { grid-template-columns:1fr 1fr; }
+            .custom-controls { grid-template-columns:1fr; }
+            .top-actions > * { flex-basis:100%; }
+        }
+
+    </style>
+
+    <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+
+    <style id="raja-app-features-v1">
+        html, body { width:100%; max-width:100%; overflow-x:hidden; }
+        body { min-height:100dvh; }
+        .container, #mainAppContent, .app-shell, .main-column, .main-panel-card,
+        .config-panel, .status-grid, .right-rail, .side-panel {
+            min-width:0;
+        }
+        img, svg, canvas, video { max-width:100%; }
+
+        /* ---------- APP LOCK ---------- */
+        .raja-lock-overlay {
+            position:fixed; inset:0; z-index:2147483000; display:none;
+            align-items:center; justify-content:center; padding:18px;
+            background:radial-gradient(circle at 50% 18%,rgba(0,242,254,.10),transparent 34%),
+                       rgba(1,5,12,.97);
+            backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px);
+        }
+        .raja-lock-overlay.visible { display:flex; }
+        .raja-lock-card {
+            width:min(390px,100%); border-radius:18px; padding:22px 18px;
+            background:linear-gradient(180deg,#091426,#050b15);
+            border:1px solid rgba(96,239,255,.30);
+            box-shadow:0 24px 80px rgba(0,0,0,.58),0 0 36px rgba(34,211,238,.08);
+            text-align:center;
+        }
+        .raja-lock-mark {
+            width:58px; height:58px; margin:0 auto 12px; border-radius:16px;
+            display:grid; place-items:center; font-size:27px;
+            background:linear-gradient(135deg,rgba(0,255,135,.16),rgba(34,211,238,.17));
+            border:1px solid rgba(0,255,135,.32);
+        }
+        .raja-lock-card h3 { color:#effbff; font-size:17px; margin:0 0 5px; }
+        .raja-lock-card p { color:#8fa8bd; font-size:10px; line-height:1.5; margin:0 0 13px; }
+        .raja-pin-input {
+            width:100%; padding:13px 12px; border-radius:10px; outline:none;
+            border:1px solid rgba(96,239,255,.28); background:#030914; color:#fff;
+            font-size:20px; font-weight:900; text-align:center; letter-spacing:8px;
+        }
+        .raja-lock-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+        .raja-lock-btn {
+            border:1px solid rgba(96,239,255,.25); border-radius:9px; padding:10px 8px;
+            background:#071321; color:#a9eaff; font-size:9px; font-weight:900; cursor:pointer;
+        }
+        .raja-lock-btn.primary { color:#04120e; background:linear-gradient(90deg,#00ff9a,#60efff); border:0; }
+        .raja-lock-message { min-height:16px; margin-top:9px; color:#ff879e; font-size:8.5px; font-weight:800; }
+
+        .raja-modal-overlay {
+            position:fixed; inset:0; z-index:2147482900; display:none; align-items:center;
+            justify-content:center; padding:18px; background:rgba(1,6,14,.84);
+            backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px);
+        }
+        .raja-modal-overlay.visible { display:flex; }
+        .raja-modal-card {
+            width:min(390px,100%); padding:18px; border-radius:16px;
+            background:linear-gradient(180deg,#091426,#050b15);
+            border:1px solid rgba(96,239,255,.26); box-shadow:0 20px 70px rgba(0,0,0,.55);
+        }
+        .raja-modal-card h3 { font-size:14px; color:#eafaff; margin-bottom:5px; }
+        .raja-modal-card p { font-size:9px; color:#8fa8bd; line-height:1.45; margin-bottom:10px; }
+        .raja-modal-card .raja-pin-input { font-size:17px; letter-spacing:6px; margin-top:7px; }
+        .raja-modal-actions { display:flex; gap:7px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+
+        /* ---------- TUTORIAL ---------- */
+        .raja-tutorial-overlay {
+            position:fixed; inset:0; z-index:2147482800; display:none;
+            pointer-events:none;
+        }
+        .raja-tutorial-overlay.visible { display:block; }
+        .raja-tutorial-dim { position:absolute; inset:0; background:rgba(0,4,10,.65); pointer-events:auto; }
+        .raja-tutorial-card {
+            position:fixed; left:50%; bottom:max(18px,env(safe-area-inset-bottom));
+            transform:translateX(-50%); width:min(460px,calc(100vw - 24px));
+            z-index:3; pointer-events:auto; border-radius:16px; padding:15px;
+            background:linear-gradient(180deg,#0a1728,#05101c);
+            border:1px solid rgba(96,239,255,.35);
+            box-shadow:0 20px 70px rgba(0,0,0,.60),0 0 24px rgba(34,211,238,.08);
+        }
+        .raja-tutorial-step { color:#00ff9a; font-size:8px; font-weight:950; letter-spacing:.8px; text-transform:uppercase; }
+        .raja-tutorial-card h3 { color:#f0fbff; font-size:15px; margin:4px 0 5px; }
+        .raja-tutorial-card p { color:#a4b8ca; font-size:10px; line-height:1.5; }
+        .raja-tutorial-actions { display:flex; align-items:center; gap:7px; margin-top:11px; }
+        .raja-tutorial-actions button {
+            border-radius:8px; padding:8px 11px; cursor:pointer; font-size:8.5px; font-weight:900;
+            border:1px solid rgba(96,239,255,.24); background:#071321; color:#a9eaff;
+        }
+        .raja-tutorial-actions .next { margin-left:auto; border:0; background:linear-gradient(90deg,#00ff9a,#60efff); color:#04120e; }
+        .raja-tutorial-focus {
+            position:relative !important; z-index:2147482850 !important;
+            box-shadow:0 0 0 3px rgba(0,255,154,.90),0 0 30px rgba(0,255,154,.42) !important;
+            border-radius:10px !important;
+        }
+
+        /* ---------- SETTINGS FEATURE CARDS ---------- */
+        .app-feature-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+        .app-feature-card {
+            border:1px solid rgba(96,239,255,.14); border-radius:9px; padding:9px;
+            background:rgba(2,9,18,.48); min-width:0;
+        }
+        .app-feature-card small { color:#7894aa; font-size:7px; font-weight:850; text-transform:uppercase; }
+        .app-feature-card strong { display:block; color:#e7f8ff; font-size:9px; margin-top:3px; }
+        .app-feature-actions { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
+        .app-feature-actions button {
+            flex:1 1 92px; border:1px solid rgba(96,239,255,.23); border-radius:7px;
+            padding:7px 6px; background:#071321; color:#9feaff; font-size:7.5px;
+            font-weight:900; cursor:pointer;
+        }
+        .app-feature-actions button.danger { color:#ff8ca4; border-color:rgba(255,93,125,.32); }
+        .app-feature-status { margin-top:6px; color:#7fa1b7; font-size:7px; line-height:1.35; }
+
+        /* ---------- RESPONSIVE APP SHELL ---------- */
+        @media (max-width:1180px) {
+            .container { width:100% !important; max-width:100% !important; padding:10px !important; }
+            .app-shell { grid-template-columns:180px minmax(0,1fr) !important; gap:10px !important; }
+            .right-rail {
+                grid-column:1 / -1; display:grid !important;
+                grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px;
+            }
+            .right-rail > * { min-width:0; }
+            .scan-live-grid { grid-template-columns:130px minmax(0,1fr) !important; }
+            .scan-process-panel { grid-column:1 / -1; }
+        }
+
+        @media (max-width:820px) {
+            body { padding:0 !important; }
+            .container { padding:6px !important; margin:0 !important; border-radius:0 !important; }
+            .app-shell { display:block !important; min-height:0 !important; }
+            .side-panel,.main-column,.right-rail { width:100% !important; max-width:100% !important; }
+            .side-panel { margin-bottom:7px; padding:9px !important; border-radius:12px !important; }
+            .brand { padding:2px 4px 8px !important; }
+            .nav-list { display:grid !important; grid-template-columns:repeat(4,minmax(0,1fr)); gap:5px !important; }
+            .nav-item { padding:8px 4px !important; font-size:8px !important; text-align:center !important; }
+            .engine-mini,.side-risk-card { display:none !important; }
+            .right-rail { margin-top:8px; grid-template-columns:1fr 1fr !important; padding:8px !important; border-radius:12px !important; }
+            .dashboard-topbar { flex-direction:column !important; align-items:stretch !important; padding:8px !important; }
+            .top-actions { display:grid !important; grid-template-columns:1fr 1fr; width:100% !important; }
+            .top-actions > * { min-width:0 !important; width:100% !important; }
+            .rescan-card { min-width:0 !important; }
+            .main-panel-card,.config-panel,.scan-summary-card { padding:10px !important; border-radius:12px !important; }
+            .status-grid,.config-grid,.signal-intel-bottom,.setup-build-grid,.scan-workspace,.scan-live-grid {
+                grid-template-columns:1fr !important;
+            }
+            .scan-live-grid { gap:8px !important; }
+            .scan-live-left,.scan-process-panel { width:100% !important; }
+            .utility-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+            .expiry-container { grid-template-columns:repeat(4,minmax(0,1fr)) !important; }
+            .market-heatmap-grid { max-width:100%; }
+            .premium-signal-result,.psr-hero,.signal-entry-window,.mini-chart-wrap { max-width:100% !important; }
+            .signal-entry-window { grid-template-columns:1fr !important; gap:7px !important; text-align:center !important; }
+            .signal-entry-status,.signal-entry-alert { text-align:center !important; }
+            .perf-table-wrap,.inline-list-box { max-width:100%; overflow:auto; }
+            .app-feature-grid { grid-template-columns:1fr; }
+        }
+
+        @media (max-width:520px) {
+            .container { padding:4px !important; }
+            .nav-list { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            .dashboard-topbar { border-radius:10px !important; }
+            .top-actions { grid-template-columns:1fr !important; }
+            .right-rail { grid-template-columns:1fr !important; }
+            .status-grid,.snapshot-grid,.ai-explain-grid,.daily-performance-grid,.profile-grid {
+                grid-template-columns:1fr !important;
+            }
+            .config-grid { gap:7px !important; }
+            .expiry-container { grid-template-columns:repeat(3,minmax(0,1fr)) !important; }
+            .utility-grid { grid-template-columns:1fr 1fr !important; }
+            .scan-heading-row { flex-direction:column; }
+            .signal-direction { font-size:16px !important; }
+            .signal-entry-timer { font-size:23px !important; min-width:0 !important; }
+            .mini-chart-wrap { height:170px !important; }
+            .raja-lock-actions { grid-template-columns:1fr; }
+        }
+
+        @media (max-width:360px) {
+            .nav-list { grid-template-columns:repeat(2,minmax(0,1fr)); }
+            .utility-grid,.expiry-container { grid-template-columns:1fr 1fr !important; }
+        }
+    </style>
 
 
-def load_licenses():
-    with license_lock:
-        if DATABASE_URL:
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT license_key, active, user_id, device_id, device_label, created_at,
-                               last_verified_at, session_token, plan, expires_at, last_login_at
-                        FROM raja_licenses
-                    """)
-                    rows = cur.fetchall()
+    <style id="raja-premium-v2-control-css">
+        /* =========================================================
+           RAJA AI PREMIUM V2
+           Theme · Safety · Offline · Broadcast · Expiry
+           ========================================================= */
+        :root {
+            --raja-page:#010309;
+            --raja-surface:#07111f;
+            --raja-surface-2:#0c1627;
+            --raja-card:#091426;
+            --raja-text:#eefaff;
+            --raja-muted:#8da6ba;
+            --raja-border:rgba(96,239,255,.22);
+            --raja-accent:#60efff;
+            --raja-green:#00ff9a;
+            --raja-red:#ff5d7d;
+        }
 
-            data = {}
-            for (key, active, user, device, device_label, created_at, last_verified_at,
-                 session_token, plan, expires_at, last_login_at) in rows:
-                data[str(key)] = {
-                    "active": bool(active),
-                    "user": user,
-                    "device": device,
-                    "device_label": device_label,
-                    "created_at": created_at,
-                    "last_verified_at": last_verified_at,
-                    "session_token": session_token,
-                    "plan": plan or DEFAULT_LICENSE_PLAN,
-                    "expires_at": expires_at,
-                    "last_login_at": last_login_at,
+        html[data-raja-theme="light"] {
+            color-scheme:light;
+            --raja-page:#eef4f8;
+            --raja-surface:#ffffff;
+            --raja-surface-2:#f5f9fc;
+            --raja-card:#ffffff;
+            --raja-text:#102031;
+            --raja-muted:#5d7285;
+            --raja-border:rgba(23,93,130,.20);
+            --raja-accent:#087fae;
+            --raja-green:#07895b;
+            --raja-red:#c73758;
+        }
+
+        html[data-raja-theme="light"] body {
+            background:linear-gradient(180deg,#eef5f8,#dfeaf0) !important;
+            color:var(--raja-text) !important;
+        }
+        html[data-raja-theme="light"] .container,
+        html[data-raja-theme="light"] .main-panel-card,
+        html[data-raja-theme="light"] .config-panel,
+        html[data-raja-theme="light"] .scan-summary-card,
+        html[data-raja-theme="light"] .rail-card,
+        html[data-raja-theme="light"] .settings-section,
+        html[data-raja-theme="light"] .selection-card,
+        html[data-raja-theme="light"] .timer-section,
+        html[data-raja-theme="light"] .ai-hud-box,
+        html[data-raja-theme="light"] .intel-heatmap-shell,
+        html[data-raja-theme="light"] .setup-build-shell,
+        html[data-raja-theme="light"] .ai-explain-card,
+        html[data-raja-theme="light"] .perf-heatmap-card,
+        html[data-raja-theme="light"] .replay-spotlight-card,
+        html[data-raja-theme="light"] .panel-box,
+        html[data-raja-theme="light"] .app-feature-card {
+            background:var(--raja-surface) !important;
+            color:var(--raja-text) !important;
+            border-color:var(--raja-border) !important;
+            box-shadow:0 8px 28px rgba(28,68,88,.06) !important;
+        }
+        html[data-raja-theme="light"] .dashboard-topbar,
+        html[data-raja-theme="light"] .side-panel,
+        html[data-raja-theme="light"] .right-rail {
+            background:linear-gradient(180deg,#ffffff,#f4f8fb) !important;
+            border-color:var(--raja-border) !important;
+        }
+        html[data-raja-theme="light"] .nav-item,
+        html[data-raja-theme="light"] .utility-btn,
+        html[data-raja-theme="light"] .rail-action,
+        html[data-raja-theme="light"] .replay-control-btn,
+        html[data-raja-theme="light"] .app-feature-actions button,
+        html[data-raja-theme="light"] .raja-lock-btn {
+            background:#f0f6f9 !important;
+            color:#176080 !important;
+            border-color:rgba(23,96,128,.20) !important;
+        }
+        html[data-raja-theme="light"] select,
+        html[data-raja-theme="light"] input,
+        html[data-raja-theme="light"] textarea {
+            background:#ffffff !important;
+            color:#102031 !important;
+            border-color:rgba(23,96,128,.25) !important;
+        }
+        html[data-raja-theme="light"] .inline-list-box,
+        html[data-raja-theme="light"] .live-scan-console,
+        html[data-raja-theme="light"] .admin-users-box {
+            background:#f6fafc !important;
+            color:#23384a !important;
+        }
+        html[data-raja-theme="light"] .inline-item,
+        html[data-raja-theme="light"] .live-scan-row {
+            color:#445d70 !important;
+            border-color:rgba(23,96,128,.10) !important;
+        }
+        html[data-raja-theme="light"] .card-label,
+        html[data-raja-theme="light"] .intel-title,
+        html[data-raja-theme="light"] .inline-title,
+        html[data-raja-theme="light"] .rail-title,
+        html[data-raja-theme="light"] .settings-section h4,
+        html[data-raja-theme="light"] .label-text {
+            color:#126b91 !important;
+        }
+        html[data-raja-theme="light"] .metric-note,
+        html[data-raja-theme="light"] .intel-caption,
+        html[data-raja-theme="light"] .app-feature-status,
+        html[data-raja-theme="light"] .pwa-tip {
+            color:#647b8d !important;
+        }
+        html[data-raja-theme="light"] .mini-chart-wrap {
+            border-color:rgba(23,96,128,.24) !important;
+        }
+
+        .raja-theme-segment {
+            display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:7px;
+        }
+        .raja-theme-segment button {
+            border-radius:8px; padding:9px 7px; cursor:pointer; font-size:8px; font-weight:950;
+            border:1px solid rgba(96,239,255,.22); background:#071321; color:#9feaff;
+        }
+        .raja-theme-segment button.active {
+            background:linear-gradient(90deg,#00ff9a,#60efff); color:#04120e; border-color:transparent;
+        }
+
+        .raja-notice-stack {
+            position:fixed; top:max(7px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+            z-index:2147482000; width:min(720px,calc(100vw - 18px)); display:grid; gap:5px;
+            pointer-events:none;
+        }
+        .raja-global-notice {
+            display:none; width:100%; padding:8px 11px; border-radius:10px;
+            border:1px solid rgba(96,239,255,.28); background:rgba(4,12,23,.95);
+            box-shadow:0 10px 32px rgba(0,0,0,.28); backdrop-filter:blur(9px);
+            color:#dff7ff; font-size:8.5px; line-height:1.4; font-weight:850;
+            pointer-events:auto;
+        }
+        .raja-global-notice.visible { display:flex; align-items:center; gap:8px; }
+        .raja-global-notice.offline { border-color:rgba(250,204,21,.45); color:#ffeaa3; cursor:pointer; }
+        .raja-global-notice.maintenance { border-color:rgba(255,93,125,.55); color:#ffd3dc; }
+        .raja-global-notice.broadcast.info { border-color:rgba(96,239,255,.45); }
+        .raja-global-notice.broadcast.warning { border-color:rgba(250,204,21,.48); color:#ffeaa3; }
+        .raja-global-notice.broadcast.critical { border-color:rgba(255,93,125,.55); color:#ffd3dc; }
+        .raja-global-notice.expiry { border-color:rgba(250,204,21,.52); color:#ffeaa3; }
+        .raja-notice-dot { width:7px; height:7px; border-radius:50%; background:currentColor; flex:0 0 auto; box-shadow:0 0 10px currentColor; }
+
+        .raja-offline-modal {
+            position:fixed; inset:0; z-index:2147482750; display:none; align-items:center; justify-content:center;
+            padding:16px; background:rgba(1,5,12,.86); backdrop-filter:blur(10px);
+        }
+        .raja-offline-modal.visible { display:flex; }
+        .raja-offline-card {
+            width:min(520px,100%); max-height:min(78vh,650px); overflow:auto;
+            border:1px solid rgba(250,204,21,.30); border-radius:16px; padding:16px;
+            background:linear-gradient(180deg,#0a1422,#050b14); color:#eefaff;
+            box-shadow:0 22px 80px rgba(0,0,0,.55);
+        }
+        .raja-offline-card h3 { font-size:14px; color:#ffe88b; margin-bottom:4px; }
+        .raja-offline-card p { color:#91a8ba; font-size:8px; line-height:1.45; margin-bottom:10px; }
+        .raja-offline-row {
+            display:grid; grid-template-columns:110px minmax(0,1fr); gap:8px; padding:7px 0;
+            border-bottom:1px solid rgba(255,255,255,.06); font-size:8px;
+        }
+        .raja-offline-row span { color:#7892a8; }
+        .raja-offline-row strong { color:#e7f7ff; word-break:break-word; }
+        .raja-offline-history { display:grid; gap:5px; margin-top:9px; }
+        .raja-offline-history div {
+            border:1px solid rgba(96,239,255,.10); border-radius:7px; padding:7px;
+            color:#a9c0d1; font-size:7.5px; background:rgba(255,255,255,.02);
+        }
+
+        .admin-control-card {
+            margin-top:12px; border-top:1px solid rgba(0,242,254,.28); padding-top:10px;
+        }
+        .admin-control-card h4 { color:#60efff; font-size:10px; margin-bottom:6px; text-transform:uppercase; }
+        .admin-control-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+        .admin-control-card textarea {
+            width:100%; min-height:68px; resize:vertical; margin-top:5px; padding:8px;
+            border-radius:7px; outline:none; background:#050811; color:#fff;
+            border:1px solid rgba(0,242,254,.30); font:inherit; font-size:9px;
+        }
+        .admin-control-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
+        .admin-control-actions button { flex:1 1 110px; }
+        .admin-control-status { color:#8ea6b9; font-size:8px; margin-top:7px; line-height:1.4; }
+
+        .no-trade-reason-box {
+            margin:8px auto 10px; width:min(620px,100%); padding:9px 10px;
+            border:1px solid rgba(255,93,125,.24); border-radius:9px; background:rgba(255,93,125,.045);
+            color:#c8d7e3; font-size:8.5px; line-height:1.5;
+        }
+
+        @media (max-width:620px) {
+            .raja-notice-stack { top:max(4px,env(safe-area-inset-top)); width:calc(100vw - 10px); }
+            .raja-global-notice { font-size:7.5px; padding:7px 9px; }
+            .admin-control-grid { grid-template-columns:1fr; }
+            .raja-offline-row { grid-template-columns:82px minmax(0,1fr); }
+        }
+    </style>
+
+</head>
+<body>
+
+    <div id="rajaAppNoticeStack" class="raja-notice-stack">
+        <div id="rajaOfflineNotice" class="raja-global-notice offline" onclick="openRajaOfflineSnapshot()" title="Open last saved data">
+            <span class="raja-notice-dot"></span><span id="rajaOfflineNoticeText">OFFLINE · Last saved data available</span>
+        </div>
+        <div id="rajaMaintenanceNotice" class="raja-global-notice maintenance">
+            <span class="raja-notice-dot"></span><span id="rajaMaintenanceNoticeText">RAJA AI scans are temporarily paused.</span>
+        </div>
+        <div id="rajaBroadcastNotice" class="raja-global-notice broadcast info">
+            <span class="raja-notice-dot"></span><span id="rajaBroadcastNoticeText"></span>
+        </div>
+        <div id="rajaExpiryNotice" class="raja-global-notice expiry">
+            <span class="raja-notice-dot"></span><span id="rajaExpiryNoticeText"></span>
+        </div>
+    </div>
+
+    <div id="rajaOfflineSnapshotModal" class="raja-offline-modal" aria-hidden="true">
+        <div class="raja-offline-card">
+            <h3>📴 RAJA AI · LAST SAVED DATA</h3>
+            <p>Read-only offline snapshot. Live scans and live prices require an internet connection.</p>
+            <div id="rajaOfflineSignalSummary"></div>
+            <div style="margin-top:11px;color:#60efff;font-size:8px;font-weight:900;">RECENT SAVED HISTORY</div>
+            <div id="rajaOfflineHistorySummary" class="raja-offline-history"></div>
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button class="menu-back-btn" onclick="closeRajaOfflineSnapshot()">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="rajaAppLockOverlay" class="raja-lock-overlay" aria-hidden="true">
+        <div class="raja-lock-card">
+            <div class="raja-lock-mark">🔐</div>
+            <h3>RAJA AI APP LOCK</h3>
+            <p>Enter your local app PIN or use the device biometric option.</p>
+            <input id="rajaUnlockPin" class="raja-pin-input" type="password" inputmode="numeric"
+                   autocomplete="off" maxlength="6" placeholder="••••" onkeydown="if(event.key==='Enter')unlockRajaWithPin()">
+            <div class="raja-lock-actions">
+                <button class="raja-lock-btn primary" onclick="unlockRajaWithPin()">UNLOCK</button>
+                <button id="rajaBiometricUnlockBtn" class="raja-lock-btn" onclick="unlockRajaWithBiometric()">BIOMETRIC</button>
+            </div>
+            <div id="rajaLockMessage" class="raja-lock-message"></div>
+        </div>
+    </div>
+
+    <div id="rajaPinSetupModal" class="raja-modal-overlay" aria-hidden="true">
+        <div class="raja-modal-card">
+            <h3>Set App Lock PIN</h3>
+            <p>Choose a 4–6 digit PIN. This protects the local app screen; your existing RAJA AI license login stays unchanged.</p>
+            <input id="rajaNewPin" class="raja-pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="NEW PIN">
+            <input id="rajaConfirmPin" class="raja-pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="CONFIRM PIN">
+            <div id="rajaPinSetupMessage" class="raja-lock-message"></div>
+            <div class="raja-modal-actions">
+                <button class="raja-lock-btn" onclick="closeRajaPinSetup()">CANCEL</button>
+                <button class="raja-lock-btn primary" onclick="saveRajaAppPin()">SAVE PIN</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="rajaTutorialOverlay" class="raja-tutorial-overlay" aria-hidden="true">
+        <div class="raja-tutorial-dim"></div>
+        <div class="raja-tutorial-card">
+            <div id="rajaTutorialStep" class="raja-tutorial-step">STEP 1 OF 3</div>
+            <h3 id="rajaTutorialTitle">Select Market & Pair</h3>
+            <p id="rajaTutorialText">Choose Crypto/Forex and the pair you want RAJA AI to scan.</p>
+            <div class="raja-tutorial-actions">
+                <button onclick="closeRajaTutorial(true)">SKIP</button>
+                <button id="rajaTutorialBack" onclick="rajaTutorialBack()">BACK</button>
+                <button id="rajaTutorialNext" class="next" onclick="rajaTutorialNext()">NEXT</button>
+            </div>
+        </div>
+    </div>
+
+
+    <button id="rajaFullscreenBtn" class="raja-fullscreen-btn" type="button"
+            onclick="toggleRajaFullscreen()" title="Open dashboard in full screen"
+            aria-label="Open dashboard in full screen">
+        <span id="rajaFullscreenIcon" class="fs-icon">⛶</span>
+        <span id="rajaFullscreenLabel" class="fs-label">FULL SCREEN</span>
+    </button>
+
+    <!-- RAJA AI UI V13: momentum graph removed; entry-window timer moved into the signal result area -->
+
+    <div class="container">
+        <h2>RAJA AI PREMIUM - PREMIUM UI V13</h2>
+        
+        <div class="market-notice">
+            💡 Market stays stable & optimal from 9:00 AM to 5:00 PM
+        </div>
+
+        <div id="activationScreen" style="display: block; text-align: center;">
+            <h3 style="color: #fff; font-size: 13px; margin-bottom: 10px; font-weight: 800;">Welcome to Multi-Broker AI Service.</h3>
+            
+            <div class="instruction-box">
+                <div class="step-title">Step 1:</div>
+                <div style="color: #cbd5e1;">Create your Broker account (Quotex):</div>
+                <a class="link-text" href="https://broker-qx.pro/sign-up/?lid=2209395" target="_blank">Quotex Partner Link</a>
+
+                <div class="step-title">Step 2:</div>
+                <div style="color: #cbd5e1;">Deposit minimum $50</div>
+
+                <div class="step-title">Step 3:</div>
+                <div style="color: #cbd5e1;">Send your Telegram ID or UID.</div>
+
+                <div style="margin-top: 8px; color: #ff3366; font-weight: 800; font-size: 10px;">
+                    After verification your access will be activated. One active device per key — logging in on a new device automatically signs out the previous device.
+                </div>
+                <div style="margin-top: 6px; color: #cbd5e1; font-weight: bold; font-size: 11px;">
+                    Official Telegram: <a href="https://t.me/RAJASIGNALAIPREMIUM" class="link-text" target="_blank">@RAJASIGNALAIPREMIUM</a>
+                </div>
+            </div>
+
+            <label class="label-text">Enter Telegram ID or UID:</label>
+            <input type="text" id="verifyUserInput" class="input-field" placeholder="@username or 12345678">
+
+            <label class="label-text" style="color: #00ff87; margin-top: 8px;">Enter VIP License Key:</label>
+            <input type="password" id="verifyLicenseKey" class="input-field" placeholder="RAJA-VIP-XXXXXX" style="border-color: #00ff87;">
+
+            <button class="scan-btn" style="margin-top: 12px;" onclick="verifyAccess()">🔓 VERIFY & UNLOCK AI</button>
+            <div id="verifyMessage" style="font-size: 11px; font-weight: 900; margin-top: 8px; display: none; padding: 6px; border-radius: 5px;"></div>
+        </div>
+
+        <div id="mainAppContent" style="display: none;">
+            <div class="app-shell">
+                <aside class="side-panel">
+                    <div class="brand"><span class="brand-mark">♛</span><span>RAJA AI PREMIUM</span><span class="vip-pill">VIP</span></div>
+                    <div class="nav-list">
+                        <button class="nav-item active" onclick="showDefaultView()">▦ Dashboard</button>
+                        <button class="nav-item" onclick="showDefaultView()">◉ AI Market Scan</button>
+                        <button class="nav-item" onclick="openHistoryInline()">◷ History</button>
+                        <button class="nav-item" onclick="openSettingsInline()">⚙ Settings</button>
+                        <button class="nav-item" onclick="openNewsInline()">▤ News · LIVE</button>
+                        <button class="nav-item" onclick="openRiskInline()">♢ Risk & Recovery</button>
+                        <button class="nav-item" onclick="openProfileInline()">👤 Profile</button>
+                    </div>
+                    <div class="premium-risk-mini" onclick="openRiskInline()" role="button" tabindex="0" title="Open Risk & Recovery">
+                        <div class="premium-risk-mini-title"><span>Risk & Recovery Premium</span><b>LIVE</b></div>
+                        <div class="mini-pressure-wrap">
+                            <div class="mini-pressure-gauge" id="sideRiskGauge"><div class="mini-pressure-value" id="sideRiskPressure">28%</div></div>
+                            <div class="mini-risk-copy"><small>RECOVERY PRESSURE</small><strong id="sideRiskState">LOW PRESSURE</strong><span>Tap to open recovery center</span></div>
+                        </div>
+                        <div class="mini-risk-metrics">
+                            <div class="mini-risk-metric"><small>Total Exposure</small><strong id="sideRiskExposure">$0.00</strong></div>
+                            <div class="mini-risk-metric"><small>Profile</small><strong id="sideRiskProfile">--</strong></div>
+                        </div>
+                    </div>
+                    <div class="engine-mini">
+                        <div>AI Engine Status <strong>LIVE</strong></div>
+                        <div>Engine: Multi-TF 4-of-6</div>
+                        <div>Source: Yahoo 1m reference</div>
+                        <div>Re-scan interval: <strong>5 min</strong></div>
+                    </div>
+                </aside>
+
+                <main class="main-column">
+                    <div class="dashboard-topbar">
+                        <div class="market-banner">🛡️ Market stays stable & optimal from <strong>9:00 AM to 5:00 PM</strong></div>
+                        <div class="top-actions">
+                            <div id="scanSessionChip" class="scan-session-chip"><span class="session-pulse"></span><span id="scanSessionText">Scan Session Active · 0%</span></div>
+                            <button class="rescan-card" id="autoRescanCard" onclick="toggleAutoRescan()">
+                                <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
+                                <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
+                            </button>
+                            <button id="installAppBtn" class="top-btn install-btn" style="display:none" onclick="installPWA()">⬇ INSTALL APP</button>
+                            <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
+                            <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
+                        </div>
+                    </div>
+
+                    <section class="main-panel-card">
+                        <div class="scan-heading-row">
+                            <div>
+                                <div class="scan-heading">📈 AI MARKET SCAN</div>
+                                <div class="scan-sub">Real-time multi-timeframe analysis across the selected market</div>
+                            </div>
+                            <div class="shared-pill">👥 SHARED MULTI-USER SCAN</div>
+                        </div>
+
+
+
+                        <section class="intel-heatmap-shell" id="premiumMarketHeatmap">
+                            <div class="intel-title-row"><div class="intel-title">◉ LIVE MARKET HEATMAP</div><div class="intel-caption" id="heatmapCaption">Latest authenticated scan snapshot · click a pair to select</div></div>
+                            <div id="marketHeatmapGrid" class="market-heatmap-grid"></div>
+                        </section>
+                        <section class="setup-build-shell" id="setupBuildShell">
+                            <div class="intel-title-row"><div class="intel-title">◎ SETUP BUILD-UP METER</div><div class="intel-caption">Technical setup formation · not a win probability</div></div>
+                            <div class="setup-build-grid">
+                                <div class="setup-track">
+                                    <div class="setup-stage" id="buildStageTrend"><div class="setup-stage-dot"></div><strong>TREND</strong><span id="buildTrendText">Waiting</span></div>
+                                    <div class="setup-stage" id="buildStageMomentum"><div class="setup-stage-dot"></div><strong>MOMENTUM</strong><span id="buildMomentumText">Waiting</span></div>
+                                    <div class="setup-stage" id="buildStageVolatility"><div class="setup-stage-dot"></div><strong>VOLATILITY</strong><span id="buildVolatilityText">Waiting</span></div>
+                                    <div class="setup-stage" id="buildStageTf"><div class="setup-stage-dot"></div><strong>TF AGREEMENT</strong><span id="buildTfText">--</span></div>
+                                    <div class="setup-stage" id="buildStageExpiry"><div class="setup-stage-dot"></div><strong>EXPIRY</strong><span id="buildExpiryText">1m</span></div>
+                                </div>
+                                <div class="setup-score-box"><strong id="setupBuildScore">0%</strong><span id="setupBuildState">READY</span></div>
+                            </div>
+                        </section>
+
+                        <div id="hudBoxContainer" class="ai-hud-box">
+                            <div id="defaultView" class="default-view">
+                                <div class="scan-workspace">
+                                    <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
+                                    <div class="ready-copy">
+                                        <div class="ready-title">AI Deep Scan Ready</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Auto Re-Scan can run the next market scan after five minutes.</div>
+                                        <div class="scan-stage-list" style="margin-top:18px;">
+                                            <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
+                                            <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
+                                            <div class="scan-stage"><span class="scan-dot"></span><span>Waiting for scan request</span></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="scanView" class="scan-view">
+                                <div class="scan-live-grid">
+                                    <div class="scan-live-left">
+                                        <div class="scan-live-kicker">Scanning Market Structure</div>
+                                        <div class="scan-ring" id="scanRingActive"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercentActive">8%</div><div class="scan-ring-label">SCANNING...</div></div></div>
+                                        <div class="scan-intensity"><div class="scan-intensity-label">Live Scan Intensity</div><div class="scan-intensity-wave"></div></div>
+                                    </div>
+                                    <div class="holo-market-scanner">
+                                        <div class="live-feed-pill">● LIVE FEED · STREAMING MARKET DATA</div>
+                                        <div class="holo-candle-strip"><i style="height:18px"></i><i style="height:31px"></i><i style="height:24px"></i><i style="height:42px"></i><i style="height:28px"></i><i style="height:48px"></i><i style="height:34px"></i><i style="height:22px"></i><i style="height:39px"></i><i style="height:27px"></i><i style="height:45px"></i><i style="height:33px"></i></div>
+                                        <div class="holo-radar-beam"></div>
+                                        <div class="holo-globe"><div class="holo-core"><strong>AI</strong><span>SCANNING</span></div></div>
+                                        <div class="holo-platform"></div>
+                                    </div>
+                                    <div class="scan-process-panel">
+                                        <div class="scan-stage-title">LIVE SCAN PROCESS</div>
+                                        <div class="scan-stage-list">
+                                            <div id="scanStageCollect" class="scan-stage active"><span class="scan-dot"></span><span>Collecting market data</span><span class="scan-stage-status">RUNNING</span></div>
+                                            <div id="scanStageAnalyze" class="scan-stage"><span class="scan-dot"></span><span>Analyzing multi-timeframe trends</span><span class="scan-stage-status">PENDING</span></div>
+                                            <div id="scanStageAssets" class="scan-stage"><span class="scan-dot"></span><span>Scanning eligible assets</span><span class="scan-stage-status">PENDING</span></div>
+                                            <div id="scanStageConditions" class="scan-stage"><span class="scan-dot"></span><span>Evaluating market conditions</span><span class="scan-stage-status">PENDING</span></div>
+                                            <div id="scanStageFinal" class="scan-stage"><span class="scan-dot"></span><span>Finalizing best opportunity</span><span class="scan-stage-status">PENDING</span></div>
+                                        </div>
+                                    </div>
+                                    <div class="scan-telemetry">
+                                        <div class="scan-telemetry-card live"><small>Assets in Scan</small><strong id="scanActiveAssetsValue">0</strong></div>
+                                        <div class="scan-telemetry-card"><small>Scan Progress</small><strong id="scanTelemetryProgress">8%</strong></div>
+                                        <div class="scan-telemetry-card"><small>Current Phase</small><strong id="scanTelemetryStage">Collecting Data</strong></div>
+                                        <div class="scan-telemetry-card"><small>Elapsed</small><strong id="scanElapsedValue">00:00</strong></div>
+                                        <div class="scan-telemetry-card countdown"><small id="scanCandleLabel">Current 1M Candle</small><strong id="scanCandleTimer">01:00</strong></div>
+                                    </div>
+                                    <div class="scan-live-footer">
+                                        <div id="liveScanConsole" class="live-scan-console"><div class="live-scan-row scanning">Synchronizing closed candles and multi-timeframe filters...</div></div>
+                                        <div class="scan-progress-container"><div id="scanProgressBar" class="scan-progress-bar"></div></div>
+                                        <div style="font-size:9px;color:#00ff87;font-weight:800;margin-top:5px;" id="scanStepText">Starting live market scan...</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="signalView" class="signal-view">
+                                <div id="signal3dShell" class="premium-signal-result signal-live-buy">
+                                    <div class="psr-topline">
+                                        <div class="psr-title"><span class="psr-ai-badge">AI</span><div><strong>AI MARKET SCAN · LIVE SIGNAL</strong><small>Real-time multi-timeframe analysis across the selected asset</small></div></div>
+                                        <div class="psr-shared">👥 SHARED MULTI-USER SCAN</div>
+                                    </div>
+
+                                    <div class="psr-hero">
+                                        <div class="psr-grid"></div>
+                                        <svg class="psr-market-lines" viewBox="0 0 1200 360" preserveAspectRatio="none" aria-hidden="true">
+                                            <defs>
+                                                <linearGradient id="psrBuyGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00ff87" stop-opacity="0"/><stop offset=".18" stop-color="#00ff87"/><stop offset=".55" stop-color="#60efff"/><stop offset="1" stop-color="#00ff87"/></linearGradient>
+                                                <linearGradient id="psrBlueGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60efff" stop-opacity="0"/><stop offset=".35" stop-color="#1aa7ff"/><stop offset="1" stop-color="#60efff" stop-opacity=".2"/></linearGradient>
+                                            </defs>
+                                            <path class="psr-line psr-line-a" d="M0 236 C70 174,120 224,185 154 S300 218,370 145 S490 208,555 116 S680 204,748 137 S880 188,948 103 S1080 171,1200 64" fill="none" stroke="url(#psrBuyGrad)" stroke-width="3"/>
+                                            <path class="psr-line psr-line-b" d="M0 280 C100 246,145 270,230 214 S360 257,432 198 S575 235,640 176 S790 232,850 166 S1010 205,1200 128" fill="none" stroke="url(#psrBlueGrad)" stroke-width="2"/>
+                                        </svg>
+                                        <div class="psr-volume-bars" aria-hidden="true">
+                                            <i style="--h:24%"></i><i style="--h:42%"></i><i style="--h:30%"></i><i style="--h:54%"></i><i style="--h:36%"></i><i style="--h:66%"></i><i style="--h:48%"></i><i style="--h:76%"></i><i style="--h:55%"></i><i style="--h:88%"></i><i style="--h:62%"></i><i style="--h:72%"></i><i style="--h:50%"></i><i style="--h:82%"></i><i style="--h:58%"></i><i style="--h:92%"></i><i style="--h:64%"></i><i style="--h:78%"></i><i style="--h:44%"></i><i style="--h:69%"></i><i style="--h:53%"></i><i style="--h:84%"></i><i style="--h:60%"></i><i style="--h:73%"></i><i style="--h:49%"></i><i style="--h:88%"></i><i style="--h:57%"></i><i style="--h:80%"></i>
+                                        </div>
+
+                                        <div class="psr-live-chip psr-live-left"><span></span> LIVE MARKET DATA</div>
+                                        <div class="psr-live-chip psr-live-right"><span></span> SCAN ACTIVE</div>
+
+                                        <div class="psr-orb-stage">
+                                            <div class="psr-orbit psr-orbit-1"></div>
+                                            <div class="psr-orbit psr-orbit-2"></div>
+                                            <div class="psr-orbit psr-orbit-3"></div>
+                                            <div class="psr-energy-orb">
+                                                <div class="psr-orb-sparks"></div>
+                                                <div class="psr-orb-content">
+                                                    <div class="psr-confirmed">CONFIRMED AI SIGNAL</div>
+                                                    <div id="resModalAsset" class="psr-asset">EUR/USD</div>
+                                                    <div class="psr-subasset">Live multi-timeframe direction</div>
+                                                    <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
+                                                    <div class="psr-confidence-label">CONFIDENCE</div>
+                                                    <span id="signalConfidenceValue" class="psr-confidence-value">--</span>
+                                                    <div class="psr-strength">VERY STRONG</div>
+                                                </div>
+                                            </div>
+                                            <div class="psr-floor psr-floor-1"></div>
+                                            <div class="psr-floor psr-floor-2"></div>
+                                            <div class="psr-floor psr-floor-3"></div>
+                                            <div class="psr-selected-expiry"><span>SELECTED EXPIRY</span><strong id="selectedExpiryHeroValue">1m</strong></div>
+                                        </div>
+
+                                    </div>
+
+                                    <div id="resModalMeta" class="signal-meta psr-meta">CALL 🔺 | Technical Confluence: -- | Selected Expiry: 1m</div>
+                                    <div class="stability-strip">
+                                        <div id="stabilityScoreChip" class="stability-chip stability-medium"><small>Market Stability</small><strong id="marketStabilityValue">--</strong></div>
+                                        <div id="riskLevelChip" class="stability-chip stability-medium"><small>Market Risk</small><strong id="marketRiskValue">--</strong></div>
+                                        <div class="stability-chip"><small>Volatility ATR%</small><strong id="marketVolatilityValue">--</strong></div>
+                                    </div>
+                                    <div class="signal-entry-window" id="signalEntryWindow">
+                                        <div class="signal-entry-status" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE</div>
+                                        <div id="candleTimer" class="signal-entry-timer">00:31</div>
+                                        <div id="tradeAlert" class="signal-entry-alert">⏳ WAIT FOR CANDLE CLOSE</div>
+                                    </div>
+
+                                    <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · PRO CHART</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><div id="signalMiniChart" class="mini-chart-host"></div><a class="mini-chart-credit" href="https://www.tradingview.com/" target="_blank" rel="noopener">Lightweight Charts™ by TradingView</a></div>
+
+                                    <section class="ai-explain-card" id="aiExplainCard">
+                                        <div class="intel-title-row"><div class="intel-title">✦ AI EXPLANATION · WHY THIS SIGNAL</div><div class="intel-caption">Based on current closed-candle indicators</div></div>
+                                        <div class="ai-explain-grid">
+                                            <div class="ai-factor"><small>Trend</small><strong id="explainTrend">--</strong><span id="explainTrendSub">Higher-TF direction</span></div>
+                                            <div class="ai-factor"><small>Momentum</small><strong id="explainMomentum">--</strong><span id="explainMomentumSub">Confluence strength</span></div>
+                                            <div class="ai-factor"><small>TF Agreement</small><strong id="explainAgreement">--</strong><span id="explainAgreementSub">Aligned timeframes</span></div>
+                                            <div class="ai-factor"><small>Expiry</small><strong id="explainExpiry">--</strong><span id="explainExpirySub">Selected-TF confirmation</span></div>
+                                            <div class="ai-factor"><small>Volatility</small><strong id="explainVolatility">--</strong><span id="explainVolatilitySub">ATR range</span></div>
+                                        </div>
+                                        <div class="ai-summary"><b>SUMMARY:</b> <span id="aiExplanationSummary">Waiting for a confirmed signal.</span></div>
+                                    </section>
+
+                                    
+
+                                    <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
+                                    <div id="signalConfidenceRing" class="signal3d-confidence"><div><strong>--</strong><span>CONFIDENCE</span></div></div>
+                                    <div class="mtf-heading psr-mtf-heading">SAME PAIR · MULTI-TIMEFRAME DIRECTION</div>
+                                    <div id="tfBreakdown" class="tf-breakdown"></div>
+                                    <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div>
+
+                                    <div class="signal-intel-bottom">
+                                        <section class="perf-heatmap-card">
+                                            <div class="intel-title-row"><div class="intel-title">▦ PERFORMANCE HEATMAP</div><div class="intel-caption">Recorded completed results</div></div>
+                                            <div class="perf-table-wrap"><table class="perf-table"><thead><tr><th>Pair</th><th>1m</th><th>2m</th><th>5m</th><th>15m</th><th>30m</th></tr></thead><tbody id="performanceHeatmapBody"><tr><td class="pair">Waiting for history</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr></tbody></table></div>
+                                            <div class="perf-note">Historical recorded outcomes only; they do not guarantee future results.</div>
+                                        </section>
+                                        <section class="replay-spotlight-card">
+                                            <div class="intel-title-row"><div class="intel-title">▶ HISTORY / REPLAY</div><div class="intel-caption">Latest tracked setup</div></div>
+                                            <div id="replaySpotlight" class="replay-spotlight-body"><span>No tracked signal available yet.</span></div>
+                                        </section>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="noSignalView" class="no-signal-view">
+                                <div style="font-size:14px;color:#ff5d7d;font-weight:900;text-transform:uppercase;margin-bottom:6px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
+                                <div style="font-size:10px;color:#a9bad0;margin-bottom:5px;" id="noSignalDesc">Current filters did not converge safely.</div>
+                                <div id="noTradeReasonBox" class="no-trade-reason-box" style="display:none;"></div>
+                                <button class="menu-back-btn" onclick="playClickSound(); resetPrimaryView()">↻ Back to Dashboard</button>
+                            </div>
+
+                            <div id="historyInlineView" class="inline-content-view">
+                                <div class="inline-title">📊 Live Signal History</div><div id="historyListBox" class="inline-list-box"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                            </div>
+                            <div id="replayInlineView" class="inline-content-view">
+                                <div class="replay-header"><div class="inline-title" style="margin:0;">🎬 Signal Replay</div><button class="menu-back-btn" onclick="openHistoryInline()">← History</button></div>
+                                <div id="replaySummary" class="inline-list-box" style="max-height:none;">Select a historical signal.</div>
+                                <div class="mini-chart-wrap"><div class="mini-chart-label">SIGNAL SNAPSHOT + OUTCOME</div><div id="replayMiniChart" class="mini-chart-host"></div><a class="mini-chart-credit" href="https://www.tradingview.com/" target="_blank" rel="noopener">Lightweight Charts™ by TradingView</a></div>
+                                <div class="replay-controls"><button class="replay-control-btn" onclick="replayReset()">⏮ START</button><button class="replay-control-btn play" onclick="replayPlay()">▶ PLAY</button><button class="replay-control-btn" onclick="replayPause()">⏸ PAUSE</button><button class="replay-control-btn" onclick="replayNext()">NEXT CANDLE ⏭</button></div><div id="replayFrameLabel" class="replay-frame-label">Replay ready</div>
+                                <div id="replayTimeframes" class="tf-breakdown"></div>
+                            </div>
+                            <div id="profileInlineView" class="inline-content-view">
+                                <div class="inline-title">👤 User Profile</div>
+                                <div id="profileGrid" class="profile-grid"><div class="profile-cell"><small>Status</small><strong>Loading...</strong></div></div>
+                                <div class="profile-actions"><button class="menu-back-btn" onclick="loadUserProfile()">↻ Refresh</button><button class="menu-back-btn" onclick="logoutSession()">🚪 Logout</button><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
+                            </div>
+                            <div id="settingsInlineView" class="inline-content-view">
+                                <div class="inline-title">⚙️ AI Engine Settings</div>
+                                <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
+                                <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
+                                <div class="settings-section"><h4>Voice Alerts</h4><div class="switch-row"><span>Speak signal aloud (example: “USD CAD, Down signal, one minute”)</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div></div>
+
+                                <div class="settings-section">
+                                    <h4>Appearance & Safety</h4>
+                                    <div class="app-feature-grid">
+                                        <div class="app-feature-card">
+                                            <small>Theme</small>
+                                            <strong id="rajaThemeStatus">DARK MODE</strong>
+                                            <div class="raja-theme-segment">
+                                                <button id="rajaThemeDarkBtn" onclick="setRajaTheme('dark')">🌙 DARK</button>
+                                                <button id="rajaThemeLightBtn" onclick="setRajaTheme('light')">☀ LIGHT</button>
+                                            </div>
+                                            <div class="app-feature-status">Theme is saved on this device.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Smart NO TRADE</small>
+                                            <strong>ACTIVE</strong>
+                                            <div class="app-feature-status">Weak market stability, high-risk conditions and failed multi-TF confirmation are rejected with the exact reason.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>News Safety Lock</small>
+                                            <strong>HIGH IMPACT · AUTO</strong>
+                                            <div class="app-feature-status">Forex scans pause around relevant high-impact calendar events.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Offline Snapshot</small>
+                                            <strong id="rajaOfflineStatusText">ONLINE</strong>
+                                            <div class="app-feature-actions"><button onclick="openRajaOfflineSnapshot()">VIEW LAST SAVED DATA</button></div>
+                                        </div>
+                                    </div>
+                                </div>
+
+
+                                <div class="settings-section">
+                                    <h4>App Security & Alerts</h4>
+                                    <div class="app-feature-grid">
+                                        <div class="app-feature-card">
+                                            <small>App Lock</small>
+                                            <strong id="rajaLockStatusText">OFF</strong>
+                                            <div class="app-feature-actions">
+                                                <button onclick="openRajaPinSetup()">SET / CHANGE PIN</button>
+                                                <button onclick="lockRajaAppNow()">LOCK NOW</button>
+                                                <button class="danger" onclick="disableRajaAppLock()">DISABLE</button>
+                                            </div>
+                                            <div id="rajaBiometricStatus" class="app-feature-status">Biometric quick unlock: not configured.</div>
+                                            <div class="app-feature-actions"><button onclick="setupRajaBiometric()">SET UP BIOMETRIC</button></div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Signal Notifications</small>
+                                            <strong id="rajaNotificationStatus">CHECKING...</strong>
+                                            <div class="app-feature-actions">
+                                                <button onclick="enableRajaNotifications()">ENABLE ALERTS</button>
+                                                <button onclick="testRajaNotification()">TEST ALERT</button>
+                                            </div>
+                                            <div class="app-feature-status">When a confirmed scan finishes while the installed app is minimized/backgrounded, the service worker can show a system notification.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>App Tutorial</small>
+                                            <strong>3-STEP QUICK GUIDE</strong>
+                                            <div class="app-feature-actions"><button onclick="startRajaTutorial(true)">RUN TUTORIAL</button></div>
+                                            <div class="app-feature-status">Select market → start scan → read the confirmed signal and candle entry timing.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Screen Fit</small>
+                                            <strong>AUTO RESPONSIVE</strong>
+                                            <div class="app-feature-status">Optimized layouts for laptop, tablet and mobile widths.</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="inline-list-box"><div class="inline-item"><span>Active Indicators:</span><span style="color:#00ff87;">8 Layers Active ✔</span></div><div class="inline-item"><span>Multi-TF Engine:</span><span id="settingsModeStatus" style="color:#00ff87;">BALANCED ✔</span></div><div class="inline-item"><span>Auto Re-Scan:</span><span style="color:#00ff87;">5 Minutes ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Underlying proxy feed</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                            </div>
+                            <div id="newsInlineView" class="inline-content-view">
+                                <div class="inline-title">📰 Live Economic News / Calendar</div>
+                                <div class="news-toolbar"><div id="marketNewsSource" class="news-source">Forex Factory weekly export · times shown in your device timezone</div><button class="news-refresh" onclick="loadMarketNews(true)">↻ REFRESH</button></div>
+                                <div id="marketNewsList" class="inline-list-box" style="max-height:235px;"><div class="inline-item"><span>Loading live economic calendar...</span><span class="win-tag">LIVE</span></div></div>
+                                <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;"><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button><button class="menu-back-btn" onclick="window.open('https://www.forexfactory.com/calendar','_blank','noopener')">↗ Forex Factory Calendar</button></div>
+                            </div>
+                            <div id="riskInlineView" class="inline-content-view risk-premium-shell">
+                                <div class="inline-title">🛡️ Risk & Recovery Premium</div>
+                                <div class="risk-premium-hero">
+                                    <div class="risk-guidance-card">
+                                        <div class="risk-section-label">Top Guidance</div>
+                                        <div id="riskGuidanceState" class="risk-guidance-state">LOWER EXPOSURE MODE</div>
+                                        <div id="riskGuidanceCopy" class="risk-guidance-copy">Use this calculator to see cumulative stake exposure before placing trades. Recovery sizing does not increase prediction accuracy.</div>
+                                        <div class="risk-guidance-list"><span>Review total exposure before entry</span><span>Keep recovery depth limited</span><span>Stop when your loss limit is reached</span><span>Avoid increasing stake to chase losses</span></div>
+                                    </div>
+                                    <div class="risk-pressure-card">
+                                        <div class="risk-section-label">Recovery Pressure Meter</div>
+                                        <div class="risk-pressure-meter" id="riskPressureMeter"><div class="risk-pressure-reading"><strong id="riskPressureValue">28%</strong><span id="riskPressureLabel">LOW PRESSURE</span></div></div>
+                                    </div>
+                                </div>
+                                <div class="risk-input-card">
+                                    <div class="risk-section-label">Recovery Inputs</div>
+                                    <div class="risk-form-grid v9"><div><label class="label-text">Base Stake ($)</label><input type="number" id="baseStakeInput" class="input-field" value="10" min="1" step="0.01" oninput="calculateRisk()"></div><div><label class="label-text">Payout %</label><input type="number" id="payoutRateInput" class="input-field" value="95" min="50" max="100" step="1" oninput="calculateRisk()"></div><div><label class="label-text">Recovery Steps</label><select id="riskStepsSelect" class="input-field" onchange="calculateRisk()"><option value="3">3 Steps</option><option value="4" selected>4 Steps</option><option value="5">5 Steps</option><option value="6">6 Steps</option></select></div></div>
+                                    <div class="risk-metrics v9"><div class="risk-metric-card"><small>Profile</small><strong id="riskProfileDisplay">--</strong></div><div class="risk-metric-card"><small>Total Exposure</small><strong id="riskTotalExposure">$0.00</strong></div><div class="risk-metric-card"><small>Target Profit</small><strong id="riskTargetProfit">$0.00</strong></div><div class="risk-metric-card"><small>Suggested Balance</small><strong id="riskRecommendedBalance">$0.00</strong></div><div class="risk-metric-card"><small>Exposure / Base</small><strong id="riskExposureMultiple">0.0x</strong></div><div class="risk-metric-card"><small>Max Step</small><strong id="riskMaxStep">$0.00</strong></div></div>
+                                </div>
+                                <div class="risk-table-card"><div class="risk-section-label">Recovery Plan Table</div><div id="riskRecoveryTable" class="inline-list-box"></div><div class="risk-note-premium">Planning aid only. Binary-options style recovery ladders can increase losses quickly; the safest control is a fixed loss limit rather than an escalating stake sequence.</div></div>
+                                <div style="display:flex;justify-content:center;margin-top:8px;"><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="status-grid">
+                        <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><span class="selected-pair-label">SELECTED TARGET PAIR</span><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong>Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                    </div>
+
+                    <section class="upgrade-card" id="dailyPerformancePanel">
+                        <div class="upgrade-title">📊 Daily Performance · This Device/User</div>
+                        <div class="daily-performance-grid">
+                            <div class="perf-cell"><small>Signals Today</small><strong id="perfSignalsToday">0</strong></div>
+                            <div class="perf-cell"><small>Completed</small><strong id="perfCompletedToday">0</strong></div>
+                            <div class="perf-cell"><small>Wins / Losses</small><strong id="perfWinLoss">0 / 0</strong></div>
+                            <div class="perf-cell"><small>Best Pair</small><strong id="perfBestPair">--</strong></div>
+                            <div class="perf-cell"><small>Best Session</small><strong id="perfBestSession">--</strong></div>
+                        </div>
+                        <div id="guardWarningDashboard" class="guard-warning">⛔ Trading session limit reached — scanning is paused by Daily Stop Guard.</div>
+                    </section>
+
+                    <section class="upgrade-card mobile-opportunity-card">
+                        <div class="upgrade-title">⚡ Opportunity Queue</div>
+                        <div class="opportunity-list js-opportunity-queue"><div class="opp-item"><div class="opp-dir weak">•</div><div class="opp-main"><strong>Waiting for scan</strong><span>Auto Scan will rank the next setups</span></div><div class="opp-score">--</div></div></div>
+                    </section>
+
+                    <section class="config-panel">
+                        <div class="config-title">TRADING CONFIGURATION</div>
+                        <div class="config-grid">
+                            <div class="selection-card">
+                                <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option></select></div>
+                                <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
+                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn active" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Balanced: standard strict multi-timeframe filtering.</div></div>
+                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this,'15s')">15s</button><button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this,'30s')">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
+                                <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button></div>
+                            </div>
+                        </div>
+                        <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START AI MARKET SCAN</button>
+                    </section>
+                </main>
+
+                <aside class="right-rail">
+                    <section class="rail-card"><div class="rail-title">⚡ OPPORTUNITY QUEUE</div><div class="opportunity-list js-opportunity-queue"><div class="opp-item"><div class="opp-dir weak">•</div><div class="opp-main"><strong>Waiting for scan</strong><span>Run Auto Scan to rank setups</span></div><div class="opp-score">--</div></div></div></section>
+                    <section class="rail-card"><div class="rail-title">RECENT SCAN HISTORY</div><div id="dashboardRecentHistory" class="recent-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div></section>
+                    <section class="rail-card"><div class="rail-title">QUICK ACTIONS</div><div class="rail-actions"><button class="rail-action" onclick="openHistoryInline()">📈 View Performance / History</button><button class="rail-action" onclick="openRiskInline()">🛡 Risk & Recovery</button><button class="rail-action" onclick="openSettingsInline()">⚙ Bot Settings</button><button class="rail-action" onclick="openNewsInline()">📰 Live News / Calendar</button><button class="rail-action" onclick="openProfileInline()">👤 My Profile</button></div></section>
+                    <section class="rail-card"><div class="rail-title">SOUND + SIGNAL ALERTS</div><div class="sound-alert-grid"><div class="sound-alert-tile buy"><strong>↑ UP (BUY)</strong><div class="sound-wave"></div><span>Ascending tone</span></div><div class="sound-alert-tile sell"><strong>↓ DOWN (SELL)</strong><div class="sound-wave"></div><span>Descending tone</span></div></div><div id="soundAlertStatusText" class="sound-alert-status">● Alerts active · flashing + movement enabled</div></section>
+                </aside>
+            </div>
+        </div>
+
+        <div id="adminPanel" class="panel-box">
+            <h3 style="color: #60efff; margin-bottom: 6px; font-size: 13px; text-align: center;">🔑 VIP LICENSE ADMIN</h3>
+            <input type="password" id="adminPasswordInput" class="input-field" placeholder="Admin Password" autocomplete="current-password">
+            <button class="utility-btn" style="width:100%; margin-top:6px;" onclick="refreshAdminLicenses()">🔄 LOAD / REFRESH LICENSES</button>
+
+            <div style="margin-top: 10px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
+                <input type="text" id="adminTelegramId" class="input-field" placeholder="User Telegram ID / UID">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;"><select id="adminPlan" class="input-field"><option value="FREE TRIAL">FREE TRIAL</option><option value="VIP">VIP</option><option value="VIP GOLD">VIP GOLD</option><option value="VIP PLATINUM">VIP PLATINUM</option></select><select id="adminDurationDays" class="input-field"><option value="0.5">12 Hours</option><option value="1">24 Hours</option><option value="7">7 Days</option><option value="30">30 Days</option><option value="90">90 Days</option><option value="365">365 Days</option><option value="0">Lifetime</option></select></div>
+                <button class="action-btn" onclick="generateKey()">GENERATE NEW LICENSE KEY</button><div style="margin-top:5px;color:#94a3b8;font-size:8.5px;text-align:center;">FREE TRIAL: one claim per Telegram ID / UID and one claim per device. 2-hour Telegram expiry reminder enabled.</div>
+                <p id="generatedKeyDisplay" style="margin-top: 10px; font-weight: bold; text-align: center; font-size: 11px; color: #00ff87; word-break: break-all;"></p>
+                <button id="copyKeyBtn" class="copy-key-btn" onclick="copyGeneratedKey()">📋 COPY LICENSE KEY</button>
+            </div>
+
+
+            <div class="admin-control-card">
+                <h4>📣 APP BROADCAST + EMERGENCY CONTROL</h4>
+                <div class="admin-control-grid">
+                    <div>
+                        <label class="label-text">Broadcast Message</label>
+                        <textarea id="adminBroadcastMessage" maxlength="500" placeholder="Example: New RAJA AI update is live."></textarea>
+                        <select id="adminBroadcastLevel" class="input-field">
+                            <option value="info">INFO</option>
+                            <option value="warning">WARNING</option>
+                            <option value="critical">CRITICAL</option>
+                        </select>
+                        <div class="admin-control-actions">
+                            <button class="utility-btn" onclick="publishRajaBroadcast()">📣 PUBLISH</button>
+                            <button class="utility-btn" onclick="clearRajaBroadcast()">CLEAR</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="label-text">Emergency Kill Switch Message</label>
+                        <textarea id="adminMaintenanceMessage" maxlength="300" placeholder="Example: Market data feed maintenance. Scans are paused temporarily."></textarea>
+                        <div class="admin-control-actions">
+                            <button class="action-btn" style="margin-top:0;background:#991b1b;" onclick="setRajaMaintenance(true)">⛔ PAUSE ALL SCANS</button>
+                            <button class="utility-btn" onclick="setRajaMaintenance(false)">✅ RESUME SCANS</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="adminControlStatus" class="admin-control-status">Load admin data to view current app-control state.</div>
+            </div>
+
+            <div style="margin-top: 14px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
+                <h4 style="color: #00ff87; font-size: 11px; margin-bottom: 6px; text-transform: uppercase;">👥 ALL GENERATED LICENSES</h4>
+                <div class="admin-summary-grid"><div class="admin-summary-card"><small>Total</small><strong id="adminSummaryTotal">0</strong></div><div class="admin-summary-card"><small>Active</small><strong id="adminSummaryActive">0</strong></div><div class="admin-summary-card"><small>Bound</small><strong id="adminSummaryBound">0</strong></div><div class="admin-summary-card"><small>Online</small><strong id="adminSummaryOnline">0</strong></div><div class="admin-summary-card"><small>Free</small><strong id="adminSummaryUnbound">0</strong></div></div><div class="admin-analytics-grid"><div class="analytics-cell"><small>Scans Today</small><strong id="adminScansToday">0</strong></div><div class="analytics-cell"><small>Signals Today</small><strong id="adminSignalsToday">0</strong></div><div class="analytics-cell"><small>Online Users</small><strong id="adminOnlineUsers">0</strong></div><div class="analytics-cell"><small>Active Licenses</small><strong id="adminActiveLicenses">0</strong></div><div class="analytics-cell"><small>Top Customer</small><strong id="adminTopCustomer">--</strong></div><div class="analytics-cell"><small>Top Market</small><strong id="adminTopMarket">--</strong></div></div>
+                <div id="adminUsersList" class="admin-users-box"><div style="color: #94a3b8; text-align: center; padding: 4px;">Enter admin password and click LOAD / REFRESH LICENSES.</div></div>
+                <button class="utility-btn" style="width:100%;margin-top:8px;" onclick="resetAllDeviceBindings()">🔓 RESET ALL DEVICE BINDINGS</button>
+                <button class="action-btn" style="margin-top:8px; background:#7f1d1d;" onclick="clearAllLicenses()">🗑 CLEAR ALL LICENSE KEYS</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const KEY_VERSION = "v15-premium-intelligence";
+
+        // Never clear the full browser storage on a frontend update. Clearing it used to
+        // regenerate the device UID and could make a valid device-bound license look like
+        // a different device after deployment.
+        if (localStorage.getItem('raja_key_version') !== KEY_VERSION) {
+            localStorage.setItem('raja_key_version', KEY_VERSION);
+        }
+
+        function safeJsonParse(value, fallback) {
+            try {
+                if (!value) return fallback;
+                const parsed = JSON.parse(value);
+                return parsed == null ? fallback : parsed;
+            } catch (e) {
+                return fallback;
+            }
+        }
+
+        let isUserVerified = false; 
+        let selectedExpiry = "1m";
+        let timerInterval = null;
+        let scanInterval = null;
+        let latestGeneratedKey = "";
+        let audioCtx = null;
+        let dynamicHistory = safeJsonParse(localStorage.getItem('raja_signal_history'), []);
+        let premiumMarketSnapshot = safeJsonParse(localStorage.getItem('raja_market_snapshot_v15'), []);
+        let activePremiumSignal = null;
+        let replayPlaybackItem = null;
+        let replayPlaybackIndex = 0;
+        let replayPlaybackTimer = null;
+        let soundEnabled = true;
+        let activeSignalEntryEpochMs = null;
+        let activeTrackedSignalId = null;
+        let backendTrackedHistory = [];
+        let scanMode = (localStorage.getItem('raja_scan_mode') || 'BALANCED').toUpperCase();
+        let voiceAlertEnabled = localStorage.getItem('raja_voice_alert') === 'true';
+        let guardSettings = safeJsonParse(localStorage.getItem('raja_guard_settings'), { enabled:true, maxTrades:20, maxLosses:5 });
+        let customScanSettings = safeJsonParse(localStorage.getItem('raja_custom_scan_settings'), { min_tf:4, min_agreement:66.7, min_score:65, vol_min:0, vol_max:3 });
+        let deferredInstallPrompt = null;
+        let historyRefreshInterval = null;
+
+        function getSessionToken(key = null) {
+            const activeKey = key || localStorage.getItem('raja_active_key');
+            return activeKey ? (localStorage.getItem('raja_token_' + activeKey) || '') : '';
+        }
+
+        function getAuthPayload() {
+            const key = localStorage.getItem('raja_active_key') || '';
+            return { key, user: localStorage.getItem('raja_active_user') || '', device: deviceSessionId, session_token: getSessionToken(key) };
+        }
+
+        function getScanOptions() {
+            if (scanMode === 'CUSTOM') return { mode:'CUSTOM', ...customScanSettings };
+            return { mode: scanMode };
+        }
+
+        function setScanMode(mode) {
+            scanMode = ['SAFE','BALANCED','AGGRESSIVE','CUSTOM'].includes(String(mode).toUpperCase()) ? String(mode).toUpperCase() : 'BALANCED';
+            localStorage.setItem('raja_scan_mode', scanMode);
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === scanMode));
+            const copy = {
+                SAFE:'Safe: 5-of-6, stronger agreement and higher score threshold.',
+                BALANCED:'Balanced: standard strict multi-timeframe filtering.',
+                AGGRESSIVE:'Aggressive: more opportunities, but still requires 4-of-6 and expiry confirmation.',
+                CUSTOM:'Custom: uses your advanced TF, agreement, score and volatility limits.'
+            };
+            const desc = document.getElementById('modeDescription'); if (desc) desc.innerText = copy[scanMode] || copy.BALANCED;
+            const status = document.getElementById('settingsModeStatus'); if (status) status.innerText = scanMode + ' ✔';
+        }
+
+        function saveCustomScanSettings() {
+            const n = (id, fallback) => { const el=document.getElementById(id); const v=Number(el && el.value); return Number.isFinite(v) ? v : fallback; };
+            customScanSettings = { min_tf:Math.max(4,Math.min(6,Math.round(n('customMinTf',4)))), min_agreement:Math.max(60,Math.min(100,n('customMinAgreement',66.7))), min_score:Math.max(50,Math.min(95,n('customMinScore',65))), vol_min:Math.max(0,Math.min(5,n('customVolMin',0))), vol_max:Math.max(.01,Math.min(10,n('customVolMax',3))) };
+            customScanSettings.vol_max=Math.max(customScanSettings.vol_min,customScanSettings.vol_max); localStorage.setItem('raja_custom_scan_settings', JSON.stringify(customScanSettings));
+        }
+
+        function saveGuardSettings() {
+            const enabledEl=document.getElementById('guardEnabled'), tradesEl=document.getElementById('guardMaxTrades'), lossesEl=document.getElementById('guardMaxLosses');
+            guardSettings = { enabled: enabledEl ? enabledEl.checked : guardSettings.enabled, maxTrades:Math.max(1,Math.min(100,Number(tradesEl?.value || guardSettings.maxTrades || 20))), maxLosses:Math.max(1,Math.min(50,Number(lossesEl?.value || guardSettings.maxLosses || 5))) };
+            localStorage.setItem('raja_guard_settings', JSON.stringify(guardSettings));
+            updateDailyPerformance();
+        }
+
+        function toggleVoiceAlert(enabled) {
+            voiceAlertEnabled = Boolean(enabled);
+            localStorage.setItem('raja_voice_alert', voiceAlertEnabled ? 'true' : 'false');
+        }
+
+        function speakSignal(signalData, isBuy) {
+            if (!voiceAlertEnabled || !('speechSynthesis' in window)) return;
+            try {
+                window.speechSynthesis.cancel();
+                const pair = String(signalData.pair || '').replace('/', ' ');
+                const direction = isBuy ? 'Up buy' : 'Down sell';
+                const expiry = String(selectedExpiry || '').replace('m',' minute').replace('s',' second');
+                window.speechSynthesis.speak(new SpeechSynthesisUtterance(`${pair}, ${direction} signal, ${expiry}`));
+            } catch(e) {}
+        }
+
+        function localDayKey(epochSeconds) {
+            const d = new Date(Number(epochSeconds || 0) * 1000); return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+        }
+        function sessionName(epochSeconds) {
+            const h = new Date(Number(epochSeconds || 0)*1000).getHours();
+            return h < 8 ? 'ASIAN' : (h < 13 ? 'LONDON' : (h < 18 ? 'NEW YORK' : 'LATE'));
+        }
+        function todayHistory() { const today=localDayKey(Date.now()/1000); return backendTrackedHistory.filter(x => localDayKey(x.created_at) === today); }
+        function guardReached() {
+            if (!guardSettings.enabled) return false;
+            const completed=todayHistory().filter(x=>x.status==='COMPLETED' && x.result);
+            const losses=completed.filter(x=>x.result==='LOSS').length;
+            return completed.length >= Number(guardSettings.maxTrades||20) || losses >= Number(guardSettings.maxLosses||5);
+        }
+        function updateDailyPerformance() {
+            const today=todayHistory(); const completed=today.filter(x=>x.status==='COMPLETED' && x.result); const wins=completed.filter(x=>x.result==='WIN').length; const losses=completed.filter(x=>x.result==='LOSS').length;
+            const pairStats={}; const sessionStats={};
+            completed.forEach(x=>{ const p=x.pair||'--'; pairStats[p]=pairStats[p]||{w:0,n:0}; pairStats[p].n++; if(x.result==='WIN') pairStats[p].w++; const s=sessionName(x.created_at); sessionStats[s]=sessionStats[s]||{w:0,n:0}; sessionStats[s].n++; if(x.result==='WIN') sessionStats[s].w++; });
+            const best=(obj)=>Object.entries(obj).sort((a,b)=>(b[1].w/Math.max(1,b[1].n))-(a[1].w/Math.max(1,a[1].n)) || b[1].n-a[1].n)[0]?.[0] || '--';
+            const set=(id,v)=>{const el=document.getElementById(id);if(el)el.innerText=String(v)};
+            set('perfSignalsToday',today.length); set('perfCompletedToday',completed.length); set('perfWinLoss',`${wins} / ${losses}`); set('perfBestPair',best(pairStats)); set('perfBestSession',best(sessionStats));
+            const reached=guardReached(); ['guardWarningDashboard','guardWarningSettings'].forEach(id=>document.getElementById(id)?.classList.toggle('visible',reached));
+            const btn=document.getElementById('scanBtn'); if(btn && !scanSessionState.running){ btn.disabled=reached; btn.innerText=reached?'⛔ TRADING SESSION LIMIT REACHED':'▶ START AI MARKET SCAN'; }
+        }
+
+        function formatDateTime(epoch) { if(!epoch) return '--'; try{return new Date(Number(epoch)*1000).toLocaleString();}catch(e){return '--';} }
+        function formatExpiryDate(epoch) { return epoch ? formatDateTime(epoch) : 'Lifetime'; }
+
+
+        function isRajaStandalone() {
+            return window.matchMedia('(display-mode: standalone)').matches ||
+                   window.navigator.standalone === true;
+        }
+
+        function setInstallButtonVisible(visible) {
+            const btn = document.getElementById('installAppBtn');
+            if (!btn) return;
+
+            if (isRajaStandalone()) {
+                btn.style.display = 'none';
+                return;
+            }
+
+            btn.style.display = visible ? 'inline-flex' : 'none';
+            btn.innerText = '⬇ INSTALL APP';
+        }
+
+        // Chrome / Edge fires this event only when the current site
+        // is eligible for native PWA installation.
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredInstallPrompt = event;
+            setInstallButtonVisible(true);
+        });
+
+        // When installation finishes, remove the install button.
+        window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            setInstallButtonVisible(false);
+        });
+
+        async function installPWA() {
+            // If already running as the installed app, nothing to install.
+            if (isRajaStandalone()) {
+                setInstallButtonVisible(false);
+                return;
+            }
+
+            // The browser must provide beforeinstallprompt first.
+            // Do not show the old "install not ready" alert.
+            if (!deferredInstallPrompt) {
+                setInstallButtonVisible(false);
+                return;
+            }
+
+            try {
+                const promptEvent = deferredInstallPrompt;
+                deferredInstallPrompt = null;
+
+                // This opens Chrome/Edge's real native Install dialog
+                // directly from the dashboard button.
+                await promptEvent.prompt();
+                await promptEvent.userChoice;
+
+                setInstallButtonVisible(false);
+            } catch (err) {
+                console.warn('RAJA AI native install prompt error:', err);
+                setInstallButtonVisible(false);
+            }
+        }
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', async () => {
+                try {
+                    await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                } catch (err) {
+                    console.warn('RAJA AI service worker registration failed:', err);
                 }
-            return data
-
-        if not LICENSE_FILE.exists():
-            LICENSE_FILE.write_text("{}", encoding="utf-8")
-            return {}
-        try:
-            data = json.loads(LICENSE_FILE.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                raise ValueError("Invalid license database")
-            return data
-        except Exception:
-            try:
-                backup = LICENSE_FILE.with_name(f"licenses.corrupt.{int(time.time())}.json")
-                LICENSE_FILE.replace(backup)
-            except Exception:
-                pass
-            LICENSE_FILE.write_text("{}", encoding="utf-8")
-            return {}
-
-
-def save_licenses(data):
-    with license_lock:
-        if DATABASE_URL:
-            rows = []
-            for key, record in (data or {}).items():
-                record = record if isinstance(record, dict) else {}
-                rows.append((
-                    str(key), bool(record.get("active", False)), record.get("user"),
-                    record.get("device"), record.get("device_label"), record.get("created_at"),
-                    record.get("last_verified_at"), record.get("session_token"),
-                    record.get("plan") or DEFAULT_LICENSE_PLAN, record.get("expires_at"),
-                    record.get("last_login_at"),
-                ))
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("DELETE FROM raja_licenses")
-                    if rows:
-                        cur.executemany("""
-                            INSERT INTO raja_licenses
-                                (license_key, active, user_id, device_id, device_label, created_at,
-                                 last_verified_at, session_token, plan, expires_at, last_login_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """, rows)
-            return
-        temp = LICENSE_FILE.with_suffix(".tmp")
-        temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        temp.replace(LICENSE_FILE)
-
-
-
-def _trial_claim_key(claim_type, claim_value):
-    claim_type = str(claim_type or "").strip().lower()
-    claim_value = str(claim_value or "").strip()
-    if claim_type == "user":
-        claim_value = normalize_user_id(claim_value)
-    return claim_type, claim_value
-
-
-def get_trial_claim(claim_type, claim_value):
-    """Return the previous FREE TRIAL claim, if any."""
-    claim_type, claim_value = _trial_claim_key(claim_type, claim_value)
-    if not claim_type or not claim_value:
-        return None
-
-    if DATABASE_URL:
-        try:
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT license_key, created_at FROM raja_trial_claims "
-                        "WHERE claim_type=%s AND claim_value=%s",
-                        (claim_type, claim_value),
-                    )
-                    row = cur.fetchone()
-            if row:
-                return {"license_key": row[0], "created_at": int(row[1] or 0)}
-            return None
-        except Exception as exc:
-            print(f"Trial claim DB read warning: {exc}")
-
-    with trial_claims_lock:
-        if not TRIAL_CLAIMS_FILE.exists():
-            TRIAL_CLAIMS_FILE.write_text("{}", encoding="utf-8")
-        try:
-            data = json.loads(TRIAL_CLAIMS_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            data = {}
-        item = data.get(f"{claim_type}:{claim_value}")
-        return item if isinstance(item, dict) else None
-
-
-def record_trial_claim(claim_type, claim_value, license_key):
-    """Permanently record that a user/UID or device has consumed a FREE TRIAL."""
-    claim_type, claim_value = _trial_claim_key(claim_type, claim_value)
-    if not claim_type or not claim_value:
-        return False
-    license_key = str(license_key or "").strip()
-    now = int(time.time())
-
-    if DATABASE_URL:
-        try:
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO raja_trial_claims(claim_type, claim_value, license_key, created_at)
-                        VALUES(%s,%s,%s,%s)
-                        ON CONFLICT(claim_type, claim_value) DO NOTHING
-                        """,
-                        (claim_type, claim_value, license_key, now),
-                    )
-            return True
-        except Exception as exc:
-            print(f"Trial claim DB write warning: {exc}")
-
-    with trial_claims_lock:
-        if not TRIAL_CLAIMS_FILE.exists():
-            TRIAL_CLAIMS_FILE.write_text("{}", encoding="utf-8")
-        try:
-            data = json.loads(TRIAL_CLAIMS_FILE.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                data = {}
-        except Exception:
-            data = {}
-        key = f"{claim_type}:{claim_value}"
-        if key not in data:
-            data[key] = {"license_key": license_key, "created_at": now}
-            temp = TRIAL_CLAIMS_FILE.with_suffix(".tmp")
-            temp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-            temp.replace(TRIAL_CLAIMS_FILE)
-    return True
-
-
-def license_is_expired(record, now=None):
-    expires_at = int((record or {}).get("expires_at") or 0)
-    return bool(expires_at and expires_at <= int(now or time.time()))
-
-
-def _load_scan_events(limit=5000):
-    limit = max(1, min(int(limit), 20000))
-    if DATABASE_URL:
-        with _db_connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT created_at, user_id, market, pair, mode, signal_found
-                    FROM raja_scan_events ORDER BY created_at DESC LIMIT %s
-                """, (limit,))
-                rows = cur.fetchall()
-        return [
-            {"created_at": int(ts), "user": user, "market": market, "pair": pair,
-             "mode": mode, "signal_found": bool(found)}
-            for ts, user, market, pair, mode, found in rows
-        ]
-    with scan_events_lock:
-        if not SCAN_EVENTS_FILE.exists():
-            SCAN_EVENTS_FILE.write_text("[]", encoding="utf-8")
-        try:
-            items = json.loads(SCAN_EVENTS_FILE.read_text(encoding="utf-8"))
-            return items[:limit] if isinstance(items, list) else []
-        except Exception:
-            return []
-
-
-def _append_scan_event(user, market, pair, mode, signal_found=False):
-    item = {
-        "created_at": int(time.time()), "user": normalize_user_id(user),
-        "market": str(market or "Unknown")[:80], "pair": str(pair or "")[:120],
-        "mode": str(mode or "BALANCED")[:30], "signal_found": bool(signal_found),
-    }
-    if DATABASE_URL:
-        try:
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO raja_scan_events(created_at,user_id,market,pair,mode,signal_found)
-                        VALUES(%s,%s,%s,%s,%s,%s)
-                    """, (item["created_at"], item["user"], item["market"], item["pair"], item["mode"], item["signal_found"]))
-            return
-        except Exception as exc:
-            print(f"Scan analytics DB warning: {exc}")
-    with scan_events_lock:
-        items = _load_scan_events(5000)
-        items.insert(0, item)
-        temp = SCAN_EVENTS_FILE.with_suffix(".tmp")
-        temp.write_text(json.dumps(items[:5000], indent=2), encoding="utf-8")
-        temp.replace(SCAN_EVENTS_FILE)
-
-
-def _auth_session(data):
-    data = data or {}
-    key = str(data.get("key", "")).strip()
-    user = normalize_user_id(data.get("user", ""))
-    device = str(data.get("device", "")).strip()
-    session_token = str(data.get("session_token", "")).strip()
-    if not key or not user or not device or not session_token:
-        return None, (jsonify({"status": "error", "message": "Active license session required."}), 401)
-    licenses = load_licenses()
-    record = licenses.get(key)
-    now = int(time.time())
-    if not record or not record.get("active", False) or license_is_expired(record, now):
-        return None, (jsonify({"status": "error", "message": "Invalid, expired or revoked license key."}), 401)
-    if normalize_user_id(record.get("user", "")) != user:
-        return None, (jsonify({"status": "error", "message": "License is assigned to a different user."}), 403)
-    if str(record.get("device") or "") != device or str(record.get("session_token") or "") != session_token:
-        return None, (jsonify({"status": "error", "message": "This session was replaced by another device. Please login again."}), 409)
-    return {"key": key, "user": user, "device": device, "record": record, "licenses": licenses}, None
-
-
-initialize_license_store()
-
-
-# =========================================================
-# SIGNAL TRACKING
-# =========================================================
-
-def load_signals():
-    with signals_lock:
-        if not SIGNALS_FILE.exists():
-            SIGNALS_FILE.write_text("[]", encoding="utf-8")
-            return []
-
-        try:
-            data = json.loads(SIGNALS_FILE.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
-        except Exception:
-            return []
-
-
-def save_signals(items):
-    with signals_lock:
-        temp = SIGNALS_FILE.with_suffix(".tmp")
-        temp.write_text(json.dumps(items, indent=2), encoding="utf-8")
-        temp.replace(SIGNALS_FILE)
-
-
-def dataframe_epoch_rows(df):
-    rows = []
-    if df is None or df.empty:
-        return rows
-
-    for index_value, row in df.iterrows():
-        try:
-            epoch = int(index_value.timestamp())
-        except Exception:
-            continue
-        rows.append((epoch, row))
-
-    return rows
-
-
-def resolve_tracked_signal(item):
-    """Resolve a pending theoretical signal from Yahoo 1m candles.
-
-    Entry = Open of the next 1-minute candle after the signal was displayed.
-    Exit  = Close of the final 1-minute candle inside the selected expiry.
-    """
-    pair = item.get("pair")
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
-        return False
-
-    update_symbol_cache(symbol)
-
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if not cached:
-        return False
-
-    rows = dataframe_epoch_rows(cached.get("data"))
-    if not rows:
-        return False
-
-    entry_epoch = int(item.get("entry_epoch", 0))
-    expiry_epoch = int(item.get("expiry_epoch", 0))
-
-    # Allow a small tolerance for delayed/missing minute bars.
-    entry_candidates = [
-        (epoch, row) for epoch, row in rows
-        if entry_epoch <= epoch < entry_epoch + 120
-    ]
-    exit_candidates = [
-        (epoch, row) for epoch, row in rows
-        if max(entry_epoch, expiry_epoch - 120) <= epoch < expiry_epoch
-    ]
-
-    if not entry_candidates or not exit_candidates:
-        return False
-
-    entry_epoch_actual, entry_row = entry_candidates[0]
-    exit_epoch_actual, exit_row = exit_candidates[-1]
-
-    try:
-        entry_price = float(entry_row["Open"])
-        exit_price = float(exit_row["Close"])
-    except Exception:
-        return False
-
-    direction = item.get("signal")
-
-    if exit_price == entry_price:
-        result = "DRAW"
-    elif direction == "CALL":
-        result = "WIN" if exit_price > entry_price else "LOSS"
-    elif direction == "PUT":
-        result = "WIN" if exit_price < entry_price else "LOSS"
-    else:
-        return False
-
-    item["entry_price"] = round(entry_price, 8)
-    item["exit_price"] = round(exit_price, 8)
-    item["entry_candle_epoch"] = entry_epoch_actual
-    item["exit_candle_epoch"] = exit_epoch_actual
-    item["result"] = result
-    item["yahoo_result"] = result
-    item["result_source"] = "yahoo_live"
-    item["status"] = "COMPLETED"
-    item["resolved_at"] = int(time.time())
-    return True
-
-
-def signal_outcome_worker():
-    while True:
-        try:
-            with signals_lock:
-                items = load_signals()
-                changed = False
-                now = int(time.time())
-
-                for item in items:
-                    if item.get("status") != "PENDING":
-                        continue
-
-                    expiry_epoch = int(item.get("expiry_epoch", 0))
-                    if now < expiry_epoch + 8:
-                        continue
-
-                    pair = str(item.get("pair", ""))
-
-                    # Yahoo is not the Quotex OTC price feed, so OTC outcomes
-                    # require the user's QX WIN / QX LOSS confirmation.
-                    if "(OTC)" in pair:
-                        item["status"] = "AWAITING_QX"
-                        item["result"] = None
-                        item["result_source"] = "awaiting_quotex"
-                        item["resolved_at"] = now
-                        changed = True
-                        continue
-
-                    if resolve_tracked_signal(item):
-                        changed = True
-
-                if changed:
-                    save_signals(items)
-
-        except Exception as e:
-            print(f"Signal outcome worker error: {e}")
-
-        time.sleep(10)
-
-
-def signal_stats(items):
-    completed = [x for x in items if x.get("status") == "COMPLETED"]
-    wins = sum(1 for x in completed if x.get("result") == "WIN")
-    losses = sum(1 for x in completed if x.get("result") == "LOSS")
-    draws = sum(1 for x in completed if x.get("result") == "DRAW")
-    decided = wins + losses
-
-    return {
-        "completed": len(completed),
-        "wins": wins,
-        "losses": losses,
-        "draws": draws,
-        "observed_win_rate": round((wins / decided) * 100, 2) if decided else None,
-    }
-
-
-# =========================================================
-# YAHOO MARKET DATA
-# =========================================================
-
-def fetch_yahoo_1m(symbol):
-    """Fetch Yahoo Finance 1-minute OHLCV candles."""
-    ticker = yf.Ticker(symbol)
-    df = ticker.history(
-        period="5d",
-        interval="1m",
-        auto_adjust=False,
-        actions=False,
-        timeout=YAHOO_REQUEST_TIMEOUT_SECONDS,
-    )
-
-    if df is None or df.empty:
-        return None
-
-    required = ["Open", "High", "Low", "Close"]
-    if not all(col in df.columns for col in required):
-        return None
-
-    df = df.dropna(subset=required)
-    if len(df) < 120:
-        return None
-
-    return df
-
-
-def _get_symbol_fetch_lock(symbol):
-    with symbol_fetch_locks_guard:
-        lock = symbol_fetch_locks.get(symbol)
-        if lock is None:
-            lock = threading.Lock()
-            symbol_fetch_locks[symbol] = lock
-        return lock
-
-
-def _get_batch_key_lock(key):
-    with batch_key_locks_guard:
-        lock = batch_key_locks.get(key)
-        if lock is None:
-            lock = threading.Lock()
-            batch_key_locks[key] = lock
-        return lock
-
-
-def _pace_yahoo_request():
-    global last_yahoo_fetch_started
-    with yahoo_pace_lock:
-        now = time.time()
-        wait_for = YAHOO_MIN_GAP_SECONDS - (now - last_yahoo_fetch_started)
-        if wait_for > 0:
-            time.sleep(wait_for)
-        last_yahoo_fetch_started = time.time()
-
-
-def update_symbol_cache(symbol, force=False):
-    """Refresh one Yahoo symbol with single-flight, pacing and failure cooldown."""
-    now = time.time()
-
-    with cache_lock:
-        cached = market_cache.get(symbol)
-        if cached and not force and (now - cached["timestamp"]) <= CACHE_DURATION:
-            return True
-
-    with failed_symbol_lock:
-        blocked_until = failed_symbol_until.get(symbol, 0)
-
-    if not force and blocked_until > now:
-        with cache_lock:
-            cached = market_cache.get(symbol)
-            if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
-                return True
-        return False
-
-    symbol_lock = _get_symbol_fetch_lock(symbol)
-    with symbol_lock:
-        now = time.time()
-
-        # Another request may have refreshed this symbol while this caller waited.
-        with cache_lock:
-            cached = market_cache.get(symbol)
-            if cached and not force and (now - cached["timestamp"]) <= CACHE_DURATION:
-                return True
-
-        with failed_symbol_lock:
-            blocked_until = failed_symbol_until.get(symbol, 0)
-
-        if not force and blocked_until > now:
-            with cache_lock:
-                cached = market_cache.get(symbol)
-                if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
-                    return True
-            return False
-
-        try:
-            with yahoo_fetch_semaphore:
-                _pace_yahoo_request()
-                df = fetch_yahoo_1m(symbol)
-
-            if df is None:
-                with failed_symbol_lock:
-                    failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
-                return False
-
-            with cache_lock:
-                market_cache[symbol] = {
-                    "data": df.copy(),
-                    "timestamp": time.time(),
+
+                // Button must appear only after beforeinstallprompt fires.
+                if (isRajaStandalone()) {
+                    setInstallButtonVisible(false);
+                }
+            });
+        }
+
+
+        // Primary-view navigation and live scan session state. A scan continues while
+        // History / News / Settings are open; returning to Dashboard restores the
+        // active scanner instead of incorrectly showing "AI Deep Scan Ready".
+        let currentSection = 'dashboard';
+        let primaryViewState = 'ready';
+        let scanSessionState = { running: false, progress: 0, startedAt: 0, autoTriggered: false, pairCount: 0 };
+        let scanAnimationInterval = null;
+        let scanCandleInterval = null;
+        let marketNewsLoadedAt = 0;
+
+        // Auto Scan pair rotation: avoid feeding the same pair repeatedly.
+        // A displayed Auto-Scan signal blocks that pair for 5 minutes, then it becomes eligible again.
+        // Manual pair selection remains unrestricted.
+        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 5 * 60 * 1000;
+        let autoPairCooldowns = safeJsonParse(localStorage.getItem('raja_auto_pair_cooldowns'), {});
+
+        function cleanAutoPairCooldowns() {
+            const now = Date.now();
+            let changed = false;
+            Object.keys(autoPairCooldowns).forEach(pair => {
+                if (!Number(autoPairCooldowns[pair]) || now - Number(autoPairCooldowns[pair]) >= AUTO_PAIR_ROTATION_COOLDOWN_MS) {
+                    delete autoPairCooldowns[pair];
+                    changed = true;
+                }
+            });
+            if (changed) localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
+        }
+
+        function isAutoPairCoolingDown(pair) {
+            cleanAutoPairCooldowns();
+            const usedAt = Number(autoPairCooldowns[pair] || 0);
+            return usedAt > 0 && (Date.now() - usedAt) < AUTO_PAIR_ROTATION_COOLDOWN_MS;
+        }
+
+        function rememberAutoPair(pair) {
+            if (!pair) return;
+            autoPairCooldowns[pair] = Date.now();
+            localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
+        }
+
+
+        const AUTO_RESCAN_INTERVAL_MS = 5 * 60 * 1000;
+        let autoRescanEnabled = localStorage.getItem('raja_auto_rescan_enabled') !== 'false';
+        let autoRescanTimeout = null;
+        let autoRescanTicker = null;
+        let nextAutoRescanAt = Number(localStorage.getItem('raja_next_auto_rescan_at') || 0);
+
+        function formatCountdown(ms) {
+            const total = Math.max(0, Math.ceil(ms / 1000));
+            const min = Math.floor(total / 60);
+            const sec = total % 60;
+            return String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+        }
+
+        function updateAutoRescanUI() {
+            const state = document.getElementById('autoRescanState');
+            const countdown = document.getElementById('autoRescanCountdown');
+            const card = document.getElementById('autoRescanCard');
+            if (!state || !countdown || !card) return;
+
+            if (!autoRescanEnabled) {
+                state.innerText = '↻ Auto Re-Scan: OFF';
+                countdown.innerText = 'Click to enable';
+                state.style.color = '#ff5d7d';
+                card.style.borderColor = 'rgba(255,93,125,.35)';
+                return;
+            }
+
+            state.innerText = '↻ Auto Re-Scan: ON';
+            state.style.color = '#00ff87';
+            card.style.borderColor = 'rgba(0,255,135,.28)';
+            if (nextAutoRescanAt > Date.now()) {
+                countdown.innerText = 'Next Re-Scan in ' + formatCountdown(nextAutoRescanAt - Date.now());
+            } else {
+                countdown.innerText = 'Next Re-Scan: READY';
+            }
+        }
+
+        function clearAutoRescanSchedule(clearSaved = false) {
+            if (autoRescanTimeout) clearTimeout(autoRescanTimeout);
+            if (autoRescanTicker) clearInterval(autoRescanTicker);
+            autoRescanTimeout = null;
+            autoRescanTicker = null;
+            if (clearSaved) {
+                nextAutoRescanAt = 0;
+                localStorage.removeItem('raja_next_auto_rescan_at');
+            }
+            updateAutoRescanUI();
+        }
+
+        function armAutoRescan(delayMs) {
+            clearAutoRescanSchedule(false);
+            if (!autoRescanEnabled || !isUserVerified) return;
+            const delay = Math.max(1000, Number(delayMs || AUTO_RESCAN_INTERVAL_MS));
+            nextAutoRescanAt = Date.now() + delay;
+            localStorage.setItem('raja_next_auto_rescan_at', String(nextAutoRescanAt));
+            updateAutoRescanUI();
+            autoRescanTicker = setInterval(updateAutoRescanUI, 1000);
+            autoRescanTimeout = setTimeout(async () => {
+                clearAutoRescanSchedule(true);
+                if (!autoRescanEnabled || !isUserVerified) return;
+                const btn = document.getElementById('scanBtn');
+                if (btn && btn.disabled) {
+                    armAutoRescan(30000);
+                    return;
+                }
+                await startDeepScan(true);
+            }, delay);
+        }
+
+        function scheduleAutoRescan() {
+            if (!autoRescanEnabled || !isUserVerified) return;
+            armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
+        }
+
+        function restoreAutoRescanSchedule() {
+            if (!autoRescanEnabled || !isUserVerified) {
+                updateAutoRescanUI();
+                return;
+            }
+            const saved = Number(localStorage.getItem('raja_next_auto_rescan_at') || 0);
+            if (saved > Date.now()) {
+                armAutoRescan(saved - Date.now());
+            } else {
+                nextAutoRescanAt = 0;
+                localStorage.removeItem('raja_next_auto_rescan_at');
+                updateAutoRescanUI();
+            }
+        }
+
+        function toggleAutoRescan() {
+            autoRescanEnabled = !autoRescanEnabled;
+            localStorage.setItem('raja_auto_rescan_enabled', autoRescanEnabled ? 'true' : 'false');
+            if (!autoRescanEnabled) clearAutoRescanSchedule(true);
+            else updateAutoRescanUI();
+            playClickSound();
+        }
+
+        function setScanStageState(id, state) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.remove('done', 'active');
+            const status = el.querySelector('.scan-stage-status');
+            if (state === 'done') { el.classList.add('done'); if (status) status.innerText = 'COMPLETE'; }
+            else if (state === 'active') { el.classList.add('active'); if (status) status.innerText = 'IN PROGRESS'; }
+            else if (status) status.innerText = 'PENDING';
+        }
+
+        function updateScanStageVisual(percent) {
+            const p = Number(percent || 0);
+            const stages = [
+                ['scanStageCollect', 0, 18],
+                ['scanStageAnalyze', 18, 36],
+                ['scanStageAssets', 36, 64],
+                ['scanStageConditions', 64, 84],
+                ['scanStageFinal', 84, 101]
+            ];
+            stages.forEach(([id, start, end]) => {
+                if (p >= end) setScanStageState(id, 'done');
+                else if (p >= start) setScanStageState(id, 'active');
+                else setScanStageState(id, 'pending');
+            });
+        }
+
+        function updateScanSessionChip() {
+            const chip = document.getElementById('scanSessionChip');
+            const text = document.getElementById('scanSessionText');
+            if (!chip || !text) return;
+            if (scanSessionState.running) {
+                chip.classList.add('visible');
+                text.innerText = `Scan Session Active · ${Math.round(scanSessionState.progress || 0)}%`;
+            } else {
+                chip.classList.remove('visible');
+                text.innerText = 'Scan Session Active · 0%';
+            }
+        }
+
+        function formatScanClock(totalSeconds) {
+            const safeSeconds = Math.max(0, Math.floor(Number(totalSeconds || 0)));
+            const mins = Math.floor(safeSeconds / 60);
+            const secs = safeSeconds % 60;
+            return String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+        }
+
+        function updateScanCandleTimer() {
+            const timerEl = document.getElementById('scanCandleTimer');
+            const labelEl = document.getElementById('scanCandleLabel');
+            if (!timerEl) return;
+
+            const candleSeconds = Math.max(1, getExpirySeconds(selectedExpiry));
+            const nowSec = Math.floor(Date.now() / 1000);
+            const secIntoCandle = nowSec % candleSeconds;
+            const secondsToClose = secIntoCandle === 0
+                ? candleSeconds
+                : candleSeconds - secIntoCandle;
+
+            timerEl.innerText = formatScanClock(secondsToClose);
+            if (labelEl) labelEl.innerText = 'Current ' + String(selectedExpiry || '1m').toUpperCase() + ' Candle';
+        }
+
+        function startScanCandleTimer() {
+            if (scanCandleInterval) clearInterval(scanCandleInterval);
+            updateScanCandleTimer();
+            scanCandleInterval = setInterval(updateScanCandleTimer, 250);
+        }
+
+        function stopScanCandleTimer() {
+            if (scanCandleInterval) clearInterval(scanCandleInterval);
+            scanCandleInterval = null;
+        }
+
+        function setScanProgress(percent) {
+            let safe = Math.max(0, Math.min(100, Number(percent || 0)));
+            if (scanSessionState.running && safe < Number(scanSessionState.progress || 0) && safe < 100) {
+                safe = Number(scanSessionState.progress || 0);
+            }
+            if (scanSessionState.running) scanSessionState.progress = safe;
+            const bar = document.getElementById('scanProgressBar');
+            if (bar) bar.style.width = safe + '%';
+            const activeRing = document.getElementById('scanRingActive');
+            if (activeRing) activeRing.style.setProperty('--p', safe);
+            const activeText = document.getElementById('scanPercentActive');
+            if (activeText) activeText.innerText = Math.round(safe) + '%';
+            updateScanStageVisual(safe);
+            const telemetryProgress = document.getElementById('scanTelemetryProgress');
+            if (telemetryProgress) telemetryProgress.innerText = Math.round(safe) + '%';
+            const telemetryStage = document.getElementById('scanTelemetryStage');
+            if (telemetryStage) telemetryStage.innerText = safe < 28 ? 'Collecting Data' : (safe < 55 ? 'Multi-TF Analysis' : (safe < 82 ? 'Asset Ranking' : 'Final Validation'));
+            if (scanSessionState.running && scanSessionState.startedAt) {
+                const elapsed = Math.max(0, Math.floor((Date.now() - scanSessionState.startedAt) / 1000));
+                const elapsedEl = document.getElementById('scanElapsedValue');
+                if (elapsedEl) elapsedEl.innerText = formatScanClock(elapsed);
+            }
+            updateScanSessionChip();
+            updateSetupBuildMeterProgress(safe);
+        }
+
+        function startScanAnimation() {
+            if (scanAnimationInterval) clearInterval(scanAnimationInterval);
+            let messageIndex = 0;
+            const messages = [
+                'Synchronizing closed 1m candles...',
+                'Building 2m / 5m / 10m / 15m / 30m structures...',
+                'Checking RSI, EMA, MACD and Bollinger alignment...',
+                'Evaluating trend, momentum and volatility filters...',
+                'Scanning eligible assets for multi-TF convergence...',
+                'Ranking high-quality setups and entry conditions...'
+            ];
+            scanAnimationInterval = setInterval(() => {
+                if (!scanSessionState.running) return;
+                const current = Number(scanSessionState.progress || 0);
+                if (current < 88) {
+                    const boost = current < 35 ? 1.7 : (current < 65 ? 1.05 : 0.55);
+                    setScanProgress(Math.min(88, current + boost));
+                }
+                if (messageIndex < messages.length && Math.round(scanSessionState.progress) >= (12 + messageIndex * 12)) {
+                    const scanConsole = document.getElementById('liveScanConsole');
+                    if (scanConsole) {
+                        scanConsole.innerHTML += `<div class="live-scan-row scanning">${messages[messageIndex]}</div>`;
+                        scanConsole.scrollTop = scanConsole.scrollHeight;
+                    }
+                    messageIndex += 1;
+                }
+            }, 850);
+        }
+
+        function beginScanSession(autoTriggered, pairCount) {
+            scanSessionState = { running: true, progress: 8, startedAt: Date.now(), autoTriggered: Boolean(autoTriggered), pairCount: Number(pairCount || 0) };
+            const assetsEl = document.getElementById('scanActiveAssetsValue');
+            if (assetsEl) assetsEl.innerText = String(Number(pairCount || 0));
+            const elapsedEl = document.getElementById('scanElapsedValue');
+            if (elapsedEl) elapsedEl.innerText = '00:00';
+            primaryViewState = 'scanning';
+            updateScanSessionChip();
+            setScanProgress(8);
+            startScanCandleTimer();
+            startScanAnimation();
+        }
+
+        function completeScanSession(finalView) {
+            if (scanAnimationInterval) clearInterval(scanAnimationInterval);
+            scanAnimationInterval = null;
+            scanSessionState.running = false;
+            scanSessionState.progress = 100;
+            stopScanCandleTimer();
+            primaryViewState = finalView || 'ready';
+            updateScanSessionChip();
+        }
+
+        const deviceSessionId = localStorage.getItem('raja_device_uid') || ('dev_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+        localStorage.setItem('raja_device_uid', deviceSessionId);
+
+        let licenseHeartbeatInterval = null;
+
+        function getCurrentDeviceLabel() {
+            const ua = navigator.userAgent || '';
+            const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || 'Unknown';
+            const isTablet = /iPad|Tablet/i.test(ua);
+            const isMobile = /Android|iPhone|iPod|Mobile/i.test(ua);
+            const type = isTablet ? 'Tablet' : (isMobile ? 'Mobile' : 'Desktop');
+            const sw = (window.screen && window.screen.width) || 0;
+            const sh = (window.screen && window.screen.height) || 0;
+            return `${type} · ${platform} · ${sw}x${sh}`;
+        }
+
+        async function heartbeatLicense() {
+            const auth = getAuthPayload();
+            if (!auth.key || !auth.user || !auth.session_token || !isUserVerified) return;
+            try {
+                const response = await fetch('/verify-license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...auth, device_label:getCurrentDeviceLabel(), heartbeat:true }) });
+                const result = await response.json().catch(()=>null);
+                if (!response.ok || !result || result.status !== 'success') {
+                    if ([401,403,409].includes(response.status)) {
+                        const oldKey=auth.key; isUserVerified=false;
+                        localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); localStorage.removeItem('raja_session_'+oldKey); localStorage.removeItem('raja_token_'+oldKey);
+                        if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval); licenseHeartbeatInterval=null; if(historyRefreshInterval)clearInterval(historyRefreshInterval); historyRefreshInterval=null;
+                        checkRoute();
+                        const msg=document.getElementById('verifyMessage'); if(msg){msg.style.display='block';msg.style.color='#fff';msg.style.background='#ff3366';msg.innerText='⚠️ This account was signed in on another device. Please login again here if you want to take over.';}
+                    }
+                }
+            } catch(e) {}
+        }
+
+        function startLicenseHeartbeat() {
+            if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval);
+            if (historyRefreshInterval) clearInterval(historyRefreshInterval);
+            heartbeatLicense();
+            licenseHeartbeatInterval = setInterval(heartbeatLicense, 5000);
+            historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 30000);
+        }
+
+
+        function toggleSound() {
+            soundEnabled = !soundEnabled;
+            let btn = document.getElementById('soundToggleBtn');
+            if (soundEnabled) {
+                btn.innerText = "🔊 SOUND: ON";
+                btn.style.color = "#00ff87";
+                btn.style.borderColor = "rgba(0, 242, 254, 0.4)";
+                playClickSound();
+            } else {
+                btn.innerText = "🔇 SOUND: OFF";
+                btn.style.color = "#ff3366";
+                btn.style.borderColor = "rgba(255, 51, 102, 0.4)";
+            }
+            const alertStatus = document.getElementById('soundAlertStatusText');
+            if (alertStatus) alertStatus.innerText = soundEnabled ? '● Alerts active · flashing + movement enabled' : '○ Sound off · visual flashing + movement remain active';
+            syncSelectedExpiryUI();
+        }
+
+        async function logoutSession() {
+            playClickSound();
+            if (!confirm("Are you sure you want to logout?")) return;
+            const auth=getAuthPayload();
+            if (auth.key && auth.user) {
+                try { await fetch('/logout-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(auth)}); } catch(e) {}
+                localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key);
+            }
+            if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval); licenseHeartbeatInterval=null; if(historyRefreshInterval)clearInterval(historyRefreshInterval); historyRefreshInterval=null;
+            localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); isUserVerified=false; checkRoute();
+        }
+
+
+        function playClickSound() {
+            if (!soundEnabled) return;
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                let osc = audioCtx.createOscillator();
+                let gainNode = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1400, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.04);
+                gainNode.gain.setValueAtTime(0.25, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.04);
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.04);
+            } catch(e) {}
+        }
+
+        function playSignalAlertSound(isBuy = true) {
+            if (!soundEnabled) return;
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const now = audioCtx.currentTime;
+                const notes = isBuy ? [660, 880, 1320] : [1320, 880, 520];
+                notes.forEach((freq, i) => {
+                    const osc = audioCtx.createOscillator();
+                    const gainNode = audioCtx.createGain();
+                    osc.type = i === 1 ? 'triangle' : 'sine';
+                    const start = now + i * 0.10;
+                    osc.frequency.setValueAtTime(freq, start);
+                    gainNode.gain.setValueAtTime(0.22, start);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, start + 0.14);
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.destination);
+                    osc.start(start);
+                    osc.stop(start + 0.15);
+                });
+            } catch(e) {}
+        }
+
+        setInterval(() => {
+            let activeKey = localStorage.getItem('raja_active_key');
+            if (activeKey) {
+                let boundDevice = localStorage.getItem('raja_session_' + activeKey);
+                if (boundDevice && boundDevice !== deviceSessionId) {
+                    isUserVerified = false;
+                    localStorage.removeItem('raja_active_key');
+                    checkRoute();
+                    let msgBox = document.getElementById('verifyMessage');
+                    if (msgBox) {
+                        msgBox.style.color = "#fff";
+                        msgBox.style.background = "#ff3366";
+                        msgBox.innerText = "⚠️ Security Alert: Key locked to another active device session!";
+                        msgBox.style.display = "block";
+                    }
+                }
+            }
+        }, 1500);
+
+        function setOuterHeaderVisible(visible) {
+            const title = document.querySelector('.container > h2');
+            const notice = document.querySelector('.container > .market-notice');
+            if (title) title.style.display = visible ? '' : 'none';
+            if (notice) notice.style.display = visible ? '' : 'none';
+        }
+
+        async function checkRoute() {
+            const isAdminRoute = String(window.location.hash || '').trim().toLowerCase() === '#admin';
+            const adminPanel=document.getElementById('adminPanel'), mainApp=document.getElementById('mainAppContent'), activation=document.getElementById('activationScreen');
+            if (!adminPanel || !mainApp || !activation) return;
+            if (isAdminRoute) { setOuterHeaderVisible(true); adminPanel.style.display='block'; mainApp.style.display='none'; activation.style.display='none'; return; }
+            adminPanel.style.display='none'; isUserVerified=false;
+            const auth=getAuthPayload(); const savedSession=auth.key ? localStorage.getItem('raja_session_'+auth.key) : null;
+            if (auth.key && auth.user && auth.session_token && savedSession===deviceSessionId) {
+                try {
+                    const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...auth,device_label:getCurrentDeviceLabel(),heartbeat:true})});
+                    const result=await response.json().catch(()=>null); isUserVerified=Boolean(response.ok && result && result.status==='success');
+                    if (!isUserVerified && [401,403,409].includes(response.status)) { localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key); }
+                } catch(error){ isUserVerified=false; }
+            }
+            if (isUserVerified) {
+                setOuterHeaderVisible(false); mainApp.style.display='block'; activation.style.display='none'; updateBrokerAssets(); startTimer(); restoreAutoRescanSchedule(); updateAutoRescanUI(); updateScanSessionChip(); startLicenseHeartbeat(); renderPrimaryView(); installHistoryMirror();
+                setScanMode(scanMode); hydrateUpgradeSettings(); await refreshTrackedHistory(); loadUserProfile(); initializeRajaAppFeatures();
+            } else { setOuterHeaderVisible(true); mainApp.style.display='none'; activation.style.display='block'; }
+        }
+
+
+        window.addEventListener('hashchange', checkRoute);
+        window.addEventListener('pageshow', checkRoute);
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', checkRoute, { once: true });
+        } else {
+            checkRoute();
+        }
+
+        async function verifyAccess() {
+            playClickSound();
+            const uInput=document.getElementById('verifyUserInput').value.trim(), key=document.getElementById('verifyLicenseKey').value.trim(), msgBox=document.getElementById('verifyMessage');
+            if(!uInput||!key){msgBox.style.color='#fff';msgBox.style.background='#ff3366';msgBox.innerText='❌ Please enter Telegram ID / UID & License Key.';msgBox.style.display='block';return;}
+            msgBox.style.display='block';msgBox.style.color='#030712';msgBox.style.background='#60efff';msgBox.innerText='🔄 Verifying license and switching active device...';
+            try {
+                const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,user:uInput,device:deviceSessionId,device_label:getCurrentDeviceLabel()})});
+                const result=await response.json(); if(!response.ok||!result||result.status!=='success') throw new Error((result&&result.message)||'License verification failed.');
+                localStorage.setItem('raja_active_key',key); localStorage.setItem('raja_active_user',result.user||uInput); localStorage.setItem('raja_session_'+key,deviceSessionId); localStorage.setItem('raja_token_'+key,result.session_token||'');
+                msgBox.style.color='#030712';msgBox.style.background='#00ff87';msgBox.innerText=result.replaced_previous_device?'✅ Login successful. Previous device has been signed out.':'✅ License verified. This device is now active.';
+                isUserVerified=true; await checkRoute(); startTimer();
+            } catch(error){ localStorage.removeItem('raja_active_key');localStorage.removeItem('raja_session_'+key);localStorage.removeItem('raja_token_'+key);msgBox.style.color='#fff';msgBox.style.background='#ff3366';msgBox.innerText='❌ '+error.message;msgBox.style.display='block'; }
+        }
+
+
+        async function generateKey() {
+            const tId=document.getElementById('adminTelegramId').value.trim(), pass=document.getElementById('adminPasswordInput').value, display=document.getElementById('generatedKeyDisplay'), copyBtn=document.getElementById('copyKeyBtn');
+            const plan=document.getElementById('adminPlan')?.value||'VIP', duration_days=Number(document.getElementById('adminDurationDays')?.value||0); // 0.5=12h, 1=24h
+            if(!tId||!pass){display.innerText='❌ Enter User Telegram ID / UID and admin password.';display.style.color='#ff3366';copyBtn.style.display='none';return;}
+            display.innerText='🔄 Creating key through backend...';display.style.color='#60efff';copyBtn.style.display='none';
+            try { const response=await fetch('/admin/generate-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass,user:tId,plan,duration_days})}); const result=await response.json(); if(!response.ok||!result||result.status!=='success') throw new Error((result&&result.message)||'Unable to generate license.'); latestGeneratedKey=result.key; display.innerHTML=`User: ${escapeHtml(result.user)}<br>Plan: ${escapeHtml(result.plan||plan)} · Expiry: ${escapeHtml(formatExpiryDate(result.expires_at))}<br>Key: ${escapeHtml(result.key)}`;display.style.color='#00ff87';copyBtn.style.display='block';await refreshAdminLicenses(); } catch(error){latestGeneratedKey='';display.innerText='❌ '+error.message;display.style.color='#ff3366';copyBtn.style.display='none';}
+        }
+
+
+        function copyGeneratedKey() {
+            if (latestGeneratedKey) {
+                navigator.clipboard.writeText(latestGeneratedKey);
+                alert("📋 License Key Copied Successfully!");
+            }
+        }
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>'"]/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+            }[ch]));
+        }
+
+        async function refreshAdminLicenses() {
+            refreshRajaAdminControl();
+            const listContainer=document.getElementById('adminUsersList'), pass=document.getElementById('adminPasswordInput').value; if(!listContainer)return;
+            const setSummary=(s={})=>{const map={adminSummaryTotal:'total',adminSummaryActive:'active',adminSummaryBound:'bound',adminSummaryOnline:'online',adminSummaryUnbound:'unbound'};Object.entries(map).forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.innerText=String(Number(s[key]||0));});};
+            if(!pass){setSummary();listContainer.innerHTML='<div style="color:#ff3366;text-align:center;padding:4px;">Enter admin password first.</div>';return;}
+            listContainer.innerHTML='<div style="color:#60efff;text-align:center;padding:4px;">Loading licenses...</div>';
+            try {
+                const [licenseResponse,analyticsResponse]=await Promise.all([fetch('/admin/licenses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})}),fetch('/admin/analytics',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pass})})]);
+                const result=await licenseResponse.json(); const analytics=await analyticsResponse.json().catch(()=>null); if(!licenseResponse.ok||!result||result.status!=='success')throw new Error((result&&result.message)||'Unable to load licenses.'); setSummary(result.summary||{});
+                if(analyticsResponse.ok&&analytics&&analytics.status==='success'){const a=analytics.data||{};const vals={adminScansToday:a.scans_today,adminSignalsToday:a.signals_today,adminOnlineUsers:a.online_users,adminActiveLicenses:a.active_licenses,adminTopCustomer:a.most_active_customer,adminTopMarket:a.most_scanned_market};Object.entries(vals).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.innerText=String(v??'--');});}
+                const rows=Array.isArray(result.data)?result.data:[]; if(!rows.length){listContainer.innerHTML='<div style="color:#94a3b8;text-align:center;padding:4px;">No license keys. Generate a new key.</div>';return;}
+                listContainer.innerHTML=rows.map(item=>{const user=escapeHtml(item.user||'Not assigned'),key=escapeHtml(item.key||''),device=escapeHtml(item.device||'--'),deviceLabel=escapeHtml(item.device_label||'No device logged in'),session=item.session_active?'<span style="color:#00ff87;font-weight:900;">ONLINE</span>':(item.device?'<span style="color:#fbbf24;font-weight:900;">BOUND</span>':'<span style="color:#94a3b8;font-weight:900;">FREE</span>');const status=item.expired?'EXPIRED':(item.active?'ACTIVE':'INACTIVE');return `<div class="admin-user-row"><div style="min-width:0;overflow:hidden;flex:1;"><strong>${user}</strong><br><span style="color:#60efff;font-size:8.5px;word-break:break-all;">${key}</span><div class="admin-license-meta"><span class="license-plan">${escapeHtml(item.plan||'VIP')}</span> · ${status} · ${session}<br>Expiry: ${escapeHtml(formatExpiryDate(item.expires_at))}<br>Last Login: ${escapeHtml(formatDateTime(item.last_login_at))}<br>Device: ${deviceLabel}<br>Device ID: ${device}</div></div><div class="admin-license-actions"><button class="admin-mini-btn copy-mini-btn" data-key="${key}" onclick="copyLicenseKeyFromList(this.dataset.key)">COPY</button><button class="admin-mini-btn reset-mini-btn" data-key="${key}" onclick="resetDeviceBinding(this.dataset.key)">LOGOUT</button><button class="remove-user-btn" data-key="${key}" onclick="removeUserAccess(this.dataset.key)">REMOVE</button></div></div>`;}).join('');
+            } catch(error){setSummary();listContainer.innerHTML=`<div style="color:#ff3366;text-align:center;padding:4px;">❌ ${escapeHtml(error.message)}</div>`;}
+        }
+
+
+        function copyLicenseKeyFromList(key) {
+            if (!key) return;
+            navigator.clipboard.writeText(key);
+            alert('📋 License key copied.');
+        }
+
+        async function resetDeviceBinding(key) {
+            if (!confirm('Reset this key device session? It can then login on a new device.')) return;
+            const pass = document.getElementById('adminPasswordInput').value;
+            if (!pass) return alert('Enter admin password first.');
+            try {
+                const response = await fetch('/admin/reset-device', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pass,key}) });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') throw new Error((result && result.message) || 'Unable to reset device.');
+                await refreshAdminLicenses();
+                alert('✅ Device session reset.');
+            } catch (error) { alert('❌ ' + error.message); }
+        }
+
+        async function resetAllDeviceBindings() {
+            if (!confirm('Reset device session for ALL license keys?')) return;
+            const pass = document.getElementById('adminPasswordInput').value;
+            if (!pass) return alert('Enter admin password first.');
+            try {
+                const response = await fetch('/admin/reset-all-devices', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pass}) });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') throw new Error((result && result.message) || 'Unable to reset devices.');
+                await refreshAdminLicenses();
+                alert(`✅ Reset ${Number(result.updated || 0)} device session(s).`);
+            } catch (error) { alert('❌ ' + error.message); }
+        }
+
+        async function removeUserAccess(key) {
+            if (!confirm("Remove this license permanently?")) return;
+            const pass = document.getElementById('adminPasswordInput').value;
+            if (!pass) {
+                alert("Enter admin password first.");
+                return;
+            }
+
+            try {
+                const response = await fetch('/admin/delete-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pass, key: key })
+                });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to remove license.');
                 }
 
-            with failed_symbol_lock:
-                failed_symbol_until.pop(symbol, None)
-
-            return True
-
-        except Exception as e:
-            with failed_symbol_lock:
-                failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
-            print(f"Yahoo fetch error for {symbol}: {e}")
-            return False
-
-
-def get_market_data(pair):
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
-        return None, None, None
-
-    now = time.time()
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if cached:
-        age = now - cached["timestamp"]
-        if age <= CACHE_DURATION:
-            return cached["data"].copy(), age, symbol
-
-    refreshed = update_symbol_cache(symbol)
-
-    with cache_lock:
-        cached = market_cache.get(symbol)
-
-    if cached:
-        age = time.time() - cached["timestamp"]
-        if refreshed or age <= STALE_CACHE_MAX_AGE:
-            return cached["data"].copy(), age, symbol
-
-    return None, None, symbol
-
-
-def background_market_poller():
-    """Disabled intentionally: full-market polling caused Yahoo rate limits."""
-    return
-
-
-def build_timeframe(base_df, minutes):
-    """Create a CLOSED-candle timeframe from Yahoo 1m OHLCV."""
-    if base_df is None or base_df.empty:
-        return None
-
-    df = base_df.copy()
-
-    if minutes == 1:
-        # Last Yahoo minute may still be forming; analyze only closed candles.
-        if len(df) > 1:
-            df = df.iloc[:-1]
-        return df
-
-    rule = f"{minutes}min"
-
-    agg = {
-        "Open": "first",
-        "High": "max",
-        "Low": "min",
-        "Close": "last",
-    }
-
-    if "Volume" in df.columns:
-        agg["Volume"] = "sum"
-
-    try:
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-            origin="start_day",
-        ).agg(agg)
-    except TypeError:
-        # Compatibility fallback for older pandas versions.
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-        ).agg(agg)
-
-    tf = tf.dropna(subset=["Open", "High", "Low", "Close"])
-
-    # The last resampled bucket can still be forming.
-    if len(tf) > 1:
-        tf = tf.iloc[:-1]
-
-    return tf
-
-
-# =========================================================
-# INDICATORS
-# =========================================================
-
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    avg_loss = loss.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    rs = avg_gain / avg_loss.replace(0, 1e-12)
-    return 100 - (100 / (1 + rs))
-
-
-def calculate_ema(series, period):
-    return series.ewm(
-        span=period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_macd(series):
-    ema12 = calculate_ema(series, 12)
-    ema26 = calculate_ema(series, 26)
-    macd = ema12 - ema26
-    signal = macd.ewm(
-        span=9,
-        adjust=False,
-        min_periods=9,
-    ).mean()
-    return macd, signal
-
-
-def calculate_bollinger_bands(series, period=20, std_dev=2):
-    middle = series.rolling(period).mean()
-    std = series.rolling(period).std()
-    upper = middle + (std_dev * std)
-    lower = middle - (std_dev * std)
-    return upper, middle, lower
-
-
-def calculate_true_range(df):
-    previous_close = df["Close"].shift(1)
-    high_low = df["High"] - df["Low"]
-    high_close = (df["High"] - previous_close).abs()
-    low_close = (df["Low"] - previous_close).abs()
-    return high_low.combine(high_close, max).combine(low_close, max)
-
-
-def calculate_atr(df, period=14):
-    tr = calculate_true_range(df)
-    return tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_adx_components(df, period=14):
-    high = df["High"]
-    low = df["Low"]
-
-    up_move = high.diff()
-    down_move = -low.diff()
-
-    plus_dm = up_move.where(
-        (up_move > down_move) & (up_move > 0),
-        0.0,
-    )
-    minus_dm = down_move.where(
-        (down_move > up_move) & (down_move > 0),
-        0.0,
-    )
-
-    tr = calculate_true_range(df)
-    atr = tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    plus_di = (
-        100
-        * plus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    minus_di = (
-        100
-        * minus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    dx = (
-        100
-        * (plus_di - minus_di).abs()
-        / (plus_di + minus_di).replace(0, 1e-12)
-    )
-
-    adx = dx.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    return adx, plus_di, minus_di
-
-
-def safe_float(value, default=None):
-    try:
-        value = float(value)
-        if value != value:
-            return default
-        return value
-    except Exception:
-        return default
-
-
-def analyze_timeframe(df, timeframe):
-    """Analyze one CLOSED timeframe. No random values are used."""
-    if df is None or df.empty or len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient closed candles",
+                if (localStorage.getItem('raja_active_key') === key) {
+                    localStorage.removeItem('raja_active_key');
+                    localStorage.removeItem('raja_active_user');
+                }
+                localStorage.removeItem('raja_session_' + key);
+                await refreshAdminLicenses();
+                alert("✅ License removed permanently.");
+            } catch (error) {
+                alert("❌ " + error.message);
+            }
         }
 
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(df.columns):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Missing OHLC columns",
+        async function clearAllLicenses() {
+            if (!confirm("WARNING: Remove ALL license keys? Every customer key will stop working.")) return;
+            const pass = document.getElementById('adminPasswordInput').value;
+            if (!pass) {
+                alert("Enter admin password first.");
+                return;
+            }
+            try {
+                const response = await fetch('/admin/clear-keys', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pass })
+                });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to clear licenses.');
+                }
+                localStorage.removeItem('raja_active_key');
+                localStorage.removeItem('raja_active_user');
+                await refreshAdminLicenses();
+                alert(`✅ Removed ${Number(result.removed || 0)} license key(s).`);
+            } catch (error) {
+                alert("❌ " + error.message);
+            }
         }
 
-    df = df.copy().dropna(subset=list(required))
-    if len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient clean candles",
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && String(window.location.hash || '').toLowerCase() === '#admin') {
+                const active = document.activeElement;
+                if (active && active.id === 'adminPasswordInput') {
+                    refreshAdminLicenses();
+                }
+            }
+        });
+
+        function hideAllHudViews() {
+            ['historyInlineView','replayInlineView','profileInlineView','settingsInlineView','newsInlineView','riskInlineView','scanView','signalView','noSignalView','defaultView'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
         }
 
-    close = df["Close"]
-
-    rsi = safe_float(calculate_rsi(close, 14).iloc[-1])
-    ema9 = safe_float(calculate_ema(close, 9).iloc[-1])
-    ema21 = safe_float(calculate_ema(close, 21).iloc[-1])
-    ema50 = safe_float(calculate_ema(close, 50).iloc[-1])
-
-    macd, macd_signal = calculate_macd(close)
-    macd_now = safe_float(macd.iloc[-1])
-    macd_sig_now = safe_float(macd_signal.iloc[-1])
-
-    bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
-    bb_mid = safe_float(bb_middle.iloc[-1])
-
-    atr = safe_float(calculate_atr(df, 14).iloc[-1])
-
-    adx, plus_di, minus_di = calculate_adx_components(df, 14)
-    adx_now = safe_float(adx.iloc[-1])
-    plus_di_now = safe_float(plus_di.iloc[-1])
-    minus_di_now = safe_float(minus_di.iloc[-1])
-
-    price = safe_float(close.iloc[-1])
-    previous_close = safe_float(close.iloc[-2])
-
-    values = [
-        rsi, ema9, ema21, ema50,
-        macd_now, macd_sig_now, bb_mid,
-        atr, adx_now, plus_di_now, minus_di_now,
-        price, previous_close,
-    ]
-
-    if any(v is None for v in values) or atr <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Indicators not ready",
+        function renderPrimaryView() {
+            if (currentSection !== 'dashboard') return;
+            hideAllHudViews();
+            if (scanSessionState.running || primaryViewState === 'scanning') {
+                const scan = document.getElementById('scanView');
+                if (scan) scan.style.display = 'block';
+                return;
+            }
+            if (primaryViewState === 'signal') {
+                const signal = document.getElementById('signalView');
+                if (signal) signal.style.display = 'block';
+                return;
+            }
+            if (primaryViewState === 'nosignal') {
+                const noSignal = document.getElementById('noSignalView');
+                if (noSignal) noSignal.style.display = 'flex';
+                return;
+            }
+            const ready = document.getElementById('defaultView');
+            if (ready) ready.style.display = 'flex';
         }
 
-    ema_bullish = price > ema9 > ema21 > ema50
-    ema_bearish = price < ema9 < ema21 < ema50
-
-    macd_bullish = macd_now > macd_sig_now
-    macd_bearish = macd_now < macd_sig_now
-
-    bb_bullish = price > bb_mid
-    bb_bearish = price < bb_mid
-
-    adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
-    adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
-
-    momentum_bullish = price > previous_close
-    momentum_bearish = price < previous_close
-
-    last = df.iloc[-1]
-    candle_open = safe_float(last["Open"])
-    candle_high = safe_float(last["High"])
-    candle_low = safe_float(last["Low"])
-    candle_close = safe_float(last["Close"])
-
-    if None in (candle_open, candle_high, candle_low, candle_close):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Latest candle incomplete",
+        function showDefaultView() {
+            currentSection = 'dashboard';
+            if (scanSessionState.running) primaryViewState = 'scanning';
+            renderPrimaryView();
         }
 
-    candle_range = candle_high - candle_low
-    if candle_range <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Invalid candle range",
+        function resetPrimaryView() {
+            currentSection = 'dashboard';
+            if (!scanSessionState.running) primaryViewState = 'ready';
+            renderPrimaryView();
         }
 
-    bullish_candle = candle_close > candle_open
-    bearish_candle = candle_close < candle_open
-
-    upper_wick = candle_high - max(candle_open, candle_close)
-    lower_wick = min(candle_open, candle_close) - candle_low
-
-    bullish_rejection = (
-        lower_wick / candle_range >= 0.25
-        and bullish_candle
-    )
-    bearish_rejection = (
-        upper_wick / candle_range >= 0.25
-        and bearish_candle
-    )
-
-    volume_bullish = False
-    volume_bearish = False
-    if "Volume" in df.columns:
-        volume = df["Volume"].fillna(0)
-        current_volume = safe_float(volume.iloc[-1], 0.0)
-        avg_volume = safe_float(volume.rolling(20).mean().iloc[-1], 0.0)
-        if current_volume > 0 and avg_volume > 0:
-            volume_bullish = bullish_candle and current_volume > avg_volume
-            volume_bearish = bearish_candle and current_volume > avg_volume
-
-    bullish_points = 0.0
-    bearish_points = 0.0
-
-    if 52 <= rsi <= 70:
-        bullish_points += 1.0
-    elif 30 <= rsi <= 48:
-        bearish_points += 1.0
-
-    if ema_bullish:
-        bullish_points += 2.0
-    elif ema_bearish:
-        bearish_points += 2.0
-
-    if macd_bullish:
-        bullish_points += 1.0
-    elif macd_bearish:
-        bearish_points += 1.0
-
-    if bb_bullish:
-        bullish_points += 1.0
-    elif bb_bearish:
-        bearish_points += 1.0
-
-    if adx_bullish:
-        bullish_points += 1.5
-    elif adx_bearish:
-        bearish_points += 1.5
-
-    if momentum_bullish:
-        bullish_points += 1.0
-    elif momentum_bearish:
-        bearish_points += 1.0
-
-    if bullish_rejection:
-        bullish_points += 1.0
-    elif bearish_rejection:
-        bearish_points += 1.0
-    elif bullish_candle:
-        bullish_points += 0.5
-    elif bearish_candle:
-        bearish_points += 0.5
-
-    if volume_bullish:
-        bullish_points += 1.0
-    elif volume_bearish:
-        bearish_points += 1.0
-
-    difference = abs(bullish_points - bearish_points)
-    winning_points = max(bullish_points, bearish_points)
-
-    # Slightly relaxed per-TF gate because final decision also requires
-    # multi-timeframe agreement.
-    if difference < 1.5 or winning_points < 3.5:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Weak/conflicting timeframe",
-            "rsi": round(rsi, 2),
-            "adx": round(adx_now, 2),
-            "bullish_points": round(bullish_points, 2),
-            "bearish_points": round(bearish_points, 2),
+        function openHistoryInline() {
+            currentSection = 'history';
+            hideAllHudViews();
+            document.getElementById('historyInlineView').style.display = "block";
+            refreshTrackedHistory();
         }
 
-    signal = "CALL" if bullish_points > bearish_points else "PUT"
-
-    score = 50 + difference * 6
-    if adx_now >= 20:
-        score += min(adx_now - 20, 15) * 0.5
-    score = max(50, min(95, score))
-
-    return {
-        "timeframe": timeframe,
-        "signal": signal,
-        "score": round(score, 2),
-        "rsi": round(rsi, 2),
-        "adx": round(adx_now, 2),
-        "atr": round(atr, 8),
-        "price": round(price, 8),
-        "bullish_points": round(bullish_points, 2),
-        "bearish_points": round(bearish_points, 2),
-        "closed_candle_epoch": int(df.index[-1].timestamp()) if len(df.index) else None,
-    }
-
-
-
-def should_suppress_duplicate(pair, signal, timeframe_summary):
-    """Suppress same pair+direction when the analyzed TF context has not changed."""
-    context = tuple(
-        (tf, details.get("signal"), details.get("score"))
-        for tf, details in sorted((timeframe_summary or {}).items())
-    )
-    fingerprint = (pair, signal, context)
-    now = time.time()
-
-    with recent_signal_lock:
-        existing = recent_signals.get(pair)
-
-        if existing:
-            same_signal = existing.get("signal") == signal
-            same_context = existing.get("fingerprint") == fingerprint
-            still_locked = (now - existing.get("timestamp", 0)) < DUPLICATE_SIGNAL_COOLDOWN
-
-            if same_signal and same_context and still_locked:
-                return True
-
-        recent_signals[pair] = {
-            "signal": signal,
-            "fingerprint": fingerprint,
-            "timestamp": now,
+        function renderHistoryList() {
+            const listContainer=document.getElementById('historyListBox'); if(!listContainer)return;
+            if(backendTrackedHistory.length>0){let html='';backendTrackedHistory.forEach((item,index)=>{const score=Number(item.score||0).toFixed(1)+'%',label=item.result?`[${item.result}]`:(item.status==='PENDING'?'[PENDING]':'[--]'),color=item.result==='WIN'?'#00ff87':(item.result==='LOSS'?'#ff3366':'#60efff'),showQx=String(item.pair||'').includes('(OTC)');html+=`<div class="inline-item" style="gap:5px;"><span style="flex:1;min-width:0;">${index+1}. ${escapeHtml(item.pair)} (${escapeHtml(item.signal)}) · ${escapeHtml(item.expiry)} · <strong style="color:#60efff;">${score}</strong><br><span style="font-size:7.5px;color:#94a3b8;">${escapeHtml(item.scan_mode||'BALANCED')} · Stability ${escapeHtml(item.market_stability_score??'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span></span><span style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end;"><span style="color:${color};font-weight:900;">${label}</span><button class="history-replay-btn" onclick="openSignalReplay('${item.id}')">REPLAY</button>${showQx?`<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>`:''}</span></div>`;});listContainer.innerHTML=html;return;}
+            listContainer.innerHTML='<div class="inline-item"><span>No recent tracked signals yet.</span><span class="win-tag">--</span></div>';
         }
 
-    return False
 
-
-def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
-    return {
-        "pair": pair,
-        "score": 0,
-        "signal": "NO SIGNAL",
-        "reason": reason,
-        "rsi": None,
-        "adx": None,
-        "atr": None,
-        "price": None,
-        "bullish_points": 0,
-        "bearish_points": 0,
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "otc_proxy_warning": "(OTC)" in pair,
-        "yahoo_symbol": symbol,
-        "timeframe_summary": timeframes or {},
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-    }
-
-
-def serialize_candles(df, limit=28):
-    if df is None or df.empty:
-        return []
-    out = []
-    for idx, row in df.tail(max(8, min(int(limit), 60))).iterrows():
-        try:
-            out.append({
-                "t": int(idx.timestamp()),
-                "o": round(float(row["Open"]), 8),
-                "h": round(float(row["High"]), 8),
-                "l": round(float(row["Low"]), 8),
-                "c": round(float(row["Close"]), 8),
-            })
-        except Exception:
-            continue
-    return out
-
-
-def market_stability_metrics(price, atr, adx, data_age, agreement_pct):
-    try:
-        price = abs(float(price or 0))
-        atr = abs(float(atr or 0))
-        vol_pct = (atr / price * 100.0) if price > 0 else 0.0
-    except Exception:
-        vol_pct = 0.0
-    age = max(0.0, float(data_age or 0))
-    adx_val = max(0.0, min(60.0, float(adx or 0)))
-    agreement = max(0.0, min(100.0, float(agreement_pct or 0)))
-    data_score = max(0.0, 100.0 - min(age, 180.0) / 1.8)
-    trend_score = min(100.0, 35.0 + adx_val * 1.15)
-    if vol_pct < 0.003:
-        vol_score = 58.0
-    elif vol_pct <= 0.8:
-        vol_score = 96.0 - abs(vol_pct - 0.16) * 18.0
-    elif vol_pct <= 1.8:
-        vol_score = 78.0 - (vol_pct - 0.8) * 28.0
-    else:
-        vol_score = max(18.0, 50.0 - (vol_pct - 1.8) * 20.0)
-    score = max(0.0, min(100.0, data_score * 0.28 + trend_score * 0.24 + agreement * 0.30 + vol_score * 0.18))
-    risk = "LOW" if score >= 78 else ("MEDIUM" if score >= 58 else "HIGH")
-    return round(score, 1), risk, round(vol_pct, 5)
-
-
-def normalize_scan_options(raw):
-    raw = raw if isinstance(raw, dict) else {}
-    mode = str(raw.get("mode") or "BALANCED").strip().upper()
-    presets = {
-        "SAFE": {"min_tf": 5, "min_agreement": 80.0, "min_score": 80.0, "vol_min": 0.003, "vol_max": 1.20},
-        "BALANCED": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.002, "vol_max": 2.00},
-        "AGGRESSIVE": {"min_tf": 4, "min_agreement": 66.7, "min_score": 55.0, "vol_min": 0.0, "vol_max": 3.00},
-        "CUSTOM": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.0, "vol_max": 3.00},
-    }
-    base = dict(presets.get(mode, presets["BALANCED"]))
-    if mode == "CUSTOM":
-        try: base["min_tf"] = max(4, min(6, int(raw.get("min_tf", base["min_tf"]))))
-        except Exception: pass
-        try: base["min_agreement"] = max(60.0, min(100.0, float(raw.get("min_agreement", base["min_agreement"]))))
-        except Exception: pass
-        try: base["min_score"] = max(50.0, min(95.0, float(raw.get("min_score", base["min_score"]))))
-        except Exception: pass
-        try: base["vol_min"] = max(0.0, min(5.0, float(raw.get("vol_min", base["vol_min"]))))
-        except Exception: pass
-        try: base["vol_max"] = max(base["vol_min"], min(10.0, float(raw.get("vol_max", base["vol_max"]))))
-        except Exception: pass
-    base["mode"] = mode if mode in presets else "BALANCED"
-    return base
-
-
-def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
-    """Scan synchronized timeframes using a SAFE/BALANCED/AGGRESSIVE/CUSTOM gate."""
-    opts = normalize_scan_options(scan_options)
-    if pair not in YAHOO_SYMBOLS:
-        result = no_signal_result(pair, "Pair is not configured in Yahoo mapping.")
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
-        return result
-
-    base_df, data_age, symbol = get_market_data(pair)
-    if base_df is None or base_df.empty:
-        result = no_signal_result(pair, "Yahoo market data unavailable.", symbol=symbol, data_age=data_age)
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
-        return result
-
-    chart_preview = serialize_candles(base_df, 28)
-    results = {}
-    for tf_name, minutes in TIMEFRAMES.items():
-        tf_df = build_timeframe(base_df, minutes)
-        results[tf_name] = analyze_timeframe(tf_df, tf_name)
-
-    call_results = [r for r in results.values() if r.get("signal") == "CALL"]
-    put_results = [r for r in results.values() if r.get("signal") == "PUT"]
-    valid_count = len(call_results) + len(put_results)
-    summary = {
-        tf: {"signal": r.get("signal"), "score": r.get("score", 0), "rsi": r.get("rsi"),
-             "adx": r.get("adx"), "closed_candle_epoch": r.get("closed_candle_epoch")}
-        for tf, r in results.items()
-    }
-
-    def rejected(reason):
-        result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary)
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview})
-        return result
-
-    if valid_count < opts["min_tf"]:
-        return rejected(f"Fewer than {opts['min_tf']} timeframes reached valid confluence for {opts['mode']} mode.")
-
-    if len(call_results) > len(put_results):
-        signal, supporters, opponents = "CALL", call_results, put_results
-    elif len(put_results) > len(call_results):
-        signal, supporters, opponents = "PUT", put_results, call_results
-    else:
-        return rejected("Multi-timeframe direction is tied.")
-
-    if len(supporters) < opts["min_tf"]:
-        return rejected(f"Fewer than {opts['min_tf']} timeframes agree with the final direction.")
-
-    agreement_ratio = len(supporters) / valid_count
-    if agreement_ratio * 100.0 < opts["min_agreement"]:
-        return rejected(f"Multi-timeframe agreement below {opts['min_agreement']:.1f}% for {opts['mode']} mode.")
-
-    required_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip())
-    if required_tf:
-        required_result = results.get(required_tf) or {}
-        required_signal = required_result.get("signal")
-        if required_signal != signal:
-            return rejected(
-                f"Selected expiry {selected_expiry} requires {required_tf} confirmation; "
-                f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
-            )
-
-    avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
-    multi_tf_score = max(50, min(95, avg_support_score + ((agreement_ratio - 0.5) * 12)))
-
-    representative = None
-    for preferred in ("5m", "2m", "1m", "10m", "15m", "30m"):
-        r = results.get(preferred)
-        if r and r.get("signal") == signal:
-            representative = r
-            break
-    if representative is None:
-        representative = max(supporters, key=lambda x: x.get("score", 0))
-
-    stability_score, risk_level, volatility_pct = market_stability_metrics(
-        representative.get("price"), representative.get("atr"), representative.get("adx"),
-        data_age, agreement_ratio * 100.0,
-    )
-    if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
-        return rejected(
-            f"Volatility {volatility_pct:.4f}% is outside {opts['mode']} range "
-            f"({opts['vol_min']:.4f}%–{opts['vol_max']:.2f}%)."
-        )
-    if multi_tf_score < opts["min_score"]:
-        return rejected(f"Technical confluence {multi_tf_score:.1f}% is below {opts['mode']} threshold {opts['min_score']:.1f}%.")
-
-    aligned_tfs = [r["timeframe"] for r in supporters]
-    opposing_tfs = [r["timeframe"] for r in opponents]
-    return {
-        "pair": pair, "score": round(multi_tf_score, 2), "signal": signal,
-        "reason": f"{opts['mode']} · Multi-TF agreement: {len(supporters)}/{valid_count} valid timeframes -> {signal}",
-        "rsi": representative.get("rsi"), "adx": representative.get("adx"), "atr": representative.get("atr"),
-        "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
-        "bearish_points": representative.get("bearish_points", 0),
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance", "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "otc_proxy_warning": "(OTC)" in pair, "yahoo_symbol": symbol,
-        "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
-        "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
-        "multi_tf_agreement": round(agreement_ratio * 100, 1), "selected_expiry": selected_expiry,
-        "required_expiry_timeframe": required_tf,
-        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-6 + {required_tf or 'TF'} Required",
-        "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
-        "market_stability_score": stability_score, "market_risk_level": risk_level,
-        "volatility_pct": volatility_pct, "chart_preview": chart_preview,
-    }
-
-
-# =========================================================
-# LIVE ECONOMIC NEWS / CALENDAR
-# =========================================================
-
-def fetch_forex_factory_calendar():
-    """Fetch and normalize Forex Factory's official weekly JSON calendar export."""
-    req = UrlRequest(
-        FOREX_FACTORY_CALENDAR_URL,
-        headers={
-            "User-Agent": "RAJA-AI-PREMIUM/2.5 (+economic-calendar)",
-            "Accept": "application/json",
-        },
-    )
-    with urlopen(req, timeout=10) as response:
-        payload = response.read().decode("utf-8", errors="replace")
-
-    raw_items = json.loads(payload)
-    if not isinstance(raw_items, list):
-        raise ValueError("Unexpected Forex Factory calendar response")
-
-    normalized = []
-    for item in raw_items[:300]:
-        if not isinstance(item, dict):
-            continue
-        title = str(item.get("title", "")).strip()
-        country = str(item.get("country", "")).strip().upper()
-        date_value = str(item.get("date", "")).strip()
-        if not title or not date_value:
-            continue
-        impact = str(item.get("impact", "Low")).strip().title() or "Low"
-        if impact not in {"High", "Medium", "Low", "Holiday"}:
-            impact = "Low"
-        normalized.append({
-            "title": title[:180],
-            "currency": country[:8],
-            "date": date_value[:40],
-            "impact": impact,
-            "forecast": str(item.get("forecast", "")).strip()[:40],
-            "previous": str(item.get("previous", "")).strip()[:40],
-        })
-
-    normalized.sort(key=lambda x: x.get("date", ""))
-    return normalized
-
-
-# =========================================================
-# ROUTES
-# =========================================================
-
-@app.route("/")
-def home():
-    if os.path.exists(BASE_DIR / "index.html"):
-        return send_from_directory(str(BASE_DIR), "index.html")
-    return (
-        "RAJA AI backend is running. "
-        "Place index.html in the same folder as bot.py."
-    )
-
-
-@app.route("/manifest.json", methods=["GET"])
-def pwa_manifest():
-    return send_from_directory(str(BASE_DIR), "manifest.json", mimetype="application/manifest+json")
-
-
-@app.route("/sw.js", methods=["GET"])
-def pwa_service_worker():
-    response = send_from_directory(str(BASE_DIR), "sw.js", mimetype="application/javascript")
-    response.headers["Service-Worker-Allowed"] = "/"
-    response.headers["Cache-Control"] = "no-cache"
-    return response
-
-
-@app.route("/raja-ai-icon-<size>.png", methods=["GET"])
-def pwa_icon(size):
-    if size not in {"192", "512"}:
-        return jsonify({"status": "error", "message": "Icon not found."}), 404
-    return send_from_directory(str(BASE_DIR), f"raja-ai-icon-{size}.png", mimetype="image/png")
-
-
-@app.after_request
-def disable_html_cache(response):
-    # Prevent stale index.html/inline JS from surviving a new Render deploy.
-    if request.path == "/" or request.path.endswith(".html"):
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    return response
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    with cache_lock:
-        cached_symbols = len(market_cache)
-
-    return jsonify({
-        "status": "success",
-        "service": "RAJA AI multi-timeframe backend",
-        "yahoo_pairs": len(YAHOO_SYMBOLS),
-        "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
-        "cached_symbols": cached_symbols,
-        "base_interval": "1m",
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "4-of-6 Strong",
-        "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
-        "background_full_market_poller": False,
-        "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
-        "yahoo_failure_cooldown_seconds": YAHOO_FAILURE_COOLDOWN,
-        "batch_cache_seconds": BATCH_CACHE_DURATION,
-        "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
-        "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
-        "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
-        "closed_candle_analysis": True,
-        "license_store": LICENSE_STORE_MODE,
-        "persistent_license_store": bool(DATABASE_URL),
-    })
-
-
-@app.route("/market-news", methods=["GET"])
-def market_news():
-    now = time.time()
-    with market_news_lock:
-        cached_data = list(market_news_cache.get("data") or [])
-        cached_at = float(market_news_cache.get("timestamp") or 0.0)
-
-    if cached_data and (now - cached_at) <= MARKET_NEWS_CACHE_SECONDS:
-        return jsonify({
-            "status": "success",
-            "source": "Forex Factory weekly calendar export",
-            "source_url": "https://www.forexfactory.com/calendar",
-            "data": cached_data,
-            "cache_hit": True,
-            "stale": False,
-            "updated_at": int(cached_at),
-        })
-
-    try:
-        fresh_data = fetch_forex_factory_calendar()
-        with market_news_lock:
-            market_news_cache["timestamp"] = time.time()
-            market_news_cache["data"] = fresh_data
-            updated_at = market_news_cache["timestamp"]
-
-        return jsonify({
-            "status": "success",
-            "source": "Forex Factory weekly calendar export",
-            "source_url": "https://www.forexfactory.com/calendar",
-            "data": fresh_data,
-            "cache_hit": False,
-            "stale": False,
-            "updated_at": int(updated_at),
-        })
-    except Exception as exc:
-        print(f"Forex Factory calendar fetch error: {exc}")
-        # If the upstream feed is briefly unavailable, serve the last successful
-        # snapshot instead of leaving the News panel blank.
-        if cached_data:
-            return jsonify({
-                "status": "success",
-                "source": "Forex Factory weekly calendar export",
-                "source_url": "https://www.forexfactory.com/calendar",
-                "data": cached_data,
-                "cache_hit": True,
-                "stale": True,
-                "updated_at": int(cached_at),
-                "warning": "Live source temporarily unavailable; showing last cached calendar.",
-            })
-        return jsonify({
-            "status": "error",
-            "message": "Live economic calendar is temporarily unavailable.",
-        }), 502
-
-
-@app.route("/verify-license", methods=["POST"])
-def verify_license():
-    data = request.get_json(silent=True) or {}
-    key = str(data.get("key", "")).strip()
-    user = normalize_user_id(data.get("user", ""))
-    device = str(data.get("device", "")).strip()
-    device_label = str(data.get("device_label", "")).strip()[:160]
-    heartbeat = bool(data.get("heartbeat", False))
-    supplied_token = str(data.get("session_token", "")).strip()
-    if not key or not user or not device:
-        return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
-
-    licenses = load_licenses()
-    record = licenses.get(key)
-    now = int(time.time())
-    if not record or not record.get("active", False):
-        return jsonify({"status": "error", "message": "Invalid or revoked license key."}), 401
-    if license_is_expired(record, now):
-        return jsonify({"status": "error", "message": "This license has expired. Contact admin to renew access."}), 401
-
-    bound_user = normalize_user_id(record.get("user", ""))
-    # @username and username are treated as the same identity. A genuinely different
-    # customer still cannot use someone else's key.
-    if bound_user and bound_user != user:
-        return jsonify({"status": "error", "message": "This key is assigned to another user/UID."}), 403
-
-    is_free_trial = str(record.get("plan") or "").strip().upper() == "FREE TRIAL"
-    if is_free_trial and not heartbeat:
-        device_claim = get_trial_claim("device", device)
-        if device_claim and str(device_claim.get("license_key") or "") != key:
-            return jsonify({
-                "status": "error",
-                "message": "This device has already used a free trial. Contact admin for VIP access."
-            }), 409
-
-    if heartbeat:
-        if str(record.get("device") or "") != device or not supplied_token or str(record.get("session_token") or "") != supplied_token:
-            return jsonify({"status": "error", "message": "This session was replaced by a newer device login."}), 409
-        record["last_verified_at"] = now
-        licenses[key] = record
-        save_licenses(licenses)
-        return jsonify({
-            "status": "success", "message": "Session active.", "user": user,
-            "device_bound": True, "device_label": record.get("device_label"),
-            "session_token": record.get("session_token"), "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
-            "expires_at": record.get("expires_at"),
-        })
-
-    # NEW DEVICE WINS: a valid login immediately replaces the previous browser session.
-    previous_device = str(record.get("device") or "")
-    previous_label = str(record.get("device_label") or "")
-    new_token = secrets.token_urlsafe(32)
-    record["device"] = device
-    record["device_label"] = device_label or device
-    record["user"] = user
-    record["session_token"] = new_token
-    record["last_verified_at"] = now
-    record["last_login_at"] = now
-    record["plan"] = record.get("plan") or DEFAULT_LICENSE_PLAN
-    licenses[key] = record
-    save_licenses(licenses)
-    if is_free_trial:
-        record_trial_claim("device", device, key)
-    return jsonify({
-        "status": "success", "message": "License verified successfully.", "user": user,
-        "device_bound": True, "device_label": record.get("device_label"), "session_token": new_token,
-        "replaced_previous_device": bool(previous_device and previous_device != device),
-        "previous_device_label": previous_label if previous_device and previous_device != device else None,
-        "plan": record.get("plan"), "expires_at": record.get("expires_at"),
-    })
-
-
-@app.route("/logout-license", methods=["POST"])
-def logout_license():
-    data = request.get_json(silent=True) or {}
-    key = str(data.get("key", "")).strip()
-    user = normalize_user_id(data.get("user", ""))
-    device = str(data.get("device", "")).strip()
-    token = str(data.get("session_token", "")).strip()
-    if not key or not user or not device:
-        return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
-    licenses = load_licenses()
-    record = licenses.get(key)
-    if not record:
-        return jsonify({"status": "success", "message": "Session already cleared."})
-    if (normalize_user_id(record.get("user", "")) == user and record.get("device") == device
-            and (not record.get("session_token") or record.get("session_token") == token)):
-        record["device"] = None
-        record["device_label"] = None
-        record["last_verified_at"] = None
-        record["session_token"] = None
-        licenses[key] = record
-        save_licenses(licenses)
-    return jsonify({"status": "success", "message": "Device session released."})
-
-
-@app.route("/user/profile", methods=["POST"])
-def user_profile():
-    data = request.get_json(silent=True) or {}
-    auth, error = _auth_session(data)
-    if error:
-        return error
-    record = auth["record"]
-    user = auth["user"]
-    now = int(time.time())
-    day_start = now - (now % 86400)
-    events = _load_scan_events(5000)
-    user_events = [e for e in events if normalize_user_id(e.get("user", "")) == user]
-    scans_today = sum(1 for e in user_events if int(e.get("created_at") or 0) >= day_start)
-    return jsonify({
-        "status": "success",
-        "data": {
-            "user": user, "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
-            "expires_at": record.get("expires_at"), "created_at": record.get("created_at"),
-            "last_login_at": record.get("last_login_at"), "last_active_at": record.get("last_verified_at"),
-            "device": record.get("device"), "device_label": record.get("device_label"),
-            "scans_today": scans_today, "total_scans": len(user_events),
+        async function markBackendSignalResult(signalId, outcome) {
+            playClickSound();
+            try {
+                const response = await fetch('/signals/result', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ signal_id: signalId, result: outcome, client_id: deviceSessionId, ...getAuthPayload() })
+                });
+                const result = await response.json();
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'Unable to save Quotex result.');
+                }
+                await refreshTrackedHistory();
+            } catch (error) {
+                alert('❌ ' + error.message);
+            }
         }
-    })
+
+        function markSignalResult(index, outcome) {
+            playClickSound();
+            if (dynamicHistory[index]) {
+                dynamicHistory[index].result = outcome;
+                localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+                renderHistoryList();
+            }
+        }
+
+        function openSettingsInline() {
+            currentSection = 'settings';
+            hideAllHudViews();
+            document.getElementById('settingsInlineView').style.display = "block";
+        }
+
+        function escapeHtml(value) {
+            return String(value == null ? '' : value).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
+
+        function impactClass(impact) {
+            const key = String(impact || 'Low').toLowerCase();
+            if (key === 'high') return 'impact-high';
+            if (key === 'medium') return 'impact-medium';
+            if (key === 'holiday') return 'impact-holiday';
+            return 'impact-low';
+        }
+
+        function renderMarketNews(items, meta = {}) {
+            const list = document.getElementById('marketNewsList');
+            const source = document.getElementById('marketNewsSource');
+            if (!list) return;
+            const now = Date.now();
+            const all = (Array.isArray(items) ? items : []).map(item => ({...item, ts: Date.parse(item.date || '')})).filter(item => Number.isFinite(item.ts));
+            let visible = all.filter(item => item.ts >= now - (4 * 60 * 60 * 1000) && item.ts <= now + (72 * 60 * 60 * 1000));
+            if (!visible.length) visible = all.slice(-24);
+            visible = visible.sort((a,b) => a.ts - b.ts).slice(0, 30);
+
+            if (source) {
+                const stale = meta.stale ? ' · cached snapshot' : ' · live weekly export';
+                source.innerText = `Forex Factory economic calendar${stale} · times converted to your device timezone`;
+            }
+            if (!visible.length) {
+                list.innerHTML = '<div class="inline-item"><span>No calendar events available right now.</span><span class="win-tag">--</span></div>';
+                return;
+            }
+            list.innerHTML = visible.map(item => {
+                const dt = new Date(item.ts);
+                const timeText = dt.toLocaleString([], { weekday:'short', hour:'2-digit', minute:'2-digit' });
+                const forecast = item.forecast ? `Forecast ${escapeHtml(item.forecast)}` : '';
+                const previous = item.previous ? `Prev ${escapeHtml(item.previous)}` : '';
+                const values = [forecast, previous].filter(Boolean).join(' · ');
+                return `<div class="news-event">
+                    <div class="news-time">${escapeHtml(timeText)}</div>
+                    <div class="news-currency">${escapeHtml(item.currency || '')}</div>
+                    <div><div class="news-title">${escapeHtml(item.title || '')}</div>${values ? `<div class="news-values">${values}</div>` : ''}</div>
+                    <div class="impact-pill ${impactClass(item.impact)}">${escapeHtml(item.impact || 'Low')}</div>
+                </div>`;
+            }).join('');
+        }
+
+        async function loadMarketNews(force = false) {
+            const list = document.getElementById('marketNewsList');
+            if (!list) return;
+            if (!force && marketNewsLoadedAt && (Date.now() - marketNewsLoadedAt) < 45000) return;
+            list.innerHTML = '<div class="inline-item"><span>Loading Forex Factory economic calendar...</span><span class="win-tag">LIVE</span></div>';
+            try {
+                const response = await fetch('/market-news', { cache: force ? 'reload' : 'default' });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') throw new Error((result && result.message) || 'News feed unavailable');
+                marketNewsLoadedAt = Date.now();
+                renderMarketNews(result.data || [], result);
+            } catch (error) {
+                list.innerHTML = `<div class="inline-item"><span>Live calendar unavailable: ${escapeHtml(error.message || 'network error')}</span><span style="color:#ff5d7d;font-weight:900;">RETRY</span></div>`;
+            }
+        }
+
+        function openNewsInline() {
+            currentSection = 'news';
+            hideAllHudViews();
+            document.getElementById('newsInlineView').style.display = "block";
+            loadMarketNews(false);
+        }
+
+        function openRiskInline() {
+            currentSection = 'risk';
+            hideAllHudViews();
+            document.getElementById('riskInlineView').style.display = "block";
+            calculateRisk();
+        }
+
+        function calculateRisk() {
+            const base = Math.max(1, Number(document.getElementById('baseStakeInput')?.value || 10));
+            const payoutPct = Math.min(100, Math.max(50, Number(document.getElementById('payoutRateInput')?.value || 95)));
+            const payout = payoutPct / 100;
+            const steps = Math.max(3, Math.min(6, Number(document.getElementById('riskStepsSelect')?.value || 4)));
+            const targetProfit = Math.max(0.5, base * payout);
+            let runningLoss = 0;
+            let totalExposure = 0;
+            let maxStepStake = base;
+            const rows = [`<div class="risk-row header"><span>Step</span><span>Stake</span><span>Loss Cover</span><span>Net Goal</span></div>`];
+            for (let step = 1; step <= steps; step++) {
+                const rawStake = step === 1 ? base : ((runningLoss + targetProfit) / payout);
+                const stake = Math.ceil(rawStake * 100) / 100;
+                const netGoal = Math.max(0, (stake * payout) - runningLoss);
+                totalExposure += stake;
+                maxStepStake = Math.max(maxStepStake, stake);
+                const cls = step <= 2 ? 'safe' : (step <= 4 ? 'balanced' : 'aggressive');
+                rows.push(`<div class="risk-row"><span class="risk-tag ${cls}">#${step}</span><span>$${stake.toFixed(2)}</span><span>$${runningLoss.toFixed(2)}</span><span>$${netGoal.toFixed(2)}</span></div>`);
+                runningLoss += stake;
+            }
+            const balance = totalExposure * 1.35;
+            const multiple = totalExposure / base;
+            const profile = multiple > 8 ? 'High' : (multiple > 4 ? 'Balanced' : 'Lower');
+            const pressure = Math.max(8, Math.min(100, Math.round((multiple / 10) * 100)));
+            const pressureLabel = pressure < 35 ? 'LOW PRESSURE' : (pressure < 68 ? 'MEDIUM PRESSURE' : 'HIGH PRESSURE');
+            const table = document.getElementById('riskRecoveryTable');
+            if (table) table.innerHTML = rows.join('');
+            const values = {
+                riskProfileDisplay:profile,
+                riskTotalExposure:`$${totalExposure.toFixed(2)}`,
+                riskTargetProfit:`$${targetProfit.toFixed(2)}`,
+                riskRecommendedBalance:`$${balance.toFixed(2)}`,
+                riskExposureMultiple:`${multiple.toFixed(1)}x`,
+                riskMaxStep:`$${maxStepStake.toFixed(2)}`,
+                riskPressureValue:`${pressure}%`,
+                riskPressureLabel:pressureLabel,
+                sideRiskPressure:`${pressure}%`,
+                sideRiskExposure:`$${totalExposure.toFixed(2)}`,
+                sideRiskProfile:profile,
+                sideRiskState:pressureLabel
+            };
+            Object.entries(values).forEach(([id,value]) => { const el=document.getElementById(id); if(el) el.innerText=value; });
+            const meter = document.getElementById('riskPressureMeter');
+            if (meter) meter.style.setProperty('--pressure', pressure);
+            const sideGauge = document.getElementById('sideRiskGauge');
+            if (sideGauge) sideGauge.style.setProperty('--pressure', pressure);
+            const guidanceState = document.getElementById('riskGuidanceState');
+            const guidanceCopy = document.getElementById('riskGuidanceCopy');
+            if (guidanceState) guidanceState.innerText = profile === 'Lower' ? 'LOWER EXPOSURE MODE' : (profile === 'Balanced' ? 'BALANCED EXPOSURE MODE' : 'HIGH EXPOSURE WARNING');
+            if (guidanceCopy) guidanceCopy.innerText = profile === 'High'
+                ? 'The selected recovery depth creates high cumulative exposure. Consider fewer steps or a smaller base stake.'
+                : (profile === 'Balanced'
+                    ? 'Cumulative exposure is moderate. Check that the full ladder fits inside your pre-set loss limit before trading.'
+                    : 'Cumulative exposure is lower, but recovery sizing still increases risk after losses. Keep a fixed stop limit.');
+        }
+
+        const brokerData = {
+            Quotex: {
+                CryptoLive: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "BTC-USD",
+                    "ETH-USD",
+                    "SOL-USD",
+                    "LTC-USD",
+                    "XRP-USD",
+                    "ADA-USD",
+                    "DOGE-USD"
+                ],
+                CryptoOTC: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "Bitcoin (OTC)",
+                    "Ethereum (OTC)",
+                    "Litecoin (OTC)",
+                    "Ripple (OTC)",
+                    "Solana (OTC)",
+                    "Toncoin (OTC)",
+                    "Ethereum Classic (OTC)",
+                    "Axie Infinity (OTC)",
+                    "Binance Coin (OTC)",
+                    "Polkadot (OTC)",
+                    "Avalanche (OTC)",
+                    "Chainlink (OTC)",
+                    "Bitcoin Cash (OTC)",
+                    "Zcash (OTC)",
+                    "Cosmos (OTC)"
+                ],
+                ForexLive: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "EUR/USD",
+                    "GBP/USD",
+                    "USD/JPY",
+                    "AUD/USD",
+                    "USD/CAD",
+                    "USD/CHF",
+                    "NZD/USD",
+                    "EUR/GBP",
+                    "EUR/JPY",
+                    "GBP/JPY",
+                    "AUD/JPY",
+                    "EUR/AUD",
+                    "GBP/AUD",
+                    "CAD/JPY",
+                    "EUR/CAD",
+                    "GBP/CAD",
+                    "NZD/JPY",
+                    "AUD/NZD",
+                    "EUR/CHF",
+                    "GBP/CHF",
+                    "XAUUSD"
+                ],
+                ForexOTC: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "USD/BRL (OTC)",
+                    "NZD/CHF (OTC)",
+                    "NZD/JPY (OTC)",
+                    "USD/COP (OTC)",
+                    "USD/MXN (OTC)",
+                    "AUD/NZD (OTC)",
+                    "USD/BDT (OTC)",
+                    "USD/DZD (OTC)",
+                    "USD/NGN (OTC)",
+                    "USD/PHP (OTC)",
+                    "USD/PKR (OTC)",
+                    "USD/ZAR (OTC)",
+                    "USD/INR (OTC)",
+                    "USD/EGP (OTC)",
+                    "USD/IDR (OTC)",
+                    "USD/ARS (OTC)",
+                    "GBP/NZD (OTC)",
+                    "EUR/NZD (OTC)",
+                    "NZD/USD (OTC)",
+                    "NZD/CAD (OTC)",
+                    "CAD/CHF (OTC)"
+                ]
+            }
+        };
+
+        function updateBrokerAssets() { updatePairs(); }
+
+        function marketDisplayName(market) {
+            return ({
+                CryptoLive: 'Crypto Live',
+                CryptoOTC: 'Crypto OTC',
+                ForexLive: 'Forex Live',
+                ForexOTC: 'Forex OTC'
+            })[market] || 'Selected Market';
+        }
+
+        function syncTargetPairDisplay() {
+            const pairSelect = document.getElementById('pairSelect');
+            const marketEl = document.getElementById('marketType');
+            const target = document.getElementById('targetPairDisplay');
+            const targetBox = document.getElementById('targetPairBoxContainer');
+            if (!pairSelect || !target) return;
+            const pair = String(pairSelect.value || '');
+            const isAuto = !pair || pair.includes('Auto Scan');
+            target.innerText = isAuto ? `AUTO SCAN · ${marketDisplayName(marketEl ? marketEl.value : '')}` : pair;
+            target.style.color = '#24efc1';
+            if (targetBox) targetBox.className = 'selected-pair-box';
+        }
+
+        function updatePairs() {
+            let brokerEl = document.getElementById('brokerSelect');
+            let marketEl = document.getElementById('marketType');
+            let pairSelect = document.getElementById('pairSelect');
+            if(!brokerEl || !marketEl || !pairSelect) return;
+            let broker = brokerEl.value;
+            let market = marketEl.value;
+            premiumMarketSnapshot = []; localStorage.removeItem('raja_market_snapshot_v15'); renderPremiumMarketSnapshot();
+            pairSelect.innerHTML = ""; 
+            if (brokerData[broker] && brokerData[broker][market]) {
+                brokerData[broker][market].forEach(pair => {
+                    let option = document.createElement("option");
+                    option.value = pair;
+                    option.innerText = pair;
+                    pairSelect.appendChild(option);
+                });
+            }
+            syncTargetPairDisplay();
+        }
+
+        function getExpirySeconds(expiryStr) {
+            if (expiryStr === "15s") return 15;
+            if (expiryStr === "30s") return 30;
+            if (expiryStr === "1m") return 60;
+            if (expiryStr === "2m") return 120;
+            if (expiryStr === "5m") return 300;
+            if (expiryStr === "15m") return 900;
+            if (expiryStr === "30m") return 1800;
+            return 60;
+        }
+
+        function setExpiry(button, time) {
+            document.querySelectorAll('.expiry-btn').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            selectedExpiry = time;
+            updateScanCandleTimer();
+
+            // Changing expiry means the old signal-entry window no longer applies.
+            // Show the live candle countdown for the newly selected timeframe and
+            // require a fresh scan before another entry instruction is displayed.
+            activeSignalEntryEpochMs = null;
+            activeTrackedSignalId = null;
+            syncSelectedExpiryUI();
+            const buildExpiry=document.getElementById('buildExpiryText'); if(buildExpiry) buildExpiry.innerText=selectedExpiry;
+            startTimer();
+        }
+
+        function syncSelectedExpiryUI() {
+            const hero = document.getElementById('selectedExpiryHeroValue');
+            if (hero) hero.innerText = selectedExpiry;
+            document.querySelectorAll('.tf-chip').forEach(chip => {
+                chip.classList.toggle('tf-selected', (chip.dataset.tf || '').toLowerCase() === String(selectedExpiry).toLowerCase());
+            });
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            // V12: entry-window/countdown UI was intentionally removed from the dashboard.
+            // Signal tracking still runs in the backend; do not start a hidden browser timer.
+            if (!document.getElementById('candleTimer') || !document.getElementById('candleStatusText') || !document.getElementById('tradeAlert')) {
+                timerInterval = null;
+                return;
+            }
+
+            function tickEntryTimer() {
+                const nowMs = Date.now();
+                const nowSec = Math.floor(nowMs / 1000);
+                const candleSeconds = Math.max(1, getExpirySeconds(selectedExpiry));
+                const secIntoSelectedCandle = nowSec % candleSeconds;
+                const secondsToClose = secIntoSelectedCandle === 0
+                    ? candleSeconds
+                    : candleSeconds - secIntoSelectedCandle;
+                const tfLabel = selectedExpiry.toUpperCase();
+
+                updateTimerDisplay(secondsToClose);
+
+                const tradeAlert = document.getElementById('tradeAlert');
+                const candleStatus = document.getElementById('candleStatusText');
+
+                if (!tradeAlert || !candleStatus) return;
+
+                if (activeSignalEntryEpochMs) {
+                    const deltaMs = nowMs - activeSignalEntryEpochMs;
+
+                    if (deltaMs < 0) {
+                        candleStatus.innerText = `SIGNAL CONFIRMED — WAIT FOR CURRENT ${tfLabel} CANDLE TO CLOSE:`;
+                        tradeAlert.innerText = `⏳ WAIT — ENTER ON NEXT ${tfLabel} CANDLE OPEN`;
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#60efff";
+                    } else if (deltaMs <= 4000) {
+                        candleStatus.innerText = `NEW ${tfLabel} CANDLE OPENED:`;
+                        tradeAlert.innerText = `✅ ENTER NOW — NEW ${tfLabel} CANDLE`;
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#00ff87";
+                    } else {
+                        candleStatus.innerText = "ENTRY WINDOW PASSED:";
+                        tradeAlert.innerText = "⚠️ ENTRY MISSED — RESCAN FOR A FRESH SIGNAL";
+                        tradeAlert.style.display = "block";
+                        tradeAlert.style.color = "#ff3366";
+                    }
+                } else {
+                    candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — WAIT FOR CLOSE:`;
+                    tradeAlert.style.display = "none";
+                }
+            }
+
+            tickEntryTimer();
+            timerInterval = setInterval(tickEntryTimer, 250);
+        }
+
+        function updateTimerDisplay(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            const displayStr =
+                (m < 10 ? "0" + m : m) + ":" +
+                (s < 10 ? "0" + s : s);
+
+            const timerEl = document.getElementById('candleTimer');
+            if (timerEl) timerEl.innerText = displayStr;
+        }
 
 
-@app.route("/admin/generate-key", methods=["POST"])
-def admin_generate_key():
-    data = request.get_json(silent=True) or {}
-    password = str(data.get("password", ""))
-    user = normalize_user_id(data.get("user", ""))
-    plan = str(data.get("plan") or DEFAULT_LICENSE_PLAN).strip().upper()[:40]
-    try:
-        # Supports short trials too:
-        # 0.5 day = 12 hours, 1 day = 24 hours.
-        duration_days = max(0.0, min(3650.0, float(data.get("duration_days") or 0)))
-    except Exception:
-        duration_days = 0.0
-    if password != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
-    if not user:
-        return jsonify({"status": "error", "message": "User Telegram ID / UID is required."}), 400
-
-    is_free_trial = plan == "FREE TRIAL"
-    if is_free_trial:
-        previous_claim = get_trial_claim("user", user)
-        if previous_claim:
-            return jsonify({
-                "status": "error",
-                "message": "Free trial already used for this Telegram ID / UID. Create a VIP license instead."
-            }), 409
-
-    licenses = load_licenses()
-    while True:
-        key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
-        if key not in licenses:
-            break
-    now = int(time.time())
-    licenses[key] = {
-        "active": True, "user": user, "device": None, "device_label": None,
-        "session_token": None, "created_at": now, "last_verified_at": None,
-        "last_login_at": None, "plan": plan, "expires_at": now + int(duration_days * 86400) if duration_days else None,
-    }
-    save_licenses(licenses)
-    if is_free_trial:
-        record_trial_claim("user", user, key)
-    return jsonify({"status": "success", "message": "License created.", "key": key, "user": user,
-                    "plan": plan, "expires_at": licenses[key].get("expires_at")})
+        // ==========================================
+        // REAL BACKEND SCAN ENGINE
+        // Yahoo/yfinance market data + backend indicators
+        // ==========================================
+        function normalizeBackendSignal(data, fallbackPair) {
+            if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{}};
+        }
 
 
-@app.route("/admin/licenses", methods=["POST"])
-def admin_list_licenses():
-    data = request.get_json(silent=True) or {}
-    password = str(data.get("password", ""))
-    if password != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
-    now = int(time.time())
-    licenses = load_licenses()
-    rows = []
-    for key, record in licenses.items():
-        record = record if isinstance(record, dict) else {}
-        last_verified_at = int(record.get("last_verified_at") or 0)
-        session_active = bool(record.get("device") and record.get("session_token") and last_verified_at and (now - last_verified_at) < 90)
-        rows.append({
-            "key": key, "active": bool(record.get("active", False)) and not license_is_expired(record, now),
-            "expired": license_is_expired(record, now), "user": record.get("user"), "device": record.get("device"),
-            "device_label": record.get("device_label"), "session_active": session_active,
-            "created_at": record.get("created_at"), "last_verified_at": record.get("last_verified_at"),
-            "last_login_at": record.get("last_login_at"), "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
-            "expires_at": record.get("expires_at"),
-        })
-    rows.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
-    bound_count = sum(1 for row in rows if row.get("device"))
-    online_count = sum(1 for row in rows if row.get("session_active"))
-    return jsonify({"status": "success", "data": rows, "count": len(rows), "summary": {
-        "total": len(rows), "active": sum(1 for row in rows if row.get("active")), "bound": bound_count,
-        "online": online_count, "unbound": max(0, len(rows) - bound_count),
-        "expired": sum(1 for row in rows if row.get("expired")),
-    }})
+        async function scanPairFromBackend(pair) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            try {
+                const response = await fetch('/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pair: pair, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', scan_options: getScanOptions(), ...getAuthPayload() }),
+                    signal: controller.signal
+                });
+
+                const result = await response.json().catch(() => null);
+                if (!response.ok) {
+                    throw new Error((result && result.message) || ('Backend scan failed: ' + response.status));
+                }
+                if (!result || result.status !== 'success' || !result.data) {
+                    throw new Error('Invalid scan response from backend.');
+                }
+                if (result.data.signal === 'NO SIGNAL') {
+                    rajaLatestNoTradeReason = String(result.data.no_trade_reason || result.data.reason || 'Current market conditions did not pass the safety gate.');
+                    rajaLatestNewsLock = result.data.news_safety_lock || null;
+                }
+                return normalizeBackendSignal(result.data, pair);
+            } catch (error) {
+                console.error('Scan error for', pair, error);
+                if (error && error.name === 'AbortError') {
+                    throw new Error('Single-pair scan timed out after 30 seconds.');
+                }
+                throw error;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        async function scanPairsBatchFromBackend(pairs) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 90000);
+            try {
+                const response = await fetch('/scan-batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', scan_options: getScanOptions(), ...getAuthPayload() }),
+                    signal: controller.signal
+                });
+
+                const result = await response.json().catch(() => null);
+                if (!response.ok) {
+                    throw new Error((result && result.message) || ('Batch scan failed: ' + response.status));
+                }
+                if (!result || result.status !== 'success' || !Array.isArray(result.data)) {
+                    throw new Error('Invalid batch scan response.');
+                }
+
+                const rejectedRows = result.data.filter(row => row && row.signal === 'NO SIGNAL');
+                const newsRow = rejectedRows.find(row => row.news_safety_lock);
+                if (newsRow) {
+                    rajaLatestNewsLock = newsRow.news_safety_lock;
+                    rajaLatestNoTradeReason = String(newsRow.no_trade_reason || newsRow.reason || 'High-impact news safety lock is active.');
+                } else if (rejectedRows.length) {
+                    const meaningful = rejectedRows.find(row => row.no_trade_reason || row.reason);
+                    if (meaningful) rajaLatestNoTradeReason = String(meaningful.no_trade_reason || meaningful.reason || '');
+                }
+                return {
+                    results: result.data,
+                    cacheHit: Boolean(result.cache_hit),
+                    diagnostics: result.diagnostics || null
+                };
+            } catch (error) {
+                console.error('Batch scan error:', error);
+                if (error && error.name === 'AbortError') {
+                    throw new Error('Shared scan exceeded 90 seconds. The next Auto Re-Scan will retry slow Yahoo symbols automatically.');
+                }
+                throw error;
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
+        async function startDeepScan(autoTriggered = false) {
+            rajaLatestNoTradeReason = '';
+            rajaLatestNewsLock = null;
+            if (!navigator.onLine) {
+                showRajaNoTradeView('📴 OFFLINE — LIVE SCAN UNAVAILABLE', 'Reconnect to the internet to run a live market scan. Your last saved signal and history remain available.');
+                return;
+            }
+            const controlState = await refreshRajaAppState(true);
+            if (controlState && controlState.maintenance) {
+                showRajaNoTradeView('⛔ SCANS TEMPORARILY PAUSED', controlState.maintenance_message || 'RAJA AI scanning is temporarily paused by the admin.');
+                return;
+            }
+            if (guardReached()) { updateDailyPerformance(); if(!autoTriggered) alert('⛔ Trading session limit reached. Change Daily Stop Guard settings or wait until the next day.'); return; }
+            const existingScanBtn = document.getElementById('scanBtn');
+            if (existingScanBtn && existingScanBtn.disabled) return;
+            clearAutoRescanSchedule(true);
+            let broker = document.getElementById('brokerSelect').value;
+            let market = document.getElementById('marketType').value;
+            let selectedPair = document.getElementById('pairSelect').value;
+
+            activeSignalEntryEpochMs = null;
+            activeTrackedSignalId = null;
+            startTimer();
+
+            const isAutoScan = selectedPair.includes('Auto Scan') || selectedPair === '';
+            let eligiblePairs = [];
+            let allAutoPairs = [];
+
+            // Never carry a pair from the previous market/scan into a new Auto Scan.
+            syncTargetPairDisplay();
+
+            if (isAutoScan) {
+                allAutoPairs = brokerData[broker][market].slice(1);
+                cleanAutoPairCooldowns();
+                eligiblePairs = allAutoPairs.filter(pair => !isAutoPairCoolingDown(pair));
+
+                if (eligiblePairs.length === 0) {
+                    completeScanSession('nosignal');
+                    syncTargetPairDisplay();
+                    currentSection = 'dashboard';
+                    document.getElementById('noSignalTitle').innerText = '⏳ AUTO PAIR ROTATION COOLDOWN';
+                    document.getElementById('noSignalDesc').innerText = 'Recently signaled pairs can be scanned again after the 5-minute cooldown. Choose a pair manually or wait for Auto Re-Scan.';
+                    renderPrimaryView();
+                    return;
+                }
+            } else {
+                eligiblePairs = [selectedPair];
+            }
+
+            beginScanSession(autoTriggered, eligiblePairs.length);
+            renderPrimaryView();
+
+            const tfBoxReset = document.getElementById('tfBreakdown');
+            const tfLineReset = document.getElementById('tfSummaryLine');
+            if (tfBoxReset) tfBoxReset.innerHTML = '';
+            if (tfLineReset) tfLineReset.innerText = 'Multi-TF: scanning backend timeframes...';
+
+            let scanConsole = document.getElementById('liveScanConsole');
+            let progressBar = document.getElementById('scanProgressBar');
+            let scanStep = document.getElementById('scanStepText');
+            let scanBtn = document.getElementById('scanBtn');
+            scanBtn.innerText = autoTriggered ? '↻ AUTO RE-SCAN IN PROGRESS...' : '▶ AI MARKET SCAN IN PROGRESS...';
+            scanBtn.disabled = true;
+            setScanProgress(8);
+
+            let bestSignalFound = null;
+            let highestConfluence = 0;
+            let scanDiagnostics = null;
+            let scanFailureMessage = '';
+
+            try {
+                if (isAutoScan) {
+                    // One shared batch request replaces 21 browser requests. The backend
+                    // caches this market snapshot so many users reuse the same scan.
+                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SHARED MULTI-USER SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
+                    scanStep.innerText = 'Fetching shared market snapshot...';
+                    setScanProgress(25);
+
+                    const batch = await scanPairsBatchFromBackend(eligiblePairs);
+
+                    scanDiagnostics = batch.diagnostics || null;
+                    const eligibleSet = new Set(eligiblePairs);
+                    const rawResults = batch.results;
+                    updatePremiumMarketSnapshot(rawResults);
+                    let processed = 0;
+
+                    rawResults.forEach(raw => {
+                        const pair = raw && raw.pair ? raw.pair : 'Unknown';
+                        if (!eligibleSet.has(pair)) return;
+                        processed += 1;
+                        const normalized = normalizeBackendSignal(raw, pair);
+
+                        if (normalized && normalized.confluence > highestConfluence) {
+                            highestConfluence = normalized.confluence;
+                            bestSignalFound = normalized;
+                        }
+
+                        if (normalized) {
+                            scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${pair}</span> <span>${normalized.confluence}%</span></div>`;
+                        } else {
+                            scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${pair}</span> <span>No valid confluence/data</span></div>`;
+                        }
+                    });
+
+                    const skippedSlow = Number((scanDiagnostics && scanDiagnostics.timed_out_pairs_count) || 0);
+                    const partialTag = skippedSlow > 0 ? ` · ${skippedSlow} SLOW SKIPPED` : '';
+                    scanStep.innerText = `Shared scan complete: ${processed}/${eligiblePairs.length} eligible${partialTag}${batch.cacheHit ? ' · CACHE HIT' : ''}`;
+                    if (skippedSlow > 0) {
+                        scanConsole.innerHTML += `<div class="live-scan-row scanning"><span>⚡ Partial scan returned safely</span><span>${skippedSlow} slow pair(s) retry next cycle</span></div>`;
+                    }
+                    setScanProgress(100);
+                    scanConsole.scrollTop = scanConsole.scrollHeight;
+                } else {
+                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SCANNING ${selectedPair}...</div>`;
+                    scanStep.innerText = `RAJA AI Multi-TF Scan: ${selectedPair}`;
+                    setScanProgress(35);
+
+                    const indicatorResult = await scanPairFromBackend(selectedPair);
+                    setScanProgress(100);
+                    if (indicatorResult) {
+                        updatePremiumMarketSnapshotFromNormalized(indicatorResult);
+                        bestSignalFound = indicatorResult;
+                        highestConfluence = indicatorResult.confluence;
+                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${selectedPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
+                    } else {
+                        scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${selectedPair}</span> <span>No valid confluence/data</span></div>`;
+                    }
+                }
+            } catch (error) {
+                console.error('Deep scan failed:', error);
+                scanFailureMessage = error && error.message ? error.message : 'Unknown scan error';
+                scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>Scan failed</span><span>${scanFailureMessage}</span></div>`;
+            } finally {
+                scanBtn.innerText = '▶ START AI MARKET SCAN';
+                scanBtn.disabled = false;
+                scheduleAutoRescan();
+            }
+
+            setTimeout(() => {
+                if (bestSignalFound) {
+                    if (isAutoScan) rememberAutoPair(bestSignalFound.pair);
+                    displaySignalResult(bestSignalFound);
+                } else {
+                    completeScanSession('nosignal');
+                    syncTargetPairDisplay();
+                    const titleEl = document.getElementById('noSignalTitle');
+                    const descEl = document.getElementById('noSignalDesc');
+
+                    const reasonBox = document.getElementById('noTradeReasonBox');
+                    if (reasonBox) { reasonBox.style.display = 'none'; reasonBox.innerText = ''; }
+                    if (scanFailureMessage) {
+                        titleEl.innerText = '⚠️ SCAN REQUEST FAILED';
+                        descEl.innerText = scanFailureMessage;
+                    } else if (rajaLatestNewsLock) {
+                        titleEl.innerText = '⚠️ HIGH IMPACT NEWS — SCAN PAUSED';
+                        descEl.innerText = 'News Safety Lock protected this Forex scan.';
+                        if (reasonBox) {
+                            reasonBox.style.display = 'block';
+                            reasonBox.innerText = rajaLatestNoTradeReason || 'A relevant high-impact economic event is inside the safety window.';
+                        }
+                    } else if (rajaLatestNoTradeReason) {
+                        titleEl.innerText = '⛔ NO TRADE — LOW QUALITY SETUP';
+                        descEl.innerText = 'RAJA AI rejected the current setup instead of forcing a signal.';
+                        if (reasonBox) {
+                            reasonBox.style.display = 'block';
+                            reasonBox.innerText = rajaLatestNoTradeReason;
+                        }
+                    } else if (isAutoScan && scanDiagnostics) {
+                        const total = Number(scanDiagnostics.total_pairs || eligiblePairs.length || 0);
+                        const dataOk = Number(scanDiagnostics.data_available || 0);
+                        const dataBad = Number(scanDiagnostics.data_unavailable || 0);
+                        if (total > 0 && dataOk === 0) {
+                            titleEl.innerText = '⚠️ YAHOO DATA TEMPORARILY UNAVAILABLE';
+                            descEl.innerText = `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
+                        } else {
+                            const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
+                            titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                            const unavailableOnly = Math.max(0, dataBad - skippedSlow);
+                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
+                        }
+                    } else {
+                        titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
+                        descEl.innerText = `Current candles did not pass ${scanMode} mode + ${selectedExpiry} confirmation.`;
+                    }
+                    if (currentSection === 'dashboard') renderPrimaryView();
+                }
+            }, 250);
+        }
 
 
-def _validate_admin_password(data):
-    if str((data or {}).get("password", "")) != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
-    return None
+        async function registerSignalForTracking(signalData) {
+            const direction=signalData.dir.includes('CALL')?'CALL':'PUT'; const selectedTfMs=getExpirySeconds(selectedExpiry)*1000; activeSignalEntryEpochMs=(Math.floor(Date.now()/selectedTfMs)+1)*selectedTfMs; startTimer();
+            try { const response=await fetch('/track-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pair:signalData.pair,signal:direction,score:signalData.confluence,expiry:selectedExpiry,timeframe_summary:signalData.timeframeSummary||{},client_id:deviceSessionId,chart_preview:signalData.chartPreview||[],market_stability_score:signalData.marketStabilityScore,market_risk_level:signalData.marketRiskLevel,volatility_pct:signalData.volatilityPct,scan_mode:signalData.scanMode,market:document.getElementById('marketType')?.value||'',snapshot:{rsi:signalData.rsi,reason:signalData.reason,multi_tf_agreement:signalData.multiTfAgreement,confirmation_mode:signalData.confirmationMode},...getAuthPayload()})}); const result=await response.json(); if(result&&result.status==='success'&&result.auto_tracking){activeTrackedSignalId=result.signal_id;activeSignalEntryEpochMs=Number(result.entry_epoch)*1000;startTimer();}else if(result&&result.status==='success'){activeTrackedSignalId=null;} }
+            catch(error){console.error('Signal tracking error:',error);}
+        }
 
 
-@app.route("/admin/analytics", methods=["POST"])
-def admin_analytics():
-    data = request.get_json(silent=True) or {}
-    auth_error = _validate_admin_password(data)
-    if auth_error:
-        return auth_error
-    now = int(time.time())
-    day_start = now - (now % 86400)
-    events = [e for e in _load_scan_events(10000) if int(e.get("created_at") or 0) >= day_start]
-    user_counts = Counter(normalize_user_id(e.get("user", "")) for e in events if e.get("user"))
-    market_counts = Counter(str(e.get("market") or "Unknown") for e in events)
-    licenses = load_licenses()
-    online = sum(1 for r in licenses.values() if r.get("device") and r.get("session_token") and int(r.get("last_verified_at") or 0) >= now - 90)
-    return jsonify({"status": "success", "data": {
-        "scans_today": len(events), "signals_today": sum(1 for e in events if e.get("signal_found")),
-        "most_active_customer": user_counts.most_common(1)[0][0] if user_counts else "--",
-        "most_active_customer_scans": user_counts.most_common(1)[0][1] if user_counts else 0,
-        "most_scanned_market": market_counts.most_common(1)[0][0] if market_counts else "--",
-        "most_scanned_market_count": market_counts.most_common(1)[0][1] if market_counts else 0,
-        "active_licenses": sum(1 for r in licenses.values() if r.get("active") and not license_is_expired(r, now)),
-        "online_users": online,
-    }})
+        async function refreshTrackedHistory() {
+            try {
+                const auth=getAuthPayload();
+                if(!auth.key||!auth.session_token) return loadRajaOfflineHistory();
+                const q=new URLSearchParams({...auth,limit:'60'});
+                const response=await fetch('/signals/history?'+q.toString());
+                const result=await response.json();
+                if(response.ok&&result&&result.status==='success'){
+                    backendTrackedHistory=Array.isArray(result.data)?result.data:[];
+                    localStorage.setItem(RAJA_OFFLINE_HISTORY_KEY, JSON.stringify(backendTrackedHistory.slice(0,60)));
+                    renderHistoryList();updateDailyPerformance();renderPerformanceHeatmap();renderReplaySpotlight();
+                    return;
+                }
+                if (!navigator.onLine) loadRajaOfflineHistory();
+            } catch(error) {
+                console.error('History refresh error:',error);
+                loadRajaOfflineHistory();
+            }
+        }
 
 
-@app.route("/admin/reset-device", methods=["POST"])
-def admin_reset_device():
-    data = request.get_json(silent=True) or {}
-    auth_error = _validate_admin_password(data)
-    if auth_error:
-        return auth_error
-    key = str(data.get("key", "")).strip()
-    if not key:
-        return jsonify({"status": "error", "message": "License key is required."}), 400
-    licenses = load_licenses()
-    if key not in licenses:
-        return jsonify({"status": "error", "message": "License key not found."}), 404
-    record = licenses.get(key) if isinstance(licenses.get(key), dict) else {}
-    record["device"] = None; record["device_label"] = None; record["last_verified_at"] = None; record["session_token"] = None
-    licenses[key] = record
-    save_licenses(licenses)
-    return jsonify({"status": "success", "message": "Device binding reset.", "key": key})
+        function renderTimeframeBreakdown(signalData) {
+            const box = document.getElementById('tfBreakdown');
+            const line = document.getElementById('tfSummaryLine');
+            if (!box || !line) return;
+            const summary = signalData.timeframeSummary || {};
+            const order = ['1m','2m','5m','15m','30m'];
+            box.innerHTML = order.map(tf => {
+                const item = summary[tf] || {};
+                const sig = item.signal || 'NO SIGNAL';
+                const score = Number(item.score || 0);
+                const cls = sig === 'CALL' ? 'tf-call' : (sig === 'PUT' ? 'tf-put' : 'tf-none');
+                const label = sig === 'CALL' ? '↑ UP' : (sig === 'PUT' ? '↓ DOWN' : '• WAIT');
+                const scoreText = score > 0 ? `${score.toFixed(0)}%` : '--';
+                const selectedCls = tf === selectedExpiry ? ' tf-selected' : '';
+                return `<div class="tf-chip ${cls}${selectedCls}" data-tf="${tf}"><span class="tf-name">${tf}</span><span class="tf-dir">${label}</span><span class="tf-score">${scoreText}</span></div>`;
+            }).join('');
+            const agreement = Number(signalData.multiTfAgreement);
+            const agreementText = Number.isFinite(agreement) ? agreement.toFixed(1) + '%' : '--';
+            line.innerText = `Same pair multi-TF agreement: ${agreementText} · Mode: ${signalData.confirmationMode || '4-of-6 Strong'} · Selected Expiry: ${selectedExpiry}`;
+            syncSelectedExpiryUI();
+        }
+
+        function displaySignalResult(signalData) {
+            cacheRajaLastSignal(signalData);
+            completeScanSession('signal');
+            let signalView = document.getElementById('signalView');
+
+            let containerEl = document.querySelector('.container');
+
+            let hudBox = document.getElementById('hudBoxContainer');
+            let targetPairBox = document.getElementById('targetPairBoxContainer');
+            let resAsset = document.getElementById('resModalAsset');
+            let resDir = document.getElementById('resModalDirection');
+            let resMeta = document.getElementById('resModalMeta');
+            let targetPairDisplay = document.getElementById('targetPairDisplay');
+            let signal3dShell = document.getElementById('signal3dShell');
+            let signalConfidenceRing = document.getElementById('signalConfidenceRing');
+            let signalConfidenceValue = document.getElementById('signalConfidenceValue');
+
+            resAsset.innerText = signalData.pair;
+            targetPairDisplay.innerText = signalData.pair;
+            
+            
+            // Render actual backend multi-timeframe breakdown.
+            renderTimeframeBreakdown(signalData);
+            registerSignalForTracking(signalData);
+            let isBuy = signalData.dir.includes("CALL");
+            playSignalAlertSound(isBuy);
+            if (containerEl) {
+                containerEl.classList.remove('signal-arrival-buy','signal-arrival-sell','alert-flash');
+                void containerEl.offsetWidth;
+                const cls = isBuy ? 'signal-arrival-buy' : 'signal-arrival-sell';
+                containerEl.classList.add(cls);
+                setTimeout(() => containerEl.classList.remove(cls), 1700);
+            }
+            syncSelectedExpiryUI();
+            let confluenceNumber = Math.max(0, Math.min(100, Number(signalData.confluence || 0)));
+            let confluenceString = confluenceNumber.toFixed(1) + "%";
+            if (signalConfidenceRing) signalConfidenceRing.style.setProperty('--conf', confluenceNumber);
+            if (signalConfidenceValue) signalConfidenceValue.innerText = confluenceString;
+            if (signal3dShell) signal3dShell.className = isBuy ? 'premium-signal-result signal-live-buy' : 'premium-signal-result signal-live-sell';
+
+            dynamicHistory.unshift({
+                pair: signalData.pair,
+                dir: isBuy ? "UP (BUY)" : "DOWN (SELL)",
+                acc: confluenceString,
+                result: null
+            });
+            if (dynamicHistory.length > 10) dynamicHistory.pop();
+            localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+
+            if (isBuy) {
+                hudBox.className = "ai-hud-box glow-buy";
+                targetPairBox.className = "selected-pair-box pair-glow-buy";
+                targetPairDisplay.style.color = "#00ff87";
+                resDir.className = "signal-direction dir-up";
+                resDir.innerHTML = `⬆ UP (BUY) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+            } else {
+                hudBox.className = "ai-hud-box glow-sell";
+                targetPairBox.className = "selected-pair-box pair-glow-sell";
+                targetPairDisplay.style.color = "#ff3366";
+                resDir.className = "signal-direction dir-down";
+                resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+            }
+            notifyRajaSignal(signalData, isBuy, confluenceString);
+            updateStabilityUI(signalData);
+            activePremiumSignal = signalData;
+            renderSignalIntelligence(signalData);
+            updatePremiumMarketSnapshotFromNormalized(signalData);
+            speakSignal(signalData, isBuy);
+            if (currentSection === 'dashboard') renderPrimaryView();
+            requestAnimationFrame(() => renderSignalChart(document.getElementById('signalMiniChart'), signalData.chartPreview || [], isBuy, null, null));
+            startTimer();
+            setTimeout(refreshTrackedHistory, 700);
+        }
+    
+
+        function hydrateUpgradeSettings() {
+            setScanMode(scanMode);
+            const map={customMinTf:customScanSettings.min_tf,customMinAgreement:customScanSettings.min_agreement,customMinScore:customScanSettings.min_score,customVolMin:customScanSettings.vol_min,customVolMax:customScanSettings.vol_max,guardMaxTrades:guardSettings.maxTrades,guardMaxLosses:guardSettings.maxLosses};
+            Object.entries(map).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;}); const ge=document.getElementById('guardEnabled');if(ge)ge.checked=guardSettings.enabled!==false;const ve=document.getElementById('voiceAlertEnabled');if(ve)ve.checked=voiceAlertEnabled;updateDailyPerformance();
+        }
+
+        function updateStabilityUI(signalData) {
+            const score=Number(signalData.marketStabilityScore||0),risk=String(signalData.marketRiskLevel||'--').toUpperCase(),vol=Number(signalData.volatilityPct||0);
+            const set=(id,v)=>{const el=document.getElementById(id);if(el)el.innerText=v;};set('marketStabilityValue',score?score.toFixed(1)+'/100':'--');set('marketRiskValue',risk);set('marketVolatilityValue',Number.isFinite(vol)?vol.toFixed(4)+'%':'--');
+            const cls=risk==='LOW'?'stability-low':(risk==='HIGH'?'stability-high':'stability-medium'); ['stabilityScoreChip','riskLevelChip'].forEach(id=>{const el=document.getElementById(id);if(el){el.classList.remove('stability-low','stability-medium','stability-high');el.classList.add(cls);}});
+        }
+
+        function renderSignalChart(container, candles, isBuy=true, entryPrice=null, exitPrice=null) {
+            if (!container || !Array.isArray(candles) || candles.length < 2) return;
+
+            const clean = candles.map((c, i) => ({
+                time: Number(c && (c.t ?? c.time ?? c.timestamp ?? i)),
+                open: Number(c && c.o),
+                high: Number(c && c.h),
+                low: Number(c && c.l),
+                close: Number(c && c.c)
+            })).filter(c =>
+                Number.isFinite(c.time) &&
+                Number.isFinite(c.open) && Number.isFinite(c.high) &&
+                Number.isFinite(c.low) && Number.isFinite(c.close) &&
+                c.high >= Math.max(c.open, c.close) &&
+                c.low <= Math.min(c.open, c.close)
+            ).sort((a,b) => a.time - b.time);
+
+            if (clean.length < 2) return;
+            const data = clean.slice(-15);
+
+            if (!window.LightweightCharts) {
+                container.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#8ea8bd;font-size:9px;">Chart engine is loading…</div>';
+                setTimeout(() => renderSignalChart(container, candles, isBuy, entryPrice, exitPrice), 400);
+                return;
+            }
+
+            if (container.__rajaLwcChart) {
+                try { container.__rajaLwcChart.remove(); } catch (_) {}
+                container.__rajaLwcChart = null;
+            }
+            container.innerHTML = '';
+
+            const chartLight = document.documentElement.dataset.rajaTheme === 'light';
+            const chartBg = chartLight ? '#f7fafc' : '#171c28';
+            const chartText = chartLight ? '#42596c' : '#c6d0dc';
+            const chartGridV = chartLight ? 'rgba(70,100,120,.12)' : 'rgba(122,137,158,.18)';
+            const chartGridH = chartLight ? 'rgba(70,100,120,.16)' : 'rgba(122,137,158,.22)';
+            const values = data.flatMap(c => [c.open, c.high, c.low, c.close]);
+            const maxAbs = Math.max(...values.map(v => Math.abs(v)));
+            const precision = maxAbs >= 10000 ? 1 : maxAbs >= 1000 ? 2 : maxAbs >= 100 ? 3 : maxAbs >= 10 ? 4 : maxAbs >= 1 ? 5 : 6;
+            const minMove = Math.pow(10, -precision);
+
+            const chart = LightweightCharts.createChart(container, {
+                width: Math.max(320, container.clientWidth || 320),
+                height: Math.max(130, container.clientHeight || 180),
+                layout: {
+                    background: { type: LightweightCharts.ColorType.Solid, color: chartBg },
+                    textColor: chartText,
+                    attributionLogo: true,
+                    fontFamily: 'Segoe UI, Arial, sans-serif',
+                    fontSize: 10,
+                },
+                grid: {
+                    vertLines: { color: chartGridV },
+                    horzLines: { color: chartGridH },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                    vertLine: { color: 'rgba(220,230,240,.42)', width: 1, style: LightweightCharts.LineStyle.Dashed, labelBackgroundColor: '#344054' },
+                    horzLine: { color: 'rgba(220,230,240,.42)', width: 1, style: LightweightCharts.LineStyle.Dashed, labelBackgroundColor: '#344054' },
+                },
+                rightPriceScale: {
+                    visible: true,
+                    borderColor: 'rgba(130,145,165,.28)',
+                    scaleMargins: { top: 0.12, bottom: 0.12 },
+                    minimumWidth: 58,
+                },
+                leftPriceScale: { visible: false },
+                timeScale: {
+                    visible: true,
+                    timeVisible: true,
+                    secondsVisible: false,
+                    borderColor: 'rgba(130,145,165,.28)',
+                    rightOffset: 0.8,
+                    barSpacing: 33,
+                    minBarSpacing: 12,
+                    fixLeftEdge: true,
+                    fixRightEdge: false,
+                    lockVisibleTimeRangeOnResize: true,
+                },
+                handleScroll: false,
+                handleScale: false,
+            });
+
+            const series = chart.addSeries(LightweightCharts.CandlestickSeries, {
+                upColor: '#18b66d',
+                downColor: '#e85c4d',
+                borderVisible: true,
+                borderUpColor: '#18b66d',
+                borderDownColor: '#e85c4d',
+                wickUpColor: '#24c67c',
+                wickDownColor: '#f06a5b',
+                priceLineVisible: true,
+                priceLineColor: '#2d9bf0',
+                priceLineWidth: 1,
+                lastValueVisible: true,
+                priceFormat: { type: 'price', precision, minMove },
+            });
+
+            series.setData(data);
+
+            const entryNum = Number(entryPrice);
+            const entry = Number.isFinite(entryNum) ? entryNum : data[data.length - 1].close;
+            series.createPriceLine({
+                price: entry,
+                color: isBuy ? '#18b66d' : '#e85c4d',
+                lineWidth: 1,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: false,
+                title: isBuy ? 'ENTRY UP' : 'ENTRY DOWN',
+            });
+
+            const exitNum = Number(exitPrice);
+            if (Number.isFinite(exitNum)) {
+                series.createPriceLine({
+                    price: exitNum,
+                    color: '#f3c14b',
+                    lineWidth: 1,
+                    lineStyle: LightweightCharts.LineStyle.Dashed,
+                    axisLabelVisible: true,
+                    title: 'EXIT',
+                });
+            }
+
+            chart.timeScale().fitContent();
+            chart.timeScale().applyOptions({
+                rightOffset: 0.8,
+                barSpacing: Math.max(22, Math.min(42, (container.clientWidth || 700) / 17))
+            });
+
+            container.__rajaLwcChart = chart;
+            container.__rajaChartState = {
+                candles: clean.map(c => ({t:c.time,o:c.open,h:c.high,l:c.low,c:c.close})),
+                isBuy: !!isBuy,
+                entryPrice: Number.isFinite(entryNum) ? entryNum : null,
+                exitPrice: Number.isFinite(exitNum) ? exitNum : null
+            };
+
+            if (!window.__rajaSignalChartResizeBound) {
+                window.__rajaSignalChartResizeBound = true;
+                let chartResizeTimer = null;
+                window.addEventListener('resize', () => {
+                    clearTimeout(chartResizeTimer);
+                    chartResizeTimer = setTimeout(() => {
+                        ['signalMiniChart', 'replayMiniChart'].forEach(id => {
+                            const target = document.getElementById(id);
+                            const state = target && target.__rajaChartState;
+                            if (target && state) {
+                                renderSignalChart(target, state.candles, state.isBuy, state.entryPrice, state.exitPrice);
+                            }
+                        });
+                    }, 120);
+                });
+            }
+        }
+
+        function openSignalReplay(signalId) {
+            const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');replayPlaybackItem=item;replayPlaybackIndex=Math.min(Math.max(4,(item.chart_preview||[]).length>4?4:(item.chart_preview||[]).length),(item.chart_preview||[]).length);replayPause();renderReplayFrame();
+        }
+
+        async function openProfileInline(){currentSection='profile';hideAllHudViews();document.getElementById('profileInlineView').style.display='block';await loadUserProfile();}
+        async function loadUserProfile(){const grid=document.getElementById('profileGrid');if(!grid||!isUserVerified)return;grid.innerHTML='<div class="profile-cell"><small>Status</small><strong>Loading...</strong></div>';try{const response=await fetch('/user/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getAuthPayload())});const result=await response.json();if(!response.ok||!result||result.status!=='success')throw new Error((result&&result.message)||'Unable to load profile.');const p=result.data||{};grid.innerHTML=`<div class="profile-cell"><small>User / UID</small><strong>${escapeHtml(p.user||'--')}</strong></div><div class="profile-cell"><small>Plan</small><strong>${escapeHtml(p.plan||'VIP')}</strong></div><div class="profile-cell"><small>Expiry</small><strong>${escapeHtml(formatExpiryDate(p.expires_at))}</strong></div><div class="profile-cell"><small>Device</small><strong>${escapeHtml(p.device_label||'--')}</strong></div><div class="profile-cell"><small>Last Login</small><strong>${escapeHtml(formatDateTime(p.last_login_at))}</strong></div><div class="profile-cell"><small>Scans Today</small><strong>${Number(p.scans_today||0)}</strong></div><div class="profile-cell"><small>Total Scans</small><strong>${Number(p.total_scans||0)}</strong></div><div class="profile-cell"><small>Joined</small><strong>${escapeHtml(formatDateTime(p.created_at))}</strong></div>`;}catch(error){grid.innerHTML=`<div class="profile-cell"><small>Error</small><strong>${escapeHtml(error.message)}</strong></div>`;}}
+
+        function installHistoryMirror() {
+            const source = document.getElementById('historyListBox');
+            const target = document.getElementById('dashboardRecentHistory');
+            if (!source || !target || source.dataset.mirrorInstalled === '1') return;
+            const sync = () => { target.innerHTML = source.innerHTML; };
+            sync();
+            new MutationObserver(sync).observe(source, { childList: true, subtree: true, characterData: true });
+            source.dataset.mirrorInstalled = '1';
+        }
 
 
-@app.route("/admin/reset-all-devices", methods=["POST"])
-def admin_reset_all_devices():
-    data = request.get_json(silent=True) or {}
-    auth_error = _validate_admin_password(data)
-    if auth_error:
-        return auth_error
-    licenses = load_licenses(); updated = 0
-    for key, record in list(licenses.items()):
-        record = record if isinstance(record, dict) else {}
-        if record.get("device") or record.get("session_token"): updated += 1
-        record["device"] = None; record["device_label"] = None; record["last_verified_at"] = None; record["session_token"] = None
-        licenses[key] = record
-    save_licenses(licenses)
-    return jsonify({"status": "success", "message": "All device bindings cleared.", "updated": updated, "total": len(licenses)})
+        // =========================================================
+        // V15 PREMIUM MARKET INTELLIGENCE
+        // =========================================================
+        function buildStrengthFromRaw(raw) {
+            raw = raw || {};
+            const summary = raw.timeframe_summary || {};
+            const vals = Object.values(summary).filter(v => v && (v.signal === 'CALL' || v.signal === 'PUT'));
+            const calls = vals.filter(v => v.signal === 'CALL');
+            const puts = vals.filter(v => v.signal === 'PUT');
+            const side = calls.length > puts.length ? 'CALL' : (puts.length > calls.length ? 'PUT' : (raw.signal === 'CALL' ? 'CALL' : (raw.signal === 'PUT' ? 'PUT' : 'WAIT')));
+            const supporters = side === 'CALL' ? calls : (side === 'PUT' ? puts : []);
+            const avg = supporters.length ? supporters.reduce((a,v)=>a+Number(v.score||0),0)/supporters.length : 0;
+            const agreement = vals.length ? supporters.length/vals.length*100 : 0;
+            const finalScore = Number(raw.score||0) > 0 ? Number(raw.score||0) : Math.max(0, Math.min(94, avg*0.82 + agreement*0.18));
+            let status = finalScore >= 85 ? 'NEAR CONFIRM' : (finalScore >= 70 ? 'BUILDING' : (finalScore >= 55 ? 'WATCHING' : 'WEAK'));
+            if (raw.signal === 'CALL' || raw.signal === 'PUT') status = 'CONFIRMED';
+            return {pair:String(raw.pair||'--'), direction:side, strength:Math.round(finalScore), agreement:Math.round(agreement), status, signalFound:raw.signal==='CALL'||raw.signal==='PUT', volatility:Number(raw.volatility_pct||0), stability:Number(raw.market_stability_score||0)};
+        }
 
+        function updatePremiumMarketSnapshot(rawResults) {
+            if (!Array.isArray(rawResults)) return;
+            const next = rawResults.filter(x=>x&&x.pair).map(buildStrengthFromRaw).sort((a,b)=>b.strength-a.strength);
+            premiumMarketSnapshot = next.slice(0,40);
+            localStorage.setItem('raja_market_snapshot_v15', JSON.stringify(premiumMarketSnapshot));
+            renderPremiumMarketSnapshot();
+        }
 
-def _delete_license_from_request(data):
-    password = str(data.get("password", "")); key = str(data.get("key", "")).strip()
-    if password != ADMIN_PASSWORD:
-        return None, (jsonify({"status": "error", "message": "Incorrect admin password."}), 403)
-    if not key:
-        return None, (jsonify({"status": "error", "message": "License key is required."}), 400)
-    licenses = load_licenses()
-    if key not in licenses:
-        return None, (jsonify({"status": "error", "message": "License key not found."}), 404)
-    licenses.pop(key, None); save_licenses(licenses)
-    return key, None
+        function updatePremiumMarketSnapshotFromNormalized(signal) {
+            if (!signal || !signal.pair) return;
+            const pulse = {pair:signal.pair,direction:signal.dir&&signal.dir.includes('CALL')?'CALL':'PUT',strength:Math.round(Number(signal.confluence||0)),agreement:Math.round(Number(signal.multiTfAgreement||0)),status:'CONFIRMED',signalFound:true,volatility:Number(signal.volatilityPct||0),stability:Number(signal.marketStabilityScore||0)};
+            const map = new Map((premiumMarketSnapshot||[]).map(x=>[x.pair,x])); map.set(pulse.pair,pulse);
+            premiumMarketSnapshot = Array.from(map.values()).sort((a,b)=>b.strength-a.strength).slice(0,40);
+            localStorage.setItem('raja_market_snapshot_v15', JSON.stringify(premiumMarketSnapshot));
+            renderPremiumMarketSnapshot();
+        }
 
+        function heatBars(seed) {
+            const base = Math.max(10, Number(seed||0));
+            return Array.from({length:11},(_,i)=>`<i style="--h:${18+((base*(i+3)*7+i*11)%75)}%"></i>`).join('');
+        }
 
-@app.route("/admin/delete-key", methods=["POST"])
-def admin_delete_key():
-    data = request.get_json(silent=True) or {}; key, error = _delete_license_from_request(data)
-    if error: return error
-    return jsonify({"status": "success", "message": "License removed permanently.", "key": key})
+        function renderPremiumMarketSnapshot() {
+            const grid=document.getElementById('marketHeatmapGrid'); if(!grid)return;
+            let rows=(premiumMarketSnapshot||[]).slice(0,7);
+            if(!rows.length){
+                try { const broker=document.getElementById('brokerSelect')?.value||'Quotex', market=document.getElementById('marketType')?.value||'ForexLive'; const pairs=(brokerData?.[broker]?.[market]||[]).filter(x=>x&&!String(x).includes('Auto Scan')).slice(0,7); rows=pairs.map(pair=>({pair,direction:'WAIT',strength:0,agreement:0,status:'WAITING'})); } catch(e) {}
+            }
+            grid.innerHTML=rows.map(x=>{const cls=x.direction==='CALL'?'bull':(x.direction==='PUT'?'bear':'weak');const arrow=x.direction==='CALL'?'↑':(x.direction==='PUT'?'↓':'•');const label=x.strength?`${x.strength}%`:'--';return `<button class="heat-tile ${cls}" onclick="selectHeatmapPair('${String(x.pair).replace(/'/g,"\\'")}')"><div class="heat-pair">${escapeHtml(x.pair)}</div><div class="heat-score">${arrow} ${label}</div><div class="heat-meta"><span>${escapeHtml(x.status||'--')}</span><span>TF ${Number(x.agreement||0)}%</span></div><div class="heat-bars">${heatBars(x.strength||23)}</div></button>`;}).join('');
+            renderOpportunityQueue();
+        }
 
+        function selectHeatmapPair(pair) {
+            const select=document.getElementById('pairSelect'); if(!select)return;
+            const option=Array.from(select.options).find(o=>o.value===pair); if(option){select.value=pair;syncTargetPairDisplay();playClickSound();}
+        }
 
-@app.route("/admin/revoke-key", methods=["POST"])
-def admin_revoke_key():
-    data = request.get_json(silent=True) or {}; key, error = _delete_license_from_request(data)
-    if error: return error
-    return jsonify({"status": "success", "message": "License removed permanently.", "key": key})
+        function renderOpportunityQueue() {
+            const boxes=Array.from(document.querySelectorAll('.js-opportunity-queue')); if(!boxes.length)return;
+            const activePair=activePremiumSignal?.pair;
+            const rows=(premiumMarketSnapshot||[]).filter(x=>x.pair!==activePair).slice(0,3);
+            const html=!rows.length?'<div class="opp-item"><div class="opp-dir weak">•</div><div class="opp-main"><strong>Waiting for scan</strong><span>Auto Scan will rank the next setups</span></div><div class="opp-score">--</div></div>':rows.map(x=>{const cls=x.direction==='CALL'?'bull':(x.direction==='PUT'?'bear':'weak'),arr=x.direction==='CALL'?'↑':(x.direction==='PUT'?'↓':'•');return `<div class="opp-item"><div class="opp-dir ${cls}">${arr}</div><div class="opp-main"><strong>${escapeHtml(x.pair)}</strong><span>${escapeHtml(x.status)} · TF ${Number(x.agreement||0)}%</span></div><div class="opp-score">${Number(x.strength||0)}%</div></div>`;}).join('');
+            boxes.forEach(box=>box.innerHTML=html);
+        }
 
+        function updateSetupBuildMeterProgress(percent) {
+            if(activePremiumSignal && !scanSessionState.running) return;
+            const p=Math.max(0,Math.min(100,Math.round(Number(percent||0))));
+            const score=document.getElementById('setupBuildScore'), state=document.getElementById('setupBuildState'); if(score)score.innerText=p+'%'; if(state)state.innerText=p===0?'READY':(p<100?'SCANNING':'VALIDATING');
+            const stages=[['buildStageTrend',18],['buildStageMomentum',38],['buildStageVolatility',58],['buildStageTf',78],['buildStageExpiry',96]]; stages.forEach(([id,t])=>document.getElementById(id)?.classList.toggle('done',p>=t));
+            const b=document.getElementById('buildExpiryText'); if(b)b.innerText=selectedExpiry;
+        }
 
-@app.route("/admin/clear-keys", methods=["POST"])
-def admin_clear_keys():
-    data = request.get_json(silent=True) or {}; password = str(data.get("password", ""))
-    if password != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
-    licenses = load_licenses(); removed = len(licenses); save_licenses({})
-    return jsonify({"status": "success", "message": "All license keys removed.", "removed": removed})
+        function updateSetupBuildMeterSignal(signalData) {
+            const p=Math.max(0,Math.min(100,Math.round(Number(signalData?.confluence||0)))); const isBuy=String(signalData?.dir||'').includes('CALL');
+            document.getElementById('setupBuildScore').innerText=p+'%'; document.getElementById('setupBuildState').innerText='CONFIRMED';
+            ['buildStageTrend','buildStageMomentum','buildStageVolatility','buildStageTf','buildStageExpiry'].forEach(id=>document.getElementById(id)?.classList.add('done'));
+            const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;}; set('buildTrendText',isBuy?'Bullish':'Bearish'); set('buildMomentumText',p>=85?'Very Strong':(p>=70?'Strong':'Moderate')); set('buildVolatilityText',String(signalData?.marketRiskLevel||'NORMAL')); set('buildTfText',`${(signalData?.alignedTimeframes||[]).length||'--'}/6`); set('buildExpiryText',selectedExpiry+' ✓');
+        }
 
+        function renderSignalIntelligence(signalData) {
+            if(!signalData)return; updateSetupBuildMeterSignal(signalData);
+            const isBuy=String(signalData.dir||'').includes('CALL'), conf=Number(signalData.confluence||0), agreement=Number(signalData.multiTfAgreement||0), aligned=(signalData.alignedTimeframes||[]).length, risk=String(signalData.marketRiskLevel||'--').toUpperCase(), vol=Number(signalData.volatilityPct||0);
+            const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;};
+            set('explainTrend',isBuy?'Bullish':'Bearish'); set('explainTrendSub',isBuy?'Higher-TF bias points upward':'Higher-TF bias points downward'); set('explainMomentum',conf>=85?'Very Strong':(conf>=70?'Strong':'Moderate')); set('explainMomentumSub',`Technical confluence ${conf.toFixed(1)}%`); set('explainAgreement',`${aligned||'--'}/6 · ${agreement.toFixed(0)}%`); set('explainAgreementSub','Aligned valid timeframes'); set('explainExpiry',`${selectedExpiry} Confirmed`); set('explainExpirySub','Selected expiry timeframe aligned'); set('explainVolatility',risk==='LOW'?'Normal / Stable':(risk==='MEDIUM'?'Moderate':'Elevated')); set('explainVolatilitySub',`ATR ${vol.toFixed(4)}% · Risk ${risk}`);
+            set('aiExplanationSummary',`${isBuy?'BUY':'SELL'} setup confirmed because the dominant trend, momentum, multi-timeframe agreement and selected ${selectedExpiry} expiry are aligned. This is a technical model assessment, not a guaranteed outcome.`);
+            renderOpportunityQueue();
+        }
 
+        function renderPerformanceHeatmap() {
+            const body=document.getElementById('performanceHeatmapBody'); if(!body)return;
+            const completed=(backendTrackedHistory||[]).filter(x=>x&&['WIN','LOSS'].includes(String(x.result||'').toUpperCase()));
+            const counts=new Map(); completed.forEach(x=>counts.set(x.pair,(counts.get(x.pair)||0)+1)); const pairs=Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(x=>x[0]);
+            if(!pairs.length){body.innerHTML='<tr><td class="pair">No completed results</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr>';return;}
+            const expiries=['1m','2m','5m','15m','30m']; body.innerHTML=pairs.map(pair=>{const cells=expiries.map(exp=>{const rows=completed.filter(x=>x.pair===pair&&x.expiry===exp);if(!rows.length)return '<td>--</td>';const wins=rows.filter(x=>String(x.result).toUpperCase()==='WIN').length,rate=Math.round(wins/rows.length*100),cls=rate>=70?'good':(rate>=50?'mid':'bad');return `<td class="${cls}" title="${wins}/${rows.length} recorded wins">${rate}%<br><small>n=${rows.length}</small></td>`;}).join('');return `<tr><td class="pair">${escapeHtml(pair)}</td>${cells}</tr>`;}).join('');
+        }
 
+        function renderReplaySpotlight() {
+            const box=document.getElementById('replaySpotlight'); if(!box)return; const item=(backendTrackedHistory||[]).find(x=>x&&x.pair); if(!item){box.innerHTML='<span>No tracked signal available yet.</span>';return;} const out=String(item.result||item.status||'PENDING').toUpperCase(),cls=out==='WIN'?'win':(out==='LOSS'?'loss':'pending');box.innerHTML=`<strong>${escapeHtml(item.pair)} · ${escapeHtml(item.signal||'--')}</strong><br><span>${escapeHtml(item.expiry||'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span><div class="replay-outcome"><b class="${cls}">${escapeHtml(out)}</b><button class="replay-open-btn" onclick="openSignalReplay('${item.id}')">OPEN REPLAY ▶</button></div>`;
+        }
 
-@app.route("/track-signal", methods=["POST"])
-def track_signal():
-    data = request.get_json(silent=True) or {}
-    auth, error = _auth_session(data)
-    if error:
-        return error
-    pair = str(data.get("pair", "")).strip(); direction = str(data.get("signal", "")).strip().upper()
-    expiry = str(data.get("expiry", "")).strip(); score = data.get("score")
-    timeframe_summary = data.get("timeframe_summary") or {}; client_id = str(data.get("client_id", "")).strip()
-    if pair not in YAHOO_SYMBOLS:
-        return jsonify({"status": "error", "message": "Unsupported pair."}), 400
-    if direction not in {"CALL", "PUT"}:
-        return jsonify({"status": "error", "message": "Signal must be CALL or PUT."}), 400
-    if expiry not in AUTO_TRACK_EXPIRIES:
-        return jsonify({"status": "success", "auto_tracking": False,
-                        "message": "15s/30s outcome tracking is disabled because the Yahoo base feed is 1-minute."})
-    now = int(time.time()); duration = AUTO_TRACK_EXPIRIES[expiry]
-    entry_epoch = ((now // duration) + 1) * duration; expiry_epoch = entry_epoch + duration
-    signal_id = "sig_" + secrets.token_hex(8)
-    item = {
-        "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
-        "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
-        "status": "PENDING", "result_source": "pending", "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
-        "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
-        "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
-        "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
-        "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
-    }
-    with signals_lock:
-        items = load_signals(); items.insert(0, item); save_signals(items[:2000])
-    return jsonify({"status": "success", "auto_tracking": True, "signal_id": signal_id,
-                    "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
-                    "message": f"Signal registered. Enter on the next {expiry} candle open."})
-
-
-@app.route("/signals/result", methods=["POST"])
-def set_signal_result():
-    data = request.get_json(silent=True) or {}
-    auth, error = _auth_session(data)
-    if error: return error
-    signal_id = str(data.get("signal_id", "")).strip(); result = str(data.get("result", "")).strip().upper()
-    if not signal_id or result not in {"WIN", "LOSS", "DRAW"}:
-        return jsonify({"status": "error", "message": "Valid signal_id and WIN/LOSS/DRAW result are required."}), 400
-    with signals_lock:
-        items = load_signals(); target = next((x for x in items if x.get("id") == signal_id), None)
-        if target is None: return jsonify({"status": "error", "message": "Signal not found."}), 404
-        if target.get("user") and normalize_user_id(target.get("user")) != auth["user"]:
-            return jsonify({"status": "error", "message": "This signal belongs to another user."}), 403
-        if "(OTC)" not in str(target.get("pair", "")):
-            return jsonify({"status": "error", "message": "Manual Quotex result is only used for OTC signals."}), 400
-        target["result"] = result; target["status"] = "COMPLETED"; target["result_source"] = "quotex_manual"; target["resolved_at"] = int(time.time())
-        save_signals(items)
-    return jsonify({"status": "success", "signal_id": signal_id, "result": result, "result_source": "quotex_manual"})
-
-
-@app.route("/signals/history", methods=["GET"])
-def signals_history():
-    try: limit = max(1, min(int(request.args.get("limit", 30)), 100))
-    except Exception: limit = 30
-    auth_data = {k: request.args.get(k, "") for k in ("key", "user", "device", "session_token")}
-    auth, error = _auth_session(auth_data)
-    if error: return error
-    items = load_signals()
-    user_items = [x for x in items if normalize_user_id(x.get("user", "")) == auth["user"]]
-    # Backward compatibility: include old same-device history records that predate user tagging.
-    user_items.extend([x for x in items if not x.get("user") and str(x.get("client_id", "")) == auth["device"] and x not in user_items])
-    user_items.sort(key=lambda x: int(x.get("created_at") or 0), reverse=True)
-    return jsonify({"status": "success", "data": user_items[:limit], "stats": signal_stats(user_items)})
-
-
-@app.route("/signals/stats", methods=["GET"])
-def signals_stats():
-    auth_data = {k: request.args.get(k, "") for k in ("key", "user", "device", "session_token")}
-    auth, error = _auth_session(auth_data)
-    if error: return error
-    items = [x for x in load_signals() if normalize_user_id(x.get("user", "")) == auth["user"]]
-    return jsonify({"status": "success", "stats": signal_stats(items)})
-
-
-@app.route("/scan-batch", methods=["POST"])
-def scan_batch():
-    data = request.get_json(silent=True) or {}
-    auth, error = _auth_session(data)
-    if error: return error
-    requested_pairs = data.get("pairs") or []; selected_expiry = str(data.get("expiry", "")).strip()
-    market = str(data.get("market") or "Unknown")[:80]; opts = normalize_scan_options(data.get("scan_options"))
-    if not isinstance(requested_pairs, list):
-        return jsonify({"status": "error", "message": "pairs must be an array."}), 400
-    pairs, seen = [], set()
-    for raw in requested_pairs[:40]:
-        pair = str(raw).strip()
-        if pair in YAHOO_SYMBOLS and pair not in seen: pairs.append(pair); seen.add(pair)
-    if not pairs:
-        return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
-
-    options_key = (opts["mode"], opts["min_tf"], opts["min_agreement"], opts["min_score"], opts["vol_min"], opts["vol_max"])
-    key = (selected_expiry, tuple(pairs), options_key); now = time.time()
-    with batch_cache_lock:
-        cached = batch_cache.get(key)
-        if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
-            payload = cached["payload"]
-            found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
-            _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
-            return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
-    key_lock = _get_batch_key_lock(key)
-    with key_lock:
-        now = time.time()
-        with batch_cache_lock:
-            cached = batch_cache.get(key)
-            if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
-                payload = cached["payload"]
-                found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
-                _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
-                return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
-
-        results_by_pair, timed_out_pairs = {}, []
-        workers = min(BATCH_SCAN_WORKERS, len(pairs)); batch_started = time.time()
-        pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch")
-        future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry, opts): pair for pair in pairs}
-        done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
-        for future in done:
-            pair = future_map[future]
-            try: results_by_pair[pair] = future.result()
-            except Exception as exc:
-                print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
-        for future in pending:
-            pair = future_map[future]; timed_out_pairs.append(pair); future.cancel()
-            results_by_pair[pair] = no_signal_result(pair, "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.", symbol=YAHOO_SYMBOLS.get(pair))
-        pool.shutdown(wait=False, cancel_futures=True)
-        results = [results_by_pair[pair] for pair in pairs]
-        data_available = sum(1 for r in results if r.get("data_age") is not None); data_unavailable = len(results) - data_available
-        signals_found = sum(1 for r in results if r.get("signal") in {"CALL", "PUT"}); elapsed = round(time.time() - batch_started, 2)
-        diagnostics = {"total_pairs": len(results), "completed_pairs": len(done), "timed_out_pairs": timed_out_pairs,
-                       "timed_out_pairs_count": len(timed_out_pairs), "partial_response": bool(timed_out_pairs),
-                       "data_available": data_available, "data_unavailable": data_unavailable, "signals_found": signals_found,
-                       "elapsed_seconds": elapsed, "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
-                       "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS, "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
-                       "batch_workers": workers, "scan_mode": opts["mode"]}
-        payload = {"data": results, "diagnostics": diagnostics}
-        with batch_cache_lock:
-            batch_cache[key] = {"timestamp": time.time(), "payload": payload}
-            if len(batch_cache) > 40:
-                for old_key, _ in sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]: batch_cache.pop(old_key, None)
-        _append_scan_event(auth["user"], market, "AUTO", opts["mode"], signals_found > 0)
-        return jsonify({"status": "success", "data": results, "diagnostics": diagnostics, "cache_hit": False})
-
-
-@app.route("/scan", methods=["POST"])
-def scan_markets():
-    data = request.get_json(silent=True) or {}
-    auth, error = _auth_session(data)
-    if error: return error
-    selected_pair = str(data.get("pair", "")).strip(); selected_expiry = str(data.get("expiry", "")).strip()
-    market = str(data.get("market") or "Unknown")[:80]; opts = normalize_scan_options(data.get("scan_options"))
-    if not selected_pair or "Auto Scan Best Pair" in selected_pair:
-        return jsonify({"status": "error", "message": "Auto Scan must use /scan-batch with the selected market pair list."}), 400
-    if selected_pair not in YAHOO_SYMBOLS:
-        return jsonify({"status": "error", "message": f"Unsupported pair: {selected_pair}",
-                        "data": no_signal_result(selected_pair, "Pair is not configured in Yahoo mapping.")}), 400
-    result = calculate_live_indicators(selected_pair, selected_expiry, opts)
-    _append_scan_event(auth["user"], market, selected_pair, opts["mode"], result.get("signal") in {"CALL", "PUT"})
-    return jsonify({"status": "success", "data": result})
+        function renderReplayFrame() {
+            const canvas=document.getElementById('replayMiniChart'); if(!canvas||!replayPlaybackItem)return; const candles=Array.isArray(replayPlaybackItem.chart_preview)?replayPlaybackItem.chart_preview:[]; if(!candles.length)return; replayPlaybackIndex=Math.max(1,Math.min(candles.length,replayPlaybackIndex||1)); const slice=candles.slice(0,replayPlaybackIndex); renderSignalChart(canvas,slice,replayPlaybackItem.signal==='CALL',replayPlaybackItem.entry_price,replayPlaybackIndex>=candles.length?replayPlaybackItem.exit_price:null); const label=document.getElementById('replayFrameLabel');if(label)label.innerText=`Candle ${replayPlaybackIndex} / ${candles.length}${replayPlaybackIndex>=candles.length?' · Replay complete':''}`;
+        }
+        function replayReset(){replayPause();if(!replayPlaybackItem)return;replayPlaybackIndex=Math.min(4,(replayPlaybackItem.chart_preview||[]).length)||1;renderReplayFrame();}
+        function replayNext(){replayPause();if(!replayPlaybackItem)return;const n=(replayPlaybackItem.chart_preview||[]).length;replayPlaybackIndex=Math.min(n,(replayPlaybackIndex||0)+1);renderReplayFrame();}
+        function replayPlay(){if(!replayPlaybackItem)return;replayPause();const n=(replayPlaybackItem.chart_preview||[]).length;if((replayPlaybackIndex||0)>=n)replayPlaybackIndex=Math.min(4,n)||1;replayPlaybackTimer=setInterval(()=>{if(!replayPlaybackItem)return replayPause();replayPlaybackIndex++;if(replayPlaybackIndex>=n){replayPlaybackIndex=n;renderReplayFrame();replayPause();return;}renderReplayFrame();},650);}
+        function replayPause(){if(replayPlaybackTimer){clearInterval(replayPlaybackTimer);replayPlaybackTimer=null;}}
 
 
 
-# =========================================================
-# TELEGRAM INTEGRATION SERVICES
-# =========================================================
+        // =========================================================
+        // RAJA AI FULL SCREEN
+        // Works on desktop browsers and supported Android/tablet browsers.
+        // Fullscreen can only be entered after a real user click.
+        // =========================================================
+        function rajaFullscreenElement() {
+            return document.fullscreenElement || document.webkitFullscreenElement || null;
+        }
 
-def issue_telegram_license(user_ref):
-    """Issue or reuse an active web-compatible VIP key for an admin-approved Telegram user."""
-    user = normalize_user_id(user_ref)
-    if not user:
-        raise ValueError("Telegram/Quotex user reference is required.")
+        function updateRajaFullscreenButton() {
+            const btn = document.getElementById('rajaFullscreenBtn');
+            const icon = document.getElementById('rajaFullscreenIcon');
+            const label = document.getElementById('rajaFullscreenLabel');
+            if (!btn || !icon || !label) return;
 
-    licenses = load_licenses()
-    for key, record in licenses.items():
-        if record.get("active", False) and normalize_user_id(record.get("user", "")) == user:
-            return key
+            const active = !!rajaFullscreenElement();
+            btn.classList.toggle('is-fullscreen', active);
+            icon.textContent = active ? '✕' : '⛶';
+            label.textContent = active ? 'EXIT FULL SCREEN' : 'FULL SCREEN';
+            btn.title = active ? 'Exit full screen' : 'Open dashboard in full screen';
+            btn.setAttribute('aria-label', btn.title);
+        }
 
-    while True:
-        key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
-        if key not in licenses:
-            break
+        async function toggleRajaFullscreen() {
+            const root = document.documentElement;
+            try {
+                if (!rajaFullscreenElement()) {
+                    if (root.requestFullscreen) {
+                        await root.requestFullscreen({ navigationUI: 'hide' });
+                    } else if (root.webkitRequestFullscreen) {
+                        root.webkitRequestFullscreen();
+                    } else {
+                        alert('Full screen is not supported by this browser. You can still use the browser full-screen option.');
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        await document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    }
+                }
+            } catch (error) {
+                console.warn('RAJA full-screen request was blocked:', error);
+                alert('Full screen could not start. Tap the button again or use your browser full-screen option.');
+            } finally {
+                setTimeout(updateRajaFullscreenButton, 60);
+            }
+        }
 
-    licenses[key] = {
-        "active": True,
-        "user": user,
-        "device": None,
-        "device_label": None,
-        "session_token": None,
-        "created_at": int(time.time()),
-        "last_verified_at": None,
-        "last_login_at": None,
-        "plan": DEFAULT_LICENSE_PLAN,
-        "expires_at": None,
-    }
-    save_licenses(licenses)
-    return key
-
-
-def validate_telegram_license(key, user_ref):
-    """Validate an existing VIP key without consuming/binding a web device session."""
-    key = str(key or "").strip()
-    user = normalize_user_id(user_ref)
-    if not key or not user:
-        return False
-    record = load_licenses().get(key)
-    if not record or not record.get("active", False):
-        return False
-    # Important for short trials: Telegram access must stop when the license expires.
-    if license_is_expired(record):
-        return False
-    bound_user = normalize_user_id(record.get("user", ""))
-    return (not bound_user) or bound_user == user
-
-
-
-def telegram_license_info(key, user_ref):
-    """Return plan/expiry details for Telegram reminder and expiry automation."""
-    key = str(key or "").strip()
-    user = normalize_user_id(user_ref)
-    record = load_licenses().get(key) if key else None
-    if not isinstance(record, dict):
-        return {"exists": False, "valid": False, "plan": None, "expires_at": None}
-    bound_user = normalize_user_id(record.get("user", ""))
-    user_matches = (not bound_user) or (bound_user == user)
-    now = int(time.time())
-    return {
-        "exists": True,
-        "valid": bool(record.get("active", False)) and user_matches and not license_is_expired(record, now),
-        "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
-        "expires_at": record.get("expires_at"),
-        "active": bool(record.get("active", False)),
-        "user_matches": user_matches,
-    }
+        document.addEventListener('fullscreenchange', updateRajaFullscreenButton);
+        document.addEventListener('webkitfullscreenchange', updateRajaFullscreenButton);
 
 
-def telegram_scan_pair(pair, selected_expiry):
-    return calculate_live_indicators(str(pair), str(selected_expiry))
+        document.addEventListener('DOMContentLoaded', () => { updateRajaFullscreenButton(); installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
 
+    
 
-def telegram_scan_auto(pairs, selected_expiry):
-    """Run the same strict multi-TF analysis for a Telegram Auto Best Pair scan."""
-    pairs = [str(p).strip() for p in (pairs or []) if str(p).strip() in YAHOO_SYMBOLS][:40]
-    if not pairs:
-        return {"best": None, "diagnostics": {"total_pairs": 0, "data_available": 0}}
+        // =========================================================
+        // RAJA AI APP FEATURES V1
+        // Local App Lock · Platform Biometric Quick Unlock
+        // Signal System Notifications · First-run Tutorial
+        // =========================================================
+        const RAJA_LOCK_ENABLED_KEY = 'raja_app_lock_enabled_v1';
+        const RAJA_LOCK_HASH_KEY = 'raja_app_lock_hash_v1';
+        const RAJA_LOCK_SALT_KEY = 'raja_app_lock_salt_v1';
+        const RAJA_BIO_CRED_KEY = 'raja_app_bio_credential_v1';
+        const RAJA_TUTORIAL_KEY = 'raja_tutorial_seen_v1';
+        const RAJA_NOTIFY_KEY = 'raja_signal_notifications_v1';
 
-    workers = min(BATCH_SCAN_WORKERS, len(pairs))
-    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-tg-scan")
-    future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry): pair for pair in pairs}
-    done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
-    results = []
-    for future in done:
-        try:
-            results.append(future.result())
-        except Exception as exc:
-            print(f"Telegram auto scan error for {future_map[future]}: {exc}")
-    for future in pending:
-        future.cancel()
-    pool.shutdown(wait=False, cancel_futures=True)
+        let rajaAppIsLocked = false;
+        let rajaHiddenAt = 0;
+        let rajaTutorialIndex = 0;
+        let rajaTutorialTarget = null;
+        let rajaFeaturesInitializedForSession = false;
 
-    valid = [r for r in results if isinstance(r, dict) and r.get("signal") in {"CALL", "PUT"}]
-    best = max(valid, key=lambda r: float(r.get("score") or 0), default=None)
-    diagnostics = {
-        "total_pairs": len(pairs),
-        "completed_pairs": len(done),
-        "timed_out_pairs_count": len(pending),
-        "data_available": sum(1 for r in results if isinstance(r, dict) and r.get("data_age") is not None),
-        "signals_found": len(valid),
-    }
-    return {"best": best, "diagnostics": diagnostics}
+        function rajaBytesToBase64Url(bytes) {
+            let binary = '';
+            const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+            arr.forEach(b => binary += String.fromCharCode(b));
+            return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+        }
 
+        function rajaBase64UrlToBytes(value) {
+            const base64 = String(value || '').replace(/-/g,'+').replace(/_/g,'/');
+            const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
+            const binary = atob(padded);
+            return Uint8Array.from(binary, c => c.charCodeAt(0));
+        }
 
-try:
-    from telegram_bot import register_telegram_routes
-    register_telegram_routes(app, {
-        "issue_license": issue_telegram_license,
-        "validate_license": validate_telegram_license,
-        "license_info": telegram_license_info,
-        "scan_pair": telegram_scan_pair,
-        "scan_auto": telegram_scan_auto,
-    })
-except Exception as telegram_integration_error:
-    # Telegram must never prevent the existing web bot from starting.
-    print(f"Telegram integration disabled due to startup error: {telegram_integration_error}")
+        function rajaRandomBytes(length=32) {
+            const bytes = new Uint8Array(length);
+            crypto.getRandomValues(bytes);
+            return bytes;
+        }
 
+        async function rajaHashPin(pin, saltB64) {
+            const salt = rajaBase64UrlToBytes(saltB64);
+            const pinBytes = new TextEncoder().encode(String(pin));
+            const combined = new Uint8Array(salt.length + pinBytes.length);
+            combined.set(salt, 0);
+            combined.set(pinBytes, salt.length);
+            const digest = await crypto.subtle.digest('SHA-256', combined);
+            return rajaBytesToBase64Url(new Uint8Array(digest));
+        }
 
-signal_worker_thread = threading.Thread(
-    target=signal_outcome_worker,
-    daemon=True,
-)
-signal_worker_thread.start()
+        function rajaLockEnabled() {
+            return localStorage.getItem(RAJA_LOCK_ENABLED_KEY) === '1' &&
+                   !!localStorage.getItem(RAJA_LOCK_HASH_KEY);
+        }
 
+        function updateRajaAppFeatureStatus() {
+            const lockStatus = document.getElementById('rajaLockStatusText');
+            if (lockStatus) {
+                lockStatus.innerText = rajaLockEnabled() ? 'ON · PIN PROTECTED' : 'OFF';
+                lockStatus.style.color = rajaLockEnabled() ? '#00ff87' : '#94a3b8';
+            }
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False,
-        threaded=True,
-    )
+            const bioStatus = document.getElementById('rajaBiometricStatus');
+            const bioReady = !!localStorage.getItem(RAJA_BIO_CRED_KEY);
+            if (bioStatus) {
+                bioStatus.innerText = bioReady
+                    ? 'Biometric quick unlock: configured on this device.'
+                    : 'Biometric quick unlock: not configured.';
+                bioStatus.style.color = bioReady ? '#00ff87' : '#7fa1b7';
+            }
+
+            const notifyStatus = document.getElementById('rajaNotificationStatus');
+            if (notifyStatus) {
+                if (!('Notification' in window)) {
+                    notifyStatus.innerText = 'NOT SUPPORTED';
+                    notifyStatus.style.color = '#ff8ca4';
+                } else {
+                    const permission = Notification.permission;
+                    notifyStatus.innerText = permission === 'granted' ? 'ON · ALLOWED' :
+                                             permission === 'denied' ? 'BLOCKED IN BROWSER' :
+                                             'OFF · PERMISSION NEEDED';
+                    notifyStatus.style.color = permission === 'granted' ? '#00ff87' :
+                                               permission === 'denied' ? '#ff5d7d' : '#facc15';
+                }
+            }
+
+            const bioUnlockBtn = document.getElementById('rajaBiometricUnlockBtn');
+            if (bioUnlockBtn) {
+                bioUnlockBtn.style.display = localStorage.getItem(RAJA_BIO_CRED_KEY) ? '' : 'none';
+            }
+        }
+
+        function openRajaPinSetup() {
+            const modal = document.getElementById('rajaPinSetupModal');
+            const newPin = document.getElementById('rajaNewPin');
+            const confirmPin = document.getElementById('rajaConfirmPin');
+            const msg = document.getElementById('rajaPinSetupMessage');
+            if (newPin) newPin.value = '';
+            if (confirmPin) confirmPin.value = '';
+            if (msg) msg.innerText = '';
+            if (modal) {
+                modal.classList.add('visible');
+                modal.setAttribute('aria-hidden','false');
+                setTimeout(() => newPin && newPin.focus(), 120);
+            }
+        }
+
+        function closeRajaPinSetup() {
+            const modal = document.getElementById('rajaPinSetupModal');
+            if (modal) {
+                modal.classList.remove('visible');
+                modal.setAttribute('aria-hidden','true');
+            }
+        }
+
+        async function saveRajaAppPin() {
+            const pin = String(document.getElementById('rajaNewPin')?.value || '').trim();
+            const confirmPin = String(document.getElementById('rajaConfirmPin')?.value || '').trim();
+            const msg = document.getElementById('rajaPinSetupMessage');
+
+            if (!/^\d{4,6}$/.test(pin)) {
+                if (msg) msg.innerText = 'Use a 4–6 digit numeric PIN.';
+                return;
+            }
+            if (pin !== confirmPin) {
+                if (msg) msg.innerText = 'PIN confirmation does not match.';
+                return;
+            }
+
+            const salt = rajaBytesToBase64Url(rajaRandomBytes(16));
+            const hash = await rajaHashPin(pin, salt);
+            localStorage.setItem(RAJA_LOCK_SALT_KEY, salt);
+            localStorage.setItem(RAJA_LOCK_HASH_KEY, hash);
+            localStorage.setItem(RAJA_LOCK_ENABLED_KEY, '1');
+            if (msg) {
+                msg.style.color = '#00ff87';
+                msg.innerText = 'PIN saved. App Lock is now ON.';
+            }
+            updateRajaAppFeatureStatus();
+            setTimeout(closeRajaPinSetup, 650);
+        }
+
+        function showRajaLock() {
+            if (!rajaLockEnabled() || !isUserVerified) return;
+            closeRajaTutorial(false);
+            rajaAppIsLocked = true;
+            const overlay = document.getElementById('rajaAppLockOverlay');
+            const pin = document.getElementById('rajaUnlockPin');
+            const msg = document.getElementById('rajaLockMessage');
+            if (msg) msg.innerText = '';
+            if (pin) pin.value = '';
+            if (overlay) {
+                overlay.classList.add('visible');
+                overlay.setAttribute('aria-hidden','false');
+                setTimeout(() => pin && pin.focus(), 120);
+            }
+            updateRajaAppFeatureStatus();
+        }
+
+        function hideRajaLock() {
+            rajaAppIsLocked = false;
+            const overlay = document.getElementById('rajaAppLockOverlay');
+            if (overlay) {
+                overlay.classList.remove('visible');
+                overlay.setAttribute('aria-hidden','true');
+            }
+        }
+
+        async function unlockRajaWithPin() {
+            if (!rajaLockEnabled()) return hideRajaLock();
+            const pin = String(document.getElementById('rajaUnlockPin')?.value || '').trim();
+            const msg = document.getElementById('rajaLockMessage');
+            if (!/^\d{4,6}$/.test(pin)) {
+                if (msg) msg.innerText = 'Enter your 4–6 digit PIN.';
+                return;
+            }
+            try {
+                const salt = localStorage.getItem(RAJA_LOCK_SALT_KEY) || '';
+                const expected = localStorage.getItem(RAJA_LOCK_HASH_KEY) || '';
+                const actual = await rajaHashPin(pin, salt);
+                if (actual === expected) {
+                    if (msg) {
+                        msg.style.color = '#00ff87';
+                        msg.innerText = 'Unlocked.';
+                    }
+                    setTimeout(hideRajaLock, 120);
+                } else {
+                    if (msg) {
+                        msg.style.color = '#ff879e';
+                        msg.innerText = 'Incorrect PIN.';
+                    }
+                }
+            } catch (error) {
+                if (msg) msg.innerText = 'Unable to verify PIN on this device.';
+            }
+        }
+
+        function lockRajaAppNow() {
+            if (!rajaLockEnabled()) return openRajaPinSetup();
+            showRajaLock();
+        }
+
+        function disableRajaAppLock() {
+            if (!confirm('Disable RAJA AI App Lock on this device?')) return;
+            localStorage.removeItem(RAJA_LOCK_ENABLED_KEY);
+            localStorage.removeItem(RAJA_LOCK_HASH_KEY);
+            localStorage.removeItem(RAJA_LOCK_SALT_KEY);
+            localStorage.removeItem(RAJA_BIO_CRED_KEY);
+            hideRajaLock();
+            updateRajaAppFeatureStatus();
+        }
+
+        async function setupRajaBiometric() {
+            const status = document.getElementById('rajaBiometricStatus');
+            if (!window.PublicKeyCredential || !navigator.credentials || !crypto?.getRandomValues) {
+                if (status) {
+                    status.style.color = '#ff8ca4';
+                    status.innerText = 'Biometric/WebAuthn is not available in this browser.';
+                }
+                return;
+            }
+            if (!rajaLockEnabled()) {
+                if (status) {
+                    status.style.color = '#facc15';
+                    status.innerText = 'Set an App Lock PIN first, then add biometric unlock.';
+                }
+                openRajaPinSetup();
+                return;
+            }
+
+            try {
+                const userId = rajaRandomBytes(16);
+                const credential = await navigator.credentials.create({
+                    publicKey: {
+                        challenge: rajaRandomBytes(32),
+                        rp: { name: 'RAJA AI PREMIUM' },
+                        user: {
+                            id: userId,
+                            name: 'raja-ai-local-lock',
+                            displayName: 'RAJA AI App Lock'
+                        },
+                        pubKeyCredParams: [
+                            { type:'public-key', alg:-7 },
+                            { type:'public-key', alg:-257 }
+                        ],
+                        authenticatorSelection: {
+                            authenticatorAttachment:'platform',
+                            residentKey:'preferred',
+                            userVerification:'required'
+                        },
+                        timeout:60000,
+                        attestation:'none'
+                    }
+                });
+
+                if (!credential || !credential.rawId) throw new Error('No credential returned');
+                localStorage.setItem(RAJA_BIO_CRED_KEY, rajaBytesToBase64Url(new Uint8Array(credential.rawId)));
+                if (status) {
+                    status.style.color = '#00ff87';
+                    status.innerText = 'Biometric quick unlock configured on this device.';
+                }
+                updateRajaAppFeatureStatus();
+            } catch (error) {
+                if (status) {
+                    status.style.color = '#ff8ca4';
+                    status.innerText = 'Biometric setup cancelled or unavailable on this device.';
+                }
+            }
+        }
+
+        async function unlockRajaWithBiometric() {
+            const msg = document.getElementById('rajaLockMessage');
+            const storedId = localStorage.getItem(RAJA_BIO_CRED_KEY);
+            if (!storedId || !navigator.credentials) {
+                if (msg) msg.innerText = 'Biometric unlock is not configured.';
+                return;
+            }
+
+            try {
+                const assertion = await navigator.credentials.get({
+                    publicKey: {
+                        challenge: rajaRandomBytes(32),
+                        allowCredentials: [{
+                            id: rajaBase64UrlToBytes(storedId),
+                            type:'public-key',
+                            transports:['internal']
+                        }],
+                        userVerification:'required',
+                        timeout:60000
+                    }
+                });
+                if (!assertion) throw new Error('No assertion');
+                if (msg) {
+                    msg.style.color = '#00ff87';
+                    msg.innerText = 'Biometric verified.';
+                }
+                setTimeout(hideRajaLock, 100);
+            } catch (error) {
+                if (msg) {
+                    msg.style.color = '#ff879e';
+                    msg.innerText = 'Biometric unlock cancelled or failed.';
+                }
+            }
+        }
+
+        async function enableRajaNotifications() {
+            const status = document.getElementById('rajaNotificationStatus');
+            if (!('Notification' in window)) {
+                if (status) status.innerText = 'NOT SUPPORTED';
+                return false;
+            }
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission === 'granted') localStorage.setItem(RAJA_NOTIFY_KEY, '1');
+                updateRajaAppFeatureStatus();
+                return permission === 'granted';
+            } catch (error) {
+                updateRajaAppFeatureStatus();
+                return false;
+            }
+        }
+
+        async function rajaPostNotification(payload) {
+            if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+            if (localStorage.getItem(RAJA_NOTIFY_KEY) !== '1') return false;
+
+            try {
+                if ('serviceWorker' in navigator) {
+                    const reg = await navigator.serviceWorker.ready;
+                    if (reg && reg.active) {
+                        reg.active.postMessage({ type:'RAJA_SHOW_NOTIFICATION', payload });
+                        return true;
+                    }
+                    if (reg && reg.showNotification) {
+                        await reg.showNotification(payload.title, payload.options || {});
+                        return true;
+                    }
+                }
+                new Notification(payload.title, payload.options || {});
+                return true;
+            } catch (error) {
+                console.warn('RAJA notification failed:', error);
+                return false;
+            }
+        }
+
+        async function testRajaNotification() {
+            if (!('Notification' in window)) return;
+            if (Notification.permission !== 'granted') {
+                const ok = await enableRajaNotifications();
+                if (!ok) return;
+            }
+            await rajaPostNotification({
+                title:'RAJA AI · Test Alert',
+                options:{
+                    body:'Notifications are ready on this device.',
+                    icon:'/raja-ai-icon-192.png',
+                    badge:'/raja-ai-icon-192.png',
+                    tag:'raja-test',
+                    renotify:false,
+                    data:{ url:'/' }
+                }
+            });
+        }
+
+        async function notifyRajaSignal(signalData, isBuy, confluenceString) {
+            const pair = String(signalData?.pair || 'Selected Pair');
+            const expiry = String(selectedExpiry || signalData?.selectedExpiry || '1m');
+            const direction = isBuy ? 'UP (BUY)' : 'DOWN (SELL)';
+            const body = `${pair} · ${direction} · ${expiry} expiry · Confluence ${confluenceString}`;
+            await rajaPostNotification({
+                title:'RAJA AI · SIGNAL CONFIRMED',
+                options:{
+                    body,
+                    icon:'/raja-ai-icon-192.png',
+                    badge:'/raja-ai-icon-192.png',
+                    tag:'raja-live-signal',
+                    renotify:true,
+                    requireInteraction:false,
+                    vibrate:[160,80,160],
+                    data:{ url:'/' }
+                }
+            });
+        }
+
+        const RAJA_TUTORIAL_STEPS = [
+            {
+                title:'Select Market & Pair',
+                text:'Choose Crypto or Forex, then select a pair or Auto Scan. RAJA AI uses this selection for the next market scan.',
+                selector:'#marketType'
+            },
+            {
+                title:'Start AI Market Scan',
+                text:'Tap START AI MARKET SCAN. The scanner checks the selected market and multi-timeframe filters before confirming a setup.',
+                selector:'#scanBtn'
+            },
+            {
+                title:'Read Signal & Entry Timing',
+                text:'A confirmed UP/DOWN signal appears in the signal area with expiry, confluence and the current-candle countdown. Use the candle timing shown in the app before entering.',
+                selector:'#hudBoxContainer'
+            }
+        ];
+
+        function clearRajaTutorialFocus() {
+            if (rajaTutorialTarget) rajaTutorialTarget.classList.remove('raja-tutorial-focus');
+            rajaTutorialTarget = null;
+        }
+
+        function renderRajaTutorialStep() {
+            const step = RAJA_TUTORIAL_STEPS[rajaTutorialIndex];
+            if (!step) return closeRajaTutorial(false);
+            clearRajaTutorialFocus();
+
+            const stepEl = document.getElementById('rajaTutorialStep');
+            const titleEl = document.getElementById('rajaTutorialTitle');
+            const textEl = document.getElementById('rajaTutorialText');
+            const backBtn = document.getElementById('rajaTutorialBack');
+            const nextBtn = document.getElementById('rajaTutorialNext');
+
+            if (stepEl) stepEl.innerText = `STEP ${rajaTutorialIndex + 1} OF ${RAJA_TUTORIAL_STEPS.length}`;
+            if (titleEl) titleEl.innerText = step.title;
+            if (textEl) textEl.innerText = step.text;
+            if (backBtn) backBtn.style.visibility = rajaTutorialIndex === 0 ? 'hidden' : 'visible';
+            if (nextBtn) nextBtn.innerText = rajaTutorialIndex === RAJA_TUTORIAL_STEPS.length - 1 ? 'FINISH' : 'NEXT';
+
+            const target = document.querySelector(step.selector);
+            if (target) {
+                rajaTutorialTarget = target;
+                target.classList.add('raja-tutorial-focus');
+                try { target.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' }); } catch (_) {}
+            }
+        }
+
+        function startRajaTutorial(force=false) {
+            if (!isUserVerified) return;
+            if (!force && localStorage.getItem(RAJA_TUTORIAL_KEY) === '1') return;
+            if (rajaAppIsLocked) return;
+            rajaTutorialIndex = 0;
+            const overlay = document.getElementById('rajaTutorialOverlay');
+            if (overlay) {
+                overlay.classList.add('visible');
+                overlay.setAttribute('aria-hidden','false');
+            }
+            setTimeout(renderRajaTutorialStep, 120);
+        }
+
+        function closeRajaTutorial(markSeen=true) {
+            clearRajaTutorialFocus();
+            const overlay = document.getElementById('rajaTutorialOverlay');
+            if (overlay) {
+                overlay.classList.remove('visible');
+                overlay.setAttribute('aria-hidden','true');
+            }
+            if (markSeen) localStorage.setItem(RAJA_TUTORIAL_KEY, '1');
+        }
+
+        function rajaTutorialNext() {
+            if (rajaTutorialIndex >= RAJA_TUTORIAL_STEPS.length - 1) {
+                closeRajaTutorial(true);
+                return;
+            }
+            rajaTutorialIndex += 1;
+            renderRajaTutorialStep();
+        }
+
+        function rajaTutorialBack() {
+            if (rajaTutorialIndex <= 0) return;
+            rajaTutorialIndex -= 1;
+            renderRajaTutorialStep();
+        }
+
+        function initializeRajaAppFeatures() {
+            if (!isUserVerified) return;
+            updateRajaAppFeatureStatus();
+            initializeRajaAppControlFeatures();
+
+            if (!rajaFeaturesInitializedForSession) {
+                rajaFeaturesInitializedForSession = true;
+                setTimeout(() => {
+                    if (rajaLockEnabled()) showRajaLock();
+                    else startRajaTutorial(false);
+                }, 450);
+            }
+        }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                rajaHiddenAt = Date.now();
+                return;
+            }
+            if (rajaLockEnabled() && isUserVerified && rajaHiddenAt && (Date.now() - rajaHiddenAt) >= 10000) {
+                showRajaLock();
+            }
+            rajaHiddenAt = 0;
+        });
+
+        window.addEventListener('pageshow', () => {
+            if (rajaLockEnabled() && isUserVerified && rajaFeaturesInitializedForSession) {
+                setTimeout(showRajaLock, 60);
+            }
+            updateRajaAppFeatureStatus();
+        });
+
+    
+
+        // =========================================================
+        // RAJA AI PREMIUM V2 APP CONTROL
+        // Theme · Smart NO TRADE UI · News Safety · Offline Snapshot
+        // Broadcast · License Expiry · Emergency Kill Switch
+        // =========================================================
+        const RAJA_THEME_KEY = 'raja_theme_v2';
+        const RAJA_OFFLINE_HISTORY_KEY = 'raja_offline_history_v2';
+        const RAJA_OFFLINE_SIGNAL_KEY = 'raja_offline_last_signal_v2';
+        const RAJA_EXPIRY_ALERT_KEY = 'raja_expiry_alert_v2';
+
+        let rajaLatestNoTradeReason = '';
+        let rajaLatestNewsLock = null;
+        let rajaAppControlState = { maintenance:false, maintenance_message:'', broadcast:null };
+        let rajaAppControlTimer = null;
+        let rajaExpiryTimer = null;
+        let rajaV2Initialized = false;
+
+        function setRajaTheme(theme) {
+            const value = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.dataset.rajaTheme = value;
+            localStorage.setItem(RAJA_THEME_KEY, value);
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', value === 'light' ? '#eef4f8' : '#050b16');
+            updateRajaThemeControls();
+
+            // Rebuild visible financial charts so their own background follows the theme.
+            ['signalMiniChart','replayMiniChart'].forEach(id => {
+                const target = document.getElementById(id);
+                const state = target && target.__rajaChartState;
+                if (target && state && typeof renderSignalChart === 'function') {
+                    renderSignalChart(target, state.candles, state.isBuy, state.entryPrice, state.exitPrice);
+                }
+            });
+        }
+
+        function updateRajaThemeControls() {
+            const theme = document.documentElement.dataset.rajaTheme === 'light' ? 'light' : 'dark';
+            const status = document.getElementById('rajaThemeStatus');
+            const darkBtn = document.getElementById('rajaThemeDarkBtn');
+            const lightBtn = document.getElementById('rajaThemeLightBtn');
+            if (status) status.innerText = theme === 'light' ? 'LIGHT MODE' : 'DARK MODE';
+            if (darkBtn) darkBtn.classList.toggle('active', theme === 'dark');
+            if (lightBtn) lightBtn.classList.toggle('active', theme === 'light');
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', theme === 'light' ? '#eef4f8' : '#050b16');
+        }
+
+        function showRajaNoTradeView(title, reason) {
+            completeScanSession('nosignal');
+            currentSection = 'dashboard';
+            primaryViewState = 'nosignal';
+            const titleEl = document.getElementById('noSignalTitle');
+            const descEl = document.getElementById('noSignalDesc');
+            const reasonBox = document.getElementById('noTradeReasonBox');
+            if (titleEl) titleEl.innerText = title || '⛔ NO TRADE';
+            if (descEl) descEl.innerText = 'RAJA AI safety controls prevented a live entry.';
+            if (reasonBox) {
+                reasonBox.style.display = 'block';
+                reasonBox.innerText = reason || 'Current conditions are not suitable for a live scan.';
+            }
+            renderPrimaryView();
+        }
+
+        function updateRajaConnectivityUI() {
+            const offline = !navigator.onLine;
+            const notice = document.getElementById('rajaOfflineNotice');
+            const status = document.getElementById('rajaOfflineStatusText');
+            const text = document.getElementById('rajaOfflineNoticeText');
+            if (notice) notice.classList.toggle('visible', offline);
+            if (status) {
+                status.innerText = offline ? 'OFFLINE · SAVED DATA ONLY' : 'ONLINE';
+                status.style.color = offline ? '#facc15' : '#00ff87';
+            }
+            if (text && offline) {
+                const cached = readRajaLastSignal();
+                text.innerText = cached && cached.pair
+                    ? `OFFLINE · Last saved signal: ${cached.pair} · tap to view`
+                    : 'OFFLINE · Last saved data available · tap to view';
+            }
+        }
+
+        function cacheRajaLastSignal(signalData) {
+            try {
+                const item = {
+                    saved_at: Date.now(),
+                    pair: signalData?.pair || '--',
+                    direction: String(signalData?.dir || '--'),
+                    confluence: Number(signalData?.confluence || 0),
+                    expiry: String(selectedExpiry || signalData?.selectedExpiry || '--'),
+                    reason: String(signalData?.reason || ''),
+                    market_stability: Number(signalData?.marketStabilityScore || 0),
+                    risk: String(signalData?.marketRiskLevel || '--')
+                };
+                localStorage.setItem(RAJA_OFFLINE_SIGNAL_KEY, JSON.stringify(item));
+                updateRajaConnectivityUI();
+            } catch (_) {}
+        }
+
+        function readRajaLastSignal() {
+            try {
+                const item = JSON.parse(localStorage.getItem(RAJA_OFFLINE_SIGNAL_KEY) || 'null');
+                return item && typeof item === 'object' ? item : null;
+            } catch (_) { return null; }
+        }
+
+        function loadRajaOfflineHistory() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(RAJA_OFFLINE_HISTORY_KEY) || '[]');
+                if (Array.isArray(saved) && saved.length) {
+                    backendTrackedHistory = saved;
+                    renderHistoryList();
+                    updateDailyPerformance();
+                    renderPerformanceHeatmap();
+                    renderReplaySpotlight();
+                    return true;
+                }
+            } catch (_) {}
+            return false;
+        }
+
+        function openRajaOfflineSnapshot() {
+            const modal = document.getElementById('rajaOfflineSnapshotModal');
+            const signalBox = document.getElementById('rajaOfflineSignalSummary');
+            const historyBox = document.getElementById('rajaOfflineHistorySummary');
+            const signal = readRajaLastSignal();
+
+            if (signalBox) {
+                signalBox.innerHTML = signal ? `
+                    <div class="raja-offline-row"><span>Saved</span><strong>${escapeHtml(new Date(signal.saved_at).toLocaleString())}</strong></div>
+                    <div class="raja-offline-row"><span>Pair</span><strong>${escapeHtml(signal.pair)}</strong></div>
+                    <div class="raja-offline-row"><span>Signal</span><strong>${escapeHtml(signal.direction)} · ${escapeHtml(signal.expiry)}</strong></div>
+                    <div class="raja-offline-row"><span>Confluence</span><strong>${Number(signal.confluence||0).toFixed(1)}%</strong></div>
+                    <div class="raja-offline-row"><span>Stability</span><strong>${Number(signal.market_stability||0).toFixed(1)} / 100 · ${escapeHtml(signal.risk)}</strong></div>
+                ` : '<div class="raja-offline-row"><span>Last Signal</span><strong>No saved signal on this device yet.</strong></div>';
+            }
+
+            let history = [];
+            try { history = JSON.parse(localStorage.getItem(RAJA_OFFLINE_HISTORY_KEY) || '[]'); } catch (_) {}
+            if (historyBox) {
+                historyBox.innerHTML = Array.isArray(history) && history.length
+                    ? history.slice(0,10).map(item => `<div><b>${escapeHtml(item.pair||'--')}</b> · ${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')} · ${escapeHtml(item.result||item.status||'PENDING')}</div>`).join('')
+                    : '<div>No saved tracked history available yet.</div>';
+            }
+
+            if (modal) {
+                modal.classList.add('visible');
+                modal.setAttribute('aria-hidden','false');
+            }
+        }
+
+        function closeRajaOfflineSnapshot() {
+            const modal = document.getElementById('rajaOfflineSnapshotModal');
+            if (modal) {
+                modal.classList.remove('visible');
+                modal.setAttribute('aria-hidden','true');
+            }
+        }
+
+        function renderRajaAppState(state) {
+            state = state || {};
+            rajaAppControlState = state;
+
+            const maintenance = Boolean(state.maintenance);
+            const maintenanceNotice = document.getElementById('rajaMaintenanceNotice');
+            const maintenanceText = document.getElementById('rajaMaintenanceNoticeText');
+            if (maintenanceNotice) maintenanceNotice.classList.toggle('visible', maintenance);
+            if (maintenanceText && maintenance) maintenanceText.innerText = state.maintenance_message || 'RAJA AI scans are temporarily paused by the admin.';
+
+            const broadcast = state.broadcast && typeof state.broadcast === 'object' ? state.broadcast : null;
+            const broadcastNotice = document.getElementById('rajaBroadcastNotice');
+            const broadcastText = document.getElementById('rajaBroadcastNoticeText');
+            if (broadcastNotice) {
+                const active = Boolean(broadcast && broadcast.active && broadcast.message);
+                broadcastNotice.classList.toggle('visible', active);
+                broadcastNotice.classList.remove('info','warning','critical');
+                broadcastNotice.classList.add(['info','warning','critical'].includes(String(broadcast?.level)) ? String(broadcast.level) : 'info');
+            }
+            if (broadcastText) broadcastText.innerText = broadcast?.message || '';
+
+            const scanBtn = document.getElementById('scanBtn');
+            if (scanBtn && !scanSessionState.running) {
+                if (maintenance) {
+                    scanBtn.disabled = true;
+                    scanBtn.innerText = '⛔ SCANS TEMPORARILY PAUSED';
+                } else if (!guardReached()) {
+                    scanBtn.disabled = false;
+                    scanBtn.innerText = '▶ START AI MARKET SCAN';
+                }
+            }
+        }
+
+        async function refreshRajaAppState(force=false) {
+            if (!navigator.onLine) {
+                updateRajaConnectivityUI();
+                return rajaAppControlState;
+            }
+            try {
+                const response = await fetch('/app-state', { cache: force ? 'no-store' : 'default' });
+                const result = await response.json().catch(() => null);
+                if (response.ok && result && result.status === 'success') {
+                    renderRajaAppState(result.data || {});
+                    return result.data || {};
+                }
+            } catch (error) {
+                console.warn('RAJA app-state check failed:', error);
+            }
+            return rajaAppControlState;
+        }
+
+        async function checkRajaLicenseExpiry() {
+            if (!isUserVerified || !navigator.onLine) return;
+            try {
+                const response = await fetch('/user/profile', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify(getAuthPayload())
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') return;
+                const p = result.data || {};
+                const expiresAt = Number(p.expires_at || 0);
+                const notice = document.getElementById('rajaExpiryNotice');
+                const text = document.getElementById('rajaExpiryNoticeText');
+
+                if (!expiresAt) {
+                    if (notice) notice.classList.remove('visible');
+                    return;
+                }
+
+                const secondsLeft = expiresAt - Math.floor(Date.now()/1000);
+                if (secondsLeft <= 0) return;
+                const daysLeft = secondsLeft / 86400;
+                const threshold = daysLeft <= 1 ? 1 : (daysLeft <= 3 ? 3 : 0);
+                if (!threshold) {
+                    if (notice) notice.classList.remove('visible');
+                    return;
+                }
+
+                const hours = Math.ceil(secondsLeft / 3600);
+                const message = threshold === 1
+                    ? `⚠ VIP expires soon · about ${hours} hour${hours===1?'':'s'} remaining. Contact admin to renew.`
+                    : `⚠ VIP expires in about ${Math.ceil(daysLeft)} days. Contact admin to renew.`;
+
+                if (notice) notice.classList.add('visible');
+                if (text) text.innerText = message;
+
+                const alertId = `${expiresAt}:${threshold}`;
+                if (localStorage.getItem(RAJA_EXPIRY_ALERT_KEY) !== alertId) {
+                    localStorage.setItem(RAJA_EXPIRY_ALERT_KEY, alertId);
+                    await rajaPostNotification({
+                        title:'RAJA AI · VIP EXPIRY ALERT',
+                        options:{
+                            body:message,
+                            icon:'/raja-ai-icon-192.png',
+                            badge:'/raja-ai-icon-192.png',
+                            tag:'raja-license-expiry',
+                            data:{url:'/'}
+                        }
+                    });
+                }
+            } catch (_) {}
+        }
+
+        function initializeRajaAppControlFeatures() {
+            updateRajaThemeControls();
+            updateRajaConnectivityUI();
+            loadRajaOfflineHistory();
+
+            if (!rajaV2Initialized) {
+                rajaV2Initialized = true;
+                refreshRajaAppState(true);
+                checkRajaLicenseExpiry();
+
+                if (rajaAppControlTimer) clearInterval(rajaAppControlTimer);
+                rajaAppControlTimer = setInterval(() => {
+                    if (isUserVerified) refreshRajaAppState(false);
+                }, 30000);
+
+                if (rajaExpiryTimer) clearInterval(rajaExpiryTimer);
+                rajaExpiryTimer = setInterval(() => {
+                    if (isUserVerified) checkRajaLicenseExpiry();
+                }, 6 * 60 * 60 * 1000);
+            }
+        }
+
+        async function refreshRajaAdminControl() {
+            const pass = document.getElementById('adminPasswordInput')?.value || '';
+            const status = document.getElementById('adminControlStatus');
+            if (!pass) {
+                if (status) status.innerText = 'Enter admin password to load app-control state.';
+                return;
+            }
+            try {
+                const response = await fetch('/admin/app-control', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({password:pass, action:'get'})
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') throw new Error(result?.message || 'Unable to load app-control state.');
+                const state = result.data || {};
+                const msg = document.getElementById('adminBroadcastMessage');
+                const level = document.getElementById('adminBroadcastLevel');
+                const maintenance = document.getElementById('adminMaintenanceMessage');
+                if (msg) msg.value = state.broadcast?.message || '';
+                if (level) level.value = ['info','warning','critical'].includes(state.broadcast?.level) ? state.broadcast.level : 'info';
+                if (maintenance) maintenance.value = state.maintenance_message || '';
+                if (status) status.innerText = `Kill Switch: ${state.maintenance ? 'ON — SCANS PAUSED' : 'OFF — SCANS LIVE'} · Broadcast: ${state.broadcast?.active ? 'ACTIVE' : 'OFF'}`;
+            } catch (error) {
+                if (status) status.innerText = '❌ ' + error.message;
+            }
+        }
+
+        async function updateRajaAdminControl(payload) {
+            const pass = document.getElementById('adminPasswordInput')?.value || '';
+            if (!pass) return alert('Enter admin password first.');
+            const status = document.getElementById('adminControlStatus');
+            try {
+                const response = await fetch('/admin/app-control', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({password:pass, ...payload})
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') throw new Error(result?.message || 'Unable to update app control.');
+                if (status) status.innerText = '✅ App control updated.';
+                renderRajaAppState(result.data || {});
+                await refreshRajaAdminControl();
+            } catch (error) {
+                if (status) status.innerText = '❌ ' + error.message;
+                alert('❌ ' + error.message);
+            }
+        }
+
+        function publishRajaBroadcast() {
+            const message = String(document.getElementById('adminBroadcastMessage')?.value || '').trim();
+            const level = String(document.getElementById('adminBroadcastLevel')?.value || 'info');
+            if (!message) return alert('Enter a broadcast message first.');
+            updateRajaAdminControl({ action:'broadcast', message, level });
+        }
+
+        function clearRajaBroadcast() {
+            updateRajaAdminControl({ action:'clear_broadcast' });
+        }
+
+        function setRajaMaintenance(enabled) {
+            const message = String(document.getElementById('adminMaintenanceMessage')?.value || '').trim();
+            if (enabled && !confirm('Pause ALL RAJA AI market scans now?')) return;
+            updateRajaAdminControl({
+                action:'maintenance',
+                maintenance:Boolean(enabled),
+                maintenance_message: message || 'RAJA AI scanning is temporarily paused for maintenance.'
+            });
+        }
+
+        window.addEventListener('online', () => {
+            updateRajaConnectivityUI();
+            refreshRajaAppState(true);
+            if (isUserVerified) {
+                refreshTrackedHistory();
+                checkRajaLicenseExpiry();
+            }
+        });
+        window.addEventListener('offline', updateRajaConnectivityUI);
+        document.addEventListener('DOMContentLoaded', () => {
+            updateRajaThemeControls();
+            updateRajaConnectivityUI();
+            refreshRajaAppState(false);
+        });
+
+    </script>
+</body>
+</html>
