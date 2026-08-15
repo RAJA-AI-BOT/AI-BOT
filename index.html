@@ -4447,7 +4447,7 @@
             <label class="label-text" style="color: #00ff87; margin-top: 8px;">Enter VIP License Key:</label>
             <input type="password" id="verifyLicenseKey" class="input-field" placeholder="RAJA-VIP-XXXXXX" style="border-color: #00ff87;">
 
-            <button class="scan-btn" style="margin-top: 12px;" onclick="verifyAccess()">🔓 VERIFY & UNLOCK AI</button>
+            <button id="verifyAccessBtn" class="scan-btn" style="margin-top: 12px;" onclick="verifyAccess()">🔓 VERIFY & UNLOCK AI</button>
             <div id="verifyMessage" style="font-size: 11px; font-weight: 900; margin-top: 8px; display: none; padding: 6px; border-radius: 5px;"></div>
         </div>
 
@@ -5099,6 +5099,10 @@
         let customScanSettings = safeJsonParse(localStorage.getItem('raja_custom_scan_settings'), { min_tf:4, min_agreement:66.7, min_score:65, vol_min:0, vol_max:3 });
         let deferredInstallPrompt = null;
         let historyRefreshInterval = null;
+        let rajaHeartbeatInFlight = false;
+        let rajaVerifyInFlight = false;
+        let rajaBackendWarmPromise = null;
+        let rajaBackendReady = false;
 
         function getSessionToken(key = null) {
             const activeKey = key || localStorage.getItem('raja_active_key');
@@ -5108,6 +5112,38 @@
         function getAuthPayload() {
             const key = localStorage.getItem('raja_active_key') || '';
             return { key, user: localStorage.getItem('raja_active_user') || '', device: deviceSessionId, session_token: getSessionToken(key) };
+        }
+
+        function warmRajaBackend() {
+            if (rajaBackendReady) return Promise.resolve(true);
+            if (rajaBackendWarmPromise) return rajaBackendWarmPromise;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 65000);
+            rajaBackendWarmPromise = fetch('/health', {
+                method:'GET',
+                cache:'no-store',
+                signal: controller.signal
+            })
+                .then(response => {
+                    rajaBackendReady = Boolean(response && response.ok);
+                    return rajaBackendReady;
+                })
+                .catch(() => false)
+                .finally(() => {
+                    clearTimeout(timeoutId);
+                    rajaBackendWarmPromise = null;
+                });
+
+            return rajaBackendWarmPromise;
+        }
+
+        // Cached PWA shells can appear before a sleeping Render instance is awake.
+        // Wake the backend immediately in the background so login/scan usually finds it ready.
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => { warmRajaBackend(); }, { once:true });
+        } else {
+            warmRajaBackend();
         }
 
         function getScanOptions() {
@@ -5658,9 +5694,17 @@
 
         async function heartbeatLicense() {
             const auth = getAuthPayload();
-            if (!auth.key || !auth.user || !auth.session_token || !isUserVerified) return;
+            if (!auth.key || !auth.user || !auth.session_token || !isUserVerified || rajaHeartbeatInFlight) return;
+            rajaHeartbeatInFlight = true;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000);
             try {
-                const response = await fetch('/verify-license', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ ...auth, device_label:getCurrentDeviceLabel(), heartbeat:true }) });
+                const response = await fetch('/verify-license', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({ ...auth, device_label:getCurrentDeviceLabel(), heartbeat:true }),
+                    signal:controller.signal
+                });
                 const result = await response.json().catch(()=>null);
                 if (!response.ok || !result || result.status !== 'success') {
                     if ([401,403,409].includes(response.status)) {
@@ -5671,7 +5715,12 @@
                         const msg=document.getElementById('verifyMessage'); if(msg){msg.style.display='block';msg.style.color='#fff';msg.style.background='#ff3366';msg.innerText='⚠️ This account was signed in on another device. Please login again here if you want to take over.';}
                     }
                 }
-            } catch(e) {}
+            } catch(e) {
+                // A temporary network/cold-start delay must not log the user out.
+            } finally {
+                clearTimeout(timeoutId);
+                rajaHeartbeatInFlight = false;
+            }
         }
 
         function startLicenseHeartbeat() {
@@ -5830,17 +5879,92 @@
         }
 
         async function verifyAccess() {
+            if (rajaVerifyInFlight) return;
             playClickSound();
-            const uInput=document.getElementById('verifyUserInput').value.trim(), key=document.getElementById('verifyLicenseKey').value.trim(), msgBox=document.getElementById('verifyMessage');
-            if(!uInput||!key){msgBox.style.color='#fff';msgBox.style.background='#ff3366';msgBox.innerText='❌ Please enter Telegram ID / UID & License Key.';msgBox.style.display='block';return;}
-            msgBox.style.display='block';msgBox.style.color='#030712';msgBox.style.background='#60efff';msgBox.innerText='🔄 Verifying license and switching active device...';
+
+            const uInput = document.getElementById('verifyUserInput').value.trim();
+            const key = document.getElementById('verifyLicenseKey').value.trim();
+            const msgBox = document.getElementById('verifyMessage');
+            const verifyBtn = document.getElementById('verifyAccessBtn');
+
+            if (!uInput || !key) {
+                msgBox.style.color='#fff';
+                msgBox.style.background='#ff3366';
+                msgBox.innerText='❌ Please enter Telegram ID / UID & License Key.';
+                msgBox.style.display='block';
+                return;
+            }
+
+            rajaVerifyInFlight = true;
+            if (verifyBtn) {
+                verifyBtn.disabled = true;
+                verifyBtn.innerText = '⏳ CONNECTING TO RAJA AI...';
+            }
+
+            msgBox.style.display='block';
+            msgBox.style.color='#030712';
+            msgBox.style.background='#60efff';
+            msgBox.innerText = rajaBackendReady
+                ? '🔄 Verifying license and switching active device...'
+                : '⏳ Server may be waking. Verifying license securely...';
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 75000);
+
             try {
-                const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,user:uInput,device:deviceSessionId,device_label:getCurrentDeviceLabel()})});
-                const result=await response.json(); if(!response.ok||!result||result.status!=='success') throw new Error((result&&result.message)||'License verification failed.');
-                localStorage.setItem('raja_active_key',key); localStorage.setItem('raja_active_user',result.user||uInput); localStorage.setItem('raja_session_'+key,deviceSessionId); localStorage.setItem('raja_token_'+key,result.session_token||'');
-                msgBox.style.color='#030712';msgBox.style.background='#00ff87';msgBox.innerText=result.replaced_previous_device?'✅ Login successful. Previous device has been signed out.':'✅ License verified. This device is now active.';
-                isUserVerified=true; await checkRoute({trustVerifiedSession:true}); startTimer();
-            } catch(error){ localStorage.removeItem('raja_active_key');localStorage.removeItem('raja_session_'+key);localStorage.removeItem('raja_token_'+key);msgBox.style.color='#fff';msgBox.style.background='#ff3366';msgBox.innerText='❌ '+error.message;msgBox.style.display='block'; }
+                // Keep the warm-up non-blocking; the actual verify request can share the wake-up.
+                warmRajaBackend();
+
+                const response = await fetch('/verify-license', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({
+                        key,
+                        user:uInput,
+                        device:deviceSessionId,
+                        device_label:getCurrentDeviceLabel()
+                    }),
+                    signal:controller.signal
+                });
+
+                const result = await response.json().catch(()=>null);
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || 'License verification failed.');
+                }
+
+                rajaBackendReady = true;
+                localStorage.setItem('raja_active_key',key);
+                localStorage.setItem('raja_active_user',result.user||uInput);
+                localStorage.setItem('raja_session_'+key,deviceSessionId);
+                localStorage.setItem('raja_token_'+key,result.session_token||'');
+
+                msgBox.style.color='#030712';
+                msgBox.style.background='#00ff87';
+                msgBox.innerText=result.replaced_previous_device
+                    ? '✅ Login successful. Previous device has been signed out.'
+                    : '✅ License verified. This device is now active.';
+
+                isUserVerified=true;
+                await checkRoute({trustVerifiedSession:true});
+                startTimer();
+            } catch(error) {
+                localStorage.removeItem('raja_active_key');
+                localStorage.removeItem('raja_session_'+key);
+                localStorage.removeItem('raja_token_'+key);
+                msgBox.style.color='#fff';
+                msgBox.style.background='#ff3366';
+                msgBox.innerText = error && error.name === 'AbortError'
+                    ? '⚠️ Server wake-up took too long. Please press VERIFY once more.'
+                    : '❌ ' + (error?.message || 'License verification failed.');
+                msgBox.style.display='block';
+            } finally {
+                clearTimeout(timeoutId);
+                rajaVerifyInFlight = false;
+                if (verifyBtn) {
+                    verifyBtn.disabled = false;
+                    verifyBtn.innerText = '🔓 VERIFY & UNLOCK AI';
+                }
+            }
         }
 
 
@@ -6485,40 +6609,84 @@
 
 
         async function scanPairFromBackend(pair) {
-            const controller = new AbortController();
-            rajaActiveScanController = controller;
-            const timeoutId = setTimeout(() => controller.abort(), 30000);
-            try {
-                const response = await fetch('/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pair: pair, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', scan_options: getScanOptions(), ...getAuthPayload() }),
-                    signal: controller.signal
-                });
+            const maxAttempts = 2;
+            let lastError = null;
 
-                const result = await response.json().catch(() => null);
-                if (!response.ok) {
-                    throw new Error((result && result.message) || ('Backend scan failed: ' + response.status));
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                const controller = new AbortController();
+                rajaActiveScanController = controller;
+                const timeoutId = setTimeout(() => controller.abort(), 75000);
+
+                try {
+                    const response = await fetch('/scan', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            pair: pair,
+                            expiry: selectedExpiry,
+                            client_id: deviceSessionId,
+                            market: document.getElementById('marketType')?.value || '',
+                            scan_options: getScanOptions(),
+                            ...getAuthPayload()
+                        }),
+                        signal: controller.signal
+                    });
+
+                    const result = await response.json().catch(() => null);
+
+                    if (!response.ok) {
+                        const message = (result && result.message) || ('Backend scan failed: ' + response.status);
+                        const transientStatus = [502, 503, 504].includes(response.status);
+                        if (transientStatus && attempt < maxAttempts && !rajaScanStopRequested) {
+                            lastError = new Error(message);
+                            await new Promise(resolve => setTimeout(resolve, 1200));
+                            continue;
+                        }
+                        throw new Error(message);
+                    }
+
+                    if (!result || result.status !== 'success' || !result.data) {
+                        throw new Error('Invalid scan response from backend.');
+                    }
+
+                    rajaBackendReady = true;
+
+                    if (result.data.signal === 'NO SIGNAL') {
+                        rajaLatestNoTradeReason = String(
+                            result.data.no_trade_reason ||
+                            result.data.reason ||
+                            'Current market conditions did not pass the safety gate.'
+                        );
+                        rajaLatestNewsLock = result.data.news_safety_lock || null;
+                    }
+
+                    return normalizeBackendSignal(result.data, pair);
+                } catch (error) {
+                    console.error('Scan error for', pair, error);
+                    lastError = error;
+
+                    if (error && error.name === 'AbortError') {
+                        if (rajaScanStopRequested) throw new Error('__RAJA_SCAN_STOPPED__');
+                        throw new Error('Live single-pair market data exceeded the 75-second safety window. Retry ready.');
+                    }
+
+                    const looksLikeNetworkFailure =
+                        error instanceof TypeError ||
+                        /failed to fetch|network|load failed/i.test(String(error?.message || ''));
+
+                    if (looksLikeNetworkFailure && attempt < maxAttempts && !rajaScanStopRequested) {
+                        await new Promise(resolve => setTimeout(resolve, 1200));
+                        continue;
+                    }
+
+                    throw error;
+                } finally {
+                    clearTimeout(timeoutId);
+                    if (rajaActiveScanController === controller) rajaActiveScanController = null;
                 }
-                if (!result || result.status !== 'success' || !result.data) {
-                    throw new Error('Invalid scan response from backend.');
-                }
-                if (result.data.signal === 'NO SIGNAL') {
-                    rajaLatestNoTradeReason = String(result.data.no_trade_reason || result.data.reason || 'Current market conditions did not pass the safety gate.');
-                    rajaLatestNewsLock = result.data.news_safety_lock || null;
-                }
-                return normalizeBackendSignal(result.data, pair);
-            } catch (error) {
-                console.error('Scan error for', pair, error);
-                if (error && error.name === 'AbortError') {
-                    if (rajaScanStopRequested) throw new Error('__RAJA_SCAN_STOPPED__');
-                    throw new Error('Single-pair scan timed out after 30 seconds.');
-                }
-                throw error;
-            } finally {
-                clearTimeout(timeoutId);
-                if (rajaActiveScanController === controller) rajaActiveScanController = null;
             }
+
+            throw lastError || new Error('Live market data is temporarily unavailable.');
         }
 
         async function scanPairsBatchFromBackend(pairs) {
@@ -6859,7 +7027,7 @@
                     const reasonBox = document.getElementById('noTradeReasonBox');
                     if (reasonBox) { reasonBox.style.display = 'none'; reasonBox.innerText = ''; }
                     if (scanFailureMessage) {
-                        const isBatchDelay = /exceeded 90 seconds|timed out/i.test(String(scanFailureMessage));
+                        const isBatchDelay = /exceeded .*seconds|timed out|safety window|failed to fetch|network|temporarily unavailable/i.test(String(scanFailureMessage));
                         titleEl.innerText = isBatchDelay ? '⚠️ MARKET DATA DELAYED · RETRY READY' : '⚠️ SCAN REQUEST FAILED';
                         descEl.innerText = isBatchDelay
                             ? 'The live source did not answer inside the safety window. No stale signal was used. Auto Re-Scan will retry; you can also press SCAN AGAIN.'
