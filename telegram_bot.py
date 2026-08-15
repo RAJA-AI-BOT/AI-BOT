@@ -8,6 +8,7 @@ import html
 from pathlib import Path
 from urllib.request import Request as UrlRequest, urlopen
 from urllib.error import HTTPError, URLError
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     import psycopg
@@ -35,6 +36,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 USERS_FILE = DATA_DIR / "telegram_users.json"
 META_FILE = DATA_DIR / "telegram_meta.json"
 STORE_LOCK = threading.RLock()
+TELEGRAM_UPDATE_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix='raja-tg-update')
 
 WEBHOOK_SECRET = (os.environ.get("TELEGRAM_WEBHOOK_SECRET") or "").strip()
 if not WEBHOOK_SECRET and BOT_TOKEN:
@@ -1121,8 +1123,13 @@ def register_telegram_routes(app, services):
             if provided != WEBHOOK_SECRET:
                 return jsonify({"ok": False, "message": "Invalid webhook secret."}), 403
         update = request.get_json(silent=True) or {}
-        # Return fast. Any long market scan is already moved to a background thread.
-        handle_update(update, services)
+        # Telegram expects a fast webhook acknowledgement. Process message/callback work
+        # in a bounded worker pool so network calls back to Telegram cannot block the webhook.
+        try:
+            TELEGRAM_UPDATE_POOL.submit(handle_update, update, services)
+        except Exception as exc:
+            print(f"Telegram update queue warning: {exc}")
+            threading.Thread(target=handle_update, args=(update, services), daemon=True).start()
         return jsonify({"ok": True})
 
     @app.route("/telegram/health", methods=["GET"])
