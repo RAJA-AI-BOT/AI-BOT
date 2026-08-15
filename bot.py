@@ -5,6 +5,7 @@ import os
 import time
 import json
 import secrets
+import hmac
 import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
@@ -187,7 +188,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 LICENSE_FILE = DATA_DIR / "licenses.json"
 license_lock = threading.RLock()
 
-ADMIN_PASSWORD = os.environ.get("RAJA_ADMIN_PASSWORD", "786")
+ADMIN_PASSWORD = (os.environ.get("RAJA_ADMIN_PASSWORD") or "").strip()
 
 # Permanent license storage:
 # - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
@@ -2222,8 +2223,9 @@ def admin_generate_key():
         duration_days = max(0.0, min(3650.0, float(data.get("duration_days") or 0)))
     except Exception:
         duration_days = 0.0
-    if password != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
+    auth_error = _validate_admin_password(data)
+    if auth_error:
+        return auth_error
     if not user:
         return jsonify({"status": "error", "message": "User Telegram ID / UID is required."}), 400
 
@@ -2257,9 +2259,9 @@ def admin_generate_key():
 @app.route("/admin/licenses", methods=["POST"])
 def admin_list_licenses():
     data = request.get_json(silent=True) or {}
-    password = str(data.get("password", ""))
-    if password != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
+    auth_error = _validate_admin_password(data)
+    if auth_error:
+        return auth_error
     now = int(time.time())
     licenses = load_licenses()
     rows = []
@@ -2286,7 +2288,15 @@ def admin_list_licenses():
 
 
 def _validate_admin_password(data):
-    if str((data or {}).get("password", "")) != ADMIN_PASSWORD:
+    # Fail closed: admin routes are disabled unless Render provides a password.
+    if not ADMIN_PASSWORD:
+        return jsonify({
+            "status": "error",
+            "message": "Admin access is disabled because RAJA_ADMIN_PASSWORD is not configured."
+        }), 503
+
+    supplied = str((data or {}).get("password", ""))
+    if not hmac.compare_digest(supplied, ADMIN_PASSWORD):
         return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
     return None
 
@@ -2351,9 +2361,10 @@ def admin_reset_all_devices():
 
 
 def _delete_license_from_request(data):
-    password = str(data.get("password", "")); key = str(data.get("key", "")).strip()
-    if password != ADMIN_PASSWORD:
-        return None, (jsonify({"status": "error", "message": "Incorrect admin password."}), 403)
+    key = str(data.get("key", "")).strip()
+    auth_error = _validate_admin_password(data)
+    if auth_error:
+        return None, auth_error
     if not key:
         return None, (jsonify({"status": "error", "message": "License key is required."}), 400)
     licenses = load_licenses()
@@ -2379,9 +2390,10 @@ def admin_revoke_key():
 
 @app.route("/admin/clear-keys", methods=["POST"])
 def admin_clear_keys():
-    data = request.get_json(silent=True) or {}; password = str(data.get("password", ""))
-    if password != ADMIN_PASSWORD:
-        return jsonify({"status": "error", "message": "Incorrect admin password."}), 403
+    data = request.get_json(silent=True) or {}
+    auth_error = _validate_admin_password(data)
+    if auth_error:
+        return auth_error
     licenses = load_licenses(); removed = len(licenses); save_licenses({})
     return jsonify({"status": "success", "message": "All license keys removed.", "removed": removed})
 
