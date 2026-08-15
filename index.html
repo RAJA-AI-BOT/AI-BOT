@@ -728,14 +728,24 @@
         @media (max-width:820px) {
             .premium-intensity-hud {
                 min-height: 0;
-                grid-template-columns:1fr;
+                grid-template-columns:112px minmax(0,1fr);
                 gap:10px;
                 padding:11px;
+                align-items:stretch;
             }
-            .premium-intensity-left { display:none; }
-            .premium-intensity-kicker { margin-bottom:8px; }
-            .premium-intensity-title { font-size:11px; }
-            .premium-wave-panel { height:62px; }
+            .premium-intensity-left { display:grid; }
+            .premium-orbit-shell { width:98px; }
+            .premium-orbit-shell::after { inset:10px; }
+            .premium-orbit-ticks { inset:-8px; }
+            .premium-progress-ring { width:82px; }
+            .premium-progress-ring::before { inset:7px; }
+            .premium-progress-value { font-size:24px; }
+            .premium-progress-label { font-size:7px; letter-spacing:.9px; }
+            .premium-progress-sub { font-size:5.8px; }
+            .premium-intensity-kicker { margin-bottom:8px; align-items:flex-start; gap:8px; }
+            .premium-intensity-title { font-size:11px; line-height:1.15; }
+            .premium-live-pill { font-size:6px; padding:4px 7px; }
+            .premium-wave-panel { height:78px; }
             .premium-intensity-band { gap:4px; margin-top:7px; }
             .premium-intensity-segment { padding:6px 3px; font-size:6.5px; }
             .premium-intensity-status { margin-top:7px; padding:7px 8px; }
@@ -749,6 +759,19 @@
                 pointer-events:auto !important;
                 transform:translateZ(0) !important;
             }
+        }
+        @media (max-width:520px) {
+            .premium-intensity-hud { grid-template-columns:100px minmax(0,1fr); gap:8px; padding:10px; }
+            .premium-orbit-shell { width:88px; }
+            .premium-progress-ring { width:76px; }
+            .premium-progress-value { font-size:22px; }
+            .premium-wave-panel { height:72px; }
+            .premium-intensity-status { grid-template-columns:70px minmax(0,1fr); }
+        }
+        @media (max-width:390px) {
+            .premium-intensity-hud { grid-template-columns:1fr; }
+            .premium-intensity-left { display:none; }
+            .premium-wave-panel { height:66px; }
         }
         @media (prefers-reduced-motion: reduce) {
             .premium-intensity-hud *, .premium-intensity-hud::before, .premium-intensity-hud::after {
@@ -3020,6 +3043,360 @@
         }
     </style>
 
+
+    <style id="raja-v22-luxury-polish">
+        /* =========================================================
+           V22 LUXURY POLISH
+           Premium mobile controls · luxury home · matched scan/result
+           · high-contrast light theme
+           ========================================================= */
+        :root {
+            --v22-gold:#f7d36a;
+            --v22-emerald:#00f0a8;
+            --v22-cyan:#5cecff;
+            --v22-blue:#3a8dff;
+            --v22-ink:#020813;
+            --v22-panel:#061221;
+        }
+
+        /* ---------- Luxury dashboard / home ---------- */
+        .main-panel-card {
+            border-color:rgba(92,236,255,.20) !important;
+            background:
+                radial-gradient(circle at 10% -10%,rgba(0,240,168,.08),transparent 28%),
+                radial-gradient(circle at 90% 0%,rgba(58,141,255,.08),transparent 30%),
+                linear-gradient(180deg,rgba(7,18,34,.985),rgba(2,8,17,.99)) !important;
+            box-shadow:0 22px 70px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.025) !important;
+        }
+        .scan-heading-row {
+            padding:2px 2px 11px;
+            border-bottom:1px solid rgba(92,236,255,.08);
+        }
+        .scan-heading {
+            letter-spacing:.35px !important;
+            text-shadow:0 0 24px rgba(92,236,255,.10);
+        }
+        .shared-pill {
+            border-radius:999px !important;
+            background:linear-gradient(180deg,rgba(92,236,255,.09),rgba(58,141,255,.035)) !important;
+            box-shadow:inset 0 0 16px rgba(92,236,255,.025);
+        }
+        #defaultView .scan-workspace {
+            position:relative;
+            border:1px solid rgba(92,236,255,.12);
+            border-radius:18px;
+            padding:22px 24px;
+            overflow:hidden;
+            background:
+                radial-gradient(circle at 17% 50%,rgba(0,240,168,.10),transparent 24%),
+                linear-gradient(180deg,rgba(4,14,27,.78),rgba(2,9,18,.88));
+        }
+        #defaultView .scan-workspace::before {
+            content:"";
+            position:absolute;
+            inset:0;
+            pointer-events:none;
+            opacity:.24;
+            background-image:linear-gradient(rgba(92,236,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(92,236,255,.035) 1px,transparent 1px);
+            background-size:28px 28px;
+        }
+        #defaultView .scan-ring {
+            width:184px !important;
+            border:1px solid rgba(92,236,255,.18);
+            filter:drop-shadow(0 0 20px rgba(0,240,168,.12));
+        }
+        #defaultView .scan-ring::after {
+            content:"";
+            position:absolute;
+            inset:-12px;
+            border-radius:50%;
+            border:1px dashed rgba(92,236,255,.19);
+            animation:premiumOrbitReverse 16s linear infinite;
+        }
+        #defaultView .ready-title {
+            font-size:21px !important;
+            letter-spacing:.25px;
+            background:linear-gradient(90deg,#ffffff,#c8f8ff 50%,#8affd5);
+            -webkit-background-clip:text;
+            -webkit-text-fill-color:transparent;
+        }
+        #defaultView .ready-sub { max-width:720px; font-size:10.5px !important; line-height:1.65 !important; }
+        #defaultView .scan-stage-list {
+            border-top:1px solid rgba(92,236,255,.08);
+            padding-top:13px;
+        }
+        .intel-heatmap-shell,.setup-build-shell,.scan-summary-card,.config-panel,.rail-card {
+            box-shadow:inset 0 1px rgba(255,255,255,.02),0 12px 34px rgba(0,0,0,.16) !important;
+        }
+        .scan-summary-card {
+            background:linear-gradient(180deg,rgba(7,18,33,.95),rgba(3,10,20,.98)) !important;
+        }
+        .selected-pair-name { text-shadow:0 0 18px rgba(0,240,168,.15); }
+        .snapshot-cell { transition:.18s ease; }
+        .snapshot-cell:hover { border-color:rgba(92,236,255,.28); transform:translateY(-1px); }
+        .config-panel {
+            background:linear-gradient(180deg,rgba(7,18,33,.98),rgba(3,10,20,.99)) !important;
+            border-color:rgba(92,236,255,.18) !important;
+        }
+        .config-title { letter-spacing:.45px; }
+        .mode-btn,.expiry-btn,.utility-btn,.rail-action { transition:.18s ease; }
+        .mode-btn:hover,.expiry-btn:hover,.utility-btn:hover,.rail-action:hover { transform:translateY(-1px); border-color:rgba(92,236,255,.38) !important; }
+        .scan-btn {
+            min-height:45px;
+            border-radius:12px !important;
+            letter-spacing:.7px !important;
+            background:linear-gradient(90deg,#00e7a1 0%,#27dfd8 48%,#3a9cff 100%) !important;
+            box-shadow:0 10px 30px rgba(0,240,168,.16),0 0 26px rgba(58,141,255,.10) !important;
+        }
+
+        /* ---------- Premium live scanner ---------- */
+        .premium-intensity-hud {
+            border-radius:18px !important;
+            border-color:rgba(92,236,255,.23) !important;
+            background:
+                radial-gradient(circle at 24% 48%,rgba(0,240,168,.11),transparent 27%),
+                radial-gradient(circle at 78% 28%,rgba(58,141,255,.08),transparent 33%),
+                linear-gradient(180deg,#041220 0%,#020913 100%) !important;
+            box-shadow:inset 0 0 70px rgba(0,240,168,.035),0 18px 48px rgba(0,0,0,.22) !important;
+        }
+        .premium-wave-panel {
+            background:
+                radial-gradient(circle at 70% 50%,rgba(0,240,168,.07),transparent 30%),
+                linear-gradient(180deg,rgba(0,240,168,.025),rgba(92,236,255,.02)) !important;
+            box-shadow:inset 0 0 28px rgba(0,240,168,.025);
+        }
+        .premium-wave-bars {
+            position:absolute; left:14px; right:14px; bottom:10px; height:56px;
+            display:flex; align-items:flex-end; justify-content:space-between; gap:5px;
+            opacity:.40; pointer-events:none;
+        }
+        .premium-wave-bars i {
+            display:block; width:calc((100% - 55px)/12); min-width:5px; border-radius:4px 4px 0 0;
+            background:linear-gradient(180deg,rgba(92,236,255,.82),rgba(0,240,168,.16));
+            box-shadow:0 0 12px rgba(0,240,168,.18);
+            animation:v22BarFloat 1.9s ease-in-out infinite alternate;
+        }
+        .premium-wave-bars i:nth-child(2n) { background:linear-gradient(180deg,rgba(0,240,168,.9),rgba(0,240,168,.12)); }
+        .premium-wave-bars i:nth-child(3n) { animation-duration:2.4s; }
+        .premium-wave-radar {
+            position:absolute; right:9px; bottom:8px; width:42px; height:42px; border-radius:50%;
+            border:1px solid rgba(92,236,255,.24); background:radial-gradient(circle,rgba(0,240,168,.10),transparent 60%);
+            box-shadow:inset 0 0 12px rgba(92,236,255,.08); opacity:.74; overflow:hidden;
+        }
+        .premium-wave-radar::before,.premium-wave-radar::after { content:""; position:absolute; inset:7px; border-radius:50%; border:1px solid rgba(92,236,255,.14); }
+        .premium-wave-radar::after { inset:14px; }
+        .premium-wave-radar span { position:absolute; inset:-20%; border-radius:50%; background:conic-gradient(from 0deg,transparent 0 78%,rgba(0,240,168,.08) 83%,rgba(92,236,255,.88) 89%,transparent 95%); animation:premiumOrbit 2.8s linear infinite; }
+        @keyframes v22BarFloat { from{transform:scaleY(.55) translateY(2px);opacity:.26} to{transform:scaleY(1.12) translateY(-1px);opacity:.72} }
+        .scan-process-panel {
+            border-radius:16px !important;
+            background:linear-gradient(180deg,rgba(4,14,27,.90),rgba(2,9,18,.96)) !important;
+            box-shadow:inset 0 0 30px rgba(92,236,255,.018);
+        }
+        .scan-telemetry-card {
+            border-radius:10px !important;
+            background:linear-gradient(180deg,rgba(5,16,29,.90),rgba(2,10,20,.96)) !important;
+        }
+
+        /* ---------- Result screen uses the same luxury language ---------- */
+        .premium-signal-result {
+            border-radius:20px !important;
+            background:
+                radial-gradient(circle at 50% 30%,rgba(58,141,255,.12),transparent 26%),
+                radial-gradient(circle at 50% 48%,color-mix(in srgb,var(--sig) 7%,transparent),transparent 36%),
+                linear-gradient(180deg,#04101f 0%,#020913 58%,#01060d 100%) !important;
+            box-shadow:inset 0 0 78px rgba(58,141,255,.045),0 18px 48px rgba(0,0,0,.24),0 0 26px color-mix(in srgb,var(--sig) 12%,transparent) !important;
+        }
+        .psr-topline { border-bottom:1px solid rgba(92,236,255,.08); margin-bottom:4px; }
+        .psr-ai-badge { border-radius:11px !important; box-shadow:0 0 24px rgba(92,236,255,.25) !important; }
+        .psr-hero { border-radius:16px !important; overflow:hidden; }
+        .ai-explain-card,.perf-heatmap-card,.replay-spotlight-card {
+            border-radius:12px !important;
+            background:linear-gradient(180deg,rgba(4,14,27,.92),rgba(2,9,18,.97)) !important;
+        }
+
+        /* ---------- Mobile bottom controls: premium and compact ---------- */
+        @media (max-width:820px) {
+            .raja-mobile-command-bar {
+                left:10px !important; right:10px !important;
+                padding:8px !important;
+                border-radius:19px !important;
+                border-color:rgba(92,236,255,.38) !important;
+                background:
+                    radial-gradient(circle at 70% 100%,rgba(58,141,255,.12),transparent 34%),
+                    linear-gradient(180deg,rgba(5,17,31,.985),rgba(2,8,17,.995)) !important;
+                box-shadow:0 18px 48px rgba(0,0,0,.64),0 0 30px rgba(0,240,168,.08),inset 0 1px rgba(255,255,255,.03) !important;
+            }
+            .raja-mobile-command-summary { padding-bottom:7px !important; color:#9fb5c8 !important; font-size:9px !important; letter-spacing:.1px; }
+            .raja-mobile-command-actions.triple { grid-template-columns:84px 112px minmax(0,1fr) !important; gap:7px !important; }
+            .raja-mobile-command-actions button {
+                min-height:52px !important;
+                border-radius:14px !important;
+                font-size:11px !important;
+                letter-spacing:.3px !important;
+                box-shadow:inset 0 1px rgba(255,255,255,.035) !important;
+            }
+            .raja-mobile-home-btn,.raja-mobile-settings-btn {
+                background:linear-gradient(180deg,rgba(9,25,43,.98),rgba(4,13,25,.99)) !important;
+                color:#c9f5ff !important;
+                border-color:rgba(92,236,255,.26) !important;
+            }
+            .raja-mobile-home-btn:active,.raja-mobile-settings-btn:active { transform:scale(.98); }
+            .raja-mobile-settings-btn.active {
+                color:#03110d !important;
+                background:linear-gradient(135deg,#00eca7,#5cecff) !important;
+                border-color:transparent !important;
+            }
+            .raja-mobile-scan-btn {
+                color:#02130e !important;
+                background:linear-gradient(100deg,#00eea7 0%,#27e0d8 48%,#3aa1ff 100%) !important;
+                box-shadow:0 8px 24px rgba(0,240,168,.20),0 0 22px rgba(58,141,255,.14) !important;
+            }
+            #mainAppContent .config-panel.raja-mobile-sheet-open {
+                border-radius:20px !important;
+                border-color:rgba(92,236,255,.38) !important;
+                background:linear-gradient(180deg,rgba(7,19,34,.998),rgba(2,8,17,.998)) !important;
+                box-shadow:0 -24px 70px rgba(0,0,0,.70),0 0 32px rgba(92,236,255,.08) !important;
+            }
+            .raja-mobile-sheet-head { border-radius:20px 20px 0 0; }
+            body.raja-mobile-scanning .main-panel-card,
+            body.raja-mobile-result .main-panel-card,
+            body.raja-mobile-nosignal .main-panel-card { border-radius:16px !important; }
+        }
+        @media (max-width:390px) {
+            .raja-mobile-command-actions.triple { grid-template-columns:72px 96px minmax(0,1fr) !important; gap:5px !important; }
+            .raja-mobile-command-actions button { font-size:10px !important; min-height:48px !important; }
+        }
+
+        /* ---------- Light theme: real contrast, not washed-out text ---------- */
+        html[data-raja-theme="light"] body {
+            background:linear-gradient(180deg,#edf4f7 0%,#dce9ef 100%) !important;
+            color:#102131 !important;
+        }
+        html[data-raja-theme="light"] .main-panel-card,
+        html[data-raja-theme="light"] .scan-summary-card,
+        html[data-raja-theme="light"] .config-panel,
+        html[data-raja-theme="light"] .rail-card,
+        html[data-raja-theme="light"] .side-panel,
+        html[data-raja-theme="light"] .right-rail,
+        html[data-raja-theme="light"] .dashboard-topbar,
+        html[data-raja-theme="light"] .intel-heatmap-shell,
+        html[data-raja-theme="light"] .setup-build-shell,
+        html[data-raja-theme="light"] .settings-section,
+        html[data-raja-theme="light"] .selection-card,
+        html[data-raja-theme="light"] .scan-telemetry-card {
+            background:linear-gradient(180deg,#ffffff,#f6fafc) !important;
+            color:#102131 !important;
+            border-color:rgba(22,93,128,.20) !important;
+            box-shadow:0 10px 28px rgba(25,65,88,.07) !important;
+        }
+        html[data-raja-theme="light"] #defaultView .scan-workspace {
+            background:linear-gradient(180deg,#f9fcfd,#edf6f8) !important;
+            border-color:rgba(22,93,128,.16) !important;
+        }
+        html[data-raja-theme="light"] #defaultView .ready-title {
+            background:none !important;
+            -webkit-text-fill-color:#102131 !important;
+            color:#102131 !important;
+            text-shadow:none !important;
+        }
+        html[data-raja-theme="light"] .scan-heading,
+        html[data-raja-theme="light"] .ready-title,
+        html[data-raja-theme="light"] .scan-stage-title,
+        html[data-raja-theme="light"] .config-title,
+        html[data-raja-theme="light"] .brand,
+        html[data-raja-theme="light"] .intel-title,
+        html[data-raja-theme="light"] .rail-title,
+        html[data-raja-theme="light"] .settings-section h4,
+        html[data-raja-theme="light"] .card-label,
+        html[data-raja-theme="light"] .selection-card label,
+        html[data-raja-theme="light"] .config-field label,
+        html[data-raja-theme="light"] .ai-factor strong,
+        html[data-raja-theme="light"] .replay-spotlight-body strong {
+            color:#102131 !important;
+            text-shadow:none !important;
+        }
+        html[data-raja-theme="light"] .scan-sub,
+        html[data-raja-theme="light"] .ready-sub,
+        html[data-raja-theme="light"] .market-banner,
+        html[data-raja-theme="light"] .intel-caption,
+        html[data-raja-theme="light"] .snapshot-cell small,
+        html[data-raja-theme="light"] .scan-stage,
+        html[data-raja-theme="light"] .metric-note,
+        html[data-raja-theme="light"] .ai-factor span,
+        html[data-raja-theme="light"] .pwa-tip,
+        html[data-raja-theme="light"] .app-feature-status {
+            color:#50677a !important;
+        }
+        html[data-raja-theme="light"] .snapshot-cell,
+        html[data-raja-theme="light"] .heat-tile,
+        html[data-raja-theme="light"] .ai-factor,
+        html[data-raja-theme="light"] .inline-list-box,
+        html[data-raja-theme="light"] .live-scan-console {
+            background:#f6fafc !important;
+            color:#23394b !important;
+            border-color:rgba(22,93,128,.15) !important;
+        }
+        html[data-raja-theme="light"] select,
+        html[data-raja-theme="light"] input,
+        html[data-raja-theme="light"] textarea {
+            background:#ffffff !important;
+            color:#102131 !important;
+            border-color:rgba(22,93,128,.28) !important;
+        }
+        html[data-raja-theme="light"] select option { color:#102131 !important; background:#ffffff !important; }
+        html[data-raja-theme="light"] .mode-btn,
+        html[data-raja-theme="light"] .expiry-btn,
+        html[data-raja-theme="light"] .utility-btn,
+        html[data-raja-theme="light"] .rail-action,
+        html[data-raja-theme="light"] .nav-item {
+            background:#eef5f8 !important;
+            color:#174d69 !important;
+            border-color:rgba(22,93,128,.18) !important;
+        }
+        html[data-raja-theme="light"] .mode-btn.active,
+        html[data-raja-theme="light"] .expiry-btn.active,
+        html[data-raja-theme="light"] .nav-item.active {
+            color:#041711 !important;
+        }
+        /* Keep neon scan/result surfaces dark in Light Mode for maximum legibility. */
+        html[data-raja-theme="light"] .premium-intensity-hud,
+        html[data-raja-theme="light"] .premium-signal-result,
+        html[data-raja-theme="light"] .scan-process-panel,
+        html[data-raja-theme="light"] .ai-explain-card,
+        html[data-raja-theme="light"] .perf-heatmap-card,
+        html[data-raja-theme="light"] .replay-spotlight-card {
+            background:linear-gradient(180deg,#061422,#020a14) !important;
+            color:#eefcff !important;
+            border-color:rgba(92,236,255,.23) !important;
+        }
+        html[data-raja-theme="light"] .premium-intensity-title,
+        html[data-raja-theme="light"] .premium-progress-value,
+        html[data-raja-theme="light"] .premium-level-copy strong,
+        html[data-raja-theme="light"] .psr-title strong,
+        html[data-raja-theme="light"] .ai-explain-card .intel-title,
+        html[data-raja-theme="light"] .ai-explain-card .ai-factor strong,
+        html[data-raja-theme="light"] .perf-heatmap-card .intel-title,
+        html[data-raja-theme="light"] .replay-spotlight-card .intel-title {
+            color:#eefcff !important;
+            -webkit-text-fill-color:initial !important;
+        }
+        html[data-raja-theme="light"] .premium-intensity-hud .premium-level-copy span,
+        html[data-raja-theme="light"] .premium-intensity-hud .premium-progress-sub,
+        html[data-raja-theme="light"] .premium-signal-result .psr-title small,
+        html[data-raja-theme="light"] .ai-explain-card .ai-factor span,
+        html[data-raja-theme="light"] .ai-explain-card .ai-summary {
+            color:#9eb7c9 !important;
+        }
+        html[data-raja-theme="light"] .raja-mobile-command-bar,
+        html[data-raja-theme="light"] #mainAppContent .config-panel.raja-mobile-sheet-open {
+            background:linear-gradient(180deg,#071827,#03101c) !important;
+            color:#eafcff !important;
+        }
+        html[data-raja-theme="light"] .raja-mobile-command-summary { color:#b4c9d7 !important; }
+        html[data-raja-theme="light"] .raja-mobile-home-btn,
+        html[data-raja-theme="light"] .raja-mobile-settings-btn { color:#dff9ff !important; }
+    </style>
+
 </head>
 <body>
 
@@ -3151,7 +3528,7 @@
                 <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
                 <div class="raja-mobile-command-actions triple">
                     <button id="rajaMobileHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button>
-                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">☰ MENU</button>
+                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS</button>
                     <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
                 </div>
             </div>
@@ -3237,7 +3614,7 @@
                                     <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
                                     <div class="ready-copy">
                                         <div class="ready-title">AI Deep Scan Ready</div>
-                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use MENU / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
                                         <div class="scan-stage-list" style="margin-top:18px;">
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
@@ -3273,6 +3650,9 @@
                                                 <div class="premium-live-pill">STREAMING MARKET DATA</div>
                                             </div>
                                             <div class="premium-wave-panel">
+                                                <div class="premium-wave-bars" aria-hidden="true">
+                                                    <i style="height:18%"></i><i style="height:32%"></i><i style="height:26%"></i><i style="height:54%"></i><i style="height:35%"></i><i style="height:68%"></i><i style="height:40%"></i><i style="height:72%"></i><i style="height:46%"></i><i style="height:58%"></i><i style="height:34%"></i><i style="height:22%"></i>
+                                                </div>
                                                 <svg class="premium-wave-svg" viewBox="0 0 1200 180" preserveAspectRatio="none" aria-hidden="true">
                                                     <defs>
                                                         <linearGradient id="premiumWaveGradient" x1="0" y1="0" x2="1" y2="0">
@@ -3289,6 +3669,7 @@
                                                 <div class="premium-spark-field" aria-hidden="true">
                                                     <i style="left:8%;top:58%"></i><i style="left:16%;top:30%"></i><i style="left:25%;top:66%"></i><i style="left:34%;top:24%"></i><i style="left:42%;top:54%"></i><i style="left:51%;top:34%"></i><i style="left:60%;top:64%"></i><i style="left:68%;top:25%"></i><i style="left:76%;top:52%"></i><i style="left:84%;top:31%"></i><i style="left:91%;top:63%"></i>
                                                 </div>
+                                                <div class="premium-wave-radar" aria-hidden="true"><span></span></div>
                                             </div>
                                             <div class="premium-intensity-band" id="premiumIntensityBand">
                                                 <div class="premium-intensity-segment active" data-level="low">LOW<strong>0–24%</strong></div>
@@ -6796,7 +7177,7 @@
             }
             if (button) {
                 button.classList.toggle('active', nextOpen);
-                button.textContent = nextOpen ? '✕ CLOSE MENU' : '☰ MENU';
+                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS';
             }
 
             if (nextOpen) {
@@ -6819,7 +7200,7 @@
             const head = document.createElement('div');
             head.className = 'raja-mobile-sheet-head';
             head.innerHTML =
-                '<strong>⚙ QUICK TRADING SETTINGS</strong>' +
+                '<strong>⚙ QUICK SETTINGS</strong>' +
                 '<button type="button" class="raja-mobile-sheet-close">DONE</button>';
             panel.insertBefore(head, panel.firstChild);
 
