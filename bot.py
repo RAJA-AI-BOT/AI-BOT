@@ -785,7 +785,10 @@ def signal_outcome_worker():
                 now = int(time.time())
 
                 for item in items:
-                    if item.get("status") != "PENDING":
+                    item_status = str(item.get("status") or "")
+                    if item_status not in {"PENDING", "AWAITING_QX"}:
+                        continue
+                    if item_status == "AWAITING_QX" and item.get("yahoo_result"):
                         continue
 
                     expiry_epoch = int(item.get("expiry_epoch", 0))
@@ -794,9 +797,18 @@ def signal_outcome_worker():
 
                     pair = str(item.get("pair", ""))
 
-                    # Yahoo is not the Quotex OTC price feed, so OTC outcomes
-                    # require the user's QX WIN / QX LOSS confirmation.
+                    # Yahoo is not the Quotex OTC price feed. For OTC we calculate
+                    # a clearly-labelled Yahoo proxy outcome for visibility, but we do NOT
+                    # count it as the customer's actual Quotex WIN/LOSS until QX confirmation.
                     if "(OTC)" in pair:
+                        proxy_item = dict(item)
+                        if resolve_tracked_signal(proxy_item):
+                            for field in (
+                                "entry_price", "exit_price", "entry_candle_epoch",
+                                "exit_candle_epoch", "yahoo_result"
+                            ):
+                                if field in proxy_item:
+                                    item[field] = proxy_item.get(field)
                         item["status"] = "AWAITING_QX"
                         item["result"] = None
                         item["result_source"] = "awaiting_quotex"
@@ -2338,7 +2350,13 @@ def set_signal_result():
             return jsonify({"status": "error", "message": "Manual Quotex result is only used for OTC signals."}), 400
         target["result"] = result; target["status"] = "COMPLETED"; target["result_source"] = "quotex_manual"; target["resolved_at"] = int(time.time())
         save_signals(items)
-    return jsonify({"status": "success", "signal_id": signal_id, "result": result, "result_source": "quotex_manual"})
+    return jsonify({
+        "status": "success",
+        "signal_id": signal_id,
+        "result": result,
+        "result_source": "quotex_manual",
+        "yahoo_proxy_result": target.get("yahoo_result"),
+    })
 
 
 @app.route("/signals/history", methods=["GET"])
