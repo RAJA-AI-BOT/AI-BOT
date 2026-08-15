@@ -1573,7 +1573,60 @@
 
     </style>
 
-    <script src="https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js"></script>
+    <script id="raja-chart-lazy-loader">
+    (() => {
+        let chartPromise = null;
+
+        window.rajaEnsureChartEngine = function rajaEnsureChartEngine() {
+            if (window.LightweightCharts) {
+                return Promise.resolve(window.LightweightCharts);
+            }
+
+            if (chartPromise) return chartPromise;
+
+            chartPromise = new Promise((resolve, reject) => {
+                const existing = document.getElementById('rajaLightweightChartsScript');
+                if (existing) {
+                    existing.addEventListener('load', () => resolve(window.LightweightCharts), { once:true });
+                    existing.addEventListener('error', reject, { once:true });
+                    return;
+                }
+
+                const script = document.createElement('script');
+                script.id = 'rajaLightweightChartsScript';
+                script.src = 'https://unpkg.com/lightweight-charts@5.2.0/dist/lightweight-charts.standalone.production.js';
+                script.async = true;
+                script.crossOrigin = 'anonymous';
+                script.onload = () => resolve(window.LightweightCharts);
+                script.onerror = () => {
+                    chartPromise = null;
+                    reject(new Error('Chart engine failed to load.'));
+                };
+                document.head.appendChild(script);
+            });
+
+            return chartPromise;
+        };
+
+        const warmChartEngine = () => {
+            const run = () => {
+                window.rajaEnsureChartEngine().catch(() => {});
+            };
+
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(run, { timeout: 3500 });
+            } else {
+                setTimeout(run, 1800);
+            }
+        };
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', warmChartEngine, { once:true });
+        } else {
+            warmChartEngine();
+        }
+    })();
+    </script>
 
     <style id="raja-app-features-v1">
         html, body { width:100%; max-width:100%; overflow-x:hidden; }
@@ -4852,7 +4905,7 @@
                                                 <button id="rajaNotificationToggleBtn" onclick="toggleRajaNotifications()">ENABLE ALERTS</button>
                                                 <button onclick="testRajaNotification()">TEST ALERT</button>
                                             </div>
-                                            <div class="app-feature-status">When a confirmed scan finishes while the installed app is minimized/backgrounded, the service worker can show a system notification.</div>
+                                            <div id="rajaNotificationHelp" class="app-feature-status">RAJA AI alerts can be turned OFF here even if Chrome still shows this site's notification permission as Allowed. Browser permission itself can only be changed from Chrome/Site Settings.</div>
                                         </div>
                                         <div class="app-feature-card">
                                             <small>App Tutorial</small>
@@ -5197,18 +5250,39 @@
         }
 
         if ('serviceWorker' in navigator) {
-            window.addEventListener('load', async () => {
+            const registerRajaServiceWorker = async () => {
                 try {
-                    await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                    const registration = await navigator.serviceWorker.register('/sw.js', {
+                        scope: '/',
+                        updateViaCache: 'none'
+                    });
+
+                    // Check for a new worker in the background. Never block UI.
+                    registration.update().catch(() => {});
+
+                    if (registration.waiting) {
+                        try {
+                            registration.waiting.postMessage({ type:'SKIP_WAITING' });
+                        } catch (_) {}
+                    }
                 } catch (err) {
                     console.warn('RAJA AI service worker registration failed:', err);
                 }
 
-                // Button must appear only after beforeinstallprompt fires.
                 if (isRajaStandalone()) {
                     setInstallButtonVisible(false);
                 }
-            });
+            };
+
+            // Register as soon as the DOM is usable rather than waiting for
+            // all non-critical resources such as the chart engine.
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    setTimeout(registerRajaServiceWorker, 0);
+                }, { once:true });
+            } else {
+                setTimeout(registerRajaServiceWorker, 0);
+            }
         }
 
 
@@ -7017,8 +7091,9 @@
             const data = clean.slice(-15);
 
             if (!window.LightweightCharts) {
+                try { window.rajaEnsureChartEngine?.().catch(() => {}); } catch (_) {}
                 container.innerHTML = '<div style="display:flex;height:100%;align-items:center;justify-content:center;color:#8ea8bd;font-size:9px;">Chart engine is loading…</div>';
-                setTimeout(() => renderSignalChart(container, candles, isBuy, entryPrice, exitPrice), 400);
+                setTimeout(() => renderSignalChart(container, candles, isBuy, entryPrice, exitPrice), 500);
                 return;
             }
 
@@ -9373,6 +9448,60 @@
             document.addEventListener('click', () => setTimeout(syncV32, 0), true);
             document.addEventListener('change', () => setTimeout(syncV32, 0), true);
         }, {once:true});
+    })();
+    </script>
+
+
+    <style id="raja-v33-fast-start-ui">
+        .raja-fast-shell-note {
+            position:fixed;
+            left:50%;
+            top:8px;
+            transform:translateX(-50%);
+            z-index:2147482500;
+            display:none;
+            padding:5px 10px;
+            border:1px solid rgba(85,233,255,.25);
+            border-radius:999px;
+            background:rgba(2,11,20,.88);
+            color:#aeefff;
+            font-size:7px;
+            font-weight:900;
+            letter-spacing:.35px;
+            backdrop-filter:blur(10px);
+            pointer-events:none;
+        }
+        .raja-fast-shell-note.show { display:block; }
+        @media (max-width:820px) {
+            .raja-fast-shell-note { top:4px; font-size:6.5px; }
+        }
+    </style>
+    <script id="raja-v33-fast-start-js">
+    (() => {
+        function showFastShellNote(text, ms = 1400) {
+            let note = document.getElementById('rajaFastShellNote');
+            if (!note) {
+                note = document.createElement('div');
+                note.id = 'rajaFastShellNote';
+                note.className = 'raja-fast-shell-note';
+                document.body.appendChild(note);
+            }
+            note.textContent = text;
+            note.classList.add('show');
+            clearTimeout(note.__timer);
+            note.__timer = setTimeout(() => note.classList.remove('show'), ms);
+        }
+
+        window.addEventListener('offline', () => showFastShellNote('OFFLINE · SAVED APP SHELL'));
+        window.addEventListener('online', () => showFastShellNote('ONLINE · LIVE DATA READY'));
+
+        // If an existing service worker already controls this page, the next
+        // launch can use the instant cached shell.
+        document.addEventListener('DOMContentLoaded', () => {
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                document.documentElement.dataset.rajaFastShell = '1';
+            }
+        }, { once:true });
     })();
     </script>
 
