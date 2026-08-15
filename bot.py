@@ -5,6 +5,7 @@ import time
 import json
 import secrets
 import hmac
+import hashlib
 import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
@@ -202,6 +203,32 @@ DUPLICATE_SIGNAL_COOLDOWN = 0
 # =========================================================
 
 BASE_DIR = Path(__file__).resolve().parent
+
+# One deterministic build ID for the deployed RAJA AI app.
+# It changes whenever backend/frontend/PWA source changes, but not on a simple
+# Render cold-start. Installed clients use it to detect a real new deployment.
+def _compute_app_build_id():
+    digest = hashlib.sha256()
+    build_files = [
+        Path(__file__).resolve(),
+        BASE_DIR / "index.html",
+        BASE_DIR / "sw.js",
+        BASE_DIR / "manifest.json",
+    ]
+    found = False
+    for path in build_files:
+        try:
+            if path.exists() and path.is_file():
+                digest.update(path.name.encode("utf-8", errors="ignore"))
+                digest.update(path.read_bytes())
+                found = True
+        except Exception:
+            continue
+    return digest.hexdigest()[:16] if found else "unknown"
+
+APP_BUILD_ID = _compute_app_build_id()
+APP_BUILD_TOKEN = "__RAJA_APP_BUILD__"
+
 DATA_DIR = Path(os.environ.get("RAJA_DATA_DIR", str(BASE_DIR))).resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -2234,25 +2261,54 @@ def news_locked_no_signal(pair, news_lock):
 # =========================================================
 
 @app.route("/")
+@app.route("/index.html")
 def home():
-    if os.path.exists(BASE_DIR / "index.html"):
-        return send_from_directory(str(BASE_DIR), "index.html")
+    index_path = BASE_DIR / "index.html"
+    if index_path.exists():
+        try:
+            html = index_path.read_text(encoding="utf-8")
+            html = html.replace(APP_BUILD_TOKEN, APP_BUILD_ID)
+            response = app.response_class(html, mimetype="text/html")
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+            return response
+        except Exception:
+            # Safe fallback if the template token cannot be injected for any reason.
+            return send_from_directory(str(BASE_DIR), "index.html")
     return (
         "RAJA AI backend is running. "
         "Place index.html in the same folder as bot.py."
     )
 
 
+@app.route("/app-version", methods=["GET"])
+def app_version():
+    response = jsonify({
+        "status": "success",
+        "build": APP_BUILD_ID,
+        "update_policy": "auto",
+    })
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.route("/manifest.json", methods=["GET"])
 def pwa_manifest():
-    return send_from_directory(str(BASE_DIR), "manifest.json", mimetype="application/manifest+json")
+    response = send_from_directory(str(BASE_DIR), "manifest.json", mimetype="application/manifest+json")
+    response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
+    return response
 
 
 @app.route("/sw.js", methods=["GET"])
 def pwa_service_worker():
     response = send_from_directory(str(BASE_DIR), "sw.js", mimetype="application/javascript")
     response.headers["Service-Worker-Allowed"] = "/"
-    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 
@@ -2265,11 +2321,15 @@ def pwa_icon(size):
 
 @app.after_request
 def disable_html_cache(response):
-    # Prevent stale index.html/inline JS from surviving a new Render deploy.
-    if request.path == "/" or request.path.endswith(".html"):
+    # Fresh app shell/update metadata must never get pinned by Safari/Chrome HTTP cache.
+    # User data/localStorage is untouched; only network cache policy is controlled here.
+    no_store_paths = {"/", "/index.html", "/sw.js", "/app-version"}
+    if request.path in no_store_paths or request.path.endswith(".html"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
+    elif request.path == "/manifest.json":
+        response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
     return response
 
 
@@ -2281,6 +2341,7 @@ def health():
     return jsonify({
         "status": "success",
         "service": "RAJA AI multi-timeframe backend",
+        "app_build": APP_BUILD_ID,
         "yahoo_pairs": len(YAHOO_SYMBOLS),
         "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
         "cached_symbols": cached_symbols,
