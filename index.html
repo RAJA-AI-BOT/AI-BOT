@@ -1587,6 +1587,26 @@
         }
     </style>
 
+
+    <style id="raja-wheel-scroll-fix">
+        /* Desktop / installed-PWA mouse-wheel scrolling fix */
+        html {
+            overflow-y: auto !important;
+            overscroll-behavior-y: auto !important;
+            scroll-behavior: auto;
+        }
+        body {
+            overflow-y: visible !important;
+            overscroll-behavior-y: auto !important;
+            min-height: 100dvh;
+        }
+        #adminPanel,
+        #activationScreen,
+        #mainAppContent {
+            overscroll-behavior-y: auto !important;
+        }
+    </style>
+
 </head>
 <body>
 
@@ -5060,5 +5080,53 @@
         });
 
     </script>
+
+    <script id="raja-wheel-scroll-fallback">
+    (() => {
+        // Some Chromium standalone/PWA windows can fail to pass wheel scrolling
+        // to the document even though the scrollbar itself remains draggable.
+        // Only use this fallback when the wheel target is NOT an independently
+        // scrollable element.
+        function hasScrollableAncestor(target, deltaY) {
+            let el = target instanceof Element ? target : null;
+
+            while (el && el !== document.body && el !== document.documentElement) {
+                const style = getComputedStyle(el);
+                const overflowY = style.overflowY;
+                const canScroll = (overflowY === 'auto' || overflowY === 'scroll') &&
+                                  el.scrollHeight > el.clientHeight + 1;
+
+                if (canScroll) {
+                    if (deltaY > 0 && el.scrollTop < el.scrollHeight - el.clientHeight - 1) return true;
+                    if (deltaY < 0 && el.scrollTop > 0) return true;
+                }
+                el = el.parentElement;
+            }
+            return false;
+        }
+
+        window.addEventListener('wheel', (event) => {
+            if (event.defaultPrevented || event.ctrlKey) return;
+
+            // Preserve normal scrolling inside lists, textareas, dropdowns, etc.
+            if (hasScrollableAncestor(event.target, event.deltaY)) return;
+
+            const root = document.scrollingElement || document.documentElement;
+            const before = root.scrollTop;
+
+            root.scrollBy({
+                top: event.deltaY,
+                left: 0,
+                behavior: 'auto'
+            });
+
+            // Prevent duplicate document scrolling only when our fallback moved it.
+            if (root.scrollTop !== before) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+    })();
+    </script>
+
 </body>
 </html>
