@@ -5617,16 +5617,23 @@
         function completeScanSession(finalView) {
             if (scanAnimationInterval) clearInterval(scanAnimationInterval);
             scanAnimationInterval = null;
+
+            const isError = finalView === 'error';
+            const terminalProgress = isError ? 0 : ((finalView === 'signal' || finalView === 'nosignal') ? 100 : 0);
+            // Update every progress widget before marking the session inactive.
+            if (scanSessionState.running) setScanProgress(terminalProgress);
             scanSessionState.running = false;
-            scanSessionState.progress = 100;
+            scanSessionState.progress = terminalProgress;
             stopScanCandleTimer();
-            primaryViewState = finalView || 'ready';
+            primaryViewState = isError ? 'nosignal' : (finalView || 'ready');
             if (finalView === 'signal' || finalView === 'nosignal') {
                 rajaHasCompletedScan = true;
             }
             updateScanSessionChip();
             if (finalView === 'nosignal' && typeof v23SmartAlert === 'function') v23SmartAlert('no-trade');
-            if (typeof v23SetHeroStatus === 'function') v23SetHeroStatus(finalView === 'signal' ? 'SIGNAL CONFIRMED' : (finalView === 'nosignal' ? 'NO TRADE · SAFETY FILTERED' : 'READY FOR DEEP SCAN'));
+            if (typeof v23SetHeroStatus === 'function') {
+                v23SetHeroStatus(finalView === 'signal' ? 'SIGNAL CONFIRMED' : (finalView === 'nosignal' ? 'NO TRADE · SAFETY FILTERED' : (isError ? 'MARKET DATA DELAYED · RETRY READY' : 'READY FOR DEEP SCAN')));
+            }
             const scanBtn = document.getElementById('scanBtn');
             if (scanBtn && !scanBtn.disabled && !guardReached()) {
                 scanBtn.innerText = rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN';
@@ -5670,7 +5677,8 @@
         function startLicenseHeartbeat() {
             if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval);
             if (historyRefreshInterval) clearInterval(historyRefreshInterval);
-            heartbeatLicense();
+            // The current session has already been verified by login/checkRoute.
+            // Start the first heartbeat after 30s instead of firing a duplicate request immediately.
             licenseHeartbeatInterval = setInterval(heartbeatLicense, 30000);
             historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 10000);
         }
@@ -5775,31 +5783,48 @@
             if (notice) notice.style.display = visible ? '' : 'none';
         }
 
-        async function checkRoute() {
+        async function checkRoute(options = {}) {
+            const trustVerifiedSession = Boolean(options && options.trustVerifiedSession === true);
             const isAdminRoute = String(window.location.hash || '').trim().toLowerCase() === '#admin';
             const adminPanel=document.getElementById('adminPanel'), mainApp=document.getElementById('mainAppContent'), activation=document.getElementById('activationScreen');
             if (!adminPanel || !mainApp || !activation) return;
             if (isAdminRoute) { setOuterHeaderVisible(true); adminPanel.style.display='block'; mainApp.style.display='none'; activation.style.display='none'; return; }
-            adminPanel.style.display='none'; isUserVerified=false;
-            const auth=getAuthPayload(); const savedSession=auth.key ? localStorage.getItem('raja_session_'+auth.key) : null;
-            if (auth.key && auth.user && auth.session_token && savedSession===deviceSessionId) {
-                try {
-                    const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...auth,device_label:getCurrentDeviceLabel(),heartbeat:true})});
-                    const result=await response.json().catch(()=>null); isUserVerified=Boolean(response.ok && result && result.status==='success');
-                    if (!isUserVerified && [401,403,409].includes(response.status)) { localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key); }
-                } catch(error){ isUserVerified=false; }
+
+            adminPanel.style.display='none';
+            const auth=getAuthPayload();
+            const savedSession=auth.key ? localStorage.getItem('raja_session_'+auth.key) : null;
+            const localSessionReady = Boolean(auth.key && auth.user && auth.session_token && savedSession===deviceSessionId);
+
+            // Immediately after a successful login we already possess a fresh server-issued token.
+            // Trust that one result instead of POSTing /verify-license a second time.
+            if (!(trustVerifiedSession && isUserVerified && localSessionReady)) {
+                isUserVerified=false;
+                if (localSessionReady) {
+                    try {
+                        const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...auth,device_label:getCurrentDeviceLabel(),heartbeat:true})});
+                        const result=await response.json().catch(()=>null); isUserVerified=Boolean(response.ok && result && result.status==='success');
+                        if (!isUserVerified && [401,403,409].includes(response.status)) { localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key); }
+                    } catch(error){ isUserVerified=false; }
+                }
             }
+
             if (isUserVerified) {
                 setOuterHeaderVisible(false); mainApp.style.display='block'; activation.style.display='none'; updateBrokerAssets(); startTimer(); restoreAutoRescanSchedule(); updateAutoRescanUI(); updateScanSessionChip(); startLicenseHeartbeat(); renderPrimaryView(); installHistoryMirror();
-                setScanMode(scanMode); hydrateUpgradeSettings(); await refreshTrackedHistory(); loadUserProfile(); initializeRajaAppFeatures();
+                setScanMode(scanMode); hydrateUpgradeSettings();
+                // Do not hold the login transition on history/profile requests.
+                Promise.resolve(refreshTrackedHistory()).catch(()=>{});
+                Promise.resolve(loadUserProfile()).catch(()=>{});
+                initializeRajaAppFeatures();
             } else { setOuterHeaderVisible(true); mainApp.style.display='none'; activation.style.display='block'; }
         }
 
 
-        window.addEventListener('hashchange', checkRoute);
-        window.addEventListener('pageshow', checkRoute);
+        window.addEventListener('hashchange', () => checkRoute());
+        // Normal first load is handled by DOMContentLoaded. Only use pageshow for bfcache restores,
+        // avoiding a second simultaneous license verification on every ordinary page load.
+        window.addEventListener('pageshow', (event) => { if (event && event.persisted) checkRoute(); });
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', checkRoute, { once: true });
+            document.addEventListener('DOMContentLoaded', () => checkRoute(), { once: true });
         } else {
             checkRoute();
         }
@@ -5814,7 +5839,7 @@
                 const result=await response.json(); if(!response.ok||!result||result.status!=='success') throw new Error((result&&result.message)||'License verification failed.');
                 localStorage.setItem('raja_active_key',key); localStorage.setItem('raja_active_user',result.user||uInput); localStorage.setItem('raja_session_'+key,deviceSessionId); localStorage.setItem('raja_token_'+key,result.session_token||'');
                 msgBox.style.color='#030712';msgBox.style.background='#00ff87';msgBox.innerText=result.replaced_previous_device?'✅ Login successful. Previous device has been signed out.':'✅ License verified. This device is now active.';
-                isUserVerified=true; await checkRoute(); startTimer();
+                isUserVerified=true; await checkRoute({trustVerifiedSession:true}); startTimer();
             } catch(error){ localStorage.removeItem('raja_active_key');localStorage.removeItem('raja_session_'+key);localStorage.removeItem('raja_token_'+key);msgBox.style.color='#fff';msgBox.style.background='#ff3366';msgBox.innerText='❌ '+error.message;msgBox.style.display='block'; }
         }
 
@@ -6534,7 +6559,7 @@
                 console.error('Batch scan error:', error);
                 if (error && error.name === 'AbortError') {
                     if (rajaScanStopRequested) throw new Error('__RAJA_SCAN_STOPPED__');
-                    throw new Error('Shared scan exceeded 90 seconds. The next Auto Re-Scan will retry slow Yahoo symbols automatically.');
+                    throw new Error('Shared scan exceeded 90 seconds. Live market data is delayed; Auto Re-Scan will retry automatically.');
                 }
                 throw error;
             } finally {
@@ -6826,7 +6851,7 @@
                     if (isAutoScan) rememberAutoPair(bestSignalFound.pair);
                     displaySignalResult(bestSignalFound);
                 } else {
-                    completeScanSession('nosignal');
+                    completeScanSession(scanFailureMessage ? 'error' : 'nosignal');
                     syncTargetPairDisplay();
                     const titleEl = document.getElementById('noSignalTitle');
                     const descEl = document.getElementById('noSignalDesc');
@@ -6834,8 +6859,11 @@
                     const reasonBox = document.getElementById('noTradeReasonBox');
                     if (reasonBox) { reasonBox.style.display = 'none'; reasonBox.innerText = ''; }
                     if (scanFailureMessage) {
-                        titleEl.innerText = '⚠️ SCAN REQUEST FAILED';
-                        descEl.innerText = scanFailureMessage;
+                        const isBatchDelay = /exceeded 90 seconds|timed out/i.test(String(scanFailureMessage));
+                        titleEl.innerText = isBatchDelay ? '⚠️ MARKET DATA DELAYED · RETRY READY' : '⚠️ SCAN REQUEST FAILED';
+                        descEl.innerText = isBatchDelay
+                            ? 'The live source did not answer inside the safety window. No stale signal was used. Auto Re-Scan will retry; you can also press SCAN AGAIN.'
+                            : scanFailureMessage;
                     } else if (rajaLatestNewsLock) {
                         titleEl.innerText = '⚠️ HIGH IMPACT NEWS — SCAN PAUSED';
                         descEl.innerText = 'News Safety Lock protected this Forex scan.';
