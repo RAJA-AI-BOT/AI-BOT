@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import yfinance as yf
 import os
 import time
 import json
@@ -12,6 +11,21 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from collections import Counter
 from datetime import datetime, timezone
 from urllib.request import Request as UrlRequest, urlopen
+
+# Lazy-load yfinance only when a market scan actually starts.
+# This keeps the Flask/Gunicorn web shell lighter during Render cold boot.
+_yf_module = None
+_yf_import_lock = threading.Lock()
+
+def _get_yfinance():
+    global _yf_module
+    if _yf_module is None:
+        with _yf_import_lock:
+            if _yf_module is None:
+                import yfinance as _yf
+                _yf_module = _yf
+    return _yf_module
+
 
 try:
     import psycopg
@@ -742,7 +756,11 @@ def save_signals(items):
                         if rows:
                             cur.executemany(
                                 "INSERT INTO raja_signals(signal_id,user_id,created_at,payload) "
-                                "VALUES(%s,%s,%s,%s)",
+                                "VALUES(%s,%s,%s,%s) "
+                                "ON CONFLICT (signal_id) DO UPDATE SET "
+                                "user_id=EXCLUDED.user_id, "
+                                "created_at=EXCLUDED.created_at, "
+                                "payload=EXCLUDED.payload",
                                 rows,
                             )
                 return
@@ -943,6 +961,7 @@ def signal_stats(items):
 
 def fetch_yahoo_1m(symbol):
     """Fetch Yahoo Finance 1-minute OHLCV candles."""
+    yf = _get_yfinance()
     ticker = yf.Ticker(symbol)
     df = ticker.history(
         period="5d",
