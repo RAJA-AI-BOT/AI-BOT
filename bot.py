@@ -155,6 +155,11 @@ YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.3
 BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
 BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
 YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
+YAHOO_SYMBOL_LOCK_WAIT_SECONDS = max(2.0, min(20.0, float(os.environ.get("RAJA_YAHOO_SYMBOL_LOCK_WAIT", "8"))))
+YAHOO_SEMAPHORE_WAIT_SECONDS = max(2.0, min(25.0, float(os.environ.get("RAJA_YAHOO_SEMAPHORE_WAIT", "12"))))
+# Reject market candles that are too old for a live 1-minute trading decision.
+# This prevents a freshly-downloaded but old weekend/closed-market candle from being labelled "fresh".
+MAX_SOURCE_CANDLE_AGE_SECONDS = max(120, min(3600, int(os.environ.get("RAJA_MAX_SOURCE_CANDLE_AGE", "300"))))
 # Browser batch timeout is 90s. Keep the backend deadline comfortably below that
 # so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
 # 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
@@ -214,7 +219,7 @@ LICENSE_STORE_MODE = "postgres" if DATABASE_URL else "file"
 DEVICE_SESSION_TTL_SECONDS = max(120, int(os.environ.get("RAJA_DEVICE_SESSION_TTL", "300")))
 # User requested a one-time reset of all previously generated keys. This marker makes
 # the reset run only once per persistent database. Change/empty the env var to control it.
-LICENSE_RESET_VERSION = os.environ.get("RAJA_LICENSE_RESET_VERSION", "2026-08-12-v8-clean-slate").strip()
+LICENSE_RESET_VERSION = os.environ.get("RAJA_LICENSE_RESET_VERSION", "").strip()
 
 SIGNALS_FILE = DATA_DIR / "signals.json"
 signals_lock = threading.RLock()
@@ -442,16 +447,17 @@ def load_license_record(key):
         return None
 
     if DATABASE_URL:
-        with _db_connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    SELECT active, user_id, device_id, device_label, created_at,
-                           last_verified_at, session_token, plan, expires_at, last_login_at
-                    FROM raja_licenses
-                    WHERE license_key = %s
-                    LIMIT 1
-                """, (key,))
-                row = cur.fetchone()
+        with license_lock:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT active, user_id, device_id, device_label, created_at,
+                               last_verified_at, session_token, plan, expires_at, last_login_at
+                        FROM raja_licenses
+                        WHERE license_key = %s
+                        LIMIT 1
+                    """, (key,))
+                    row = cur.fetchone()
         if not row:
             return None
         (active, user, device, device_label, created_at, last_verified_at,
@@ -487,25 +493,26 @@ def save_license_record(key, record):
             record.get("plan") or DEFAULT_LICENSE_PLAN, record.get("expires_at"),
             record.get("last_login_at"),
         )
-        with _db_connect() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO raja_licenses
-                        (license_key, active, user_id, device_id, device_label, created_at,
-                         last_verified_at, session_token, plan, expires_at, last_login_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (license_key) DO UPDATE SET
-                        active = EXCLUDED.active,
-                        user_id = EXCLUDED.user_id,
-                        device_id = EXCLUDED.device_id,
-                        device_label = EXCLUDED.device_label,
-                        created_at = EXCLUDED.created_at,
-                        last_verified_at = EXCLUDED.last_verified_at,
-                        session_token = EXCLUDED.session_token,
-                        plan = EXCLUDED.plan,
-                        expires_at = EXCLUDED.expires_at,
-                        last_login_at = EXCLUDED.last_login_at
-                """, values)
+        with license_lock:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO raja_licenses
+                            (license_key, active, user_id, device_id, device_label, created_at,
+                             last_verified_at, session_token, plan, expires_at, last_login_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (license_key) DO UPDATE SET
+                            active = EXCLUDED.active,
+                            user_id = EXCLUDED.user_id,
+                            device_id = EXCLUDED.device_id,
+                            device_label = EXCLUDED.device_label,
+                            created_at = EXCLUDED.created_at,
+                            last_verified_at = EXCLUDED.last_verified_at,
+                            session_token = EXCLUDED.session_token,
+                            plan = EXCLUDED.plan,
+                            expires_at = EXCLUDED.expires_at,
+                            last_login_at = EXCLUDED.last_login_at
+                    """, values)
         return
 
     with license_lock:
@@ -513,6 +520,118 @@ def save_license_record(key, record):
         licenses[key] = record
         save_licenses(licenses)
 
+
+
+def find_active_license_for_user(user_ref):
+    """Find one active, non-expired license for a user without rebuilding the license table."""
+    user = normalize_user_id(user_ref)
+    if not user:
+        return None, None
+    now = int(time.time())
+
+    if DATABASE_URL:
+        with license_lock:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT license_key, active, user_id, device_id, device_label, created_at,
+                               last_verified_at, session_token, plan, expires_at, last_login_at
+                        FROM raja_licenses
+                        WHERE lower(user_id) = %s AND active = TRUE
+                        ORDER BY created_at DESC NULLS LAST
+                        LIMIT 20
+                    """, (user,))
+                    rows = cur.fetchall()
+        for row in rows:
+            key, active, bound_user, device, device_label, created_at, last_verified_at, session_token, plan, expires_at, last_login_at = row
+            record = {
+                "active": bool(active), "user": bound_user, "device": device,
+                "device_label": device_label, "created_at": created_at,
+                "last_verified_at": last_verified_at, "session_token": session_token,
+                "plan": plan or DEFAULT_LICENSE_PLAN, "expires_at": expires_at,
+                "last_login_at": last_login_at,
+            }
+            if not license_is_expired(record, now):
+                return str(key), record
+        return None, None
+
+    for key, record in load_licenses().items():
+        if (record.get("active", False)
+                and normalize_user_id(record.get("user", "")) == user
+                and not license_is_expired(record, now)):
+            return key, record
+    return None, None
+
+
+def delete_license_record(key):
+    key = str(key or "").strip()
+    if not key:
+        return False
+    if DATABASE_URL:
+        with license_lock:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM raja_licenses WHERE license_key=%s", (key,))
+                    return cur.rowcount > 0
+    with license_lock:
+        licenses = load_licenses()
+        existed = key in licenses
+        licenses.pop(key, None)
+        save_licenses(licenses)
+        return existed
+
+
+def clear_all_license_records():
+    if DATABASE_URL:
+        with license_lock:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT COUNT(*) FROM raja_licenses")
+                    row = cur.fetchone()
+                    removed = int(row[0] or 0) if row else 0
+                    cur.execute("DELETE FROM raja_licenses")
+                    return removed
+    with license_lock:
+        licenses = load_licenses()
+        removed = len(licenses)
+        save_licenses({})
+        return removed
+
+
+def reset_all_license_devices():
+    """Clear device sessions atomically; return number of rows that were bound."""
+    if DATABASE_URL:
+        with license_lock:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT COUNT(*) FROM raja_licenses
+                        WHERE device_id IS NOT NULL OR session_token IS NOT NULL
+                    """)
+                    row = cur.fetchone()
+                    updated = int(row[0] or 0) if row else 0
+                    cur.execute("""
+                        UPDATE raja_licenses
+                        SET device_id=NULL, device_label=NULL, last_verified_at=NULL, session_token=NULL
+                    """)
+                    cur.execute("SELECT COUNT(*) FROM raja_licenses")
+                    total_row = cur.fetchone()
+                    total = int(total_row[0] or 0) if total_row else 0
+                    return updated, total
+    with license_lock:
+        licenses = load_licenses()
+        updated = 0
+        for key, record in list(licenses.items()):
+            record = record if isinstance(record, dict) else {}
+            if record.get("device") or record.get("session_token"):
+                updated += 1
+            record["device"] = None
+            record["device_label"] = None
+            record["last_verified_at"] = None
+            record["session_token"] = None
+            licenses[key] = record
+        save_licenses(licenses)
+        return updated, len(licenses)
 
 
 def _trial_claim_key(claim_type, claim_value):
@@ -1094,8 +1213,31 @@ def _pace_yahoo_request():
         last_yahoo_fetch_started = time.time()
 
 
+def _cached_symbol_is_usable(symbol, max_cache_age):
+    now = time.time()
+    with cache_lock:
+        cached = market_cache.get(symbol)
+        if cached and (now - float(cached.get("timestamp") or 0)) <= max_cache_age:
+            return True
+    return False
+
+
+def _source_candle_age_seconds(df):
+    """Return age of the newest Yahoo 1m candle, not age of our local cache fetch."""
+    if df is None or getattr(df, "empty", True):
+        return None
+    try:
+        latest = df.index[-1]
+        latest_epoch = float(latest.timestamp())
+        # Yahoo timestamps are the candle open time. Give the 1m candle its full minute
+        # before counting it as stale.
+        return max(0.0, time.time() - latest_epoch - 60.0)
+    except Exception:
+        return None
+
+
 def update_symbol_cache(symbol, force=False):
-    """Refresh one Yahoo symbol with single-flight, pacing and failure cooldown."""
+    """Refresh one Yahoo symbol with bounded single-flight waits and failure cooldown."""
     now = time.time()
 
     with cache_lock:
@@ -1107,14 +1249,16 @@ def update_symbol_cache(symbol, force=False):
         blocked_until = failed_symbol_until.get(symbol, 0)
 
     if not force and blocked_until > now:
-        with cache_lock:
-            cached = market_cache.get(symbol)
-            if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
-                return True
-        return False
+        return _cached_symbol_is_usable(symbol, STALE_CACHE_MAX_AGE)
 
     symbol_lock = _get_symbol_fetch_lock(symbol)
-    with symbol_lock:
+    acquired_symbol = symbol_lock.acquire(timeout=YAHOO_SYMBOL_LOCK_WAIT_SECONDS)
+    if not acquired_symbol:
+        # Another request is already fetching this exact symbol. Never let a manual
+        # single-pair scan hang indefinitely behind it.
+        return _cached_symbol_is_usable(symbol, STALE_CACHE_MAX_AGE)
+
+    try:
         now = time.time()
 
         # Another request may have refreshed this symbol while this caller waited.
@@ -1127,38 +1271,41 @@ def update_symbol_cache(symbol, force=False):
             blocked_until = failed_symbol_until.get(symbol, 0)
 
         if not force and blocked_until > now:
-            with cache_lock:
-                cached = market_cache.get(symbol)
-                if cached and (now - cached["timestamp"]) <= STALE_CACHE_MAX_AGE:
-                    return True
-            return False
+            return _cached_symbol_is_usable(symbol, STALE_CACHE_MAX_AGE)
+
+        acquired_slot = yahoo_fetch_semaphore.acquire(timeout=YAHOO_SEMAPHORE_WAIT_SECONDS)
+        if not acquired_slot:
+            return _cached_symbol_is_usable(symbol, STALE_CACHE_MAX_AGE)
 
         try:
-            with yahoo_fetch_semaphore:
-                _pace_yahoo_request()
-                df = fetch_yahoo_1m(symbol)
+            _pace_yahoo_request()
+            df = fetch_yahoo_1m(symbol)
+        finally:
+            yahoo_fetch_semaphore.release()
 
-            if df is None:
-                with failed_symbol_lock:
-                    failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
-                return False
-
-            with cache_lock:
-                market_cache[symbol] = {
-                    "data": df.copy(),
-                    "timestamp": time.time(),
-                }
-
-            with failed_symbol_lock:
-                failed_symbol_until.pop(symbol, None)
-
-            return True
-
-        except Exception as e:
+        if df is None:
             with failed_symbol_lock:
                 failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
-            print(f"Yahoo fetch error for {symbol}: {e}")
             return False
+
+        with cache_lock:
+            market_cache[symbol] = {
+                "data": df.copy(),
+                "timestamp": time.time(),
+            }
+
+        with failed_symbol_lock:
+            failed_symbol_until.pop(symbol, None)
+
+        return True
+
+    except Exception as e:
+        with failed_symbol_lock:
+            failed_symbol_until[symbol] = time.time() + YAHOO_FAILURE_COOLDOWN
+        print(f"Yahoo fetch error for {symbol}: {e}")
+        return False
+    finally:
+        symbol_lock.release()
 
 
 def get_market_data(pair):
@@ -1171,9 +1318,10 @@ def get_market_data(pair):
         cached = market_cache.get(symbol)
 
     if cached:
-        age = now - cached["timestamp"]
-        if age <= CACHE_DURATION:
-            return cached["data"].copy(), age, symbol
+        cache_age = now - cached["timestamp"]
+        if cache_age <= CACHE_DURATION:
+            data = cached["data"].copy()
+            return data, _source_candle_age_seconds(data), symbol
 
     refreshed = update_symbol_cache(symbol)
 
@@ -1181,12 +1329,12 @@ def get_market_data(pair):
         cached = market_cache.get(symbol)
 
     if cached:
-        age = time.time() - cached["timestamp"]
-        if refreshed or age <= STALE_CACHE_MAX_AGE:
-            return cached["data"].copy(), age, symbol
+        cache_age = time.time() - cached["timestamp"]
+        if refreshed or cache_age <= STALE_CACHE_MAX_AGE:
+            data = cached["data"].copy()
+            return data, _source_candle_age_seconds(data), symbol
 
     return None, None, symbol
-
 
 def background_market_poller():
     """Disabled intentionally: full-market polling caused Yahoo rate limits."""
@@ -1728,8 +1876,24 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
 
     base_df, data_age, symbol = get_market_data(pair)
     if base_df is None or base_df.empty:
-        result = no_signal_result(pair, "Yahoo market data unavailable.", symbol=symbol, data_age=data_age)
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
+        result = no_signal_result(pair, "Yahoo market data unavailable. Retry when the live source is reachable.", symbol=symbol, data_age=data_age)
+        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "data_delayed": True})
+        return result
+
+    if data_age is not None and data_age > MAX_SOURCE_CANDLE_AGE_SECONDS:
+        age_min = max(1, int(round(float(data_age) / 60.0)))
+        result = no_signal_result(
+            pair,
+            f"Latest Yahoo 1m candle is about {age_min} minute(s) old; live source is stale/market may be closed.",
+            symbol=symbol,
+            data_age=data_age,
+        )
+        result.update({
+            "scan_mode": opts["mode"],
+            "scan_thresholds": opts,
+            "data_delayed": True,
+            "source_stale": True,
+        })
         return result
 
     chart_preview = serialize_candles(base_df, 28)
@@ -2063,6 +2227,9 @@ def health():
         "yahoo_failure_cooldown_seconds": YAHOO_FAILURE_COOLDOWN,
         "batch_cache_seconds": BATCH_CACHE_DURATION,
         "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
+        "yahoo_symbol_lock_wait_seconds": YAHOO_SYMBOL_LOCK_WAIT_SECONDS,
+        "yahoo_semaphore_wait_seconds": YAHOO_SEMAPHORE_WAIT_SECONDS,
+        "max_source_candle_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
         "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
         "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
         "closed_candle_analysis": True,
@@ -2333,22 +2500,21 @@ def admin_generate_key():
                 "message": "Free trial already used for this Telegram ID / UID. Create a VIP license instead."
             }), 409
 
-    licenses = load_licenses()
     while True:
         key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
-        if key not in licenses:
+        if load_license_record(key) is None:
             break
     now = int(time.time())
-    licenses[key] = {
+    record = {
         "active": True, "user": user, "device": None, "device_label": None,
         "session_token": None, "created_at": now, "last_verified_at": None,
         "last_login_at": None, "plan": plan, "expires_at": now + int(duration_days * 86400) if duration_days else None,
     }
-    save_licenses(licenses)
+    save_license_record(key, record)
     if is_free_trial:
         record_trial_claim("user", user, key)
     return jsonify({"status": "success", "message": "License created.", "key": key, "user": user,
-                    "plan": plan, "expires_at": licenses[key].get("expires_at")})
+                    "plan": plan, "expires_at": record.get("expires_at")})
 
 
 @app.route("/admin/licenses", methods=["POST"])
@@ -2429,13 +2595,14 @@ def admin_reset_device():
     key = str(data.get("key", "")).strip()
     if not key:
         return jsonify({"status": "error", "message": "License key is required."}), 400
-    licenses = load_licenses()
-    if key not in licenses:
+    record = load_license_record(key)
+    if not record:
         return jsonify({"status": "error", "message": "License key not found."}), 404
-    record = licenses.get(key) if isinstance(licenses.get(key), dict) else {}
-    record["device"] = None; record["device_label"] = None; record["last_verified_at"] = None; record["session_token"] = None
-    licenses[key] = record
-    save_licenses(licenses)
+    record["device"] = None
+    record["device_label"] = None
+    record["last_verified_at"] = None
+    record["session_token"] = None
+    save_license_record(key, record)
     return jsonify({"status": "success", "message": "Device binding reset.", "key": key})
 
 
@@ -2445,14 +2612,8 @@ def admin_reset_all_devices():
     auth_error = _validate_admin_password(data)
     if auth_error:
         return auth_error
-    licenses = load_licenses(); updated = 0
-    for key, record in list(licenses.items()):
-        record = record if isinstance(record, dict) else {}
-        if record.get("device") or record.get("session_token"): updated += 1
-        record["device"] = None; record["device_label"] = None; record["last_verified_at"] = None; record["session_token"] = None
-        licenses[key] = record
-    save_licenses(licenses)
-    return jsonify({"status": "success", "message": "All device bindings cleared.", "updated": updated, "total": len(licenses)})
+    updated, total = reset_all_license_devices()
+    return jsonify({"status": "success", "message": "All device bindings cleared.", "updated": updated, "total": total})
 
 
 def _delete_license_from_request(data):
@@ -2462,10 +2623,8 @@ def _delete_license_from_request(data):
         return None, auth_error
     if not key:
         return None, (jsonify({"status": "error", "message": "License key is required."}), 400)
-    licenses = load_licenses()
-    if key not in licenses:
+    if not delete_license_record(key):
         return None, (jsonify({"status": "error", "message": "License key not found."}), 404)
-    licenses.pop(key, None); save_licenses(licenses)
     return key, None
 
 
@@ -2489,7 +2648,7 @@ def admin_clear_keys():
     auth_error = _validate_admin_password(data)
     if auth_error:
         return auth_error
-    licenses = load_licenses(); removed = len(licenses); save_licenses({})
+    removed = clear_all_license_records()
     return jsonify({"status": "success", "message": "All license keys removed.", "removed": removed})
 
 
@@ -2763,17 +2922,16 @@ def issue_telegram_license(user_ref):
     if not user:
         raise ValueError("Telegram/Quotex user reference is required.")
 
-    licenses = load_licenses()
-    for key, record in licenses.items():
-        if record.get("active", False) and normalize_user_id(record.get("user", "")) == user:
-            return key
+    existing_key, _ = find_active_license_for_user(user)
+    if existing_key:
+        return existing_key
 
     while True:
         key = "RAJA-VIP-" + secrets.token_hex(4).upper() + "-2026"
-        if key not in licenses:
+        if load_license_record(key) is None:
             break
 
-    licenses[key] = {
+    record = {
         "active": True,
         "user": user,
         "device": None,
@@ -2785,7 +2943,7 @@ def issue_telegram_license(user_ref):
         "plan": DEFAULT_LICENSE_PLAN,
         "expires_at": None,
     }
-    save_licenses(licenses)
+    save_license_record(key, record)
     return key
 
 
@@ -2795,7 +2953,7 @@ def validate_telegram_license(key, user_ref):
     user = normalize_user_id(user_ref)
     if not key or not user:
         return False
-    record = load_licenses().get(key)
+    record = load_license_record(key)
     if not record or not record.get("active", False):
         return False
     # Important for short trials: Telegram access must stop when the license expires.
@@ -2810,7 +2968,7 @@ def telegram_license_info(key, user_ref):
     """Return plan/expiry details for Telegram reminder and expiry automation."""
     key = str(key or "").strip()
     user = normalize_user_id(user_ref)
-    record = load_licenses().get(key) if key else None
+    record = load_license_record(key) if key else None
     if not isinstance(record, dict):
         return {"exists": False, "valid": False, "plan": None, "expires_at": None}
     bound_user = normalize_user_id(record.get("user", ""))
