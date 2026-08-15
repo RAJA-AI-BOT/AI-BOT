@@ -4445,7 +4445,7 @@
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button></div>
                             </div>
                         </div>
-                        <button id="scanBtn" class="scan-btn" onclick="playClickSound(); startDeepScan()">▶ START AI MARKET SCAN</button>
+                        <button id="scanBtn" class="scan-btn" type="button" onclick="playClickSound(); startDeepScan(false)">▶ START AI MARKET SCAN</button>
                     </section>
                 </main>
 
@@ -5968,31 +5968,104 @@
             }
         }
 
+        let rajaScanStartPending = false;
+
         async function startDeepScan(autoTriggered = false) {
             rajaLatestNoTradeReason = '';
             rajaLatestNewsLock = null;
+
+            const existingScanBtn = document.getElementById('scanBtn');
+
+            // Prevent double taps while an actual scan is already running.
+            if (rajaScanStartPending || scanSessionState.running) return;
+
             if (!navigator.onLine) {
                 showRajaNoTradeView('📴 OFFLINE — LIVE SCAN UNAVAILABLE', 'Reconnect to the internet to run a live market scan. Your last saved signal and history remain available.');
                 return;
             }
-            const controlState = await refreshRajaAppState(true);
-            if (controlState && controlState.maintenance) {
-                showRajaNoTradeView('⛔ SCANS TEMPORARILY PAUSED', controlState.maintenance_message || 'RAJA AI scanning is temporarily paused by the admin.');
+
+            // Daily guard is local and can be checked before changing the screen.
+            if (guardReached()) {
+                updateDailyPerformance();
+                if (existingScanBtn) {
+                    existingScanBtn.disabled = true;
+                    existingScanBtn.innerText = '⛔ TRADING SESSION LIMIT REACHED';
+                }
+                if(!autoTriggered) alert('⛔ Trading session limit reached. Change Daily Stop Guard settings or wait until the next day.');
                 return;
             }
-            if (guardReached()) { updateDailyPerformance(); if(!autoTriggered) alert('⛔ Trading session limit reached. Change Daily Stop Guard settings or wait until the next day.'); return; }
-            const existingScanBtn = document.getElementById('scanBtn');
-            if (existingScanBtn && existingScanBtn.disabled) return;
-            clearAutoRescanSchedule(true);
+
+            // Read the requested scan configuration immediately.
             let broker = document.getElementById('brokerSelect').value;
             let market = document.getElementById('marketType').value;
             let selectedPair = document.getElementById('pairSelect').value;
-
-            activeSignalEntryEpochMs = null;
-            activeTrackedSignalId = null;
-            startTimer();
-
             const isAutoScan = selectedPair.includes('Auto Scan') || selectedPair === '';
+
+            // ---------------------------------------------------------
+            // INSTANT FRESH-SCAN UX
+            // The moment SCAN AGAIN is pressed, leave the old signal
+            // screen and show a brand-new scan session from 0%.
+            // Previous tracked/history records remain stored separately.
+            // ---------------------------------------------------------
+            clearAutoRescanSchedule(true);
+            rajaScanStartPending = true;
+            currentSection = 'dashboard';
+            primaryViewState = 'scanning';
+            scanSessionState = {
+                running: true,
+                progress: 0,
+                startedAt: Date.now(),
+                autoTriggered: Boolean(autoTriggered),
+                pairCount: 0
+            };
+
+            if (scanAnimationInterval) clearInterval(scanAnimationInterval);
+            scanAnimationInterval = null;
+            stopScanCandleTimer();
+
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('scanning');
+            if (typeof v23SetHeroStatus === 'function') v23SetHeroStatus('STARTING FRESH SCAN · 0%');
+
+            const assetsEl = document.getElementById('scanActiveAssetsValue');
+            if (assetsEl) assetsEl.innerText = '0';
+            const elapsedEl = document.getElementById('scanElapsedValue');
+            if (elapsedEl) elapsedEl.innerText = '00:00';
+
+            setScanProgress(0);
+            updateScanSessionChip();
+            startScanCandleTimer();
+            startScanAnimation();
+            renderPrimaryView();
+
+            const scanConsoleEarly = document.getElementById('liveScanConsole');
+            if (scanConsoleEarly) {
+                scanConsoleEarly.innerHTML = '<div class="live-scan-row scanning">⚡ Starting fresh RAJA AI scan...</div>';
+            }
+            const scanStepEarly = document.getElementById('scanStepText');
+            if (scanStepEarly) scanStepEarly.innerText = 'Initializing fresh market scan...';
+
+            if (existingScanBtn) {
+                existingScanBtn.disabled = true;
+                existingScanBtn.innerText = autoTriggered ? '↻ AUTO RE-SCAN IN PROGRESS...' : '▶ AI MARKET SCAN IN PROGRESS...';
+            }
+
+            // Check server-side maintenance without making the button feel dead.
+            let controlState = rajaAppControlState;
+            try {
+                controlState = await refreshRajaAppState(true, 6000);
+            } finally {
+                rajaScanStartPending = false;
+            }
+
+            if (controlState && controlState.maintenance) {
+                if (existingScanBtn) {
+                    existingScanBtn.disabled = true;
+                    existingScanBtn.innerText = '⛔ SCANS TEMPORARILY PAUSED';
+                }
+                showRajaNoTradeView('⛔ SCANS TEMPORARILY PAUSED', controlState.maintenance_message || 'RAJA AI scanning is temporarily paused by the admin.');
+                return;
+            }
+
             let eligiblePairs = [];
             let allAutoPairs = [];
 
@@ -6017,8 +6090,19 @@
                 eligiblePairs = [selectedPair];
             }
 
-            beginScanSession(autoTriggered, eligiblePairs.length);
-            renderPrimaryView();
+            // Keep the instant session start time; only promote it to the
+            // real asset count/progress once the scan request is ready.
+            scanSessionState.autoTriggered = Boolean(autoTriggered);
+            scanSessionState.pairCount = Number(eligiblePairs.length || 0);
+            const activeAssetsEl = document.getElementById('scanActiveAssetsValue');
+            if (activeAssetsEl) activeAssetsEl.innerText = String(scanSessionState.pairCount);
+            setScanProgress(Math.max(8, Number(scanSessionState.progress || 0)));
+
+            // Detach only the front-screen active signal pointer.
+            // Backend/history tracking of the previous saved signal continues.
+            activeSignalEntryEpochMs = null;
+            activeTrackedSignalId = null;
+            startTimer();
 
             const tfBoxReset = document.getElementById('tfBreakdown');
             const tfLineReset = document.getElementById('tfSummaryLine');
@@ -7400,20 +7484,33 @@
             }
         }
 
-        async function refreshRajaAppState(force=false) {
+        async function refreshRajaAppState(force=false, timeoutMs=6000) {
             if (!navigator.onLine) {
                 updateRajaConnectivityUI();
                 return rajaAppControlState;
             }
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), Math.max(1500, Number(timeoutMs || 6000)));
+
             try {
-                const response = await fetch('/app-state', { cache: force ? 'no-store' : 'default' });
+                const response = await fetch('/app-state', {
+                    cache: force ? 'no-store' : 'default',
+                    signal: controller.signal
+                });
                 const result = await response.json().catch(() => null);
                 if (response.ok && result && result.status === 'success') {
                     renderRajaAppState(result.data || {});
                     return result.data || {};
                 }
             } catch (error) {
-                console.warn('RAJA app-state check failed:', error);
+                if (error && error.name === 'AbortError') {
+                    console.warn('RAJA app-state check timed out; continuing with last known app state.');
+                } else {
+                    console.warn('RAJA app-state check failed:', error);
+                }
+            } finally {
+                clearTimeout(timeoutId);
             }
             return rajaAppControlState;
         }
