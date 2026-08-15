@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="raja-app-build" content="__RAJA_APP_BUILD__">
     <title>RAJA AI PREMIUM</title>
     <meta name="theme-color" content="#050b16">
     <meta name="mobile-web-app-capable" content="yes">
@@ -5365,24 +5366,114 @@
             }
         }
 
+        // =========================================================
+        // GLOBAL PWA AUTO-UPDATE
+        // iPad/iPhone standalone PWA + Android + laptop/desktop.
+        // The HTML carries its own server-injected build ID. A tiny no-cache
+        // endpoint is checked on launch, foreground/focus and once per minute.
+        // When a real deployment is detected, the new worker is activated and
+        // the app reloads once into the fresh shell. LocalStorage/login stays intact.
+        // =========================================================
+        const RAJA_CURRENT_BUILD = String(
+            document.querySelector('meta[name="raja-app-build"]')?.content || ''
+        ).trim();
+        const RAJA_VERSION_CHECK_MS = 60 * 1000;
+        let rajaSwRegistration = null;
+        let rajaVersionTimer = null;
+        let rajaUpdateReloadStarted = false;
+        let rajaBuildMismatchDetected = false;
+        let rajaLastVersionCheckAt = 0;
+
+        function reloadRajaIntoBuild(buildId) {
+            if (rajaUpdateReloadStarted) return;
+            rajaUpdateReloadStarted = true;
+
+            try {
+                const target = new URL(window.location.href);
+                target.searchParams.set('_raja_build', String(buildId || Date.now()));
+                window.location.replace(target.toString());
+            } catch (_) {
+                window.location.reload();
+            }
+        }
+
+        async function checkRajaAppVersion(force = false) {
+            if (rajaUpdateReloadStarted || !navigator.onLine) return;
+
+            const now = Date.now();
+            if (!force && now - rajaLastVersionCheckAt < 15000) return;
+            rajaLastVersionCheckAt = now;
+
+            try {
+                const response = await fetch(`/app-version?_=${now}`, {
+                    method: 'GET',
+                    cache: 'no-store',
+                    headers: { 'Cache-Control': 'no-cache' }
+                });
+                if (!response.ok) return;
+
+                const payload = await response.json().catch(() => null);
+                const latestBuild = String(payload?.build || '').trim();
+                if (!latestBuild || !RAJA_CURRENT_BUILD || latestBuild === RAJA_CURRENT_BUILD) {
+                    return;
+                }
+
+                rajaBuildMismatchDetected = true;
+
+                // Ask the browser to fetch a fresh service worker first.
+                if (rajaSwRegistration) {
+                    try {
+                        await rajaSwRegistration.update();
+                    } catch (_) {}
+
+                    if (rajaSwRegistration.waiting) {
+                        try {
+                            rajaSwRegistration.waiting.postMessage({ type:'SKIP_WAITING' });
+                        } catch (_) {}
+                    }
+                }
+
+                // controllerchange normally fires when a new SW activates.
+                // The timeout also covers UI/backend-only deployments where sw.js did not change.
+                setTimeout(() => reloadRajaIntoBuild(latestBuild), 1200);
+            } catch (_) {
+                // Offline/waking server: keep the current working app and retry later.
+            }
+        }
+
         if ('serviceWorker' in navigator) {
+            let controllerReloadArmed = false;
+
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!controllerReloadArmed || !rajaBuildMismatchDetected || rajaUpdateReloadStarted) return;
+                reloadRajaIntoBuild('sw-' + Date.now());
+            });
+
             const registerRajaServiceWorker = async () => {
                 try {
-                    const registration = await navigator.serviceWorker.register('/sw.js', {
+                    rajaSwRegistration = await navigator.serviceWorker.register('/sw.js', {
                         scope: '/',
                         updateViaCache: 'none'
                     });
 
-                    // Check for a new worker in the background. Never block UI.
-                    registration.update().catch(() => {});
+                    controllerReloadArmed = true;
 
-                    if (registration.waiting) {
+                    try {
+                        await rajaSwRegistration.update();
+                    } catch (_) {}
+
+                    if (rajaSwRegistration.waiting) {
                         try {
-                            registration.waiting.postMessage({ type:'SKIP_WAITING' });
+                            rajaSwRegistration.waiting.postMessage({ type:'SKIP_WAITING' });
                         } catch (_) {}
                     }
+
+                    // Check server build immediately after registration settles.
+                    checkRajaAppVersion(true);
                 } catch (err) {
                     console.warn('RAJA AI service worker registration failed:', err);
+                    // Version endpoint can still refresh a normal browser tab.
+                    checkRajaAppVersion(true);
                 }
 
                 if (isRajaStandalone()) {
@@ -5399,7 +5490,24 @@
             } else {
                 setTimeout(registerRajaServiceWorker, 0);
             }
+        } else {
+            // Non-PWA browser fallback still receives deployment updates.
+            setTimeout(() => checkRajaAppVersion(true), 0);
         }
+
+        // iOS/iPadOS PWAs are often suspended in the background rather than closed.
+        // Re-check every time the app becomes visible again.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') checkRajaAppVersion(true);
+        });
+        window.addEventListener('focus', () => checkRajaAppVersion(true));
+        window.addEventListener('pageshow', () => checkRajaAppVersion(true));
+        window.addEventListener('online', () => checkRajaAppVersion(true));
+
+        if (rajaVersionTimer) clearInterval(rajaVersionTimer);
+        rajaVersionTimer = setInterval(() => {
+            if (document.visibilityState === 'visible') checkRajaAppVersion(false);
+        }, RAJA_VERSION_CHECK_MS);
 
 
         // Primary-view navigation and live scan session state. A scan continues while
