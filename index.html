@@ -5671,8 +5671,8 @@
             if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval);
             if (historyRefreshInterval) clearInterval(historyRefreshInterval);
             heartbeatLicense();
-            licenseHeartbeatInterval = setInterval(heartbeatLicense, 5000);
-            historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 3000);
+            licenseHeartbeatInterval = setInterval(heartbeatLicense, 30000);
+            historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 10000);
         }
 
 
