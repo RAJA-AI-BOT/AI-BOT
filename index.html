@@ -16,6 +16,16 @@
     <link rel="icon" type="image/png" sizes="512x512" href="/raja-ai-icon-512.png">
     <link rel="apple-touch-icon" sizes="192x192" href="/raja-ai-icon-192.png">
 
+
+    <script id="raja-theme-bootstrap-v2">
+        try {
+            const savedTheme = localStorage.getItem('raja_theme_v2') || 'dark';
+            document.documentElement.dataset.rajaTheme = savedTheme === 'light' ? 'light' : 'dark';
+        } catch (_) {
+            document.documentElement.dataset.rajaTheme = 'dark';
+        }
+    </script>
+
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: radial-gradient(circle at center, #070b19 0%, #010309 100%); color: #ffffff; font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; display: flex; justify-content: center; align-items: flex-start; padding: 6px; }
@@ -1382,8 +1392,232 @@
         }
     </style>
 
+
+    <style id="raja-premium-v2-control-css">
+        /* =========================================================
+           RAJA AI PREMIUM V2
+           Theme · Safety · Offline · Broadcast · Expiry
+           ========================================================= */
+        :root {
+            --raja-page:#010309;
+            --raja-surface:#07111f;
+            --raja-surface-2:#0c1627;
+            --raja-card:#091426;
+            --raja-text:#eefaff;
+            --raja-muted:#8da6ba;
+            --raja-border:rgba(96,239,255,.22);
+            --raja-accent:#60efff;
+            --raja-green:#00ff9a;
+            --raja-red:#ff5d7d;
+        }
+
+        html[data-raja-theme="light"] {
+            color-scheme:light;
+            --raja-page:#eef4f8;
+            --raja-surface:#ffffff;
+            --raja-surface-2:#f5f9fc;
+            --raja-card:#ffffff;
+            --raja-text:#102031;
+            --raja-muted:#5d7285;
+            --raja-border:rgba(23,93,130,.20);
+            --raja-accent:#087fae;
+            --raja-green:#07895b;
+            --raja-red:#c73758;
+        }
+
+        html[data-raja-theme="light"] body {
+            background:linear-gradient(180deg,#eef5f8,#dfeaf0) !important;
+            color:var(--raja-text) !important;
+        }
+        html[data-raja-theme="light"] .container,
+        html[data-raja-theme="light"] .main-panel-card,
+        html[data-raja-theme="light"] .config-panel,
+        html[data-raja-theme="light"] .scan-summary-card,
+        html[data-raja-theme="light"] .rail-card,
+        html[data-raja-theme="light"] .settings-section,
+        html[data-raja-theme="light"] .selection-card,
+        html[data-raja-theme="light"] .timer-section,
+        html[data-raja-theme="light"] .ai-hud-box,
+        html[data-raja-theme="light"] .intel-heatmap-shell,
+        html[data-raja-theme="light"] .setup-build-shell,
+        html[data-raja-theme="light"] .ai-explain-card,
+        html[data-raja-theme="light"] .perf-heatmap-card,
+        html[data-raja-theme="light"] .replay-spotlight-card,
+        html[data-raja-theme="light"] .panel-box,
+        html[data-raja-theme="light"] .app-feature-card {
+            background:var(--raja-surface) !important;
+            color:var(--raja-text) !important;
+            border-color:var(--raja-border) !important;
+            box-shadow:0 8px 28px rgba(28,68,88,.06) !important;
+        }
+        html[data-raja-theme="light"] .dashboard-topbar,
+        html[data-raja-theme="light"] .side-panel,
+        html[data-raja-theme="light"] .right-rail {
+            background:linear-gradient(180deg,#ffffff,#f4f8fb) !important;
+            border-color:var(--raja-border) !important;
+        }
+        html[data-raja-theme="light"] .nav-item,
+        html[data-raja-theme="light"] .utility-btn,
+        html[data-raja-theme="light"] .rail-action,
+        html[data-raja-theme="light"] .replay-control-btn,
+        html[data-raja-theme="light"] .app-feature-actions button,
+        html[data-raja-theme="light"] .raja-lock-btn {
+            background:#f0f6f9 !important;
+            color:#176080 !important;
+            border-color:rgba(23,96,128,.20) !important;
+        }
+        html[data-raja-theme="light"] select,
+        html[data-raja-theme="light"] input,
+        html[data-raja-theme="light"] textarea {
+            background:#ffffff !important;
+            color:#102031 !important;
+            border-color:rgba(23,96,128,.25) !important;
+        }
+        html[data-raja-theme="light"] .inline-list-box,
+        html[data-raja-theme="light"] .live-scan-console,
+        html[data-raja-theme="light"] .admin-users-box {
+            background:#f6fafc !important;
+            color:#23384a !important;
+        }
+        html[data-raja-theme="light"] .inline-item,
+        html[data-raja-theme="light"] .live-scan-row {
+            color:#445d70 !important;
+            border-color:rgba(23,96,128,.10) !important;
+        }
+        html[data-raja-theme="light"] .card-label,
+        html[data-raja-theme="light"] .intel-title,
+        html[data-raja-theme="light"] .inline-title,
+        html[data-raja-theme="light"] .rail-title,
+        html[data-raja-theme="light"] .settings-section h4,
+        html[data-raja-theme="light"] .label-text {
+            color:#126b91 !important;
+        }
+        html[data-raja-theme="light"] .metric-note,
+        html[data-raja-theme="light"] .intel-caption,
+        html[data-raja-theme="light"] .app-feature-status,
+        html[data-raja-theme="light"] .pwa-tip {
+            color:#647b8d !important;
+        }
+        html[data-raja-theme="light"] .mini-chart-wrap {
+            border-color:rgba(23,96,128,.24) !important;
+        }
+
+        .raja-theme-segment {
+            display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:7px;
+        }
+        .raja-theme-segment button {
+            border-radius:8px; padding:9px 7px; cursor:pointer; font-size:8px; font-weight:950;
+            border:1px solid rgba(96,239,255,.22); background:#071321; color:#9feaff;
+        }
+        .raja-theme-segment button.active {
+            background:linear-gradient(90deg,#00ff9a,#60efff); color:#04120e; border-color:transparent;
+        }
+
+        .raja-notice-stack {
+            position:fixed; top:max(7px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+            z-index:2147482000; width:min(720px,calc(100vw - 18px)); display:grid; gap:5px;
+            pointer-events:none;
+        }
+        .raja-global-notice {
+            display:none; width:100%; padding:8px 11px; border-radius:10px;
+            border:1px solid rgba(96,239,255,.28); background:rgba(4,12,23,.95);
+            box-shadow:0 10px 32px rgba(0,0,0,.28); backdrop-filter:blur(9px);
+            color:#dff7ff; font-size:8.5px; line-height:1.4; font-weight:850;
+            pointer-events:auto;
+        }
+        .raja-global-notice.visible { display:flex; align-items:center; gap:8px; }
+        .raja-global-notice.offline { border-color:rgba(250,204,21,.45); color:#ffeaa3; cursor:pointer; }
+        .raja-global-notice.maintenance { border-color:rgba(255,93,125,.55); color:#ffd3dc; }
+        .raja-global-notice.broadcast.info { border-color:rgba(96,239,255,.45); }
+        .raja-global-notice.broadcast.warning { border-color:rgba(250,204,21,.48); color:#ffeaa3; }
+        .raja-global-notice.broadcast.critical { border-color:rgba(255,93,125,.55); color:#ffd3dc; }
+        .raja-global-notice.expiry { border-color:rgba(250,204,21,.52); color:#ffeaa3; }
+        .raja-notice-dot { width:7px; height:7px; border-radius:50%; background:currentColor; flex:0 0 auto; box-shadow:0 0 10px currentColor; }
+
+        .raja-offline-modal {
+            position:fixed; inset:0; z-index:2147482750; display:none; align-items:center; justify-content:center;
+            padding:16px; background:rgba(1,5,12,.86); backdrop-filter:blur(10px);
+        }
+        .raja-offline-modal.visible { display:flex; }
+        .raja-offline-card {
+            width:min(520px,100%); max-height:min(78vh,650px); overflow:auto;
+            border:1px solid rgba(250,204,21,.30); border-radius:16px; padding:16px;
+            background:linear-gradient(180deg,#0a1422,#050b14); color:#eefaff;
+            box-shadow:0 22px 80px rgba(0,0,0,.55);
+        }
+        .raja-offline-card h3 { font-size:14px; color:#ffe88b; margin-bottom:4px; }
+        .raja-offline-card p { color:#91a8ba; font-size:8px; line-height:1.45; margin-bottom:10px; }
+        .raja-offline-row {
+            display:grid; grid-template-columns:110px minmax(0,1fr); gap:8px; padding:7px 0;
+            border-bottom:1px solid rgba(255,255,255,.06); font-size:8px;
+        }
+        .raja-offline-row span { color:#7892a8; }
+        .raja-offline-row strong { color:#e7f7ff; word-break:break-word; }
+        .raja-offline-history { display:grid; gap:5px; margin-top:9px; }
+        .raja-offline-history div {
+            border:1px solid rgba(96,239,255,.10); border-radius:7px; padding:7px;
+            color:#a9c0d1; font-size:7.5px; background:rgba(255,255,255,.02);
+        }
+
+        .admin-control-card {
+            margin-top:12px; border-top:1px solid rgba(0,242,254,.28); padding-top:10px;
+        }
+        .admin-control-card h4 { color:#60efff; font-size:10px; margin-bottom:6px; text-transform:uppercase; }
+        .admin-control-grid { display:grid; grid-template-columns:1fr 1fr; gap:7px; }
+        .admin-control-card textarea {
+            width:100%; min-height:68px; resize:vertical; margin-top:5px; padding:8px;
+            border-radius:7px; outline:none; background:#050811; color:#fff;
+            border:1px solid rgba(0,242,254,.30); font:inherit; font-size:9px;
+        }
+        .admin-control-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
+        .admin-control-actions button { flex:1 1 110px; }
+        .admin-control-status { color:#8ea6b9; font-size:8px; margin-top:7px; line-height:1.4; }
+
+        .no-trade-reason-box {
+            margin:8px auto 10px; width:min(620px,100%); padding:9px 10px;
+            border:1px solid rgba(255,93,125,.24); border-radius:9px; background:rgba(255,93,125,.045);
+            color:#c8d7e3; font-size:8.5px; line-height:1.5;
+        }
+
+        @media (max-width:620px) {
+            .raja-notice-stack { top:max(4px,env(safe-area-inset-top)); width:calc(100vw - 10px); }
+            .raja-global-notice { font-size:7.5px; padding:7px 9px; }
+            .admin-control-grid { grid-template-columns:1fr; }
+            .raja-offline-row { grid-template-columns:82px minmax(0,1fr); }
+        }
+    </style>
+
 </head>
 <body>
+
+    <div id="rajaAppNoticeStack" class="raja-notice-stack">
+        <div id="rajaOfflineNotice" class="raja-global-notice offline" onclick="openRajaOfflineSnapshot()" title="Open last saved data">
+            <span class="raja-notice-dot"></span><span id="rajaOfflineNoticeText">OFFLINE · Last saved data available</span>
+        </div>
+        <div id="rajaMaintenanceNotice" class="raja-global-notice maintenance">
+            <span class="raja-notice-dot"></span><span id="rajaMaintenanceNoticeText">RAJA AI scans are temporarily paused.</span>
+        </div>
+        <div id="rajaBroadcastNotice" class="raja-global-notice broadcast info">
+            <span class="raja-notice-dot"></span><span id="rajaBroadcastNoticeText"></span>
+        </div>
+        <div id="rajaExpiryNotice" class="raja-global-notice expiry">
+            <span class="raja-notice-dot"></span><span id="rajaExpiryNoticeText"></span>
+        </div>
+    </div>
+
+    <div id="rajaOfflineSnapshotModal" class="raja-offline-modal" aria-hidden="true">
+        <div class="raja-offline-card">
+            <h3>📴 RAJA AI · LAST SAVED DATA</h3>
+            <p>Read-only offline snapshot. Live scans and live prices require an internet connection.</p>
+            <div id="rajaOfflineSignalSummary"></div>
+            <div style="margin-top:11px;color:#60efff;font-size:8px;font-weight:900;">RECENT SAVED HISTORY</div>
+            <div id="rajaOfflineHistorySummary" class="raja-offline-history"></div>
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+                <button class="menu-back-btn" onclick="closeRajaOfflineSnapshot()">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
 
     <div id="rajaAppLockOverlay" class="raja-lock-overlay" aria-hidden="true">
         <div class="raja-lock-card">
@@ -1706,7 +1940,8 @@
 
                             <div id="noSignalView" class="no-signal-view">
                                 <div style="font-size:14px;color:#ff5d7d;font-weight:900;text-transform:uppercase;margin-bottom:6px;" id="noSignalTitle">⚠️ NO VALID LIVE SIGNAL FOUND</div>
-                                <div style="font-size:10px;color:#a9bad0;margin-bottom:12px;" id="noSignalDesc">Current filters did not converge safely.</div>
+                                <div style="font-size:10px;color:#a9bad0;margin-bottom:5px;" id="noSignalDesc">Current filters did not converge safely.</div>
+                                <div id="noTradeReasonBox" class="no-trade-reason-box" style="display:none;"></div>
                                 <button class="menu-back-btn" onclick="playClickSound(); resetPrimaryView()">↻ Back to Dashboard</button>
                             </div>
 
@@ -1730,6 +1965,37 @@
                                 <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
                                 <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
                                 <div class="settings-section"><h4>Voice Alerts</h4><div class="switch-row"><span>Speak signal aloud (example: “USD CAD, Down signal, one minute”)</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div></div>
+
+                                <div class="settings-section">
+                                    <h4>Appearance & Safety</h4>
+                                    <div class="app-feature-grid">
+                                        <div class="app-feature-card">
+                                            <small>Theme</small>
+                                            <strong id="rajaThemeStatus">DARK MODE</strong>
+                                            <div class="raja-theme-segment">
+                                                <button id="rajaThemeDarkBtn" onclick="setRajaTheme('dark')">🌙 DARK</button>
+                                                <button id="rajaThemeLightBtn" onclick="setRajaTheme('light')">☀ LIGHT</button>
+                                            </div>
+                                            <div class="app-feature-status">Theme is saved on this device.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Smart NO TRADE</small>
+                                            <strong>ACTIVE</strong>
+                                            <div class="app-feature-status">Weak market stability, high-risk conditions and failed multi-TF confirmation are rejected with the exact reason.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>News Safety Lock</small>
+                                            <strong>HIGH IMPACT · AUTO</strong>
+                                            <div class="app-feature-status">Forex scans pause around relevant high-impact calendar events.</div>
+                                        </div>
+                                        <div class="app-feature-card">
+                                            <small>Offline Snapshot</small>
+                                            <strong id="rajaOfflineStatusText">ONLINE</strong>
+                                            <div class="app-feature-actions"><button onclick="openRajaOfflineSnapshot()">VIEW LAST SAVED DATA</button></div>
+                                        </div>
+                                    </div>
+                                </div>
+
 
                                 <div class="settings-section">
                                     <h4>App Security & Alerts</h4>
@@ -1858,6 +2124,35 @@
                 <button class="action-btn" onclick="generateKey()">GENERATE NEW LICENSE KEY</button><div style="margin-top:5px;color:#94a3b8;font-size:8.5px;text-align:center;">FREE TRIAL: one claim per Telegram ID / UID and one claim per device. 2-hour Telegram expiry reminder enabled.</div>
                 <p id="generatedKeyDisplay" style="margin-top: 10px; font-weight: bold; text-align: center; font-size: 11px; color: #00ff87; word-break: break-all;"></p>
                 <button id="copyKeyBtn" class="copy-key-btn" onclick="copyGeneratedKey()">📋 COPY LICENSE KEY</button>
+            </div>
+
+
+            <div class="admin-control-card">
+                <h4>📣 APP BROADCAST + EMERGENCY CONTROL</h4>
+                <div class="admin-control-grid">
+                    <div>
+                        <label class="label-text">Broadcast Message</label>
+                        <textarea id="adminBroadcastMessage" maxlength="500" placeholder="Example: New RAJA AI update is live."></textarea>
+                        <select id="adminBroadcastLevel" class="input-field">
+                            <option value="info">INFO</option>
+                            <option value="warning">WARNING</option>
+                            <option value="critical">CRITICAL</option>
+                        </select>
+                        <div class="admin-control-actions">
+                            <button class="utility-btn" onclick="publishRajaBroadcast()">📣 PUBLISH</button>
+                            <button class="utility-btn" onclick="clearRajaBroadcast()">CLEAR</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="label-text">Emergency Kill Switch Message</label>
+                        <textarea id="adminMaintenanceMessage" maxlength="300" placeholder="Example: Market data feed maintenance. Scans are paused temporarily."></textarea>
+                        <div class="admin-control-actions">
+                            <button class="action-btn" style="margin-top:0;background:#991b1b;" onclick="setRajaMaintenance(true)">⛔ PAUSE ALL SCANS</button>
+                            <button class="utility-btn" onclick="setRajaMaintenance(false)">✅ RESUME SCANS</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="adminControlStatus" class="admin-control-status">Load admin data to view current app-control state.</div>
             </div>
 
             <div style="margin-top: 14px; border-top: 1px solid rgba(0, 242, 254, 0.3); padding-top: 8px;">
@@ -2576,6 +2871,7 @@
         }
 
         async function refreshAdminLicenses() {
+            refreshRajaAdminControl();
             const listContainer=document.getElementById('adminUsersList'), pass=document.getElementById('adminPasswordInput').value; if(!listContainer)return;
             const setSummary=(s={})=>{const map={adminSummaryTotal:'total',adminSummaryActive:'active',adminSummaryBound:'bound',adminSummaryOnline:'online',adminSummaryUnbound:'unbound'};Object.entries(map).forEach(([id,key])=>{const el=document.getElementById(id);if(el)el.innerText=String(Number(s[key]||0));});};
             if(!pass){setSummary();listContainer.innerHTML='<div style="color:#ff3366;text-align:center;padding:4px;">Enter admin password first.</div>';return;}
@@ -3162,6 +3458,10 @@
                 if (!result || result.status !== 'success' || !result.data) {
                     throw new Error('Invalid scan response from backend.');
                 }
+                if (result.data.signal === 'NO SIGNAL') {
+                    rajaLatestNoTradeReason = String(result.data.no_trade_reason || result.data.reason || 'Current market conditions did not pass the safety gate.');
+                    rajaLatestNewsLock = result.data.news_safety_lock || null;
+                }
                 return normalizeBackendSignal(result.data, pair);
             } catch (error) {
                 console.error('Scan error for', pair, error);
@@ -3193,6 +3493,15 @@
                     throw new Error('Invalid batch scan response.');
                 }
 
+                const rejectedRows = result.data.filter(row => row && row.signal === 'NO SIGNAL');
+                const newsRow = rejectedRows.find(row => row.news_safety_lock);
+                if (newsRow) {
+                    rajaLatestNewsLock = newsRow.news_safety_lock;
+                    rajaLatestNoTradeReason = String(newsRow.no_trade_reason || newsRow.reason || 'High-impact news safety lock is active.');
+                } else if (rejectedRows.length) {
+                    const meaningful = rejectedRows.find(row => row.no_trade_reason || row.reason);
+                    if (meaningful) rajaLatestNoTradeReason = String(meaningful.no_trade_reason || meaningful.reason || '');
+                }
                 return {
                     results: result.data,
                     cacheHit: Boolean(result.cache_hit),
@@ -3210,6 +3519,17 @@
         }
 
         async function startDeepScan(autoTriggered = false) {
+            rajaLatestNoTradeReason = '';
+            rajaLatestNewsLock = null;
+            if (!navigator.onLine) {
+                showRajaNoTradeView('📴 OFFLINE — LIVE SCAN UNAVAILABLE', 'Reconnect to the internet to run a live market scan. Your last saved signal and history remain available.');
+                return;
+            }
+            const controlState = await refreshRajaAppState(true);
+            if (controlState && controlState.maintenance) {
+                showRajaNoTradeView('⛔ SCANS TEMPORARILY PAUSED', controlState.maintenance_message || 'RAJA AI scanning is temporarily paused by the admin.');
+                return;
+            }
             if (guardReached()) { updateDailyPerformance(); if(!autoTriggered) alert('⛔ Trading session limit reached. Change Daily Stop Guard settings or wait until the next day.'); return; }
             const existingScanBtn = document.getElementById('scanBtn');
             if (existingScanBtn && existingScanBtn.disabled) return;
@@ -3346,9 +3666,25 @@
                     const titleEl = document.getElementById('noSignalTitle');
                     const descEl = document.getElementById('noSignalDesc');
 
+                    const reasonBox = document.getElementById('noTradeReasonBox');
+                    if (reasonBox) { reasonBox.style.display = 'none'; reasonBox.innerText = ''; }
                     if (scanFailureMessage) {
                         titleEl.innerText = '⚠️ SCAN REQUEST FAILED';
                         descEl.innerText = scanFailureMessage;
+                    } else if (rajaLatestNewsLock) {
+                        titleEl.innerText = '⚠️ HIGH IMPACT NEWS — SCAN PAUSED';
+                        descEl.innerText = 'News Safety Lock protected this Forex scan.';
+                        if (reasonBox) {
+                            reasonBox.style.display = 'block';
+                            reasonBox.innerText = rajaLatestNoTradeReason || 'A relevant high-impact economic event is inside the safety window.';
+                        }
+                    } else if (rajaLatestNoTradeReason) {
+                        titleEl.innerText = '⛔ NO TRADE — LOW QUALITY SETUP';
+                        descEl.innerText = 'RAJA AI rejected the current setup instead of forcing a signal.';
+                        if (reasonBox) {
+                            reasonBox.style.display = 'block';
+                            reasonBox.innerText = rajaLatestNoTradeReason;
+                        }
                     } else if (isAutoScan && scanDiagnostics) {
                         const total = Number(scanDiagnostics.total_pairs || eligiblePairs.length || 0);
                         const dataOk = Number(scanDiagnostics.data_available || 0);
@@ -3380,8 +3716,23 @@
 
 
         async function refreshTrackedHistory() {
-            try { const auth=getAuthPayload(); if(!auth.key||!auth.session_token)return; const q=new URLSearchParams({...auth,limit:'60'}); const response=await fetch('/signals/history?'+q.toString()); const result=await response.json(); if(response.ok&&result&&result.status==='success'){backendTrackedHistory=Array.isArray(result.data)?result.data:[];renderHistoryList();updateDailyPerformance();renderPerformanceHeatmap();renderReplaySpotlight();} }
-            catch(error){console.error('History refresh error:',error);}
+            try {
+                const auth=getAuthPayload();
+                if(!auth.key||!auth.session_token) return loadRajaOfflineHistory();
+                const q=new URLSearchParams({...auth,limit:'60'});
+                const response=await fetch('/signals/history?'+q.toString());
+                const result=await response.json();
+                if(response.ok&&result&&result.status==='success'){
+                    backendTrackedHistory=Array.isArray(result.data)?result.data:[];
+                    localStorage.setItem(RAJA_OFFLINE_HISTORY_KEY, JSON.stringify(backendTrackedHistory.slice(0,60)));
+                    renderHistoryList();updateDailyPerformance();renderPerformanceHeatmap();renderReplaySpotlight();
+                    return;
+                }
+                if (!navigator.onLine) loadRajaOfflineHistory();
+            } catch(error) {
+                console.error('History refresh error:',error);
+                loadRajaOfflineHistory();
+            }
         }
 
 
@@ -3408,6 +3759,7 @@
         }
 
         function displaySignalResult(signalData) {
+            cacheRajaLastSignal(signalData);
             completeScanSession('signal');
             let signalView = document.getElementById('signalView');
 
@@ -3527,6 +3879,11 @@
             }
             container.innerHTML = '';
 
+            const chartLight = document.documentElement.dataset.rajaTheme === 'light';
+            const chartBg = chartLight ? '#f7fafc' : '#171c28';
+            const chartText = chartLight ? '#42596c' : '#c6d0dc';
+            const chartGridV = chartLight ? 'rgba(70,100,120,.12)' : 'rgba(122,137,158,.18)';
+            const chartGridH = chartLight ? 'rgba(70,100,120,.16)' : 'rgba(122,137,158,.22)';
             const values = data.flatMap(c => [c.open, c.high, c.low, c.close]);
             const maxAbs = Math.max(...values.map(v => Math.abs(v)));
             const precision = maxAbs >= 10000 ? 1 : maxAbs >= 1000 ? 2 : maxAbs >= 100 ? 3 : maxAbs >= 10 ? 4 : maxAbs >= 1 ? 5 : 6;
@@ -3536,15 +3893,15 @@
                 width: Math.max(320, container.clientWidth || 320),
                 height: Math.max(130, container.clientHeight || 180),
                 layout: {
-                    background: { type: LightweightCharts.ColorType.Solid, color: '#171c28' },
-                    textColor: '#c6d0dc',
+                    background: { type: LightweightCharts.ColorType.Solid, color: chartBg },
+                    textColor: chartText,
                     attributionLogo: true,
                     fontFamily: 'Segoe UI, Arial, sans-serif',
                     fontSize: 10,
                 },
                 grid: {
-                    vertLines: { color: 'rgba(122,137,158,.18)' },
-                    horzLines: { color: 'rgba(122,137,158,.22)' },
+                    vertLines: { color: chartGridV },
+                    horzLines: { color: chartGridH },
                 },
                 crosshair: {
                     mode: LightweightCharts.CrosshairMode.Normal,
@@ -4303,6 +4660,7 @@
         function initializeRajaAppFeatures() {
             if (!isUserVerified) return;
             updateRajaAppFeatureStatus();
+            initializeRajaAppControlFeatures();
 
             if (!rajaFeaturesInitializedForSession) {
                 rajaFeaturesInitializedForSession = true;
@@ -4329,6 +4687,376 @@
                 setTimeout(showRajaLock, 60);
             }
             updateRajaAppFeatureStatus();
+        });
+
+    
+
+        // =========================================================
+        // RAJA AI PREMIUM V2 APP CONTROL
+        // Theme · Smart NO TRADE UI · News Safety · Offline Snapshot
+        // Broadcast · License Expiry · Emergency Kill Switch
+        // =========================================================
+        const RAJA_THEME_KEY = 'raja_theme_v2';
+        const RAJA_OFFLINE_HISTORY_KEY = 'raja_offline_history_v2';
+        const RAJA_OFFLINE_SIGNAL_KEY = 'raja_offline_last_signal_v2';
+        const RAJA_EXPIRY_ALERT_KEY = 'raja_expiry_alert_v2';
+
+        let rajaLatestNoTradeReason = '';
+        let rajaLatestNewsLock = null;
+        let rajaAppControlState = { maintenance:false, maintenance_message:'', broadcast:null };
+        let rajaAppControlTimer = null;
+        let rajaExpiryTimer = null;
+        let rajaV2Initialized = false;
+
+        function setRajaTheme(theme) {
+            const value = theme === 'light' ? 'light' : 'dark';
+            document.documentElement.dataset.rajaTheme = value;
+            localStorage.setItem(RAJA_THEME_KEY, value);
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', value === 'light' ? '#eef4f8' : '#050b16');
+            updateRajaThemeControls();
+
+            // Rebuild visible financial charts so their own background follows the theme.
+            ['signalMiniChart','replayMiniChart'].forEach(id => {
+                const target = document.getElementById(id);
+                const state = target && target.__rajaChartState;
+                if (target && state && typeof renderSignalChart === 'function') {
+                    renderSignalChart(target, state.candles, state.isBuy, state.entryPrice, state.exitPrice);
+                }
+            });
+        }
+
+        function updateRajaThemeControls() {
+            const theme = document.documentElement.dataset.rajaTheme === 'light' ? 'light' : 'dark';
+            const status = document.getElementById('rajaThemeStatus');
+            const darkBtn = document.getElementById('rajaThemeDarkBtn');
+            const lightBtn = document.getElementById('rajaThemeLightBtn');
+            if (status) status.innerText = theme === 'light' ? 'LIGHT MODE' : 'DARK MODE';
+            if (darkBtn) darkBtn.classList.toggle('active', theme === 'dark');
+            if (lightBtn) lightBtn.classList.toggle('active', theme === 'light');
+            const meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', theme === 'light' ? '#eef4f8' : '#050b16');
+        }
+
+        function showRajaNoTradeView(title, reason) {
+            completeScanSession('nosignal');
+            currentSection = 'dashboard';
+            primaryViewState = 'nosignal';
+            const titleEl = document.getElementById('noSignalTitle');
+            const descEl = document.getElementById('noSignalDesc');
+            const reasonBox = document.getElementById('noTradeReasonBox');
+            if (titleEl) titleEl.innerText = title || '⛔ NO TRADE';
+            if (descEl) descEl.innerText = 'RAJA AI safety controls prevented a live entry.';
+            if (reasonBox) {
+                reasonBox.style.display = 'block';
+                reasonBox.innerText = reason || 'Current conditions are not suitable for a live scan.';
+            }
+            renderPrimaryView();
+        }
+
+        function updateRajaConnectivityUI() {
+            const offline = !navigator.onLine;
+            const notice = document.getElementById('rajaOfflineNotice');
+            const status = document.getElementById('rajaOfflineStatusText');
+            const text = document.getElementById('rajaOfflineNoticeText');
+            if (notice) notice.classList.toggle('visible', offline);
+            if (status) {
+                status.innerText = offline ? 'OFFLINE · SAVED DATA ONLY' : 'ONLINE';
+                status.style.color = offline ? '#facc15' : '#00ff87';
+            }
+            if (text && offline) {
+                const cached = readRajaLastSignal();
+                text.innerText = cached && cached.pair
+                    ? `OFFLINE · Last saved signal: ${cached.pair} · tap to view`
+                    : 'OFFLINE · Last saved data available · tap to view';
+            }
+        }
+
+        function cacheRajaLastSignal(signalData) {
+            try {
+                const item = {
+                    saved_at: Date.now(),
+                    pair: signalData?.pair || '--',
+                    direction: String(signalData?.dir || '--'),
+                    confluence: Number(signalData?.confluence || 0),
+                    expiry: String(selectedExpiry || signalData?.selectedExpiry || '--'),
+                    reason: String(signalData?.reason || ''),
+                    market_stability: Number(signalData?.marketStabilityScore || 0),
+                    risk: String(signalData?.marketRiskLevel || '--')
+                };
+                localStorage.setItem(RAJA_OFFLINE_SIGNAL_KEY, JSON.stringify(item));
+                updateRajaConnectivityUI();
+            } catch (_) {}
+        }
+
+        function readRajaLastSignal() {
+            try {
+                const item = JSON.parse(localStorage.getItem(RAJA_OFFLINE_SIGNAL_KEY) || 'null');
+                return item && typeof item === 'object' ? item : null;
+            } catch (_) { return null; }
+        }
+
+        function loadRajaOfflineHistory() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(RAJA_OFFLINE_HISTORY_KEY) || '[]');
+                if (Array.isArray(saved) && saved.length) {
+                    backendTrackedHistory = saved;
+                    renderHistoryList();
+                    updateDailyPerformance();
+                    renderPerformanceHeatmap();
+                    renderReplaySpotlight();
+                    return true;
+                }
+            } catch (_) {}
+            return false;
+        }
+
+        function openRajaOfflineSnapshot() {
+            const modal = document.getElementById('rajaOfflineSnapshotModal');
+            const signalBox = document.getElementById('rajaOfflineSignalSummary');
+            const historyBox = document.getElementById('rajaOfflineHistorySummary');
+            const signal = readRajaLastSignal();
+
+            if (signalBox) {
+                signalBox.innerHTML = signal ? `
+                    <div class="raja-offline-row"><span>Saved</span><strong>${escapeHtml(new Date(signal.saved_at).toLocaleString())}</strong></div>
+                    <div class="raja-offline-row"><span>Pair</span><strong>${escapeHtml(signal.pair)}</strong></div>
+                    <div class="raja-offline-row"><span>Signal</span><strong>${escapeHtml(signal.direction)} · ${escapeHtml(signal.expiry)}</strong></div>
+                    <div class="raja-offline-row"><span>Confluence</span><strong>${Number(signal.confluence||0).toFixed(1)}%</strong></div>
+                    <div class="raja-offline-row"><span>Stability</span><strong>${Number(signal.market_stability||0).toFixed(1)} / 100 · ${escapeHtml(signal.risk)}</strong></div>
+                ` : '<div class="raja-offline-row"><span>Last Signal</span><strong>No saved signal on this device yet.</strong></div>';
+            }
+
+            let history = [];
+            try { history = JSON.parse(localStorage.getItem(RAJA_OFFLINE_HISTORY_KEY) || '[]'); } catch (_) {}
+            if (historyBox) {
+                historyBox.innerHTML = Array.isArray(history) && history.length
+                    ? history.slice(0,10).map(item => `<div><b>${escapeHtml(item.pair||'--')}</b> · ${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')} · ${escapeHtml(item.result||item.status||'PENDING')}</div>`).join('')
+                    : '<div>No saved tracked history available yet.</div>';
+            }
+
+            if (modal) {
+                modal.classList.add('visible');
+                modal.setAttribute('aria-hidden','false');
+            }
+        }
+
+        function closeRajaOfflineSnapshot() {
+            const modal = document.getElementById('rajaOfflineSnapshotModal');
+            if (modal) {
+                modal.classList.remove('visible');
+                modal.setAttribute('aria-hidden','true');
+            }
+        }
+
+        function renderRajaAppState(state) {
+            state = state || {};
+            rajaAppControlState = state;
+
+            const maintenance = Boolean(state.maintenance);
+            const maintenanceNotice = document.getElementById('rajaMaintenanceNotice');
+            const maintenanceText = document.getElementById('rajaMaintenanceNoticeText');
+            if (maintenanceNotice) maintenanceNotice.classList.toggle('visible', maintenance);
+            if (maintenanceText && maintenance) maintenanceText.innerText = state.maintenance_message || 'RAJA AI scans are temporarily paused by the admin.';
+
+            const broadcast = state.broadcast && typeof state.broadcast === 'object' ? state.broadcast : null;
+            const broadcastNotice = document.getElementById('rajaBroadcastNotice');
+            const broadcastText = document.getElementById('rajaBroadcastNoticeText');
+            if (broadcastNotice) {
+                const active = Boolean(broadcast && broadcast.active && broadcast.message);
+                broadcastNotice.classList.toggle('visible', active);
+                broadcastNotice.classList.remove('info','warning','critical');
+                broadcastNotice.classList.add(['info','warning','critical'].includes(String(broadcast?.level)) ? String(broadcast.level) : 'info');
+            }
+            if (broadcastText) broadcastText.innerText = broadcast?.message || '';
+
+            const scanBtn = document.getElementById('scanBtn');
+            if (scanBtn && !scanSessionState.running) {
+                if (maintenance) {
+                    scanBtn.disabled = true;
+                    scanBtn.innerText = '⛔ SCANS TEMPORARILY PAUSED';
+                } else if (!guardReached()) {
+                    scanBtn.disabled = false;
+                    scanBtn.innerText = '▶ START AI MARKET SCAN';
+                }
+            }
+        }
+
+        async function refreshRajaAppState(force=false) {
+            if (!navigator.onLine) {
+                updateRajaConnectivityUI();
+                return rajaAppControlState;
+            }
+            try {
+                const response = await fetch('/app-state', { cache: force ? 'no-store' : 'default' });
+                const result = await response.json().catch(() => null);
+                if (response.ok && result && result.status === 'success') {
+                    renderRajaAppState(result.data || {});
+                    return result.data || {};
+                }
+            } catch (error) {
+                console.warn('RAJA app-state check failed:', error);
+            }
+            return rajaAppControlState;
+        }
+
+        async function checkRajaLicenseExpiry() {
+            if (!isUserVerified || !navigator.onLine) return;
+            try {
+                const response = await fetch('/user/profile', {
+                    method:'POST',
+                    headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify(getAuthPayload())
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') return;
+                const p = result.data || {};
+                const expiresAt = Number(p.expires_at || 0);
+                const notice = document.getElementById('rajaExpiryNotice');
+                const text = document.getElementById('rajaExpiryNoticeText');
+
+                if (!expiresAt) {
+                    if (notice) notice.classList.remove('visible');
+                    return;
+                }
+
+                const secondsLeft = expiresAt - Math.floor(Date.now()/1000);
+                if (secondsLeft <= 0) return;
+                const daysLeft = secondsLeft / 86400;
+                const threshold = daysLeft <= 1 ? 1 : (daysLeft <= 3 ? 3 : 0);
+                if (!threshold) {
+                    if (notice) notice.classList.remove('visible');
+                    return;
+                }
+
+                const hours = Math.ceil(secondsLeft / 3600);
+                const message = threshold === 1
+                    ? `⚠ VIP expires soon · about ${hours} hour${hours===1?'':'s'} remaining. Contact admin to renew.`
+                    : `⚠ VIP expires in about ${Math.ceil(daysLeft)} days. Contact admin to renew.`;
+
+                if (notice) notice.classList.add('visible');
+                if (text) text.innerText = message;
+
+                const alertId = `${expiresAt}:${threshold}`;
+                if (localStorage.getItem(RAJA_EXPIRY_ALERT_KEY) !== alertId) {
+                    localStorage.setItem(RAJA_EXPIRY_ALERT_KEY, alertId);
+                    await rajaPostNotification({
+                        title:'RAJA AI · VIP EXPIRY ALERT',
+                        options:{
+                            body:message,
+                            icon:'/raja-ai-icon-192.png',
+                            badge:'/raja-ai-icon-192.png',
+                            tag:'raja-license-expiry',
+                            data:{url:'/'}
+                        }
+                    });
+                }
+            } catch (_) {}
+        }
+
+        function initializeRajaAppControlFeatures() {
+            updateRajaThemeControls();
+            updateRajaConnectivityUI();
+            loadRajaOfflineHistory();
+
+            if (!rajaV2Initialized) {
+                rajaV2Initialized = true;
+                refreshRajaAppState(true);
+                checkRajaLicenseExpiry();
+
+                if (rajaAppControlTimer) clearInterval(rajaAppControlTimer);
+                rajaAppControlTimer = setInterval(() => {
+                    if (isUserVerified) refreshRajaAppState(false);
+                }, 30000);
+
+                if (rajaExpiryTimer) clearInterval(rajaExpiryTimer);
+                rajaExpiryTimer = setInterval(() => {
+                    if (isUserVerified) checkRajaLicenseExpiry();
+                }, 6 * 60 * 60 * 1000);
+            }
+        }
+
+        async function refreshRajaAdminControl() {
+            const pass = document.getElementById('adminPasswordInput')?.value || '';
+            const status = document.getElementById('adminControlStatus');
+            if (!pass) {
+                if (status) status.innerText = 'Enter admin password to load app-control state.';
+                return;
+            }
+            try {
+                const response = await fetch('/admin/app-control', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({password:pass, action:'get'})
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') throw new Error(result?.message || 'Unable to load app-control state.');
+                const state = result.data || {};
+                const msg = document.getElementById('adminBroadcastMessage');
+                const level = document.getElementById('adminBroadcastLevel');
+                const maintenance = document.getElementById('adminMaintenanceMessage');
+                if (msg) msg.value = state.broadcast?.message || '';
+                if (level) level.value = ['info','warning','critical'].includes(state.broadcast?.level) ? state.broadcast.level : 'info';
+                if (maintenance) maintenance.value = state.maintenance_message || '';
+                if (status) status.innerText = `Kill Switch: ${state.maintenance ? 'ON — SCANS PAUSED' : 'OFF — SCANS LIVE'} · Broadcast: ${state.broadcast?.active ? 'ACTIVE' : 'OFF'}`;
+            } catch (error) {
+                if (status) status.innerText = '❌ ' + error.message;
+            }
+        }
+
+        async function updateRajaAdminControl(payload) {
+            const pass = document.getElementById('adminPasswordInput')?.value || '';
+            if (!pass) return alert('Enter admin password first.');
+            const status = document.getElementById('adminControlStatus');
+            try {
+                const response = await fetch('/admin/app-control', {
+                    method:'POST', headers:{'Content-Type':'application/json'},
+                    body:JSON.stringify({password:pass, ...payload})
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') throw new Error(result?.message || 'Unable to update app control.');
+                if (status) status.innerText = '✅ App control updated.';
+                renderRajaAppState(result.data || {});
+                await refreshRajaAdminControl();
+            } catch (error) {
+                if (status) status.innerText = '❌ ' + error.message;
+                alert('❌ ' + error.message);
+            }
+        }
+
+        function publishRajaBroadcast() {
+            const message = String(document.getElementById('adminBroadcastMessage')?.value || '').trim();
+            const level = String(document.getElementById('adminBroadcastLevel')?.value || 'info');
+            if (!message) return alert('Enter a broadcast message first.');
+            updateRajaAdminControl({ action:'broadcast', message, level });
+        }
+
+        function clearRajaBroadcast() {
+            updateRajaAdminControl({ action:'clear_broadcast' });
+        }
+
+        function setRajaMaintenance(enabled) {
+            const message = String(document.getElementById('adminMaintenanceMessage')?.value || '').trim();
+            if (enabled && !confirm('Pause ALL RAJA AI market scans now?')) return;
+            updateRajaAdminControl({
+                action:'maintenance',
+                maintenance:Boolean(enabled),
+                maintenance_message: message || 'RAJA AI scanning is temporarily paused for maintenance.'
+            });
+        }
+
+        window.addEventListener('online', () => {
+            updateRajaConnectivityUI();
+            refreshRajaAppState(true);
+            if (isUserVerified) {
+                refreshTrackedHistory();
+                checkRajaLicenseExpiry();
+            }
+        });
+        window.addEventListener('offline', updateRajaConnectivityUI);
+        document.addEventListener('DOMContentLoaded', () => {
+            updateRajaThemeControls();
+            updateRajaConnectivityUI();
+            refreshRajaAppState(false);
         });
 
     </script>
