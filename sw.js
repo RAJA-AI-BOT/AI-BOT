@@ -1,6 +1,6 @@
-const CACHE_VERSION = 'raja-ai-pwa-v10-stable-shell';
+const CACHE_VERSION = 'raja-ai-pwa-v11-auto-update';
 const STABLE_SHELL_CACHE = 'raja-ai-pwa-stable-shell';
-const ASSET_CACHE = 'raja-ai-pwa-v10-assets';
+const ASSET_CACHE = 'raja-ai-pwa-v11-assets';
 
 const STATIC_ASSETS = [
   '/manifest.json',
@@ -9,6 +9,7 @@ const STATIC_ASSETS = [
 ];
 
 const API_PREFIXES = [
+  '/app-version',
   '/signals/',
   '/scan',
   '/verify-license',
@@ -97,6 +98,12 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
+
+    const migratingFromV10 = keys.some((key) =>
+      key === 'raja-ai-pwa-v10-assets' ||
+      key === 'raja-ai-pwa-v10-stable-shell'
+    );
+
     const stable = await caches.open(
       STABLE_SHELL_CACHE
     );
@@ -155,6 +162,26 @@ self.addEventListener('activate', (event) => {
     } catch (_) {}
 
     await self.clients.claim();
+
+    try {
+      const clientList = await self.clients.matchAll({
+        type: 'window',
+        includeUncontrolled: true
+      });
+
+      for (const client of clientList) {
+        client.postMessage({
+          type: 'RAJA_SW_ACTIVATED',
+          version: CACHE_VERSION
+        });
+
+        if (migratingFromV10 && 'navigate' in client) {
+          try {
+            await client.navigate(client.url);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
   })());
 });
 
@@ -232,6 +259,15 @@ self.addEventListener('fetch', (event) => {
 
     event.respondWith(
       (async () => {
+        // Online = latest server version first.
+        const network =
+          await networkRefresh;
+
+        if (network) {
+          return network;
+        }
+
+        // Offline/server waking = use last working app shell.
         const stable =
           await caches.open(
             STABLE_SHELL_CACHE
@@ -242,13 +278,6 @@ self.addEventListener('fetch', (event) => {
 
         if (cached) {
           return cached;
-        }
-
-        const network =
-          await networkRefresh;
-
-        if (network) {
-          return network;
         }
 
         return new Response(
