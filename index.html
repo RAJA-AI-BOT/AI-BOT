@@ -3397,6 +3397,66 @@
         html[data-raja-theme="light"] .raja-mobile-settings-btn { color:#dff9ff !important; }
     </style>
 
+
+    <style id="raja-v23-command-center">
+        /* V23 · RAJA AI Command Center */
+        .v23-welcome-hero{position:relative;overflow:hidden;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(320px,.75fr);gap:18px;padding:18px 20px;border:1px solid rgba(92,236,255,.20);border-radius:18px;background:radial-gradient(circle at 14% 40%,rgba(0,240,168,.13),transparent 30%),radial-gradient(circle at 92% 20%,rgba(58,141,255,.15),transparent 32%),linear-gradient(135deg,rgba(5,18,32,.98),rgba(2,8,17,.99));box-shadow:0 18px 52px rgba(0,0,0,.25),inset 0 1px rgba(255,255,255,.035)}
+        .v23-welcome-hero::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.26;background-image:linear-gradient(rgba(92,236,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(92,236,255,.045) 1px,transparent 1px);background-size:28px 28px;animation:v23Grid 18s linear infinite}
+        .v23-welcome-hero::after{content:"";position:absolute;top:-70%;left:-24%;width:35%;height:240%;transform:rotate(17deg);background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);animation:v23WelcomeSweep 4.8s linear infinite;pointer-events:none}
+        .v23-welcome-copy,.v23-command-deck{position:relative;z-index:2;min-width:0}
+        .v23-welcome-eyebrow{display:flex;align-items:center;gap:7px;color:#8db6c9;font-size:8px;font-weight:900;letter-spacing:1.2px;text-transform:uppercase}
+        .v23-live-dot{width:7px;height:7px;border-radius:50%;background:#00f0a8;box-shadow:0 0 14px rgba(0,240,168,.9);animation:pulseDot 1s infinite}
+        .v23-welcome-title{margin-top:8px;color:#d9f6ff;font-size:23px;font-weight:850;letter-spacing:.4px;line-height:1.1}
+        .v23-welcome-title strong{display:inline-block;color:#ecfff8;background:linear-gradient(90deg,#00f0a8,#5cecff,#f7d36a,#00f0a8);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:v23TextShimmer 3.2s linear infinite;text-shadow:0 0 28px rgba(0,240,168,.08)}
+        .v23-welcome-sub{margin-top:7px;color:#8ca8ba;font-size:9.5px;line-height:1.5}
+        .v23-freshness-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:13px}
+        .v23-fresh-chip{padding:8px 9px;border-radius:9px;border:1px solid rgba(92,236,255,.12);background:rgba(2,10,19,.60)}
+        .v23-fresh-chip small{display:block;color:#667f94;font-size:6px;font-weight:900;letter-spacing:.7px}.v23-fresh-chip strong{display:block;margin-top:3px;color:#baf9e8;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .v23-command-deck{border:1px solid rgba(92,236,255,.12);border-radius:14px;padding:11px;background:linear-gradient(180deg,rgba(3,12,23,.72),rgba(1,8,16,.80))}
+        .v23-command-label{color:#77dff4;font-size:7px;font-weight:950;letter-spacing:.8px;margin-bottom:7px}
+        .v23-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.v23-presets button,.v23-view-toggle button{border:1px solid rgba(92,236,255,.16);border-radius:8px;background:#061321;color:#a9c8d9;padding:8px 5px;font-size:7.5px;font-weight:900;cursor:pointer;transition:.18s ease}.v23-presets button b{color:#e9fff8}.v23-presets button:hover,.v23-presets button.active{color:#001812;border-color:#00f0a8;background:linear-gradient(135deg,#00f0a8,#5cecff);box-shadow:0 0 18px rgba(0,240,168,.12)}
+        .v23-view-toggle{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-top:7px}.v23-view-toggle button.active{color:#eaffff;border-color:rgba(92,236,255,.42);background:linear-gradient(180deg,rgba(92,236,255,.12),rgba(58,141,255,.06));box-shadow:inset 0 0 16px rgba(92,236,255,.04)}
+        .v23-ready-line{display:flex;align-items:center;gap:7px;margin-top:9px;color:#8fb8c9;font-size:7px;font-weight:900}.v23-ready-line span{width:7px;height:7px;border-radius:50%;background:#00f0a8;box-shadow:0 0 12px #00f0a8}.v23-ready-line b{color:#baffea;letter-spacing:.7px}
+        .v23-top3-card{margin-bottom:9px;padding:10px;border:1px solid rgba(92,236,255,.13);border-radius:13px;background:linear-gradient(180deg,rgba(3,13,24,.82),rgba(2,8,17,.94));box-shadow:inset 0 0 28px rgba(92,236,255,.018)}
+        .v23-section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px}.v23-section-head small{display:block;color:#657f94;font-size:6px;font-weight:900;letter-spacing:.8px}.v23-section-head strong{display:block;margin-top:2px;color:#dffaff;font-size:9px;font-weight:950;letter-spacing:.5px}.v23-section-head>span{color:#7091a6;font-size:6.5px;font-weight:800;text-align:right}.v23-section-head.compact{margin-bottom:7px}.v23-section-head.compact strong{font-size:8.5px}
+        .v23-top3-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.v23-rank-card{position:relative;display:grid;grid-template-columns:33px minmax(0,1fr) auto;gap:8px;align-items:center;padding:8px;border:1px solid rgba(92,236,255,.12);border-radius:10px;background:rgba(4,15,27,.78);overflow:hidden}.v23-rank-card::after{content:"";position:absolute;inset:auto 0 0;height:2px;background:linear-gradient(90deg,transparent,var(--rank-color,#5cecff),transparent);opacity:.65}.v23-rank-card>b{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;color:#001713;background:linear-gradient(135deg,var(--rank-color,#5cecff),#d8fff5);font-size:8px}.v23-rank-main strong{display:block;color:#ecfaff;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.v23-rank-main span{display:block;margin-top:2px;color:#708b9f;font-size:6.5px}.v23-rank-score{color:var(--rank-color,#5cecff);font-size:13px;font-weight:950;text-shadow:0 0 14px color-mix(in srgb,var(--rank-color,#5cecff) 45%,transparent)}.v23-rank-card.rank-1{--rank-color:#00f0a8;border-color:rgba(0,240,168,.28);background:linear-gradient(180deg,rgba(0,240,168,.07),rgba(4,15,27,.84))}.v23-rank-card.rank-2{--rank-color:#5cecff}.v23-rank-card.rank-3{--rank-color:#f7d36a}.v23-rank-card.empty{grid-template-columns:33px 1fr;color:#71889b}.v23-rank-card.empty strong{font-size:8px}.v23-rank-card.empty span{font-size:6.5px;color:#62778a}
+        .v23-signal-tools{display:grid;grid-template-columns:1.18fr .82fr;gap:8px;margin-top:8px}.v23-lifecycle-card,.v23-winner-card{border:1px solid rgba(92,236,255,.12);border-radius:11px;padding:9px;background:rgba(2,10,19,.72)}
+        .v23-lifecycle{position:relative;display:grid;grid-template-columns:repeat(5,1fr);gap:4px;padding-top:3px}.v23-lifecycle::before{content:"";position:absolute;left:8%;right:8%;top:14px;height:2px;background:rgba(92,236,255,.10)}.v23-life-step{position:relative;z-index:1;text-align:center;color:#607a90;font-size:6px;font-weight:850}.v23-life-step i{display:grid;place-items:center;width:22px;height:22px;margin:0 auto 5px;border-radius:50%;font-style:normal;border:1px solid #2b465d;background:#06111d;color:#6f8ba1;font-size:7px}.v23-life-step.done{color:#baf7e5}.v23-life-step.done i{color:#001710;border-color:#00f0a8;background:#00c992;box-shadow:0 0 12px rgba(0,240,168,.42)}.v23-life-step.active{color:#dffcff}.v23-life-step.active i{color:#001014;border-color:#5cecff;background:#5cecff;box-shadow:0 0 15px rgba(92,236,255,.50);animation:pulseDot 1.1s infinite}.v23-life-step.missed{color:#ff8099}.v23-life-step.missed i{border-color:#ff5577;color:#ff839a;background:rgba(255,85,119,.08)}
+        #v23TrackingBadge{padding:3px 6px;border-radius:999px;border:1px solid rgba(92,236,255,.14);background:rgba(92,236,255,.05)}
+        .v23-winner-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.v23-winner-grid>div{padding:6px;border:1px solid rgba(92,236,255,.09);border-radius:7px;background:rgba(255,255,255,.015)}.v23-winner-grid small{display:block;color:#657f94;font-size:5.5px;font-weight:900}.v23-winner-grid strong{display:block;margin-top:3px;color:#baffea;font-size:8px}.v23-winner-reason{margin-top:6px;padding-top:6px;border-top:1px solid rgba(92,236,255,.08);color:#8ba6b9;font-size:6.7px;line-height:1.45}.v23-result-freshness{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:7px;padding:6px 8px;border:1px solid rgba(92,236,255,.10);border-radius:8px;background:rgba(92,236,255,.025);font-size:6.5px}.v23-result-freshness span{color:#5cecff;font-weight:900;letter-spacing:.5px}.v23-result-freshness b{color:#9fc1d0;text-align:right}
+        /* Premium multi-timeframe cards */
+        #signalView .tf-breakdown{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:7px!important;flex-wrap:unset!important;margin-top:7px!important}
+        #signalView .tf-chip{position:relative;display:flex!important;min-height:64px;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:8px 5px!important;border-radius:11px!important;background:linear-gradient(180deg,rgba(6,18,31,.94),rgba(2,9,17,.98))!important;border:1px solid rgba(92,236,255,.12)!important;overflow:hidden;font-size:inherit!important;transition:.2s ease}
+        #signalView .tf-chip::before{content:"";position:absolute;inset:auto 12% 0;height:2px;background:var(--tf-accent,#5cecff);box-shadow:0 0 12px var(--tf-accent,#5cecff);opacity:.7}
+        #signalView .tf-chip .tf-name{color:#7895a9;font-size:6.5px;font-weight:900}#signalView .tf-chip .tf-dir{font-size:10px;font-weight:950;letter-spacing:.25px}#signalView .tf-chip .tf-score{color:#eaf9ff;font-size:9px;font-weight:950}
+        #signalView .tf-chip.tf-call{--tf-accent:#00f0a8!important;color:#00f0a8!important;border-color:rgba(0,240,168,.32)!important;background:linear-gradient(180deg,rgba(0,240,168,.08),rgba(2,10,18,.98))!important;box-shadow:inset 0 0 24px rgba(0,240,168,.025)}
+        #signalView .tf-chip.tf-put{--tf-accent:#ff5577!important;color:#ff5577!important;border-color:rgba(255,85,119,.30)!important;background:linear-gradient(180deg,rgba(255,85,119,.07),rgba(2,10,18,.98))!important}
+        #signalView .tf-chip.tf-none{--tf-accent:#7894a9!important;color:#96adbd!important;border-color:rgba(120,148,169,.18)!important;opacity:.78}
+        #signalView .tf-chip.tf-selected{border-color:#5cecff!important;box-shadow:0 0 0 1px rgba(92,236,255,.55),0 0 22px rgba(0,240,168,.15),inset 0 0 24px rgba(92,236,255,.06)!important;transform:translateY(-2px)}
+        #signalView .tf-chip.tf-selected::after{content:"SELECTED";position:absolute;top:4px;right:5px;color:#5cecff;font-size:4.8px;font-weight:950;letter-spacing:.5px}
+        #signalView .tf-summary-line{margin-top:7px!important;padding:6px 8px;border-radius:8px;background:rgba(0,240,168,.035);border:1px solid rgba(0,240,168,.10);color:#82f5d2!important}
+        /* Only the new premium scanner + process panel remain on desktop. */
+        .scan-live-grid{grid-template-columns:minmax(0,1fr) 220px!important;gap:12px!important}
+        @media(max-width:1180px) and (min-width:821px){.scan-live-grid{grid-template-columns:minmax(0,1fr) 185px!important}}
+        /* Smart alert visuals */
+        body.v23-alert-buy .main-panel-card{animation:v23BuyAlert .65s ease 2}body.v23-alert-sell .main-panel-card{animation:v23SellAlert .65s ease 2}body.v23-alert-amber .main-panel-card{animation:v23AmberAlert .7s ease 2}body.v23-entry-open .signal-entry-window{animation:v23EntryAlert .45s ease 3!important}
+        @keyframes v23BuyAlert{50%{box-shadow:0 0 65px rgba(0,240,168,.35),inset 0 0 32px rgba(0,240,168,.12)}}@keyframes v23SellAlert{50%{box-shadow:0 0 65px rgba(255,85,119,.34),inset 0 0 32px rgba(255,85,119,.11)}}@keyframes v23AmberAlert{50%{box-shadow:0 0 50px rgba(247,211,106,.30),inset 0 0 28px rgba(247,211,106,.10)}}@keyframes v23EntryAlert{50%{border-color:#00f0a8;box-shadow:0 0 30px rgba(0,240,168,.35),inset 0 0 22px rgba(0,240,168,.09)}}
+        /* Compact / Pro view */
+        body.raja-view-compact #premiumMarketHeatmap,body.raja-view-compact #setupBuildShell,body.raja-view-compact #dailyPerformancePanel,body.raja-view-compact .mobile-opportunity-card,body.raja-view-compact #aiExplainCard,body.raja-view-compact .signal-intel-bottom,body.raja-view-compact #advancedFiltersInfo{display:none!important}
+        body.raja-view-compact .main-column{gap:9px!important}body.raja-view-compact .main-panel-card{padding:12px!important}
+        /* Fix the ready ring/text collision and make mobile concise */
+        @media(max-width:820px){
+            .v23-welcome-hero{grid-template-columns:1fr;padding:12px;gap:10px;border-radius:14px}.v23-welcome-title{font-size:18px}.v23-freshness-row{grid-template-columns:repeat(2,1fr);gap:5px}.v23-command-deck{padding:9px}.v23-top3-grid{display:flex;overflow-x:auto;gap:6px;scroll-snap-type:x proximity;padding-bottom:2px}.v23-rank-card{min-height:52px;min-width:210px;scroll-snap-align:start}.v23-signal-tools{grid-template-columns:1fr}.v23-winner-grid{grid-template-columns:repeat(2,1fr)}
+            #defaultView .scan-workspace{display:grid!important;grid-template-columns:1fr!important;gap:14px!important;padding:16px 12px!important;text-align:center!important;align-items:center!important}.ready-copy{text-align:center!important;position:relative!important;z-index:3!important}.ready-copy .scan-stage-list{max-width:360px;margin:12px auto 0!important;text-align:left!important}.ready-copy .ready-title{font-size:18px!important}.ready-copy .ready-sub{font-size:9.5px!important}.default-view #scanRing{width:124px!important;margin:0 auto!important;position:relative!important;z-index:2!important}.default-view #scanRing .scan-ring-value{font-size:27px!important}
+            .scan-live-grid{grid-template-columns:1fr!important}.premium-intensity-hud{grid-column:1/-1!important}.scan-process-panel{grid-column:1/-1!important}
+            #signalView .tf-breakdown{grid-template-columns:repeat(5,minmax(66px,1fr))!important;overflow-x:auto!important;padding-bottom:3px!important}.psr-mtf-heading{margin-top:8px!important}
+        }
+        @media(max-width:520px){.v23-presets button{font-size:7px;padding:7px 3px}.v23-welcome-sub{font-size:8.7px}.v23-top3-card{padding:8px}.v23-section-head{align-items:center}.v23-lifecycle{gap:2px}.v23-life-step span{font-size:5.4px}.v23-life-step i{width:20px;height:20px}.v23-result-freshness{align-items:flex-start;flex-direction:column}.v23-result-freshness b{text-align:left}}
+        /* Light theme stays readable */
+        html[data-raja-theme="light"] .v23-welcome-hero,html[data-raja-theme="light"] .v23-top3-card,html[data-raja-theme="light"] .v23-lifecycle-card,html[data-raja-theme="light"] .v23-winner-card{background:linear-gradient(180deg,#ffffff,#eef5fa)!important;border-color:#b8d3df!important;box-shadow:0 12px 30px rgba(36,74,95,.10)!important}html[data-raja-theme="light"] .v23-welcome-title{color:#092033!important}html[data-raja-theme="light"] .v23-welcome-title strong{-webkit-text-fill-color:transparent}html[data-raja-theme="light"] .v23-welcome-sub,html[data-raja-theme="light"] .v23-welcome-eyebrow,html[data-raja-theme="light"] .v23-section-head>span,html[data-raja-theme="light"] .v23-winner-reason{color:#4c6879!important}html[data-raja-theme="light"] .v23-fresh-chip,html[data-raja-theme="light"] .v23-command-deck,html[data-raja-theme="light"] .v23-rank-card,html[data-raja-theme="light"] .v23-winner-grid>div{background:#f8fbfd!important;border-color:#c8dbe4!important}html[data-raja-theme="light"] .v23-fresh-chip strong,html[data-raja-theme="light"] .v23-section-head strong,html[data-raja-theme="light"] .v23-rank-main strong{color:#0a2938!important}html[data-raja-theme="light"] .v23-presets button,html[data-raja-theme="light"] .v23-view-toggle button{background:#edf5f8;color:#244858;border-color:#bfd6e0}html[data-raja-theme="light"] .v23-presets button.active,html[data-raja-theme="light"] .v23-presets button:hover{color:#062019}html[data-raja-theme="light"] #signalView .tf-chip{background:#f7fbfd!important}html[data-raja-theme="light"] #signalView .tf-chip .tf-score{color:#102d3c!important}
+        @keyframes v23TextShimmer{to{background-position:250% 0}}@keyframes v23WelcomeSweep{from{left:-35%}to{left:125%}}@keyframes v23Grid{to{background-position:28px 28px}}
+    </style>
+
 </head>
 <body>
 
@@ -3579,6 +3639,33 @@
                         </div>
                     </div>
 
+                    <section id="v23WelcomeHero" class="v23-welcome-hero">
+                        <div class="v23-welcome-copy">
+                            <div class="v23-welcome-eyebrow"><span class="v23-live-dot"></span> RAJA AI PREMIUM · MARKET INTELLIGENCE</div>
+                            <div class="v23-welcome-title"><span>WELCOME TO</span> <strong>RAJA AI BOT</strong></div>
+                            <div class="v23-welcome-sub">Multi-timeframe opportunity ranking · strict safety filters · live signal lifecycle</div>
+                            <div class="v23-freshness-row">
+                                <div class="v23-fresh-chip"><small>FEED</small><strong id="v23FreshFeed">YAHOO 1m · LIVE</strong></div>
+                                <div class="v23-fresh-chip"><small>DATA AGE</small><strong id="v23FreshAge">--</strong></div>
+                                <div class="v23-fresh-chip"><small>SCAN TIME</small><strong id="v23FreshLatency">--</strong></div>
+                                <div class="v23-fresh-chip"><small>SNAPSHOT</small><strong id="v23FreshCache">READY</strong></div>
+                            </div>
+                        </div>
+                        <div class="v23-command-deck">
+                            <div class="v23-command-label">QUICK SCAN PRESETS</div>
+                            <div class="v23-presets">
+                                <button type="button" onclick="applyRajaPreset('SAFE','1m',this)">🛡 SAFE <b>1m</b></button>
+                                <button type="button" onclick="applyRajaPreset('BALANCED','1m',this)" class="active">⚖ BALANCED <b>1m</b></button>
+                                <button type="button" onclick="applyRajaPreset('BALANCED','5m',this)">🎯 TREND <b>5m</b></button>
+                            </div>
+                            <div class="v23-view-toggle" role="group" aria-label="Dashboard density">
+                                <button id="v23CompactBtn" type="button" onclick="setRajaViewMode('compact')">COMPACT</button>
+                                <button id="v23ProBtn" type="button" onclick="setRajaViewMode('pro')" class="active">PRO VIEW</button>
+                            </div>
+                            <div class="v23-ready-line"><span></span><b id="v23HeroStatus">READY FOR DEEP SCAN</b></div>
+                        </div>
+                    </section>
+
                     <section class="main-panel-card">
                         <div class="scan-heading-row">
                             <div>
@@ -3608,6 +3695,18 @@
                             </div>
                         </section>
 
+                        <section id="v23Top3Compare" class="v23-top3-card">
+                            <div class="v23-section-head">
+                                <div><small>AI OPPORTUNITY RANKING</small><strong>TOP 3 OPPORTUNITY COMPARE</strong></div>
+                                <span id="v23Top3Meta">Waiting for authenticated scan</span>
+                            </div>
+                            <div id="v23Top3Grid" class="v23-top3-grid">
+                                <div class="v23-rank-card empty"><b>#1</b><strong>WAITING</strong><span>Run Auto Scan</span></div>
+                                <div class="v23-rank-card empty"><b>#2</b><strong>WAITING</strong><span>Run Auto Scan</span></div>
+                                <div class="v23-rank-card empty"><b>#3</b><strong>WAITING</strong><span>Run Auto Scan</span></div>
+                            </div>
+                        </section>
+
                         <div id="hudBoxContainer" class="ai-hud-box">
                             <div id="defaultView" class="default-view">
                                 <div class="scan-workspace">
@@ -3626,11 +3725,6 @@
 
                             <div id="scanView" class="scan-view">
                                 <div class="scan-live-grid">
-                                    <div class="scan-live-left">
-                                        <div class="scan-live-kicker">Scanning Market Structure</div>
-                                        <div class="scan-ring" id="scanRingActive"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercentActive">8%</div><div class="scan-ring-label">SCANNING...</div></div></div>
-                                        <div class="scan-intensity"><div class="scan-intensity-label">Live Scan Intensity</div><div class="scan-intensity-wave"></div></div>
-                                    </div>
                                     <div class="premium-intensity-hud" id="premiumIntensityHud" data-level="low">
                                         <div class="premium-intensity-left">
                                             <div class="premium-orbit-shell">
@@ -3765,6 +3859,35 @@
                                         <div id="riskLevelChip" class="stability-chip stability-medium"><small>Market Risk</small><strong id="marketRiskValue">--</strong></div>
                                         <div class="stability-chip"><small>Volatility ATR%</small><strong id="marketVolatilityValue">--</strong></div>
                                     </div>
+
+                                    <section class="v23-signal-tools">
+                                        <div class="v23-lifecycle-card">
+                                            <div class="v23-section-head compact"><div><small>LIVE SIGNAL STATE</small><strong>SIGNAL LIFECYCLE</strong></div><span id="v23TrackingBadge">TRACKING PENDING</span></div>
+                                            <div id="v23Lifecycle" class="v23-lifecycle">
+                                                <div class="v23-life-step" data-step="detected"><i>1</i><span>Detected</span></div>
+                                                <div class="v23-life-step" data-step="confirmed"><i>2</i><span>TF Confirmed</span></div>
+                                                <div class="v23-life-step" data-step="waiting"><i>3</i><span>Entry Waiting</span></div>
+                                                <div class="v23-life-step" data-step="entry"><i>4</i><span>Entry Open</span></div>
+                                                <div class="v23-life-step" data-step="tracking"><i>5</i><span>Auto Tracking</span></div>
+                                            </div>
+                                        </div>
+                                        <div class="v23-winner-card">
+                                            <div class="v23-section-head compact"><div><small>AI DECISION</small><strong>WHY THIS PAIR WON?</strong></div><span id="v23WinnerRank">RANK --</span></div>
+                                            <div id="v23WinnerGrid" class="v23-winner-grid">
+                                                <div><small>Confluence</small><strong id="v23WinnerScore">--</strong></div>
+                                                <div><small>TF Agreement</small><strong id="v23WinnerAgreement">--</strong></div>
+                                                <div><small>Stability</small><strong id="v23WinnerStability">--</strong></div>
+                                                <div><small>Lead vs #2</small><strong id="v23WinnerLead">--</strong></div>
+                                            </div>
+                                            <div id="v23WinnerReason" class="v23-winner-reason">Waiting for ranked scan data.</div>
+                                        </div>
+                                    </section>
+
+                                    <div class="v23-result-freshness">
+                                        <span>● DATA FRESHNESS</span>
+                                        <b id="v23ResultFreshness">Awaiting signal snapshot</b>
+                                    </div>
+
                                     <div class="signal-entry-window" id="signalEntryWindow">
                                         <div class="signal-entry-status" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE</div>
                                         <div id="candleTimer" class="signal-entry-timer">00:31</div>
@@ -4531,6 +4654,7 @@
             }
             updateScanSessionChip();
             updateSetupBuildMeterProgress(safe);
+            if (typeof v23SetHeroStatus === 'function' && scanSessionState.running) v23SetHeroStatus('SCANNING MARKET · ' + Math.round(safe) + '%');
         }
 
         function startScanAnimation() {
@@ -4564,6 +4688,8 @@
 
         function beginScanSession(autoTriggered, pairCount) {
             scanSessionState = { running: true, progress: 8, startedAt: Date.now(), autoTriggered: Boolean(autoTriggered), pairCount: Number(pairCount || 0) };
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('scanning');
+            if (typeof v23SetHeroStatus === 'function') v23SetHeroStatus('SCANNING MARKET · 8%');
             const assetsEl = document.getElementById('scanActiveAssetsValue');
             if (assetsEl) assetsEl.innerText = String(Number(pairCount || 0));
             const elapsedEl = document.getElementById('scanElapsedValue');
@@ -4586,6 +4712,8 @@
                 rajaHasCompletedScan = true;
             }
             updateScanSessionChip();
+            if (finalView === 'nosignal' && typeof v23SmartAlert === 'function') v23SmartAlert('no-trade');
+            if (typeof v23SetHeroStatus === 'function') v23SetHeroStatus(finalView === 'signal' ? 'SIGNAL CONFIRMED' : (finalView === 'nosignal' ? 'NO TRADE · SAFETY FILTERED' : 'READY FOR DEEP SCAN'));
             const scanBtn = document.getElementById('scanBtn');
             if (scanBtn && !scanBtn.disabled && !guardReached()) {
                 scanBtn.innerText = rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN';
@@ -4919,11 +5047,14 @@
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'none';
             });
+            const v23Welcome = document.getElementById('v23WelcomeHero');
+            if (v23Welcome && currentSection !== 'dashboard') v23Welcome.style.display = 'none';
         }
 
         function renderPrimaryView() {
-            if (currentSection !== 'dashboard') return;
+            if (currentSection !== 'dashboard') { if (typeof v23SyncWelcomeState === 'function') v23SyncWelcomeState(); return; }
             hideAllHudViews();
+            if (typeof v23SyncWelcomeState === 'function') v23SyncWelcomeState();
             if (scanSessionState.running || primaryViewState === 'scanning') {
                 const scan = document.getElementById('scanView');
                 if (scan) scan.style.display = 'block';
@@ -5332,11 +5463,14 @@
                         tradeAlert.innerText = `✅ ENTER NOW — NEW ${tfLabel} CANDLE`;
                         tradeAlert.style.display = "block";
                         tradeAlert.style.color = "#00ff87";
+                        if (typeof v23EntryOpenOnce === 'function') v23EntryOpenOnce(activeTrackedSignalId || activeSignalEntryEpochMs || tfLabel);
+                        if (typeof v23SetLifecycle === 'function') v23SetLifecycle('entry');
                     } else {
                         candleStatus.innerText = "ENTRY WINDOW PASSED:";
                         tradeAlert.innerText = "⚠️ ENTRY MISSED — RESCAN FOR A FRESH SIGNAL";
                         tradeAlert.style.display = "block";
                         tradeAlert.style.color = "#ff3366";
+                        if (typeof v23SetLifecycle === 'function') v23SetLifecycle('missed');
                     }
                 } else {
                     candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — WAIT FOR CLOSE:`;
@@ -5532,6 +5666,8 @@
                     const eligibleSet = new Set(eligiblePairs);
                     const rawResults = batch.results;
                     updatePremiumMarketSnapshot(rawResults);
+                    if (typeof v23UpdateFreshnessFromRaw === 'function') v23UpdateFreshnessFromRaw(rawResults, scanDiagnostics, batch.cacheHit);
+                    if (typeof v23RenderTop3 === 'function') v23RenderTop3();
                     let processed = 0;
 
                     rawResults.forEach(raw => {
@@ -5569,6 +5705,8 @@
                     setScanProgress(100);
                     if (indicatorResult) {
                         updatePremiumMarketSnapshotFromNormalized(indicatorResult);
+                        if (typeof v23UpdateFreshnessFromSignal === 'function') v23UpdateFreshnessFromSignal(indicatorResult);
+                        if (typeof v23RenderTop3 === 'function') v23RenderTop3();
                         bestSignalFound = indicatorResult;
                         highestConfluence = indicatorResult.confluence;
                         scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${selectedPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
@@ -5640,7 +5778,7 @@
 
         async function registerSignalForTracking(signalData) {
             const direction=signalData.dir.includes('CALL')?'CALL':'PUT'; const selectedTfMs=getExpirySeconds(selectedExpiry)*1000; activeSignalEntryEpochMs=(Math.floor(Date.now()/selectedTfMs)+1)*selectedTfMs; startTimer();
-            try { const response=await fetch('/track-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pair:signalData.pair,signal:direction,score:signalData.confluence,expiry:selectedExpiry,timeframe_summary:signalData.timeframeSummary||{},client_id:deviceSessionId,chart_preview:signalData.chartPreview||[],market_stability_score:signalData.marketStabilityScore,market_risk_level:signalData.marketRiskLevel,volatility_pct:signalData.volatilityPct,scan_mode:signalData.scanMode,market:document.getElementById('marketType')?.value||'',snapshot:{rsi:signalData.rsi,reason:signalData.reason,multi_tf_agreement:signalData.multiTfAgreement,confirmation_mode:signalData.confirmationMode},...getAuthPayload()})}); const result=await response.json(); if(result&&result.status==='success'&&result.auto_tracking){activeTrackedSignalId=result.signal_id;activeSignalEntryEpochMs=Number(result.entry_epoch)*1000;startTimer();}else if(result&&result.status==='success'){activeTrackedSignalId=null;} }
+            try { const response=await fetch('/track-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pair:signalData.pair,signal:direction,score:signalData.confluence,expiry:selectedExpiry,timeframe_summary:signalData.timeframeSummary||{},client_id:deviceSessionId,chart_preview:signalData.chartPreview||[],market_stability_score:signalData.marketStabilityScore,market_risk_level:signalData.marketRiskLevel,volatility_pct:signalData.volatilityPct,scan_mode:signalData.scanMode,market:document.getElementById('marketType')?.value||'',snapshot:{rsi:signalData.rsi,reason:signalData.reason,multi_tf_agreement:signalData.multiTfAgreement,confirmation_mode:signalData.confirmationMode},...getAuthPayload()})}); const result=await response.json(); if(result&&result.status==='success'&&result.auto_tracking){activeTrackedSignalId=result.signal_id;activeSignalEntryEpochMs=Number(result.entry_epoch)*1000;if(typeof v23SetTrackingBadge==='function')v23SetTrackingBadge(true);startTimer();}else if(result&&result.status==='success'){activeTrackedSignalId=null;if(typeof v23SetTrackingBadge==='function')v23SetTrackingBadge(false);} }
             catch(error){console.error('Signal tracking error:',error);}
         }
 
@@ -5714,6 +5852,10 @@
             registerSignalForTracking(signalData);
             let isBuy = signalData.dir.includes("CALL");
             playSignalAlertSound(isBuy);
+            if (typeof v23SmartAlert === 'function') v23SmartAlert(isBuy ? 'buy' : 'sell');
+            if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
+            if (typeof v23RenderWinnerReason === 'function') v23RenderWinnerReason(signalData);
+            if (typeof v23UpdateFreshnessFromSignal === 'function') v23UpdateFreshnessFromSignal(signalData);
             if (containerEl) {
                 containerEl.classList.remove('signal-arrival-buy','signal-arrival-sell','alert-flash');
                 void containerEl.offsetWidth;
@@ -5976,6 +6118,7 @@
             premiumMarketSnapshot = next.slice(0,40);
             localStorage.setItem('raja_market_snapshot_v15', JSON.stringify(premiumMarketSnapshot));
             renderPremiumMarketSnapshot();
+            if (typeof v23RenderTop3 === 'function') v23RenderTop3();
         }
 
         function updatePremiumMarketSnapshotFromNormalized(signal) {
@@ -5985,6 +6128,7 @@
             premiumMarketSnapshot = Array.from(map.values()).sort((a,b)=>b.strength-a.strength).slice(0,40);
             localStorage.setItem('raja_market_snapshot_v15', JSON.stringify(premiumMarketSnapshot));
             renderPremiumMarketSnapshot();
+            if (typeof v23RenderTop3 === 'function') v23RenderTop3();
         }
 
         function heatBars(seed) {
@@ -7325,6 +7469,145 @@
             bind();
         }
     })();
+    </script>
+
+
+    <script id="raja-v23-command-center-js">
+    let v23LastFreshness = { age:null, elapsed:null, cacheHit:false, count:0, updatedAt:0 };
+    let v23LastEntryAlertKey = null;
+
+    function v23SetHeroStatus(text){ const el=document.getElementById('v23HeroStatus'); if(el) el.textContent=String(text||'READY FOR DEEP SCAN'); }
+
+    function setRajaViewMode(mode){
+        mode = mode === 'compact' ? 'compact' : 'pro';
+        document.body.classList.toggle('raja-view-compact', mode==='compact');
+        localStorage.setItem('raja_view_mode_v23', mode);
+        document.getElementById('v23CompactBtn')?.classList.toggle('active',mode==='compact');
+        document.getElementById('v23ProBtn')?.classList.toggle('active',mode==='pro');
+        playClickSound?.();
+    }
+
+    function applyRajaPreset(mode, expiry, button){
+        try{
+            setScanMode(mode);
+            const expiryBtn = document.querySelector('.expiry-btn[data-time="'+expiry+'"]');
+            if(expiryBtn) setExpiry(expiryBtn, expiry);
+            document.querySelectorAll('.v23-presets button').forEach(btn=>btn.classList.toggle('active',btn===button));
+            v23SetHeroStatus(mode+' PRESET · '+String(expiry).toUpperCase()+' READY');
+            const settings=document.getElementById('rajaMobileSettingsBtn');
+            if(settings) settings.dispatchEvent(new Event('change'));
+            playClickSound?.();
+        }catch(e){ console.warn('RAJA preset warning',e); }
+    }
+
+    function v23SyncWelcomeState(){
+        const hero=document.getElementById('v23WelcomeHero'); if(!hero) return;
+        const ready = currentSection==='dashboard' && !scanSessionState.running && primaryViewState==='ready';
+        hero.style.display = ready ? 'grid' : 'none';
+    }
+
+    function v23RenderTop3(){
+        const grid=document.getElementById('v23Top3Grid'); if(!grid) return;
+        const rows=(premiumMarketSnapshot||[]).slice(0,3);
+        const meta=document.getElementById('v23Top3Meta');
+        if(meta) meta.textContent = rows.length ? ((v23LastFreshness.count||premiumMarketSnapshot.length)+' assets ranked · strongest first') : 'Waiting for authenticated scan';
+        if(!rows.length){
+            grid.innerHTML='<div class="v23-rank-card empty"><b>#1</b><div><strong>WAITING</strong><span>Run Auto Scan</span></div></div><div class="v23-rank-card empty"><b>#2</b><div><strong>WAITING</strong><span>Run Auto Scan</span></div></div><div class="v23-rank-card empty"><b>#3</b><div><strong>WAITING</strong><span>Run Auto Scan</span></div></div>';
+            return;
+        }
+        grid.innerHTML=rows.map((x,i)=>{
+            const arrow=x.direction==='CALL'?'↑ UP':(x.direction==='PUT'?'↓ DOWN':'• WATCH');
+            return '<div class="v23-rank-card rank-'+(i+1)+'"><b>#'+(i+1)+'</b><div class="v23-rank-main"><strong>'+escapeHtml(x.pair)+'</strong><span>'+arrow+' · TF '+Number(x.agreement||0)+'% · '+escapeHtml(x.status||'--')+'</span></div><div class="v23-rank-score">'+Number(x.strength||0)+'%</div></div>';
+        }).join('');
+    }
+
+    function v23FormatAge(seconds){
+        const n=Number(seconds); if(!Number.isFinite(n)) return '--';
+        if(n<60) return Math.max(0,Math.round(n))+'s';
+        return (n/60).toFixed(1)+'m';
+    }
+    function v23PaintFreshness(){
+        const f=v23LastFreshness;
+        const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+        set('v23FreshAge',v23FormatAge(f.age));
+        set('v23FreshLatency',Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--');
+        set('v23FreshCache',!f.updatedAt?'READY':(f.cacheHit?'SHARED CACHE':'FRESH SNAPSHOT'));
+        const result=document.getElementById('v23ResultFreshness');
+        if(result) result.textContent='Yahoo 1m · age '+v23FormatAge(f.age)+' · scan '+(Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--')+' · '+(f.cacheHit?'shared cache':'fresh snapshot');
+    }
+    function v23UpdateFreshnessFromRaw(rows, diagnostics, cacheHit){
+        rows=Array.isArray(rows)?rows:[];
+        const ages=rows.map(x=>Number(x&&x.data_age)).filter(Number.isFinite);
+        v23LastFreshness={age:ages.length?Math.min(...ages):null,elapsed:Number(diagnostics&&diagnostics.elapsed_seconds),cacheHit:Boolean(cacheHit),count:Number(diagnostics&&diagnostics.total_pairs)||rows.length,updatedAt:Date.now()};
+        v23PaintFreshness(); v23RenderTop3();
+    }
+    function v23UpdateFreshnessFromSignal(signal){
+        if(!signal) return;
+        const elapsed=scanSessionState.startedAt?Math.max(0,(Date.now()-scanSessionState.startedAt)/1000):v23LastFreshness.elapsed;
+        v23LastFreshness={...v23LastFreshness,age:Number(signal.dataAge),elapsed:elapsed,cacheHit:(v23LastFreshness.count>1?v23LastFreshness.cacheHit:false),count:v23LastFreshness.count||1,updatedAt:Date.now()};
+        v23PaintFreshness();
+    }
+
+    function v23SetTrackingBadge(on){
+        const badge=document.getElementById('v23TrackingBadge'); if(!badge)return;
+        badge.textContent=on?'AUTO TRACKING · ON':'TRACKING PENDING';
+        badge.style.color=on?'#00f0a8':'#7e9aae';
+        badge.style.borderColor=on?'rgba(0,240,168,.28)':'rgba(92,236,255,.14)';
+    }
+    function v23SetLifecycle(state){
+        const steps=[...document.querySelectorAll('#v23Lifecycle .v23-life-step')]; if(!steps.length)return;
+        steps.forEach(x=>x.classList.remove('done','active','missed'));
+        const map={scanning:-1,waiting:2,entry:3,missed:2,tracking:4}; const idx=map[state]??2;
+        if(state==='scanning') return;
+        steps.forEach((x,i)=>{ if(i<idx)x.classList.add('done'); else if(i===idx)x.classList.add(state==='missed'?'missed':'active'); });
+        if(state==='entry'){ steps[0]?.classList.add('done');steps[1]?.classList.add('done');steps[2]?.classList.add('done'); }
+        if(state==='tracking') steps.forEach(x=>x.classList.add('done'));
+    }
+
+    function v23RenderWinnerReason(signal){
+        if(!signal)return;
+        const rows=(premiumMarketSnapshot||[]);
+        const eligible=rows.filter(x=>x.signalFound);
+        const rank=Math.max(0,eligible.findIndex(x=>x.pair===signal.pair));
+        const second=eligible.find(x=>x.pair!==signal.pair);
+        const score=Number(signal.confluence||0), agreement=Number(signal.multiTfAgreement||0), stability=Number(signal.marketStabilityScore||0);
+        const lead=second?score-Number(second.strength||0):0;
+        const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+        set('v23WinnerRank','#'+(rank>=0?rank+1:1)+' ELIGIBLE · '+Math.max(rows.length,v23LastFreshness.count||1)+' SCANNED');
+        set('v23WinnerScore',score.toFixed(1)+'%'); set('v23WinnerAgreement',Number.isFinite(agreement)?agreement.toFixed(0)+'%':'--'); set('v23WinnerStability',stability?stability.toFixed(1)+'/100':'--'); set('v23WinnerLead',second?(lead>=0?'+':'')+lead.toFixed(0)+' pts':'--');
+        const aligned=Array.isArray(signal.alignedTimeframes)?signal.alignedTimeframes.length:0;
+        const risk=String(signal.marketRiskLevel||'--').toUpperCase();
+        const reason=document.getElementById('v23WinnerReason');
+        if(reason) reason.textContent=(signal.pair||'This pair')+' ranked highest because confluence '+score.toFixed(1)+'%, '+(aligned||'multi')+' aligned timeframes, '+(Number.isFinite(agreement)?agreement.toFixed(0)+'% TF agreement':'strong TF agreement')+' and '+risk+' market risk produced the strongest eligible setup'+(second?' versus #2 '+second.pair+'.':'.');
+    }
+
+    function v23Tone(kind){
+        if(!soundEnabled) return;
+        try{
+            if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+            if(audioCtx.state==='suspended')audioCtx.resume();
+            const now=audioCtx.currentTime;
+            const notes=kind==='entry'?[880,1174,1568,2093]:kind==='no-trade'?[420,360]:[];
+            notes.forEach((freq,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=kind==='entry'?'sine':'triangle';const t=now+i*.09;o.frequency.setValueAtTime(freq,t);g.gain.setValueAtTime(kind==='entry'?.20:.12,t);g.gain.exponentialRampToValueAtTime(.01,t+.14);o.connect(g);g.connect(audioCtx.destination);o.start(t);o.stop(t+.15);});
+        }catch(e){}
+    }
+    function v23SmartAlert(kind){
+        document.body.classList.remove('v23-alert-buy','v23-alert-sell','v23-alert-amber');
+        const cls=kind==='buy'?'v23-alert-buy':kind==='sell'?'v23-alert-sell':'v23-alert-amber';
+        void document.body.offsetWidth; document.body.classList.add(cls); setTimeout(()=>document.body.classList.remove(cls),1700);
+        try{ if(navigator.vibrate){ if(kind==='buy')navigator.vibrate([90,55,130]); else if(kind==='sell')navigator.vibrate([150,55,90]); else navigator.vibrate([65,70,65]); } }catch(e){}
+        if(kind==='no-trade')v23Tone('no-trade');
+    }
+    function v23EntryOpenOnce(key){
+        const stable=String(key||'entry'); if(v23LastEntryAlertKey===stable)return; v23LastEntryAlertKey=stable;
+        document.body.classList.add('v23-entry-open'); setTimeout(()=>document.body.classList.remove('v23-entry-open'),1500);
+        v23Tone('entry'); try{navigator.vibrate?.([180,70,180,70,260]);}catch(e){}
+    }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+        setRajaViewMode(localStorage.getItem('raja_view_mode_v23')||(window.matchMedia('(max-width:820px)').matches?'compact':'pro'));
+        v23PaintFreshness(); v23RenderTop3(); v23SyncWelcomeState();
+    });
     </script>
 
 </body>
