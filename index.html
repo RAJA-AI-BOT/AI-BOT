@@ -324,6 +324,13 @@
         }
 
     
+        /* PWA install action: visible in browser mode on phone/tablet/desktop. */
+        #installAppBtn {
+            display: inline-flex !important;
+            align-items: center;
+            justify-content: center;
+        }
+
         /* PWA installed mode */
         @media (display-mode: standalone) {
             html, body {
@@ -331,7 +338,7 @@
                 min-height: 100%;
                 overscroll-behavior-y: contain;
             }
-            #installAppBtn { display: none !important; }
+            #installAppBtn, #activationInstallAppBtn { display: none !important; }
         }
 
     </style>
@@ -5266,7 +5273,7 @@
                                 <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
                                 <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
                             </button>
-                            <button id="installAppBtn" class="top-btn install-btn" style="display:none" onclick="installPWA()">⬇ INSTALL APP</button>
+                            <button id="installAppBtn" class="top-btn install-btn" onclick="installPWA()">⬇ INSTALL APP</button>
                             <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
                             <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
                         </div>
@@ -6123,7 +6130,7 @@
             }
         }
 
-        function setInstallButtonVisible(visible) {
+        function setInstallButtonVisible(visible = true) {
             const buttons = [
                 document.getElementById('installAppBtn'),
                 document.getElementById('activationInstallAppBtn')
@@ -6131,14 +6138,13 @@
 
             if (!buttons.length) return;
 
-            // Keep the install action visible on phone, tablet and desktop
-            // whenever RAJA AI is not currently running in standalone mode.
             const show = !isRajaStandalone();
 
             buttons.forEach(btn => {
                 btn.style.display = show ? 'inline-flex' : 'none';
                 btn.disabled = false;
-                btn.dataset.nativeInstallReady = deferredInstallPrompt ? '1' : '0';
+                btn.dataset.nativeInstallReady =
+                    (typeof navigator.install === 'function' || deferredInstallPrompt) ? '1' : '0';
             });
 
             const dashboardBtn = document.getElementById('installAppBtn');
@@ -6173,38 +6179,67 @@
                 return;
             }
 
-            // Directly invoke the browser's REAL native install dialog.
-            // No RAJA AI custom popup, no Add-to-Home instructions.
-            if (!deferredInstallPrompt) {
-                // Browser has not provided a native install event yet.
-                // Do not show a custom popup or manual Add-to-Home message.
-                // Keep the install button visible so it becomes immediately
-                // usable if/when beforeinstallprompt fires later in this session.
-                setInstallButtonVisible(true);
-                const buttons = [
-                    document.getElementById('installAppBtn'),
-                    document.getElementById('activationInstallAppBtn')
-                ].filter(Boolean);
+            const buttons = [
+                document.getElementById('installAppBtn'),
+                document.getElementById('activationInstallAppBtn')
+            ].filter(Boolean);
+
+            const setTemporaryLabel = (label) => {
                 buttons.forEach(btn => {
-                    const original = btn.innerText;
-                    btn.innerText = 'INSTALL APP · NATIVE PROMPT NOT READY';
-                    setTimeout(() => {
-                        if (!isRajaStandalone()) btn.innerText = original;
-                    }, 1800);
+                    btn.innerText = label;
+                    btn.disabled = true;
                 });
-                return;
+            };
+
+            // New Chromium Web Install API (2026). When available, this is the
+            // cleanest direct path from the user's click to the browser's native
+            // install experience. The manifest already has an explicit "id".
+            if (typeof navigator.install === 'function') {
+                try {
+                    setTemporaryLabel('OPENING INSTALLER...');
+                    await navigator.install();
+                    setInstallButtonVisible(false);
+                    return;
+                } catch (err) {
+                    // AbortError means the user dismissed/cancelled the browser UI.
+                    if (err && err.name === 'AbortError') {
+                        setInstallButtonVisible(true);
+                        return;
+                    }
+                    console.warn('RAJA AI navigator.install failed; trying legacy prompt:', err);
+                    setInstallButtonVisible(true);
+                }
             }
 
-            const promptEvent = deferredInstallPrompt;
-            deferredInstallPrompt = null;
-            setInstallButtonVisible(false);
+            // Legacy Chromium/Samsung path, when the browser supplies
+            // beforeinstallprompt for this installable PWA.
+            if (deferredInstallPrompt) {
+                const promptEvent = deferredInstallPrompt;
+                deferredInstallPrompt = null;
 
-            try {
-                await promptEvent.prompt();
-                await promptEvent.userChoice;
-            } catch (err) {
-                console.warn('RAJA AI native install prompt error:', err);
+                try {
+                    setTemporaryLabel('OPENING INSTALLER...');
+                    await promptEvent.prompt();
+                    const choice = await promptEvent.userChoice;
+
+                    if (choice && choice.outcome === 'accepted') {
+                        setInstallButtonVisible(false);
+                    } else {
+                        setInstallButtonVisible(true);
+                    }
+                    return;
+                } catch (err) {
+                    console.warn('RAJA AI beforeinstallprompt failed:', err);
+                    setInstallButtonVisible(true);
+                    return;
+                }
             }
+
+            // There is no standards-based JavaScript call that can force a native
+            // installer in a browser that exposes neither API. Keep everything in
+            // English and do not show a custom Add-to-Home popup.
+            setTemporaryLabel('NATIVE INSTALL NOT AVAILABLE');
+            setTimeout(() => setInstallButtonVisible(true), 1800);
         }
 
         // =========================================================
