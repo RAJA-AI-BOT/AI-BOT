@@ -5176,8 +5176,9 @@
             
             <div class="instruction-box">
                 <div class="step-title">Step 1:</div>
-                <div style="color: #cbd5e1;">Create your Broker account (Quotex):</div>
+                <div style="color: #cbd5e1;">Choose your supported Broker: Quotex or Pocket Option.</div>
                 <a class="link-text" href="https://broker-qx.pro/sign-up/?lid=2209395" target="_blank">Quotex Partner Link</a>
+                <div style="color:#60efff;font-weight:800;margin-top:3px;">🔵 Pocket Option is supported inside RAJA AI after login.</div>
 
                 <div class="step-title">Step 2:</div>
                 <div style="color: #cbd5e1;">Deposit minimum $50</div>
@@ -5645,24 +5646,24 @@
                             <div class="raja-forex-otc-fallback-head">
                                 <div>
                                     <div class="raja-forex-otc-fallback-kicker">⚡ FOREX OTC · FALLBACK MODE</div>
-                                    <div class="raja-forex-otc-fallback-title">QUOTEX FOREX OTC PAIRS · IN-APP PANEL</div>
+                                    <div id="rajaForexOtcFallbackTitle" class="raja-forex-otc-fallback-title">FOREX OTC PAIRS · IN-APP PANEL</div>
                                 </div>
                                 <span id="rajaForexOtcFallbackState" class="raja-forex-otc-fallback-badge">MARKET CLOSED</span>
                             </div>
 
                             <div class="raja-forex-otc-fallback-copy">
-                                RAJA AI checked Yahoo live data first. Because Forex OTC Yahoo reference data is stale/unavailable, fallback mode is active. Select a pair below or choose Auto Scan, then press the fallback action button once. RAJA AI immediately starts the SAME normal scanner UI using fallback reference analysis. As soon as Yahoo becomes fresh, fallback switches OFF automatically and the normal scanner returns to Yahoo live data.
+                                RAJA AI checked Yahoo reference data first. Because Forex OTC Yahoo reference data is stale/unavailable, broker fallback mode is active. Select a pair below or choose Auto Scan, then press the fallback action button once. RAJA AI immediately starts the SAME normal scanner UI using the last available Yahoo reference structure. This is not the broker's live OTC candle feed. As soon as Yahoo becomes fresh, fallback switches OFF automatically and the normal scanner returns to Yahoo data.
                             </div>
 
                             <div class="raja-forex-otc-pair-head">
-                                <span>21 FOREX OTC PAIRS</span>
+                                <span id="rajaForexOtcFallbackPairCount">FOREX OTC PAIRS</span>
                                 <span id="rajaForexOtcSelectedPair">Select a pair</span>
                             </div>
                             <div id="rajaForexOtcPairGrid" class="raja-forex-otc-pair-grid" aria-label="Forex OTC pairs"></div>
 
                             <div class="raja-forex-otc-fallback-actions">
                                 <button type="button" id="rajaForexOtcAutoAllBtn" class="raja-forex-otc-auto-all-btn">
-                                    ▶ RUN FALLBACK AUTO SCAN · ALL 21
+                                    ▶ RUN FALLBACK AUTO SCAN
                                 </button>
                                 <button type="button" id="rajaForexOtcRetryBtn" class="raja-forex-otc-open-btn">
                                     ▶ RUN FALLBACK SCAN · SELECTED PAIR
@@ -5679,7 +5680,7 @@
                             <div id="rajaForexOtcFallbackResults" class="raja-forex-otc-results" style="display:none;">
                                 <div class="raja-forex-otc-results-head">
                                     <span>FALLBACK SIGNALS</span>
-                                    <span id="rajaForexOtcFallbackMode">REFERENCE-BASED · NOT LIVE QUOTEX</span>
+                                    <span id="rajaForexOtcFallbackMode">REFERENCE-BASED · NOT LIVE BROKER OTC</span>
                                 </div>
                                 <div id="rajaForexOtcFallbackResultsBody"></div>
                                 <div class="raja-forex-otc-results-note">
@@ -5864,7 +5865,7 @@
                         </div>
                         <div class="config-grid">
                             <div class="selection-card">
-                                <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option></select></div>
+                                <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
                                 <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: 5-of-6, stronger agreement and higher score threshold.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
@@ -6352,15 +6353,21 @@
             if (changed) localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
         }
 
+        function autoPairCooldownKey(pair) {
+            const broker = String(document.getElementById('brokerSelect')?.value || 'Quotex');
+            const market = String(document.getElementById('marketType')?.value || '');
+            return `${broker}::${market}::${String(pair || '')}`;
+        }
+
         function isAutoPairCoolingDown(pair) {
             cleanAutoPairCooldowns();
-            const usedAt = Number(autoPairCooldowns[pair] || 0);
+            const usedAt = Number(autoPairCooldowns[autoPairCooldownKey(pair)] || 0);
             return usedAt > 0 && (Date.now() - usedAt) < AUTO_PAIR_ROTATION_COOLDOWN_MS;
         }
 
         function rememberAutoPair(pair) {
             if (!pair) return;
-            autoPairCooldowns[pair] = Date.now();
+            autoPairCooldowns[autoPairCooldownKey(pair)] = Date.now();
             localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
         }
 
@@ -7470,17 +7477,151 @@
                     "NZD/CAD (OTC)",
                     "CAD/CHF (OTC)"
                 ]
+            },
+            PocketOption: {
+                CryptoLive: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "BTC-USD",
+                    "ETH-USD",
+                    "SOL-USD",
+                    "LTC-USD",
+                    "XRP-USD",
+                    "ADA-USD",
+                    "DOGE-USD"
+                ],
+                ForexOTC: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "EUR/USD (OTC)",
+                    "GBP/USD (OTC)",
+                    "USD/JPY (OTC)",
+                    "AUD/USD (OTC)",
+                    "USD/CAD (OTC)",
+                    "USD/CHF (OTC)",
+                    "EUR/JPY (OTC)",
+                    "GBP/JPY (OTC)",
+                    "AUD/JPY (OTC)",
+                    "CAD/JPY (OTC)",
+                    "EUR/CHF (OTC)",
+                    "EUR/GBP (OTC)",
+                    "AUD/CAD (OTC)",
+                    "AUD/CHF (OTC)",
+                    "CAD/CHF (OTC)",
+                    "NZD/JPY (OTC)",
+                    "AUD/NZD (OTC)",
+                    "EUR/NZD (OTC)",
+                    "GBP/AUD (OTC)",
+                    "CHF/JPY (OTC)",
+                    "USD/MXN (OTC)",
+                    "USD/BRL (OTC)",
+                    "USD/INR (OTC)",
+                    "USD/SGD (OTC)",
+                    "USD/CNH (OTC)",
+                    "USD/IDR (OTC)",
+                    "USD/PHP (OTC)",
+                    "USD/MYR (OTC)",
+                    "USD/COP (OTC)",
+                    "EUR/TRY (OTC)"
+                ],
+                CryptoOTC: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "BNB (OTC)",
+                    "Polkadot (OTC)",
+                    "Ethereum (OTC)",
+                    "Toncoin (OTC)",
+                    "Cardano (OTC)",
+                    "Polygon (OTC)",
+                    "TRON (OTC)",
+                    "Avalanche (OTC)",
+                    "Bitcoin (OTC)",
+                    "Bitcoin ETF (OTC)",
+                    "Solana (OTC)",
+                    "Chainlink (OTC)",
+                    "Litecoin (OTC)",
+                    "Dogecoin (OTC)"
+                ],
+                StocksOTC: [
+                    "✨ Auto Scan Best Pair (AI) ✨",
+                    "Apple (OTC)",
+                    "American Express (OTC)",
+                    "Boeing Company (OTC)",
+                    "Cisco (OTC)",
+                    "Facebook Inc (OTC)",
+                    "Intel (OTC)",
+                    "Johnson & Johnson (OTC)",
+                    "McDonald's (OTC)",
+                    "Microsoft (OTC)",
+                    "Pfizer Inc (OTC)",
+                    "Tesla (OTC)",
+                    "ExxonMobil (OTC)",
+                    "Advanced Micro Devices (OTC)"
+                ]
             }
         };
 
-        function updateBrokerAssets() { updatePairs(); }
+        const brokerMarketOptions = {
+            Quotex: [
+                { value:'CryptoLive', label:'🪙 Crypto Live Market' },
+                { value:'CryptoOTC', label:'🪙 Crypto OTC Market' },
+                { value:'ForexLive', label:'🟢 Forex Live Market' },
+                { value:'ForexOTC', label:'⚡ Forex OTC Market' }
+            ],
+            PocketOption: [
+                { value:'CryptoLive', label:'🔵 Pocket Crypto Live Market · 7' },
+                { value:'ForexOTC', label:'🔵 Pocket Forex OTC Market · 30' },
+                { value:'CryptoOTC', label:'🔵 Pocket Crypto OTC Market · 14' },
+                { value:'StocksOTC', label:'🔵 Pocket Stocks OTC Market · 13' }
+            ]
+        };
+
+        function brokerDisplayName(broker) {
+            return broker === 'PocketOption' ? 'Pocket Option' : 'Quotex';
+        }
+
+        function updateBrokerAssets() {
+            const brokerEl = document.getElementById('brokerSelect');
+            const marketEl = document.getElementById('marketType');
+            if (!brokerEl || !marketEl) return;
+
+            const broker = brokerEl.value || 'Quotex';
+            const options = brokerMarketOptions[broker] || brokerMarketOptions.Quotex;
+            const oldMarket = marketEl.value;
+            marketEl.innerHTML = '';
+
+            options.forEach(item => {
+                const option = document.createElement('option');
+                option.value = item.value;
+                option.textContent = item.label;
+                marketEl.appendChild(option);
+            });
+
+            if (options.some(item => item.value === oldMarket)) {
+                marketEl.value = oldMarket;
+            } else if (options.length) {
+                marketEl.value = options[0].value;
+            }
+
+            try {
+                if (typeof window.rajaDisarmForexOtcFallback === 'function') {
+                    window.rajaDisarmForexOtcFallback();
+                }
+            } catch (_) {}
+
+            updatePairs();
+
+            try {
+                if (typeof window.rajaOnBrokerChanged === 'function') {
+                    window.rajaOnBrokerChanged(broker);
+                }
+            } catch (_) {}
+        }
 
         function marketDisplayName(market) {
             return ({
                 CryptoLive: 'Crypto Live',
                 CryptoOTC: 'Crypto OTC',
                 ForexLive: 'Forex Live',
-                ForexOTC: 'Forex OTC'
+                ForexOTC: 'Forex OTC',
+                StocksOTC: 'Stocks OTC'
             })[market] || 'Selected Market';
         }
 
@@ -7652,6 +7793,7 @@
                             expiry: selectedExpiry,
                             client_id: deviceSessionId,
                             market: document.getElementById('marketType')?.value || '',
+                            broker: document.getElementById('brokerSelect')?.value || 'Quotex',
                             scan_options: getScanOptions(),
                             ...getAuthPayload()
                         }),
@@ -7727,7 +7869,7 @@
                 const response = await fetch('/scan-batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', scan_options: getScanOptions(), ...getAuthPayload() }),
+                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', broker: document.getElementById('brokerSelect')?.value || 'Quotex', scan_options: getScanOptions(), ...getAuthPayload() }),
                     signal: controller.signal
                 });
 
@@ -7869,6 +8011,7 @@
             //   normal SCAN button keeps working through the isolated JS fallback engine
             //   until Yahoo becomes fresh again.
             const forexOtcFallbackAlreadyActive = Boolean(
+                (broker === 'Quotex' || broker === 'PocketOption') &&
                 market === 'ForexOTC' &&
                 typeof window.rajaIsForexOtcFallbackActive === 'function' &&
                 window.rajaIsForexOtcFallbackActive()
@@ -8146,7 +8289,7 @@
                 );
 
                 try {
-                    if (blockedByReference && typeof window.rajaArmForexOtcFallback === 'function') {
+                    if ((broker === 'Quotex' || broker === 'PocketOption') && blockedByReference && typeof window.rajaArmForexOtcFallback === 'function') {
                         const reason = String(
                             state.message ||
                             state.ageLabel ||
@@ -9465,7 +9608,7 @@
             }
 
             if (descEl) {
-                const label = s.otc ? 'Forex OTC scan paused.' : 'Live market scan paused.';
+                const label = s.otc ? `${marketDisplayName(s.market)} scan paused.` : 'Live market scan paused.';
                 descEl.innerText = s.badMarket
                     ? label + ' Fresh data is required before RAJA AI can generate a signal.'
                     : label + ' The live reference source did not return usable data.';
@@ -10616,7 +10759,8 @@
                 CryptoLive:'CRYPTO LIVE',
                 CryptoOTC:'CRYPTO OTC',
                 ForexLive:'FOREX LIVE',
-                ForexOTC:'FOREX OTC'
+                ForexOTC:'FOREX OTC',
+                StocksOTC:'STOCKS OTC'
             })[value] || 'MARKET READY';
         }
 
@@ -11027,10 +11171,22 @@
 
     <script id="raja-smart-market-switch-js-v2">
     (() => {
-        const STORAGE_KEY = 'raja_all_market_availability_v2';
+        const STORAGE_KEY_BASE = 'raja_all_market_availability_v3';
         const CACHE_MS = 3 * 60 * 1000;
-        const MARKETS = ['CryptoLive', 'CryptoOTC', 'ForexLive', 'ForexOTC'];
-        const LIVE_PRIORITY = { CryptoLive:4, ForexLive:3, CryptoOTC:2, ForexOTC:1 };
+        const LIVE_PRIORITY = { CryptoLive:5, ForexLive:4, CryptoOTC:3, ForexOTC:2, StocksOTC:1 };
+
+        function currentBroker() {
+            return String(document.getElementById('brokerSelect')?.value || 'Quotex');
+        }
+
+        function marketsForBroker(broker = currentBroker()) {
+            const rows = brokerData?.[broker];
+            return rows && typeof rows === 'object' ? Object.keys(rows) : [];
+        }
+
+        function brokerStoreKey(broker = currentBroker()) {
+            return `${STORAGE_KEY_BASE}_${String(broker || 'Quotex')}`;
+        }
         let otcFallbackConfig = null;
 
         function setScanningMarketBadge(market) {
@@ -11109,10 +11265,50 @@
             '10m':1.45, '15m':1.60, '30m':1.75
         };
 
+        function isForexOtcFallbackBroker(broker = currentBroker()) {
+            return broker === 'Quotex' || broker === 'PocketOption';
+        }
+
+        function forexOtcFallbackBrokerName(broker = currentBroker()) {
+            return broker === 'PocketOption' ? 'Pocket Option' : 'Quotex';
+        }
+
+        function forexOtcFallbackBrokerLabel(broker = currentBroker()) {
+            return forexOtcFallbackBrokerName(broker).toUpperCase();
+        }
+
+        function forexOtcFallbackPairLimit() {
+            const rows = forexOtcPairsFromCurrentSelect();
+            return Math.max(1, Math.min(30, rows.length || (currentBroker() === 'PocketOption' ? 30 : 21)));
+        }
+
+        function forexOtcFallbackWarning() {
+            return `REFERENCE-BASED FALLBACK · NOT LIVE ${forexOtcFallbackBrokerLabel()} OTC DATA`;
+        }
+
+        function syncForexOtcFallbackBranding() {
+            const brokerName = forexOtcFallbackBrokerName();
+            const brokerLabel = forexOtcFallbackBrokerLabel();
+            const pairCount = forexOtcPairsFromCurrentSelect().length;
+
+            const title = document.getElementById('rajaForexOtcFallbackTitle');
+            const count = document.getElementById('rajaForexOtcFallbackPairCount');
+            const mode = document.getElementById('rajaForexOtcFallbackMode');
+            const autoBtn = document.getElementById('rajaForexOtcAutoAllBtn');
+
+            if (title) title.textContent = `${brokerLabel} FOREX OTC PAIRS · IN-APP PANEL`;
+            if (count) count.textContent = `${pairCount} FOREX OTC PAIRS`;
+            if (mode) mode.textContent = `REFERENCE-BASED · NOT LIVE ${brokerLabel} OTC`;
+            if (autoBtn) autoBtn.textContent = `▶ RUN FALLBACK AUTO SCAN · ALL ${pairCount || forexOtcFallbackPairLimit()}`;
+
+            return { brokerName, brokerLabel, pairCount };
+        }
+
         function forexOtcPairsFromCurrentSelect() {
+            const brokerEl = document.getElementById('brokerSelect');
             const marketEl = document.getElementById('marketType');
             const pairEl = document.getElementById('pairSelect');
-            if (!marketEl || marketEl.value !== 'ForexOTC' || !pairEl) return [];
+            if (!brokerEl || !isForexOtcFallbackBroker(brokerEl.value) || !marketEl || marketEl.value !== 'ForexOTC' || !pairEl) return [];
             return Array.from(pairEl.options || [])
                 .map(option => String(option.value || '').trim())
                 .filter(pair => pair && !pair.includes('Auto Scan'));
@@ -11124,6 +11320,7 @@
             if (!grid) return;
 
             const pairs = forexOtcPairsFromCurrentSelect();
+            syncForexOtcFallbackBranding();
             const pairSelect = document.getElementById('pairSelect');
             const currentPair = String(
                 forexOtcFallbackSelectedPair ||
@@ -11423,7 +11620,7 @@
                 scanMode:'FALLBACK',
                 scanThresholds:{},
                 fallbackReference:true,
-                fallbackWarning:'REFERENCE-BASED FALLBACK · NOT LIVE QUOTEX OTC DATA',
+                fallbackWarning:forexOtcFallbackWarning(),
                 source:'Yahoo Finance',
                 sourceMode:'fallback_reference_only'
             };
@@ -11458,7 +11655,7 @@
                     <div class="raja-forex-otc-result-grid">
                         <div class="raja-forex-otc-result-card watch">
                             <div class="raja-forex-otc-result-top">
-                                <div class="raja-forex-otc-result-pair">${autoMode ? 'AUTO SCAN ALL 21' : 'SELECTED PAIR'}</div>
+                                <div class="raja-forex-otc-result-pair">${autoMode ? `AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length}` : 'SELECTED PAIR'}</div>
                                 <div class="raja-forex-otc-result-dir">NO FALLBACK SIGNAL</div>
                             </div>
                             <div class="raja-forex-otc-result-reason">
@@ -11488,7 +11685,7 @@
                                 <div class="raja-forex-otc-result-stat"><small>Data Age</small><b>${escapeHtml(item.ageLabel || '--')}</b></div>
                             </div>
                             <div class="raja-forex-otc-result-reason">
-                                ${escapeHtml(item.reason || '')} · REFERENCE-BASED FALLBACK · NOT LIVE QUOTEX DATA.
+                                ${escapeHtml(item.reason || '')} · ${escapeHtml(forexOtcFallbackWarning())}.
                             </div>
                         </div>`;
                 }).join('')
@@ -11503,7 +11700,7 @@
         }
 
         async function fetchForexOtcFallbackSnapshots(pairs) {
-            const list = Array.isArray(pairs) ? pairs.filter(Boolean).slice(0,21) : [];
+            const list = Array.isArray(pairs) ? pairs.filter(Boolean).slice(0, forexOtcFallbackPairLimit()) : [];
             if (!list.length) throw new Error('No Forex OTC pair selected.');
 
             const controller = new AbortController();
@@ -11518,6 +11715,7 @@
                         pairs:list,
                         expiry:(typeof selectedExpiry !== 'undefined' ? selectedExpiry : '1m'),
                         market:'ForexOTC',
+                        broker:currentBroker(),
                         ...(typeof getAuthPayload === 'function' ? getAuthPayload() : {})
                     }),
                     cache:'no-store',
@@ -11537,7 +11735,7 @@
             if (!forexOtcFallbackArmed || forexOtcFallbackBusy) return null;
             forexOtcFallbackBusy = true;
 
-            const list = Array.isArray(pairs) ? pairs.filter(Boolean).slice(0,21) : [];
+            const list = Array.isArray(pairs) ? pairs.filter(Boolean).slice(0, forexOtcFallbackPairLimit()) : [];
             const autoBtn = document.getElementById('rajaForexOtcAutoAllBtn');
             const retryBtn = document.getElementById('rajaForexOtcRetryBtn');
             const scanBtn = document.getElementById('scanBtn');
@@ -11569,8 +11767,8 @@
             if (scanBtn) {
                 scanBtn.disabled = true;
                 scanBtn.innerText = autoMode
-                    ? '⚡ FOREX OTC FALLBACK · SCANNING ALL 21...'
-                    : '⚡ FOREX OTC FALLBACK · SCANNING PAIR...';
+                    ? `⚡ ${forexOtcFallbackBrokerLabel()} FOREX OTC FALLBACK · SCANNING ALL ${list.length}...`
+                    : `⚡ ${forexOtcFallbackBrokerLabel()} FOREX OTC FALLBACK · SCANNING PAIR...`;
             }
 
             try {
@@ -11719,7 +11917,7 @@
 
             if (meta) {
                 meta.textContent = mode === 'auto'
-                    ? 'AUTO SCAN ALL 21 selected · use the NORMAL START AI MARKET SCAN button. Fallback stays active until Yahoo recovers.'
+                    ? `${`AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length}`} selected · use the NORMAL START AI MARKET SCAN button. Fallback stays active until Yahoo recovers.`
                     : `${pairEl.value || 'Selected pair'} ready · use the NORMAL START AI MARKET SCAN button. Fallback stays active until Yahoo recovers.`;
             }
 
@@ -11771,7 +11969,7 @@
 
             if (meta) {
                 meta.textContent = mode === 'auto'
-                    ? 'AUTO SCAN ALL 21 selected · press the NORMAL START AI MARKET SCAN button. While Yahoo is unavailable, that button uses Forex OTC fallback. Yahoo recovery switches it back automatically.'
+                    ? `${`AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length}`} selected · press the NORMAL START AI MARKET SCAN button. While Yahoo is unavailable, that button uses Forex OTC fallback. Yahoo recovery switches it back automatically.`
                     : `${pairEl.value || 'Selected pair'} selected · press the NORMAL START AI MARKET SCAN button. While Yahoo is unavailable, that button uses Forex OTC fallback.`;
             }
 
@@ -11817,7 +12015,7 @@
             try { if (typeof syncTargetPairDisplay === 'function') syncTargetPairDisplay(); } catch (_) {}
 
             if (meta) {
-                meta.textContent = 'Starting fallback AUTO SCAN ALL 21 in the normal RAJA AI scanner...';
+                meta.textContent = `Starting ${forexOtcFallbackBrokerName()} fallback AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length} in the normal RAJA AI scanner...`;
             }
 
             // One click = start the normal scan lifecycle immediately.
@@ -11871,6 +12069,7 @@
                         pair,
                         expiry:(typeof selectedExpiry !== 'undefined' ? selectedExpiry : '1m'),
                         market:'ForexOTC',
+                        broker:currentBroker(),
                         ...(typeof getAuthPayload === 'function' ? getAuthPayload() : {})
                     }),
                     cache:'no-store'
@@ -11905,7 +12104,7 @@
             const state = document.getElementById('rajaForexOtcFallbackState');
             const meta = document.getElementById('rajaForexOtcFallbackMeta');
             if (state) state.textContent = 'YAHOO LIVE RESTORED';
-            if (meta) meta.textContent = `Yahoo fresh data restored (${row?.data_age_label || 'fresh'}). JS fallback is switching OFF and normal RAJA AI Yahoo scanning is resuming.`;
+            if (meta) meta.textContent = `Yahoo fresh data restored (${row?.data_age_label || 'fresh'}). ${forexOtcFallbackBrokerName()} fallback is switching OFF and normal RAJA AI Yahoo scanning is resuming.`;
 
             forexOtcFallbackArmed = false;
             forexOtcFallbackReason = '';
@@ -11934,6 +12133,10 @@
         }
 
         function armForexOtcFallback(reason = '') {
+            if (!isForexOtcFallbackBroker(currentBroker())) {
+                disarmForexOtcFallback();
+                return;
+            }
             forexOtcFallbackArmed = true;
             forexOtcFallbackReason = String(reason || 'Yahoo Forex OTC reference data is stale or unavailable.');
 
@@ -11990,7 +12193,8 @@
                 CryptoLive:'Crypto Live',
                 CryptoOTC:'Crypto OTC',
                 ForexLive:'Forex Live',
-                ForexOTC:'Forex OTC'
+                ForexOTC:'Forex OTC',
+                StocksOTC:'Stocks OTC'
             })[market] || market || 'Market';
         }
 
@@ -12000,7 +12204,7 @@
 
         function readStore() {
             try {
-                const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                const value = JSON.parse(localStorage.getItem(brokerStoreKey()) || '{}');
                 return value && typeof value === 'object' ? value : {};
             } catch (_) {
                 return {};
@@ -12008,7 +12212,7 @@
         }
 
         function writeStore(store) {
-            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(store || {})); } catch (_) {}
+            try { localStorage.setItem(brokerStoreKey(), JSON.stringify(store || {})); } catch (_) {}
         }
 
         function isFreshSnapshot(snapshot) {
@@ -12078,11 +12282,23 @@
             }
         }
 
-        async function probeMarket(market, force = false) {
-            const store = readStore();
+        async function probeMarket(market, force = false, brokerAtStart = currentBroker()) {
+            const storeKey = brokerStoreKey(brokerAtStart);
+            const readBrokerStore = () => {
+                try {
+                    const value = JSON.parse(localStorage.getItem(storeKey) || '{}');
+                    return value && typeof value === 'object' ? value : {};
+                } catch (_) { return {}; }
+            };
+            const writeBrokerStore = value => {
+                try { localStorage.setItem(storeKey, JSON.stringify(value || {})); } catch (_) {}
+            };
+
+            const store = readBrokerStore();
             if (!force && isFreshSnapshot(store[market])) return store[market];
 
-            const pairs = getPairsForMarket(market);
+            const rows = brokerData?.[brokerAtStart]?.[market];
+            const pairs = Array.isArray(rows) ? rows.slice(1).filter(Boolean) : [];
             if (!pairs.length) {
                 const empty = {
                     market,
@@ -12093,7 +12309,7 @@
                     message: 'No configured pairs.'
                 };
                 store[market] = empty;
-                writeStore(store);
+                writeBrokerStore(store);
                 return empty;
             }
 
@@ -12109,6 +12325,7 @@
                         expiry: (typeof selectedExpiry !== 'undefined' ? selectedExpiry : '1m'),
                         client_id: (typeof deviceSessionId !== 'undefined' ? deviceSessionId : ''),
                         market,
+                        broker: brokerAtStart,
                         scan_options: (typeof getScanOptions === 'function' ? getScanOptions() : {}),
                         ...(typeof getAuthPayload === 'function' ? getAuthPayload() : {})
                     }),
@@ -12137,13 +12354,13 @@
                     diagnostics: result.diagnostics || null
                 };
 
-                const latest = readStore();
+                const latest = readBrokerStore();
                 latest[market] = snapshot;
-                writeStore(latest);
+                writeBrokerStore(latest);
                 return snapshot;
 
             } catch (error) {
-                const latest = readStore();
+                const latest = readBrokerStore();
                 const old = latest[market];
 
                 // Keep a still-fresh prior result if the background check itself failed.
@@ -12158,7 +12375,7 @@
                     message: String(error?.message || 'Availability check failed.')
                 };
                 latest[market] = snapshot;
-                writeStore(latest);
+                writeBrokerStore(latest);
                 return snapshot;
             } finally {
                 clearTimeout(timeoutId);
@@ -12170,7 +12387,8 @@
         }
 
         function bestAvailableMarket(store) {
-            return MARKETS
+            const markets = marketsForBroker();
+            return markets
                 .map(market => ({ market, snapshot:store[market] }))
                 .filter(item => isFreshSnapshot(item.snapshot) && snapshotReadyCount(item.snapshot) > 0)
                 .sort((a, b) => {
@@ -12201,18 +12419,20 @@
 
             const store = readStore();
             const current = currentMarket();
+            const broker = currentBroker();
+            const markets = marketsForBroker(broker);
 
-            if (marketEl) marketEl.textContent = 'All markets · live freshness check';
+            if (marketEl) marketEl.textContent = `${brokerDisplayName(broker)} markets · live freshness check`;
 
-            const freshRows = MARKETS
+            const freshRows = markets
                 .map(market => ({ market, snapshot:store[market] }))
                 .filter(item => isFreshSnapshot(item.snapshot));
 
             const totalReady = freshRows.reduce((sum, item) => sum + snapshotReadyCount(item.snapshot), 0);
             countEl.textContent = String(totalReady);
 
-            const allFourChecked = MARKETS.every(market => isFreshSnapshot(store[market]));
-            const allFourZeroReady = allFourChecked && MARKETS.every(market => snapshotReadyCount(store[market]) === 0);
+            const allBrokerMarketsChecked = markets.length > 0 && markets.every(market => isFreshSnapshot(store[market]));
+            const allBrokerMarketsZeroReady = allBrokerMarketsChecked && markets.every(market => snapshotReadyCount(store[market]) === 0);
 
             const forexSnapshot = store.ForexOTC;
             const forexChecked = isFreshSnapshot(forexSnapshot);
@@ -12222,6 +12442,7 @@
             // Forex OTC Yahoo scan fails. Do NOT wait for the separate all-market
             // availability checker to finish probing Forex OTC again.
             const forexFallbackVisible =
+                isForexOtcFallbackBroker(broker) &&
                 current === 'ForexOTC' &&
                 forexOtcFallbackArmed;
 
@@ -12237,20 +12458,21 @@
             }
 
             if (forexFallbackVisible) {
+                syncForexOtcFallbackBranding();
                 renderForexOtcFallbackPairs();
                 if (forexRetryBtn) forexRetryBtn.disabled = false;
                 if (forexFallbackMeta && forexOtcFallbackReason && !forexOtcFallbackBusy) {
-                    forexFallbackMeta.textContent = `JS FALLBACK ACTIVE · ${forexOtcFallbackReason} · Reference-based signals are available below while Yahoo auto-recovery runs.`;
+                    forexFallbackMeta.textContent = `${forexOtcFallbackBrokerName()} JS FALLBACK ACTIVE · ${forexOtcFallbackReason} · Reference-based signals are available below while Yahoo auto-recovery runs.`;
                 }
             }
 
             if (fallbackPanel) {
                 // When Forex OTC was explicitly scanned and failed because reference data
                 // is stale/unavailable, its dedicated in-app panel takes priority.
-                fallbackPanel.style.display = (!checkingMarkets.size && allFourZeroReady && !forexFallbackVisible) ? 'block' : 'none';
+                fallbackPanel.style.display = (broker === 'Quotex' && !checkingMarkets.size && allBrokerMarketsZeroReady && !forexFallbackVisible) ? 'block' : 'none';
             }
 
-            if (!checkingMarkets.size && allFourZeroReady) {
+            if (broker === 'Quotex' && !checkingMarkets.size && allBrokerMarketsZeroReady) {
                 loadOtcFallbackConfig(false).then(cfg => {
                     if (fallbackMeta) {
                         fallbackMeta.textContent = cfg?.companion_connected
@@ -12292,7 +12514,7 @@
                 if (refreshBtn) refreshBtn.disabled = false;
             }
 
-            listEl.innerHTML = MARKETS.map(market => {
+            listEl.innerHTML = markets.map(market => {
                 const snap = store[market];
                 const isChecking = checkingMarkets.has(market);
                 const fresh = isFreshSnapshot(snap);
@@ -12343,15 +12565,17 @@
             if (refreshPromise && !force) return refreshPromise;
 
             const generation = ++refreshGeneration;
-            const checking = new Set(MARKETS);
+            const brokerAtStart = currentBroker();
+            const markets = marketsForBroker(brokerAtStart);
+            const checking = new Set(markets);
             render(checking);
 
             refreshPromise = (async () => {
                 // Two at a time keeps free hosting / shared backend load controlled.
-                for (let i = 0; i < MARKETS.length; i += 2) {
-                    const batch = MARKETS.slice(i, i + 2);
+                for (let i = 0; i < markets.length; i += 2) {
+                    const batch = markets.slice(i, i + 2);
                     await Promise.all(batch.map(async market => {
-                        await probeMarket(market, force);
+                        await probeMarket(market, force, brokerAtStart);
                         if (generation === refreshGeneration) {
                             checking.delete(market);
                             render(checking);
@@ -12371,7 +12595,7 @@
         function switchMarketToAutoScan(market) {
             const marketSelect = document.getElementById('marketType');
             const pairSelect = document.getElementById('pairSelect');
-            if (!marketSelect || !pairSelect || !MARKETS.includes(market)) return false;
+            if (!marketSelect || !pairSelect || !marketsForBroker().includes(market)) return false;
 
             marketSelect.value = market;
             try { updatePairs(); } catch (_) {}
@@ -12503,6 +12727,21 @@
                 forexSettingsBtn.addEventListener('click', openForexOtcFallbackSettings);
             }
 
+            const brokerSelect = document.getElementById('brokerSelect');
+            if (brokerSelect && !brokerSelect.dataset.rajaBrokerSwitchBound) {
+                brokerSelect.dataset.rajaBrokerSwitchBound = '1';
+                brokerSelect.addEventListener('change', () => {
+                    try { disarmForexOtcFallback(); } catch (_) {}
+                    forexOtcFallbackSelectedPair = '';
+                    refreshGeneration += 1;
+                    refreshPromise = null;
+                    setTimeout(() => {
+                        try { setScanningMarketBadge(currentMarket()); } catch (_) {}
+                        try { render(new Set()); } catch (_) {}
+                    }, 0);
+                });
+            }
+
             const marketSelect = document.getElementById('marketType');
             if (marketSelect && !marketSelect.dataset.rajaFallbackBound) {
                 marketSelect.dataset.rajaFallbackBound = '1';
@@ -12516,6 +12755,15 @@
 
             try { setScanningMarketBadge(currentMarket()); } catch (_) {}
         }
+
+        window.rajaOnBrokerChanged = () => {
+            try { disarmForexOtcFallback(); } catch (_) {}
+            forexOtcFallbackSelectedPair = '';
+            refreshGeneration += 1;
+            refreshPromise = null;
+            try { setScanningMarketBadge(currentMarket()); } catch (_) {}
+            try { render(new Set()); } catch (_) {}
+        };
 
         window.rajaSetScanningMarketBadge = setScanningMarketBadge;
         window.rajaRefreshAvailableMarkets = refreshAllMarkets;
