@@ -5174,9 +5174,6 @@
     <div class="container">
         <h2>RAJA AI PREMIUM - PREMIUM UI V13</h2>
         
-        <div class="market-notice">
-            💡 Best Market Hours: 9:00 AM – 5:00 PM  🚫 Avoid Trade on Saturday and Sunday
-        </div>
 
         <div id="activationScreen" style="display: block; text-align: center;">
             <h3 style="color: #fff; font-size: 13px; margin-bottom: 10px; font-weight: 800;">Welcome to Multi-Broker AI Service.</h3>
@@ -5221,7 +5218,136 @@
             <div id="verifyMessage" style="font-size: 11px; font-weight: 900; margin-top: 8px; display: none; padding: 6px; border-radius: 5px;"></div>
         </div>
 
-        <div id="mainAppContent" style="display: none;">
+        
+<div id="mainAppContent" style="display: none;">
+    <section id="rajaOption2Dashboard" class="raja-o2-dashboard" aria-label="RAJA AI main dashboard">
+        <header class="raja-o2-header">
+            <div class="raja-o2-brand"><span class="raja-o2-mark">RA</span><span><b>RAJA AI</b><small>PREMIUM</small></span></div>
+            <div class="raja-o2-status-strip">
+                <div><span>SESSION</span><b id="o2Session">--</b></div>
+                <div><span>MARKET</span><b id="o2MarketStatus">CRYPTO LIVE</b></div>
+                <div><span>DATA</span><b id="o2DataStatus">YAHOO LIVE</b></div>
+                <div><span>LATENCY</span><b id="o2Latency">--</b></div>
+                <div><span>RISK MODE</span><b id="o2RiskMode">SAFE</b></div>
+            </div>
+            <div class="raja-o2-header-actions">
+                <button id="o2SoundBtn" type="button" onclick="toggleSound();rajaO2SyncAll()" title="Sound">🔊</button>
+                <button type="button" onclick="installPWA()" title="Install App">⬇</button>
+                <button type="button" onclick="logoutSession()" title="Logout">⏻</button>
+            </div>
+        </header>
+
+        <div class="raja-o2-top">
+            <section class="raja-o2-card raja-o2-broker">
+                <h4>BROKER & MARKET</h4>
+                <select id="o2BrokerSelect" onchange="rajaO2BrokerChanged(this.value)"></select>
+                <select id="o2MarketSelect" onchange="rajaO2MarketChanged(this.value)"></select>
+            </section>
+            <section class="raja-o2-card raja-o2-ai">
+                <div class="raja-o2-ai-ring"><span>RA</span></div>
+                <div><h4>AI STATUS</h4><strong id="o2AiState">AI ACTIVE</strong><small id="o2AiSub">SCANNING READY</small></div>
+            </section>
+            <section class="raja-o2-card raja-o2-presets">
+                <h4>QUICK PRESETS</h4>
+                <div>
+                    <button data-mode="SAFE" onclick="rajaO2SetMode('SAFE')">🛡 SAFE</button>
+                    <button data-mode="BALANCED" onclick="rajaO2SetMode('BALANCED')">⚖ BALANCED</button>
+                    <button data-mode="AGGRESSIVE" onclick="rajaO2SetMode('AGGRESSIVE')">🚀 AGGRESSIVE</button>
+                    <button data-mode="CUSTOM" onclick="rajaO2SetMode('CUSTOM')">⚙ CUSTOM</button>
+                </div>
+            </section>
+        </div>
+
+        <div class="raja-o2-controls">
+            <section class="raja-o2-card raja-o2-pair">
+                <h4>SELECT PAIR / ASSET</h4>
+                <select id="o2PairSelect" onchange="rajaO2PairChanged(this.value)"></select>
+            </section>
+            <section class="raja-o2-card raja-o2-expiry">
+                <h4>SELECT EXPIRY</h4>
+                <div class="raja-o2-expiry-grid">
+                    <div><small>FAST</small><span><button data-time="1m" onclick="rajaO2SetExpiry('1m')">1M</button><button data-time="2m" onclick="rajaO2SetExpiry('2m')">2M</button><button data-time="5m" onclick="rajaO2SetExpiry('5m')">5M</button></span></div>
+                    <div><small>TREND</small><span><button data-time="10m" onclick="rajaO2SetExpiry('10m')">10M</button><button data-time="15m" onclick="rajaO2SetExpiry('15m')">15M</button><button data-time="30m" onclick="rajaO2SetExpiry('30m')">30M</button></span></div>
+                    <div><small>SWING</small><span><button data-time="1h" onclick="rajaO2SetExpiry('1h')">1H</button><button data-time="2h" onclick="rajaO2SetExpiry('2h')">2H</button><button data-time="5h" onclick="rajaO2SetExpiry('5h')">5H</button></span></div>
+                </div>
+            </section>
+        </div>
+
+        <button id="o2DeepScanBtn" class="raja-o2-scan" type="button" onclick="playClickSound();startDeepScan(false)">
+            🚀 START AI DEEP SCAN <small>AI MULTI-TIMEFRAME ENGINE · LIVE DATA</small>
+        </button>
+
+        <div class="raja-o2-main-grid">
+            <section class="raja-o2-card raja-o2-progress">
+                <h4>AI LIVE SCAN PROGRESS</h4>
+                <div id="o2ProgressSteps">
+                    <div data-stage="12"><span>Fetching candles</span><b>○</b></div>
+                    <div data-stage="28"><span>Trend analysis</span><b>○</b></div>
+                    <div data-stage="44"><span>Momentum check</span><b>○</b></div>
+                    <div data-stage="58"><span>Volatility check</span><b>○</b></div>
+                    <div data-stage="72"><span>Multi-TF confirmation</span><b>○</b></div>
+                    <div data-stage="86"><span>Ranking best pairs</span><b>○</b></div>
+                </div>
+                <div class="raja-o2-progress-meter"><i id="o2ProgressBar"></i></div>
+                <strong id="o2ProgressLabel">READY</strong>
+            </section>
+
+            <section id="o2SignalCard" class="raja-o2-card raja-o2-signal ready">
+                <div class="raja-o2-signal-head"><span><i></i> ACTIVE SIGNAL</span><b id="o2SignalGrade">READY</b></div>
+                <div class="raja-o2-signal-core">
+                    <div class="raja-o2-direction"><span id="o2DirectionIcon">◎</span><strong id="o2Direction">READY</strong></div>
+                    <div class="raja-o2-signal-copy">
+                        <h2 id="o2SignalPair">SELECT A MARKET</h2>
+                        <h3 id="o2SignalSetup">AI SCAN READY</h3>
+                        <div id="o2BestExpiry">BEST EXPIRY: --</div>
+                    </div>
+                    <div class="raja-o2-entry"><small>ENTER IN</small><strong id="o2EntryCountdown">--:--</strong></div>
+                </div>
+                <div class="raja-o2-metrics">
+                    <div><span>TF AGREEMENT</span><b id="o2Agreement">--</b></div>
+                    <div><span>STABILITY</span><b id="o2Stability">--</b></div>
+                    <div><span>TECH SCORE</span><b id="o2TechScore">--</b></div>
+                    <div><span>RISK LEVEL</span><b id="o2RiskLevel">--</b></div>
+                </div>
+                <div class="raja-o2-signal-foot">
+                    <div><span>SOURCE</span><b id="o2Source">--</b></div>
+                    <div><span>MODE</span><b id="o2Mode">SAFE</b></div>
+                    <div><span>TIMEFRAME</span><b id="o2TfCount">6 CORE</b></div>
+                    <div><span>PAIR LOCK</span><b id="o2PairLock">READY</b></div>
+                </div>
+            </section>
+
+            <section class="raja-o2-card raja-o2-overview">
+                <h4>MARKET OVERVIEW</h4>
+                <div><span>MARKET QUALITY</span><b id="o2Quality">READY</b></div>
+                <div><span>VOLATILITY</span><b id="o2Volatility">--</b></div>
+                <div><span>TREND STRENGTH</span><b id="o2Trend">--</b></div>
+                <div><span>DATA RELIABILITY</span><b id="o2Reliability">CHECKING</b></div>
+                <small id="o2LastUpdate">Waiting for scan</small>
+            </section>
+        </div>
+
+        <div class="raja-o2-bottom">
+            <section class="raja-o2-card raja-o2-top3">
+                <h4>TOP 3 AI RECOMMENDATIONS</h4>
+                <div id="o2Top3"><div class="raja-o2-empty">Run Auto Scan to rank opportunities.</div></div>
+            </section>
+            <section class="raja-o2-card raja-o2-stats">
+                <div><span>SIGNALS TODAY</span><b id="o2StatSignals">0</b></div>
+                <div><span>WIN / LOSS</span><b id="o2StatWL">0 / 0</b></div>
+                <div><span>BEST SESSION</span><b id="o2StatSession">--</b></div>
+            </section>
+        </div>
+
+        <nav class="raja-o2-nav">
+            <button class="active" onclick="showDefaultView()">⌂<span>HOME</span></button>
+            <button onclick="document.getElementById('o2DeepScanBtn')?.click()">◎<span>SCAN</span></button>
+            <button class="center" onclick="document.getElementById('o2SignalCard')?.focus?.()">◉<span>SIGNAL</span></button>
+            <button onclick="openHistoryInline()">◷<span>HISTORY</span></button>
+            <button onclick="openSettingsInline()">⚙<span>SETTINGS</span></button>
+        </nav>
+    </section>
+
 
             <div id="rajaMobileConfigBackdrop" class="raja-mobile-config-backdrop" aria-hidden="true"></div>
             <div id="rajaMobileCommandBar" class="raja-mobile-command-bar" role="region" aria-label="Quick trading controls">
@@ -5258,7 +5384,7 @@
                     </div>
                     <div class="engine-mini">
                         <div>AI Engine Status <strong>LIVE</strong></div>
-                        <div>Engine: Multi-TF 4-of-6</div>
+                        <div>Engine: 6-Core + Swing Confirm</div>
                         <div id="rajaEngineSourceText">Source: AUTO · Yahoo → Twelve Data</div>
                         <div>Re-scan interval: <strong>5 min</strong></div>
                     </div>
@@ -5266,7 +5392,7 @@
 
                 <main class="main-column">
                     <div class="dashboard-topbar">
-                        <div class="market-banner">💡 Best Market Hours: <strong>9:00 AM – 5:00 PM</strong>  🚫 <strong>Avoid Trade on Saturday and Sunday</strong></div>
+                        
                         <div class="top-actions">
                             <div id="scanSessionChip" class="scan-session-chip"><span class="session-pulse"></span><span id="scanSessionText">Scan Session Active · 0%</span></div>
                             <button class="rescan-card" id="autoRescanCard" onclick="toggleAutoRescan()">
@@ -5721,8 +5847,20 @@
                                 </div>
                             </div>
 
-                            <div id="historyInlineView" class="inline-content-view">
-                                <div class="inline-title">📊 Live Signal History</div><div id="historyListBox" class="inline-list-box"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                            <div id="historyInlineView" class="inline-content-view raja-history-pro">
+                                <div class="inline-title">📊 TRADE HISTORY & OUTCOMES</div>
+                                <div class="raja-history-toolbar">
+                                    <div class="raja-history-filters">
+                                        <button class="raja-history-filter active" data-filter="ALL" onclick="setRajaHistoryFilter('ALL',this)">ALL</button>
+                                        <button class="raja-history-filter" data-filter="WIN" onclick="setRajaHistoryFilter('WIN',this)">WINS</button>
+                                        <button class="raja-history-filter" data-filter="LOSS" onclick="setRajaHistoryFilter('LOSS',this)">LOSSES</button>
+                                        <button class="raja-history-filter" data-filter="PENDING" onclick="setRajaHistoryFilter('PENDING',this)">PENDING</button>
+                                    </div>
+                                    <input id="rajaHistorySearch" class="raja-history-search" type="search" placeholder="Search pair..." oninput="renderHistoryList()">
+                                </div>
+                                <div id="rajaHistorySummary" class="raja-history-summary">Loading history…</div>
+                                <div id="historyListBox" class="inline-list-box raja-history-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div>
+                                <button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             </div>
                             <div id="replayInlineView" class="inline-content-view">
                                 <div class="replay-header"><div class="inline-title" style="margin:0;">🎬 Signal Replay</div><button class="menu-back-btn" onclick="openHistoryInline()">← History</button></div>
@@ -5740,7 +5878,24 @@
                                 <div class="inline-title">⚙️ AI Engine Settings</div>
                                 <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
                                 <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
-                                <div class="settings-section"><h4>Voice Alerts</h4><div class="switch-row"><span>Speak signal aloud (example: “USD CAD, Down signal, one minute”)</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div></div>
+                                <div class="settings-section raja-sound-center">
+                                    <h4>🔊 Sound & Voice Center</h4>
+                                    <div class="switch-row"><span>Master Sound</span><input id="rajaMasterSound" type="checkbox" checked onchange="saveRajaSoundCenter()"></div>
+                                    <div class="switch-row"><span>Speak confirmed signals aloud</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked);saveRajaSoundCenter()"></div>
+                                    <div class="switch-row"><span>Quiet Mode · only signal + entry alerts</span><input id="rajaQuietMode" type="checkbox" onchange="saveRajaSoundCenter()"></div>
+                                    <div class="raja-sound-grid">
+                                        <label>Voice Volume <input id="rajaVoiceVolume" type="range" min="0" max="100" value="75" oninput="saveRajaSoundCenter()"><b id="rajaVoiceVolumeValue">75%</b></label>
+                                        <label>Alert Volume <input id="rajaAlertVolume" type="range" min="0" max="100" value="55" oninput="saveRajaSoundCenter()"><b id="rajaAlertVolumeValue">55%</b></label>
+                                        <label>Voice Speed <select id="rajaVoiceSpeed" onchange="saveRajaSoundCenter()"><option value="0.82">Slow</option><option value="1" selected>Normal</option><option value="1.18">Fast</option></select></label>
+                                        <label>Voice <select id="rajaVoiceGender" onchange="saveRajaSoundCenter()"><option value="auto">Auto</option><option value="female">Female</option><option value="male">Male</option></select></label>
+                                    </div>
+                                    <div class="raja-sound-tests">
+                                        <button type="button" onclick="testRajaCallSound()">TEST CALL</button>
+                                        <button type="button" onclick="testRajaPutSound()">TEST PUT</button>
+                                        <button type="button" onclick="testRajaVoice()">TEST VOICE</button>
+                                    </div>
+                                    <div class="app-feature-status">CALL rising tone · PUT falling tone · A+ double alert · entry countdown · expiry · WIN/LOSS chimes.</div>
+                                </div>
 
                                 <div class="settings-section">
                                     <h4>Appearance & Safety</h4>
@@ -5845,7 +6000,7 @@
 
                     <div class="status-grid">
                         <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><span class="selected-pair-label">SELECTED TARGET PAIR</span><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
-                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="v23BaseFeed">Auto · Yahoo → Twelve</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Core + Swing</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="v23BaseFeed">Auto · Yahoo → Twelve</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
                     </div>
 
                     <section class="upgrade-card" id="dailyPerformancePanel">
@@ -5875,7 +6030,12 @@
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
                                 <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: 5-of-6, stronger agreement and higher score threshold.</div></div>
-                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: base market feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: base market feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
+                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label>
+<div class="raja-expiry-groups">
+  <div class="raja-expiry-group"><small>FAST</small><div class="expiry-container"><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1M</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2M</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5M</button></div></div>
+  <div class="raja-expiry-group"><small>TREND</small><div class="expiry-container"><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10M</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15M</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30M</button></div></div>
+  <div class="raja-expiry-group swing"><small>SWING</small><div class="expiry-container"><button class="expiry-btn" data-time="1h" onclick="playClickSound(); setExpiry(this,'1h')">1H</button><button class="expiry-btn" data-time="2h" onclick="playClickSound(); setExpiry(this,'2h')">2H</button><button class="expiry-btn" data-time="5h" onclick="playClickSound(); setExpiry(this,'5h')">5H</button></div></div>
+</div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button></div>
                             </div>
                         </div>
@@ -6812,7 +6972,7 @@
             let messageIndex = 0;
             const messages = [
                 'Synchronizing closed 1m candles...',
-                'Building 2m / 5m / 10m / 15m / 30m structures...',
+                'Building core + swing timeframe structures...',
                 'Checking RSI, EMA, MACD and Bollinger alignment...',
                 'Evaluating trend, momentum and volatility filters...',
                 'Scanning eligible assets for multi-TF convergence...',
@@ -7877,14 +8037,15 @@
         }
 
         function getExpirySeconds(expiryStr) {
-            if (expiryStr === "15s") return 15;
-            if (expiryStr === "30s") return 30;
             if (expiryStr === "1m") return 60;
             if (expiryStr === "2m") return 120;
             if (expiryStr === "5m") return 300;
             if (expiryStr === "10m") return 600;
             if (expiryStr === "15m") return 900;
             if (expiryStr === "30m") return 1800;
+            if (expiryStr === "1h") return 3600;
+            if (expiryStr === "2h") return 7200;
+            if (expiryStr === "5h") return 18000;
             return 60;
         }
 
@@ -7989,7 +8150,7 @@
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used),bestExpiry:data.best_expiry||data.selected_expiry||selectedExpiry,swingConfirmation:data.swing_confirmation||null};
         }
 
 
@@ -8637,6 +8798,7 @@
                         volatility_pct: signalData.volatilityPct,
                         scan_mode: signalData.scanMode,
                         market: document.getElementById('marketType')?.value || '',
+                        broker: document.getElementById('brokerSelect')?.value || 'Quotex',
                         source: signalData.source || 'Yahoo Finance',
                         source_mode: signalData.sourceMode || '',
                         provider_symbol: signalData.providerSymbol || '',
@@ -8700,7 +8862,7 @@
             const line = document.getElementById('tfSummaryLine');
             if (!box || !line) return;
             const summary = signalData.timeframeSummary || {};
-            const order = ['1m','2m','5m','10m','15m','30m'];
+            const order = ['1m','2m','5m','10m','15m','30m','1h','2h','5h'];
             box.innerHTML = order.map(tf => {
                 const item = summary[tf] || {};
                 const sig = item.signal || 'NO SIGNAL';
@@ -8995,7 +9157,7 @@
         }
 
         function openSignalReplay(signalId) {
-            const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');replayPlaybackItem=item;replayPlaybackIndex=Math.min(Math.max(4,(item.chart_preview||[]).length>4?4:(item.chart_preview||[]).length),(item.chart_preview||[]).length);replayPause();renderReplayFrame();
+            const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m','1h','2h','5h'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');replayPlaybackItem=item;replayPlaybackIndex=Math.min(Math.max(4,(item.chart_preview||[]).length>4?4:(item.chart_preview||[]).length),(item.chart_preview||[]).length);replayPause();renderReplayFrame();
         }
 
         async function openProfileInline(){currentSection='profile';hideAllHudViews();document.getElementById('profileInlineView').style.display='block';await loadUserProfile();}
@@ -9094,14 +9256,14 @@
             const p=Math.max(0,Math.min(100,Math.round(Number(signalData?.confluence||0)))); const isBuy=String(signalData?.dir||'').includes('CALL');
             document.getElementById('setupBuildScore').innerText=p+'%'; document.getElementById('setupBuildState').innerText='CONFIRMED';
             ['buildStageTrend','buildStageMomentum','buildStageVolatility','buildStageTf','buildStageExpiry'].forEach(id=>document.getElementById(id)?.classList.add('done'));
-            const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;}; set('buildTrendText',isBuy?'Bullish':'Bearish'); set('buildMomentumText',p>=85?'Very Strong':(p>=70?'Strong':'Moderate')); set('buildVolatilityText',String(signalData?.marketRiskLevel||'NORMAL')); set('buildTfText',`${(signalData?.alignedTimeframes||[]).length||'--'}/6`); set('buildExpiryText',selectedExpiry+' ✓');
+            const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;}; set('buildTrendText',isBuy?'Bullish':'Bearish'); set('buildMomentumText',p>=85?'Very Strong':(p>=70?'Strong':'Moderate')); set('buildVolatilityText',String(signalData?.marketRiskLevel||'NORMAL')); set('buildTfText',`${(signalData?.alignedTimeframes||[]).length||'--'} aligned`); set('buildExpiryText',selectedExpiry+' ✓');
         }
 
         function renderSignalIntelligence(signalData) {
             if(!signalData)return; updateSetupBuildMeterSignal(signalData);
             const isBuy=String(signalData.dir||'').includes('CALL'), conf=Number(signalData.confluence||0), agreement=Number(signalData.multiTfAgreement||0), aligned=(signalData.alignedTimeframes||[]).length, risk=String(signalData.marketRiskLevel||'--').toUpperCase(), vol=Number(signalData.volatilityPct||0);
             const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;};
-            set('explainTrend',isBuy?'Bullish':'Bearish'); set('explainTrendSub',isBuy?'Higher-TF bias points upward':'Higher-TF bias points downward'); set('explainMomentum',conf>=85?'Very Strong':(conf>=70?'Strong':'Moderate')); set('explainMomentumSub',`Technical confluence ${conf.toFixed(1)}%`); set('explainAgreement',`${aligned||'--'}/6 · ${agreement.toFixed(0)}%`); set('explainAgreementSub','Aligned valid timeframes'); set('explainExpiry',`${selectedExpiry} Confirmed`); set('explainExpirySub','Selected expiry timeframe aligned'); set('explainVolatility',risk==='LOW'?'Normal / Stable':(risk==='MEDIUM'?'Moderate':'Elevated')); set('explainVolatilitySub',`ATR ${vol.toFixed(4)}% · Risk ${risk}`);
+            set('explainTrend',isBuy?'Bullish':'Bearish'); set('explainTrendSub',isBuy?'Higher-TF bias points upward':'Higher-TF bias points downward'); set('explainMomentum',conf>=85?'Very Strong':(conf>=70?'Strong':'Moderate')); set('explainMomentumSub',`Technical confluence ${conf.toFixed(1)}%`); set('explainAgreement',`${aligned||'--'} aligned · ${agreement.toFixed(0)}%`); set('explainAgreementSub','Aligned valid timeframes'); set('explainExpiry',`${selectedExpiry} Confirmed`); set('explainExpirySub','Selected expiry timeframe aligned'); set('explainVolatility',risk==='LOW'?'Normal / Stable':(risk==='MEDIUM'?'Moderate':'Elevated')); set('explainVolatilitySub',`ATR ${vol.toFixed(4)}% · Risk ${risk}`);
             set('aiExplanationSummary',`${isBuy?'BUY':'SELL'} setup confirmed because the dominant trend, momentum, multi-timeframe agreement and selected ${selectedExpiry} expiry are aligned. This is a technical model assessment, not a guaranteed outcome.`);
             renderOpportunityQueue();
         }
@@ -13185,6 +13347,510 @@ document.addEventListener('click', function (event) {
 document.addEventListener('keydown', function (event) {
   if (event.key === 'Escape') closeRajaInstallModal();
 });
+</script>
+
+
+<style id="raja-option2-final-ui">
+/* FINAL OPTION 2 — viewport dashboard */
+.market-notice,.market-banner{display:none!important}
+.raja-o2-dashboard{display:none;flex-direction:column;width:100%;height:calc(100dvh - 12px);max-height:1080px;min-height:520px;overflow:hidden;background:
+radial-gradient(circle at 62% 34%,rgba(0,255,135,.055),transparent 28%),
+linear-gradient(180deg,#020812,#02060d);border:1px solid rgba(64,215,240,.18);border-radius:16px;padding:10px;gap:8px;color:#eafaff}
+.raja-o2-dashboard *{box-sizing:border-box}
+.raja-o2-card{background:linear-gradient(180deg,rgba(4,17,31,.96),rgba(2,10,20,.96));border:1px solid rgba(82,219,239,.18);border-radius:12px;box-shadow:inset 0 0 24px rgba(15,220,255,.025)}
+.raja-o2-card h4{font-size:9px;line-height:1;color:#55e9ff;letter-spacing:.5px;margin:0 0 7px;text-transform:uppercase}
+.raja-o2-header{position:relative;height:48px;display:grid;grid-template-columns:170px 1fr 110px;gap:8px;align-items:center;border-bottom:1px solid rgba(82,219,239,.12);padding:0 5px}
+.raja-o2-brand{display:flex;align-items:center;gap:8px}.raja-o2-mark{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,#10e4c0,#4fc3ff);color:#03131b;font-weight:950;font-size:15px;box-shadow:0 0 18px rgba(20,241,174,.26)}
+.raja-o2-brand b{display:block;font-size:13px;letter-spacing:.7px}.raja-o2-brand small{display:block;font-size:7px;color:#66f4de;letter-spacing:1.4px}
+.raja-o2-status-strip{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));height:38px}.raja-o2-status-strip div{display:flex;flex-direction:column;align-items:center;justify-content:center;border-left:1px solid rgba(255,255,255,.05)}
+.raja-o2-status-strip span{font-size:6px;color:#7993a9;font-weight:800}.raja-o2-status-strip b{font-size:8px;color:#19efb0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.raja-o2-header-actions{display:flex;gap:6px;justify-content:flex-end}.raja-o2-header-actions button{width:31px;height:31px;border-radius:9px;border:1px solid rgba(85,233,255,.2);background:#061423;color:#dffaff;cursor:pointer}
+.raja-o2-top{display:grid;grid-template-columns:1.05fr 1fr 1.35fr;gap:8px;height:104px}.raja-o2-top>.raja-o2-card{padding:10px}
+.raja-o2-broker{display:grid;grid-template-columns:1fr 1fr;gap:7px;align-content:center}.raja-o2-broker h4{grid-column:1/-1}.raja-o2-broker select,.raja-o2-pair select{min-height:32px;background:#03101c;border:1px solid rgba(85,233,255,.18);border-radius:8px;color:#fff;font-size:9px;padding:5px}
+.raja-o2-ai{display:flex;align-items:center;justify-content:center;gap:15px}.raja-o2-ai-ring{width:70px;height:70px;border-radius:50%;display:grid;place-items:center;border:2px solid #13efad;box-shadow:0 0 20px rgba(20,241,174,.28),inset 0 0 22px rgba(20,241,174,.12)}.raja-o2-ai-ring span{font-weight:950;color:#17efad}
+.raja-o2-ai strong{display:block;color:#13efad;font-size:15px}.raja-o2-ai small{font-size:7px;color:#42efc7}
+.raja-o2-presets>div{display:grid;grid-template-columns:1fr 1fr;gap:6px}.raja-o2-presets button{height:30px;border-radius:8px;border:1px solid rgba(83,177,255,.18);background:#061423;color:#b9cfdf;font-size:8px;font-weight:900;cursor:pointer}.raja-o2-presets button.active{color:#17efad;border-color:rgba(20,241,174,.48);background:rgba(20,241,174,.08)}
+.raja-o2-controls{display:grid;grid-template-columns:.75fr 1.55fr;gap:8px;height:88px}.raja-o2-controls>.raja-o2-card{padding:10px}.raja-o2-pair{display:flex;flex-direction:column}.raja-o2-pair select{flex:1}
+.raja-o2-expiry-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;height:52px}.raja-o2-expiry-grid>div{min-width:0}.raja-o2-expiry-grid small{display:block;text-align:center;color:#7f96aa;font-size:6px;margin-bottom:4px}.raja-o2-expiry-grid span{display:grid;grid-template-columns:repeat(3,1fr);gap:3px}.raja-o2-expiry-grid button{height:32px;border:1px solid rgba(83,177,255,.22);border-radius:7px;background:#06111f;color:#dcefff;font-size:8px;font-weight:900;cursor:pointer}.raja-o2-expiry-grid>div:nth-child(1) button{border-color:rgba(20,241,174,.24)}.raja-o2-expiry-grid>div:nth-child(3) button{border-color:rgba(196,92,255,.32)}.raja-o2-expiry-grid button.active{background:linear-gradient(180deg,#0f5d42,#072d25);border-color:#13efad;color:#eafff8;box-shadow:0 0 14px rgba(20,241,174,.22)}
+.raja-o2-scan{height:52px;border:0;border-radius:11px;background:linear-gradient(100deg,#10dda8,#34c9df,#7c4dff);color:white;font-size:14px;font-weight:950;letter-spacing:.4px;cursor:pointer;box-shadow:0 0 24px rgba(62,194,255,.18)}.raja-o2-scan small{display:block;font-size:6px;opacity:.74;margin-top:2px;letter-spacing:.8px}
+.raja-o2-main-grid{display:grid;grid-template-columns:.62fr 1.95fr .72fr;gap:8px;min-height:0;flex:1}.raja-o2-main-grid>.raja-o2-card{padding:10px;min-height:0}
+.raja-o2-progress{display:flex;flex-direction:column}.raja-o2-progress #o2ProgressSteps{display:grid;gap:4px;flex:1;align-content:center}.raja-o2-progress #o2ProgressSteps div{display:flex;justify-content:space-between;color:#a9bdcc;font-size:8px;padding:3px 2px}.raja-o2-progress #o2ProgressSteps b.done{color:#16efad}.raja-o2-progress-meter{height:6px;border-radius:5px;background:#071828;overflow:hidden}.raja-o2-progress-meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#16efad,#55e9ff);transition:.2s}.raja-o2-progress>strong{text-align:center;color:#55e9ff;font-size:8px;margin-top:6px}
+.raja-o2-signal{border-color:rgba(20,241,174,.32);box-shadow:0 0 22px rgba(20,241,174,.07),inset 0 0 30px rgba(20,241,174,.035);display:grid;grid-template-rows:24px 1fr auto auto;overflow:hidden}.raja-o2-signal.put{border-color:rgba(255,81,120,.45);box-shadow:0 0 24px rgba(255,81,120,.09)}.raja-o2-signal-head{display:flex;justify-content:space-between;align-items:center;font-size:8px;font-weight:900}.raja-o2-signal-head span{color:#cdeee8}.raja-o2-signal-head i{display:inline-block;width:7px;height:7px;border-radius:50%;background:#14f1ae;box-shadow:0 0 12px #14f1ae;margin-right:5px}.raja-o2-signal.put .raja-o2-signal-head i{background:#ff5178;box-shadow:0 0 12px #ff5178}.raja-o2-signal-head b{color:#14f1ae}
+.raja-o2-signal-core{display:grid;grid-template-columns:.65fr 1.5fr .65fr;align-items:center;gap:8px;min-height:0}.raja-o2-direction{text-align:center}.raja-o2-direction span{font-size:42px;color:#14f1ae;filter:drop-shadow(0 0 12px rgba(20,241,174,.34))}.raja-o2-direction strong{display:block;font-size:21px;color:#14f1ae}.raja-o2-signal.put .raja-o2-direction span,.raja-o2-signal.put .raja-o2-direction strong,.raja-o2-signal.put .raja-o2-signal-copy h3{color:#ff5178}
+.raja-o2-signal-copy{text-align:center}.raja-o2-signal-copy h2{font-size:25px;background:none;-webkit-text-fill-color:initial;color:#fff;margin:0 0 4px}.raja-o2-signal-copy h3{font-size:13px;color:#14f1ae;margin:0 0 7px}.raja-o2-signal-copy div{display:inline-block;padding:5px 20px;border-radius:7px;background:rgba(20,241,174,.09);color:#14f1ae;font-size:10px;font-weight:900}
+.raja-o2-entry{width:92px;height:92px;border-radius:50%;border:2px solid rgba(20,241,174,.65);display:grid;place-items:center;align-content:center;justify-self:center;box-shadow:inset 0 0 18px rgba(20,241,174,.09)}.raja-o2-entry small{font-size:7px;color:#c6d8e4}.raja-o2-entry strong{font-size:20px;color:#14f1ae}
+.raja-o2-metrics,.raja-o2-signal-foot{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.raja-o2-metrics div,.raja-o2-signal-foot div{background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.05);border-radius:7px;padding:5px;text-align:center}.raja-o2-metrics span,.raja-o2-signal-foot span{display:block;font-size:5.5px;color:#70899e}.raja-o2-metrics b{font-size:11px;color:#55e9ff}.raja-o2-signal-foot{margin-top:5px}.raja-o2-signal-foot b{font-size:7px;color:#d8edf8}.raja-o2-signal-foot div:nth-child(2) b{color:#14f1ae}
+.raja-o2-overview{display:grid;grid-template-rows:auto repeat(4,1fr) auto}.raja-o2-overview>div{border-bottom:1px solid rgba(255,255,255,.05);display:flex;flex-direction:column;justify-content:center}.raja-o2-overview span{font-size:6px;color:#768fa3}.raja-o2-overview b{font-size:10px;color:#14f1ae;margin-top:3px}.raja-o2-overview>div:nth-of-type(2) b{color:#f7d36a}.raja-o2-overview small{font-size:6px;color:#728ca0;padding-top:5px}
+.raja-o2-bottom{display:grid;grid-template-columns:1.6fr .85fr;gap:8px;height:104px}.raja-o2-bottom>.raja-o2-card{padding:9px}.raja-o2-top3 #o2Top3{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.raja-o2-rank{display:grid;grid-template-columns:22px 1fr 35px;gap:5px;align-items:center;background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.05);border-radius:7px;padding:5px}.raja-o2-rank>span{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#f0b831;color:#07101a;font-weight:950;font-size:8px}.raja-o2-rank strong{font-size:8px}.raja-o2-rank small{display:block;color:#7f96aa;font-size:5.5px}.raja-o2-rank b{color:#14f1ae;font-size:9px}.raja-o2-empty{color:#70899e;font-size:8px;padding:12px}
+.raja-o2-stats{display:grid;grid-template-columns:repeat(3,1fr);align-items:center}.raja-o2-stats div{text-align:center}.raja-o2-stats span{display:block;font-size:5.5px;color:#748da1}.raja-o2-stats b{display:block;color:#eafaff;font-size:12px;margin-top:4px}.raja-o2-stats div:last-child b{color:#55e9ff}
+.raja-o2-nav{height:50px;border-top:1px solid rgba(85,233,255,.12);display:grid;grid-template-columns:repeat(5,1fr);align-items:center}.raja-o2-nav button{border:0;background:transparent;color:#7f94a9;font-size:16px;height:42px;cursor:pointer}.raja-o2-nav button span{display:block;font-size:5.5px;font-weight:900;margin-top:2px}.raja-o2-nav button.active{color:#14eec0}.raja-o2-nav button.center{width:42px;border-radius:50%;justify-self:center;border:2px solid #4dcfff;color:#4dcfff;box-shadow:0 0 16px rgba(77,207,255,.28)}
+#mainAppContent.raja-o2-main-active>.app-shell{display:none!important}
+#mainAppContent.raja-o2-main-active #rajaMobileCommandBar,#mainAppContent.raja-o2-main-active #rajaMobileConfigBackdrop{display:none!important}
+body.raja-o2-dashboard-active{overflow:hidden!important}
+body.raja-o2-dashboard-active>.container{max-width:none!important;width:100%!important;height:100dvh!important;margin:0!important;padding:5px!important;border:0!important;background:#02060d!important;border-radius:0!important}
+body.raja-o2-dashboard-active>.container>h2{display:none!important}
+body.raja-o2-dashboard-active #rajaFullscreenBtn{top:8px;right:8px;transform:scale(.78);transform-origin:top right}
+
+/* Expiry groups in legacy/settings views */
+.raja-expiry-groups{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.raja-expiry-group small{display:block;font-size:7px;color:#6f8ca3;font-weight:900;text-align:center;margin-bottom:3px}.raja-expiry-group .expiry-container{grid-template-columns:repeat(3,1fr)!important}
+
+body:not(.raja-o2-dashboard-active)>.container{max-width:900px!important;width:min(96vw,900px)!important}
+
+/* Premium activation */
+#activationScreen{position:relative;max-width:760px!important;margin:10px auto!important;padding:74px 42px 28px!important;background:linear-gradient(180deg,rgba(4,18,31,.98),rgba(2,9,18,.99))!important;border:1px solid rgba(85,233,255,.52)!important;border-radius:26px!important;box-shadow:0 0 55px rgba(0,206,255,.10),inset 0 0 45px rgba(20,241,174,.025)!important}
+#activationScreen:before{content:"RA";position:absolute;top:18px;left:50%;transform:translateX(-50%);width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle,#0a3540,#03121f 68%);border:2px solid #55e9ff;color:#55e9ff;font-weight:950;font-size:22px;box-shadow:0 0 24px rgba(85,233,255,.32)}
+#activationScreen h3{font-size:18px!important;letter-spacing:.3px}.instruction-box{border-color:rgba(85,233,255,.32)!important;background:rgba(2,12,23,.76)!important;border-radius:14px!important;padding:16px!important}.step-title{font-size:13px!important;color:#14f1ae!important}.input-field{min-height:42px!important;border-radius:9px!important}.label-text{font-size:10px!important}.raja-activation-install-btn,#verifyAccessBtn{min-height:48px!important;border-radius:10px!important}
+
+/* History */
+.raja-history-toolbar{display:flex;gap:8px;justify-content:space-between;align-items:center;margin-bottom:8px}.raja-history-filters{display:flex;gap:5px;flex-wrap:wrap}.raja-history-filter{border:1px solid rgba(85,233,255,.2);background:#061322;color:#9db2c3;padding:6px 10px;border-radius:7px;font-size:8px;font-weight:900;cursor:pointer}.raja-history-filter.active{border-color:#14f1ae;color:#14f1ae;background:rgba(20,241,174,.08)}.raja-history-search{min-width:150px;background:#04101c;border:1px solid rgba(85,233,255,.2);border-radius:7px;color:#fff;padding:7px 9px;font-size:9px}.raja-history-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:7px}.raja-history-summary>div{background:#05111f;border:1px solid rgba(255,255,255,.05);border-radius:7px;padding:7px;text-align:center}.raja-history-summary span{display:block;color:#738ba0;font-size:6px}.raja-history-summary b{font-size:11px;color:#e8faff}.raja-history-list{max-height:56dvh!important;padding:7px!important}.raja-history-card{display:grid;grid-template-columns:1.1fr .8fr .8fr .7fr auto;gap:6px;align-items:center;padding:8px;border:1px solid rgba(255,255,255,.055);border-radius:8px;margin-bottom:5px;background:#04101c}.raja-history-card small{display:block;color:#728ca0;font-size:6px}.raja-history-card b{font-size:8px}.raja-history-dir.call{color:#14f1ae}.raja-history-dir.put{color:#ff5178}.raja-history-result.win{color:#14f1ae}.raja-history-result.loss{color:#ff5178}.raja-history-result.pending{color:#f7d36a}
+
+/* Sound Center */
+.raja-sound-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.raja-sound-grid label{background:#05111f;border:1px solid rgba(85,233,255,.10);border-radius:8px;padding:8px;color:#a9bfce;font-size:8px;font-weight:800}.raja-sound-grid input[type=range]{width:100%;margin-top:5px}.raja-sound-grid select{margin-top:5px;font-size:9px}.raja-sound-grid b{float:right;color:#55e9ff}.raja-sound-tests{display:flex;gap:6px;margin-top:8px}.raja-sound-tests button{flex:1;min-height:34px;border:1px solid rgba(85,233,255,.22);border-radius:8px;background:#061423;color:#dff7ff;font-size:8px;font-weight:900;cursor:pointer}
+
+@media(max-width:1100px){
+ .raja-o2-dashboard{padding:7px;gap:6px}
+ .raja-o2-header{grid-template-columns:135px 1fr 92px;height:44px}.raja-o2-brand b{font-size:11px}.raja-o2-status-strip div:nth-child(1){display:none}.raja-o2-status-strip{grid-template-columns:repeat(4,1fr)}
+ .raja-o2-top{height:90px}.raja-o2-top>.raja-o2-card,.raja-o2-controls>.raja-o2-card,.raja-o2-main-grid>.raja-o2-card{padding:7px}
+ .raja-o2-ai-ring{width:56px;height:56px}.raja-o2-ai strong{font-size:12px}
+ .raja-o2-controls{height:78px}.raja-o2-scan{height:46px;font-size:12px}
+ .raja-o2-main-grid{grid-template-columns:.55fr 1.8fr .65fr}.raja-o2-signal-copy h2{font-size:21px}.raja-o2-direction span{font-size:34px}.raja-o2-direction strong{font-size:16px}.raja-o2-entry{width:76px;height:76px}.raja-o2-entry strong{font-size:16px}
+ .raja-o2-bottom{height:92px}.raja-o2-nav{height:46px}
+}
+@media(max-width:700px){
+ body.raja-o2-dashboard-active>.container{padding:0!important}
+ .raja-o2-dashboard{height:100dvh;min-height:540px;border-radius:0;border:0;padding:6px;gap:5px}
+ .raja-o2-header{height:46px;grid-template-columns:1fr auto}.raja-o2-brand{justify-content:center}.raja-o2-header-actions{position:absolute;right:7px}.raja-o2-status-strip{grid-column:1/-1;position:absolute;top:49px;left:6px;right:6px;height:30px;grid-template-columns:repeat(4,1fr);background:#03101c;border:1px solid rgba(85,233,255,.10);border-radius:8px}.raja-o2-status-strip div:nth-child(1){display:none}.raja-o2-status-strip span{font-size:5px}.raja-o2-status-strip b{font-size:6px}
+ .raja-o2-top{margin-top:34px;height:72px;grid-template-columns:1fr}.raja-o2-broker,.raja-o2-presets{display:none}.raja-o2-ai{padding:5px!important}.raja-o2-ai-ring{width:44px;height:44px}.raja-o2-ai strong{font-size:11px}.raja-o2-ai h4{display:none}
+ .raja-o2-controls{height:82px;grid-template-columns:.9fr 1.35fr}.raja-o2-pair h4,.raja-o2-expiry h4{font-size:6px;margin-bottom:4px}.raja-o2-pair select{min-height:27px;font-size:7px}.raja-o2-expiry-grid{height:55px;grid-template-columns:repeat(3,1fr);gap:3px}.raja-o2-expiry-grid small{font-size:5px}.raja-o2-expiry-grid span{grid-template-columns:1fr}.raja-o2-expiry-grid button{height:14px;font-size:5.5px;border-radius:4px}
+ .raja-o2-scan{order:5;height:48px;font-size:11px}.raja-o2-main-grid{display:block;min-height:0;flex:1}.raja-o2-progress,.raja-o2-overview{display:none}.raja-o2-signal{height:100%;padding:8px!important;grid-template-rows:22px 1fr auto auto}.raja-o2-signal-core{grid-template-columns:.65fr 1.25fr .65fr}.raja-o2-signal-copy h2{font-size:18px}.raja-o2-signal-copy h3{font-size:10px}.raja-o2-signal-copy div{font-size:8px;padding:4px 10px}.raja-o2-direction span{font-size:31px}.raja-o2-direction strong{font-size:14px}.raja-o2-entry{width:62px;height:62px}.raja-o2-entry strong{font-size:13px}.raja-o2-metrics b{font-size:9px}.raja-o2-metrics span,.raja-o2-signal-foot span{font-size:4.5px}.raja-o2-signal-foot b{font-size:6px}
+ .raja-o2-bottom{height:54px;grid-template-columns:1fr}.raja-o2-top3{display:none}.raja-o2-stats{padding:5px!important}.raja-o2-stats span{font-size:5px}.raja-o2-stats b{font-size:9px}
+ .raja-o2-nav{height:48px}.raja-o2-nav button{height:40px;font-size:14px}
+ #rajaFullscreenBtn{display:none!important}
+ #activationScreen{margin:0!important;max-width:none!important;min-height:100dvh;padding:72px 16px 18px!important;border-radius:0!important;display:flex!important;flex-direction:column;justify-content:center}
+ #activationScreen .instruction-box{padding:10px!important;font-size:10px!important}.raja-sound-grid{grid-template-columns:1fr}.raja-history-toolbar{flex-direction:column;align-items:stretch}.raja-history-search{width:100%}.raja-history-card{grid-template-columns:1fr 1fr 1fr}.raja-history-card .raja-history-actions{grid-column:1/-1}
+}
+</style>
+
+
+<script id="raja-option2-final-js">
+(function(){
+    const $ = id => document.getElementById(id);
+    let rajaHistoryFilter = 'ALL';
+    let rajaSoundPrefs = {
+        master:true, quiet:false, voiceVolume:.75, alertVolume:.55, speed:1, gender:'auto',
+        countdown:true, aPlus:true, outcomes:true
+    };
+    let rajaSoundHistorySeeded = false;
+    const rajaKnownOutcome = new Map();
+    let rajaCountdownSignalKey = '';
+    const rajaCountdownSpoken = new Set();
+    let rajaExpirySoundKey = '';
+
+    function rajaReadSoundPrefs(){
+        try{
+            const saved = JSON.parse(localStorage.getItem('raja_sound_center_v1')||'{}');
+            rajaSoundPrefs = {...rajaSoundPrefs,...saved};
+        }catch(_){}
+        return rajaSoundPrefs;
+    }
+
+    window.saveRajaSoundCenter = function(){
+        const p = rajaReadSoundPrefs();
+        p.master = $('rajaMasterSound') ? $('rajaMasterSound').checked : p.master;
+        p.quiet = $('rajaQuietMode') ? $('rajaQuietMode').checked : p.quiet;
+        p.voiceVolume = Math.max(0,Math.min(1,Number($('rajaVoiceVolume')?.value||75)/100));
+        p.alertVolume = Math.max(0,Math.min(1,Number($('rajaAlertVolume')?.value||55)/100));
+        p.speed = Math.max(.65,Math.min(1.4,Number($('rajaVoiceSpeed')?.value||1)));
+        p.gender = String($('rajaVoiceGender')?.value||'auto');
+        localStorage.setItem('raja_sound_center_v1',JSON.stringify(p));
+        if($('rajaVoiceVolumeValue')) $('rajaVoiceVolumeValue').textContent=Math.round(p.voiceVolume*100)+'%';
+        if($('rajaAlertVolumeValue')) $('rajaAlertVolumeValue').textContent=Math.round(p.alertVolume*100)+'%';
+        if(typeof soundEnabled!=='undefined' && !p.master && soundEnabled){
+            soundEnabled=false;
+            const b=$('soundToggleBtn'); if(b)b.textContent='🔇 SOUND: OFF';
+        }
+        rajaO2SyncAll();
+    };
+
+    function rajaHydrateSoundCenter(){
+        const p=rajaReadSoundPrefs();
+        if($('rajaMasterSound')) $('rajaMasterSound').checked=p.master!==false;
+        if($('rajaQuietMode')) $('rajaQuietMode').checked=!!p.quiet;
+        if($('rajaVoiceVolume')) $('rajaVoiceVolume').value=Math.round(p.voiceVolume*100);
+        if($('rajaAlertVolume')) $('rajaAlertVolume').value=Math.round(p.alertVolume*100);
+        if($('rajaVoiceSpeed')) $('rajaVoiceSpeed').value=String(p.speed);
+        if($('rajaVoiceGender')) $('rajaVoiceGender').value=p.gender||'auto';
+        if($('rajaVoiceVolumeValue')) $('rajaVoiceVolumeValue').textContent=Math.round(p.voiceVolume*100)+'%';
+        if($('rajaAlertVolumeValue')) $('rajaAlertVolumeValue').textContent=Math.round(p.alertVolume*100)+'%';
+    }
+
+    function rajaAudioAllowed(kind='signal'){
+        const p=rajaReadSoundPrefs();
+        if(p.master===false || (typeof soundEnabled!=='undefined' && !soundEnabled)) return false;
+        if(p.quiet && !['call','put','entry','countdown','a+'].includes(kind)) return false;
+        return true;
+    }
+
+    function rajaTone(notes, opts={}){
+        const kind=opts.kind||'signal';
+        if(!rajaAudioAllowed(kind)) return;
+        try{
+            if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+            if(audioCtx.state==='suspended') audioCtx.resume();
+            const p=rajaReadSoundPrefs(), now=audioCtx.currentTime;
+            (notes||[]).forEach((freq,i)=>{
+                const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+                const start=now+i*(opts.gap||.09);
+                o.type=opts.type||'sine';
+                o.frequency.setValueAtTime(freq,start);
+                g.gain.setValueAtTime(Math.max(.015,p.alertVolume*(opts.gain||.24)),start);
+                g.gain.exponentialRampToValueAtTime(.005,start+(opts.duration||.16));
+                o.connect(g);g.connect(audioCtx.destination);o.start(start);o.stop(start+(opts.duration||.17));
+            });
+        }catch(_){}
+    }
+
+    function rajaPickVoice(gender){
+        if(!('speechSynthesis' in window)) return null;
+        const voices=window.speechSynthesis.getVoices().filter(v=>/^en/i.test(v.lang||''));
+        if(!voices.length) return null;
+        const femaleRx=/female|zira|samantha|victoria|karen|moira|tessa|ava|aria|jenny|susan|hazel|sonia/i;
+        const maleRx=/male|david|mark|daniel|george|james|alex|fred|tom|guy/i;
+        if(gender==='female') return voices.find(v=>femaleRx.test(v.name))||voices[0];
+        if(gender==='male') return voices.find(v=>maleRx.test(v.name))||voices[0];
+        return voices.find(v=>/natural|google|microsoft/i.test(v.name))||voices[0];
+    }
+
+    function rajaSpeakText(text, force=false){
+        const p=rajaReadSoundPrefs();
+        if(!('speechSynthesis' in window) || !text) return;
+        if(!force && (!voiceAlertEnabled || p.master===false)) return;
+        try{
+            window.speechSynthesis.cancel();
+            const u=new SpeechSynthesisUtterance(String(text));
+            u.lang='en-US'; u.rate=p.speed; u.volume=p.voiceVolume;
+            const v=rajaPickVoice(p.gender); if(v)u.voice=v;
+            window.speechSynthesis.speak(u);
+        }catch(_){}
+    }
+    window.rajaSpeakText=rajaSpeakText;
+
+    function expiryWords(tf){
+        const s=String(tf||'1m').toLowerCase();
+        if(s.endsWith('h')){const n=parseInt(s)||1;return `${n} hour${n===1?'':'s'}`;}
+        const n=parseInt(s)||1;return `${n} minute${n===1?'':'s'}`;
+    }
+
+    // Upgrade existing signal tone + voice without changing scan logic.
+    if(typeof playSignalAlertSound==='function'){
+        playSignalAlertSound=function(isBuy=true){
+            rajaTone(isBuy?[620,840,1120,1480]:[1480,1120,820,560],{kind:isBuy?'call':'put',gap:.085,duration:.15,gain:.28,type:'sine'});
+        };
+    }
+    if(typeof speakSignal==='function'){
+        speakSignal=function(signalData,isBuy){
+            if(!voiceAlertEnabled)return;
+            const pair=String(signalData?.pair||'').replace(/[-/]/g,' ');
+            rajaSpeakText(`RAJA AI. ${pair}. ${isBuy?'CALL':'PUT'} signal. ${expiryWords(selectedExpiry)} expiry.`);
+        };
+    }
+    if(typeof v23Tone==='function'){
+        v23Tone=function(kind){
+            if(kind==='entry') return rajaTone([820,1120,1520,1960],{kind:'entry',gain:.25});
+            if(kind==='no-trade') return rajaTone([410,340],{kind:'no-trade',gain:.13,type:'triangle',duration:.2});
+        };
+    }
+
+    window.testRajaCallSound=function(){rajaTone([620,840,1120,1480],{kind:'call',gain:.28});rajaSpeakText('RAJA AI. Bitcoin U S D. CALL signal. Five minute expiry.',true);};
+    window.testRajaPutSound=function(){rajaTone([1480,1120,820,560],{kind:'put',gain:.28});rajaSpeakText('RAJA AI. Bitcoin U S D. PUT signal. Five minute expiry.',true);};
+    window.testRajaVoice=function(){rajaSpeakText('RAJA AI voice alert is ready.',true);};
+
+    window.setRajaHistoryFilter=function(filter,btn){
+        rajaHistoryFilter=String(filter||'ALL').toUpperCase();
+        document.querySelectorAll('.raja-history-filter').forEach(x=>x.classList.toggle('active',x===btn));
+        renderHistoryList();
+    };
+
+    // Broker-neutral, source-aware history renderer.
+    if(typeof renderHistoryList==='function'){
+        renderHistoryList=function(){
+            const box=$('historyListBox'); if(!box)return;
+            const all=Array.isArray(backendTrackedHistory)?backendTrackedHistory:[];
+            const search=String($('rajaHistorySearch')?.value||'').trim().toLowerCase();
+            const rows=all.filter(item=>{
+                const result=String(item.result||'').toUpperCase();
+                const pending=!['WIN','LOSS','DRAW'].includes(result);
+                const matchFilter=rajaHistoryFilter==='ALL'||result===rajaHistoryFilter||(rajaHistoryFilter==='PENDING'&&pending);
+                const matchSearch=!search||String(item.pair||'').toLowerCase().includes(search);
+                return matchFilter&&matchSearch;
+            });
+            const completed=all.filter(x=>['WIN','LOSS','DRAW'].includes(String(x.result||'').toUpperCase()));
+            const wins=completed.filter(x=>String(x.result||'').toUpperCase()==='WIN').length;
+            const losses=completed.filter(x=>String(x.result||'').toUpperCase()==='LOSS').length;
+            const pending=all.length-completed.length;
+            const decided=wins+losses;
+            const wr=decided?((wins/decided)*100).toFixed(1)+'%':'--';
+            if($('rajaHistorySummary')) $('rajaHistorySummary').innerHTML=
+                `<div><span>TOTAL</span><b>${all.length}</b></div><div><span>WIN / LOSS</span><b>${wins} / ${losses}</b></div><div><span>PENDING</span><b>${pending}</b></div><div><span>REFERENCE WIN RATE</span><b>${wr}</b></div>`;
+            if(!rows.length){box.innerHTML='<div class="inline-item"><span>No matching tracked signals.</span><span class="win-tag">--</span></div>';return;}
+            box.innerHTML=rows.map((item,index)=>{
+                const result=String(item.result||'').toUpperCase();
+                const status=String(item.status||'').toUpperCase();
+                const proxy=String(item.reference_result||item.yahoo_result||item.backup_result||'').toUpperCase();
+                const otc=String(item.pair||'').includes('(OTC)');
+                const phase=String(item.phase||'').toUpperCase();
+                let resultLabel=result||phase||status||'PENDING';
+                let resultClass=result==='WIN'?'win':result==='LOSS'?'loss':'pending';
+                if(otc&&!result&&(status==='AWAITING_QX'||phase==='QX_VERIFY')){
+                    resultLabel=proxy?`REFERENCE ${proxy} · BROKER VERIFY`:'BROKER RESULT REQUIRED';
+                    resultClass='pending';
+                }
+                const showManual=otc&&!result&&(status==='AWAITING_QX'||phase==='QX_VERIFY');
+                const direction=String(item.signal||'').toUpperCase();
+                const broker=String(item.broker||'--');
+                const source=String(item.result_reference_source||item.source||'--');
+                const entry=item.entry_price==null?'--':Number(item.entry_price).toFixed(5);
+                const exit=item.exit_price==null?'--':Number(item.exit_price).toFixed(5);
+                return `<div class="raja-history-card">
+                    <div><small>PAIR / SIGNAL</small><b>${escapeHtml(item.pair||'--')}</b><div class="raja-history-dir ${direction==='CALL'?'call':'put'}">${escapeHtml(direction||'--')} · ${escapeHtml(item.expiry||'--')}</div></div>
+                    <div><small>BROKER / MARKET</small><b>${escapeHtml(broker)}</b><small>${escapeHtml(item.market||'--')}</small></div>
+                    <div><small>ENTRY → EXIT</small><b>${entry} → ${exit}</b><small>${escapeHtml(source)}</small></div>
+                    <div><small>RESULT</small><b class="raja-history-result ${resultClass}">${escapeHtml(resultLabel)}</b><small>${escapeHtml(formatDateTime(item.created_at))}</small></div>
+                    <div class="raja-history-actions"><button class="history-replay-btn" onclick="openSignalReplay('${item.id}')">REPLAY</button>${showManual?`<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">BROKER WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">BROKER LOSS</button>`:''}</div>
+                </div>`;
+            }).join('');
+        };
+    }
+
+    function rajaO2CopyOptions(source,target){
+        if(!source||!target)return;
+        const html=source.innerHTML;
+        if(target.dataset.sourceHtml!==html){
+            target.innerHTML=html; target.dataset.sourceHtml=html;
+        }
+        target.value=source.value;
+    }
+
+    window.rajaO2BrokerChanged=function(value){
+        const original=$('brokerSelect');if(!original)return;
+        original.value=value; updateBrokerAssets(); setTimeout(rajaO2SyncAll,0);
+    };
+    window.rajaO2MarketChanged=function(value){
+        const original=$('marketType');if(!original)return;
+        original.value=value; updatePairs(); setTimeout(rajaO2SyncAll,0);
+    };
+    window.rajaO2PairChanged=function(value){
+        const original=$('pairSelect');if(!original)return;
+        original.value=value; syncTargetPairDisplay(); setTimeout(rajaO2SyncAll,0);
+    };
+    window.rajaO2SetMode=function(mode){setScanMode(mode);setTimeout(rajaO2SyncAll,0);};
+    window.rajaO2SetExpiry=function(tf){
+        const original=document.querySelector(`.expiry-btn[data-time="${tf}"]`);
+        if(original)setExpiry(original,tf);
+        else {selectedExpiry=tf;syncSelectedExpiryUI();startTimer();}
+        playClickSound();setTimeout(rajaO2SyncAll,0);
+    };
+
+    function rajaO2TimeLabel(sec){
+        if(!Number.isFinite(sec)||sec<0)return '--:--';
+        if(sec>=3600){const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60);return `${h}:${String(m).padStart(2,'0')}`;}
+        const m=Math.floor(sec/60),s=Math.floor(sec%60);return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    }
+
+    function rajaO2UpdateSignal(){
+        const s=typeof activePremiumSignal!=='undefined'?activePremiumSignal:null;
+        const card=$('o2SignalCard');
+        if(!card)return;
+        if(!s){
+            card.classList.remove('put');
+            $('o2SignalPair').textContent=String($('pairSelect')?.value||'SELECT A MARKET').replace('✨ Auto Scan Best Pair (AI) ✨','AUTO SCAN');
+            $('o2SignalSetup').textContent='AI SCAN READY';
+            $('o2Direction').textContent='READY';$('o2DirectionIcon').textContent='◎';
+            $('o2SignalGrade').textContent='READY';$('o2BestExpiry').textContent='BEST EXPIRY: --';
+            $('o2Agreement').textContent='--';$('o2Stability').textContent='--';$('o2TechScore').textContent='--';$('o2RiskLevel').textContent='--';$('o2Source').textContent='--';
+            return;
+        }
+        const isPut=String(s.dir||'').includes('PUT');
+        card.classList.toggle('put',isPut);
+        const confidence=Number(s.confluence||0),agreement=Number(s.multiTfAgreement||0),stability=Number(s.marketStabilityScore||0);
+        let grade='B';
+        try{grade=(typeof v31SignalGrade==='function'?v31SignalGrade(confidence,agreement,stability)[0]:'B');}catch(_){}
+        $('o2SignalPair').textContent=s.pair||'--';
+        $('o2SignalSetup').textContent=`${grade} ${confidence>=90?'STRONG ':''}SETUP`;
+        $('o2SignalGrade').textContent=grade;
+        $('o2Direction').textContent=isPut?'PUT':'CALL';
+        $('o2DirectionIcon').textContent=isPut?'▼':'▲';
+        $('o2BestExpiry').textContent='BEST EXPIRY: '+String(s.bestExpiry||selectedExpiry||'--').toUpperCase();
+        $('o2Agreement').textContent=agreement?agreement.toFixed(0)+'%':'--';
+        $('o2Stability').textContent=stability?stability.toFixed(0)+'%':'--';
+        $('o2TechScore').textContent=confidence?confidence.toFixed(0)+'/100':'--';
+        $('o2RiskLevel').textContent=String(s.marketRiskLevel||'--').toUpperCase();
+        $('o2Source').textContent=String(s.source||'--').replace(' Finance','').toUpperCase();
+        $('o2Mode').textContent=String(s.scanMode||scanMode||'SAFE').toUpperCase();
+        $('o2TfCount').textContent=(Array.isArray(s.alignedTimeframes)?s.alignedTimeframes.length:'--')+' ALIGNED';
+        const remaining=typeof autoPairCooldownRemainingMs==='function'?autoPairCooldownRemainingMs(s.pair):0;
+        $('o2PairLock').textContent=remaining?rajaO2TimeLabel(remaining/1000):'READY';
+        const entryMs=Number(activeSignalEntryEpochMs||0);
+        const entrySec=entryMs?Math.ceil((entryMs-Date.now())/1000):NaN;
+        $('o2EntryCountdown').textContent=entrySec>=0?rajaO2TimeLabel(entrySec):'OPEN';
+        $('o2Quality').textContent=stability>=80?'HIGH':stability>=60?'GOOD':'CAUTION';
+        $('o2Volatility').textContent=Number.isFinite(Number(s.volatilityPct))?Number(s.volatilityPct).toFixed(3)+'%':'--';
+        $('o2Trend').textContent=agreement>=80?'STRONG':agreement>=67?'ALIGNED':'MIXED';
+        $('o2Reliability').textContent=s.backupUsed?'TWELVE BACKUP':'YAHOO PRIMARY';
+        $('o2LastUpdate').textContent='Updated '+new Date().toLocaleTimeString();
+    }
+
+    function rajaO2RenderTop3(){
+        const host=$('o2Top3');if(!host)return;
+        let rows=[];
+        try{
+            rows=(Array.isArray(premiumMarketSnapshot)?premiumMarketSnapshot:[])
+                .filter(x=>x&&x.signalFound)
+                .sort((a,b)=>Number(b.strength||0)-Number(a.strength||0))
+                .slice(0,3);
+        }catch(_){}
+        if(!rows.length){host.innerHTML='<div class="raja-o2-empty">Run Auto Scan to rank opportunities.</div>';return;}
+        host.innerHTML=rows.map((x,i)=>`<div class="raja-o2-rank"><span>${i+1}</span><div><strong>${escapeHtml(x.pair||'--')}</strong><small>${escapeHtml(x.signal||'SETUP')} · ${escapeHtml(String(x.marketRiskLevel||''))}</small></div><b>${Math.round(Number(x.strength||0))}%</b></div>`).join('');
+    }
+
+    function rajaO2Progress(){
+        const running=!!scanSessionState?.running, p=Math.max(0,Math.min(100,Number(scanSessionState?.progress||0)));
+        if($('o2ProgressBar')) $('o2ProgressBar').style.width=p+'%';
+        if($('o2ProgressLabel')) $('o2ProgressLabel').textContent=running?`SCANNING ${Math.round(p)}%`:(p===100?'COMPLETE':'READY');
+        document.querySelectorAll('#o2ProgressSteps [data-stage]').forEach(row=>{
+            const done=p>=Number(row.dataset.stage||0);
+            const b=row.querySelector('b');if(b){b.textContent=done?'✓':'○';b.classList.toggle('done',done);}
+        });
+        if($('o2AiState')) $('o2AiState').textContent=running?'AI SCANNING':'AI ACTIVE';
+        if($('o2AiSub')) $('o2AiSub').textContent=running?`${Math.round(p)}% COMPLETE`:'SCANNING READY';
+        if($('o2DeepScanBtn')){
+            $('o2DeepScanBtn').disabled=running;
+            $('o2DeepScanBtn').firstChild.textContent=running?'⏳ AI DEEP SCAN RUNNING ':'🚀 START AI DEEP SCAN ';
+        }
+    }
+
+    function rajaO2Stats(){
+        try{
+            const today=typeof todayHistory==='function'?todayHistory():[];
+            const completed=today.filter(x=>['WIN','LOSS','DRAW'].includes(String(x.result||'').toUpperCase()));
+            const w=completed.filter(x=>String(x.result||'').toUpperCase()==='WIN').length;
+            const l=completed.filter(x=>String(x.result||'').toUpperCase()==='LOSS').length;
+            $('o2StatSignals').textContent=today.length;
+            $('o2StatWL').textContent=`${w} / ${l}`;
+            $('o2StatSession').textContent=$('perfBestSession')?.textContent||'--';
+        }catch(_){}
+    }
+
+    window.rajaO2SyncAll=function(){
+        const main=$('mainAppContent'),dash=$('rajaOption2Dashboard'),app=document.querySelector('#mainAppContent>.app-shell');
+        const logged=main&&getComputedStyle(main).display!=='none';
+        const isDash=logged && (typeof currentSection==='undefined'||currentSection==='dashboard');
+        if(dash)dash.style.display=isDash?'flex':'none';
+        if(main)main.classList.toggle('raja-o2-main-active',isDash);
+        document.body.classList.toggle('raja-o2-dashboard-active',isDash);
+        if(app && !isDash && getComputedStyle(app).display==='none')app.style.display='grid';
+
+        rajaO2CopyOptions($('brokerSelect'),$('o2BrokerSelect'));
+        rajaO2CopyOptions($('marketType'),$('o2MarketSelect'));
+        rajaO2CopyOptions($('pairSelect'),$('o2PairSelect'));
+        document.querySelectorAll('.raja-o2-presets button[data-mode]').forEach(b=>b.classList.toggle('active',b.dataset.mode===String(scanMode||'SAFE')));
+        document.querySelectorAll('.raja-o2-expiry button[data-time]').forEach(b=>b.classList.toggle('active',b.dataset.time===String(selectedExpiry||'1m')));
+        if($('o2RiskMode'))$('o2RiskMode').textContent=String(scanMode||'SAFE').toUpperCase();
+        if($('o2MarketStatus'))$('o2MarketStatus').textContent=String($('marketType')?.selectedOptions?.[0]?.textContent||'MARKET').replace(/[🪙🟢⚡]/g,'').trim().toUpperCase();
+        if($('o2Session')){$('o2Session').textContent=(typeof sessionName==='function'?sessionName(Date.now()/1000):'LIVE')+' SESSION';}
+        const sig=typeof activePremiumSignal!=='undefined'?activePremiumSignal:null;
+        if($('o2DataStatus'))$('o2DataStatus').textContent=sig?(sig.backupUsed?'TWELVE BACKUP':'YAHOO LIVE'):(navigator.onLine?'LIVE FEED':'OFFLINE');
+        if($('o2Latency')){
+            let latency='--';
+            try{latency=(typeof v23LastFreshness!=='undefined'&&v23LastFreshness.elapsed!=null)?Number(v23LastFreshness.elapsed).toFixed(1)+'s':'--';}catch(_){}
+            $('o2Latency').textContent=latency;
+        }
+        if($('o2SoundBtn'))$('o2SoundBtn').textContent=(typeof soundEnabled!=='undefined'&&soundEnabled&&rajaReadSoundPrefs().master!==false)?'🔊':'🔇';
+        rajaO2Progress();rajaO2UpdateSignal();rajaO2RenderTop3();rajaO2Stats();
+    };
+
+    // Wrap displaySignalResult to surface A+ alert and immediate Option-2 refresh.
+    try{
+        const originalDisplay=displaySignalResult;
+        displaySignalResult=function(signalData){
+            const result=originalDisplay.apply(this,arguments);
+            setTimeout(()=>{
+                rajaO2SyncAll();
+                const c=Number(signalData?.confluence||0),a=Number(signalData?.multiTfAgreement||0),s=Number(signalData?.marketStabilityScore||0);
+                let grade='';
+                try{grade=typeof v31SignalGrade==='function'?v31SignalGrade(c,a,s)[0]:'';}catch(_){}
+                if(grade==='A+'&&rajaReadSoundPrefs().aPlus!==false){
+                    setTimeout(()=>rajaTone([1046,1318,1568,2093,1568,2093],{kind:'a+',gap:.075,gain:.20}),380);
+                }
+            },0);
+            return result;
+        };
+    }catch(_){}
+
+    // Stale/bad-market warning tone, once per rendered state.
+    try{
+        const originalBad=renderRajaBadMarketState;
+        let lastBad='';
+        renderRajaBadMarketState=function(state){
+            const out=originalBad.apply(this,arguments);
+            const key=JSON.stringify([state?.pair,state?.marketStatus,state?.dataAgeSeconds||state?.ageSeconds]);
+            if(out&&key!==lastBad){lastBad=key;rajaTone([520,420,320],{kind:'bad-market',gain:.12,type:'triangle',duration:.18});}
+            return out;
+        };
+    }catch(_){}
+
+    function rajaOutcomeWatcher(){
+        const rows=Array.isArray(backendTrackedHistory)?backendTrackedHistory:[];
+        if(!rajaSoundHistorySeeded){
+            rows.forEach(x=>rajaKnownOutcome.set(x.id,String(x.result||'')));
+            rajaSoundHistorySeeded=true;return;
+        }
+        rows.forEach(x=>{
+            const id=x.id,now=String(x.result||'').toUpperCase(),prev=String(rajaKnownOutcome.get(id)||'').toUpperCase();
+            if(id&&now&&now!==prev&&['WIN','LOSS','DRAW'].includes(now)){
+                if(rajaReadSoundPrefs().outcomes!==false){
+                    if(now==='WIN')rajaTone([784,988,1174,1568],{kind:'win',gain:.17});
+                    else if(now==='LOSS')rajaTone([440,392],{kind:'loss',gain:.09,type:'triangle',duration:.22});
+                    else rajaTone([620],{kind:'result',gain:.10});
+                }
+            }
+            if(id)rajaKnownOutcome.set(id,now);
+        });
+    }
+
+    function rajaCountdownWatcher(){
+        const entryMs=Number(activeSignalEntryEpochMs||0);
+        const signalId=String(activeTrackedSignalId||entryMs||'');
+        if(!entryMs||!signalId)return;
+        if(signalId!==rajaCountdownSignalKey){rajaCountdownSignalKey=signalId;rajaCountdownSpoken.clear();rajaExpirySoundKey='';}
+        const sec=Math.ceil((entryMs-Date.now())/1000);
+        const p=rajaReadSoundPrefs();
+        const announce=[10,5,3,2,1];
+        announce.forEach(n=>{
+            if(sec===n&&!rajaCountdownSpoken.has(n)){
+                rajaCountdownSpoken.add(n);
+                if(p.countdown!==false){rajaTone([820+(10-n)*20],{kind:'countdown',gain:.10,duration:.10});if(voiceAlertEnabled)rajaSpeakText(String(n));}
+            }
+        });
+        if(sec<=0&&!rajaCountdownSpoken.has(0)){
+            rajaCountdownSpoken.add(0);
+            if(p.countdown!==false){rajaTone([960,1320,1760],{kind:'entry',gain:.18});if(voiceAlertEnabled)rajaSpeakText('ENTER NOW');}
+        }
+        const item=(Array.isArray(backendTrackedHistory)?backendTrackedHistory:[]).find(x=>String(x.id)===String(activeTrackedSignalId));
+        const expiryEpoch=Number(item?.expiry_epoch||0);
+        if(expiryEpoch&&Date.now()>=expiryEpoch*1000){
+            const k=String(item.id)+':expiry';
+            if(rajaExpirySoundKey!==k){rajaExpirySoundKey=k;rajaTone([620,520,420],{kind:'expiry',gain:.10,type:'triangle'});}
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded',()=>{
+        rajaHydrateSoundCenter();
+        setTimeout(rajaO2SyncAll,150);
+        setTimeout(rajaO2SyncAll,900);
+        setInterval(()=>{rajaO2SyncAll();rajaOutcomeWatcher();rajaCountdownWatcher();},500);
+    });
+})();
 </script>
 
 </body>
