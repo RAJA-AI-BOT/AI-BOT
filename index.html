@@ -6131,15 +6131,20 @@
 
             if (!buttons.length) return;
 
-            // On phone/tablet keep INSTALL visible even when the browser does not
-            // expose beforeinstallprompt. Some Android browsers require the user
-            // to confirm installation from their own browser menu.
             const nativePromptReady = Boolean(deferredInstallPrompt);
-            const mobileTabletFallback = isRajaTouchDevice();
+            const touchDevice = isRajaTouchDevice();
+
+            // Desktop/laptop:
+            // show INSTALL only when the browser exposes its native PWA prompt.
+            // If Chrome already shows "Open in app", the app is normally already
+            // installed and no install prompt is available.
+            //
+            // Phone/tablet:
+            // keep an install affordance visible even when the browser requires
+            // Add to Home Screen from its own menu.
             const show = !isRajaStandalone() && (
-                Boolean(visible) ||
                 nativePromptReady ||
-                mobileTabletFallback
+                (touchDevice && Boolean(visible))
             );
 
             buttons.forEach(btn => {
@@ -6149,11 +6154,16 @@
             const dashboardBtn = document.getElementById('installAppBtn');
             const activationBtn = document.getElementById('activationInstallAppBtn');
 
-            const label = nativePromptReady ? '⬇ INSTALL APP' : '⬇ INSTALL / ADD TO HOME';
-            if (dashboardBtn) dashboardBtn.innerText = label;
-            if (activationBtn) activationBtn.innerText = nativePromptReady
-                ? '⬇ INSTALL RAJA AI APP'
-                : '⬇ INSTALL / ADD RAJA AI';
+            if (dashboardBtn) {
+                dashboardBtn.innerText = nativePromptReady
+                    ? '⬇ INSTALL APP'
+                    : '⬇ INSTALL RAJA AI';
+            }
+            if (activationBtn) {
+                activationBtn.innerText = nativePromptReady
+                    ? '⬇ INSTALL RAJA AI APP'
+                    : '⬇ INSTALL RAJA AI';
+            }
         }
 
         // Chrome / Edge fires this event only when the current site
@@ -6171,7 +6181,7 @@
         });
 
         document.addEventListener('DOMContentLoaded', () => {
-            setInstallButtonVisible(true);
+            setInstallButtonVisible(isRajaTouchDevice());
         }, { once:true });
 
         function rajaInstallHelpMessage() {
@@ -6180,12 +6190,12 @@
             const isSamsung = /SamsungBrowser/i.test(ua);
 
             if (isIOS) {
-                return 'RAJA AI install: Safari ka Share button tap karein → Add to Home Screen → Add.';
+                return 'Install RAJA AI: tap the Safari Share button, choose "Add to Home Screen", then tap "Add".';
             }
             if (isSamsung) {
-                return 'RAJA AI install: Samsung Internet menu (☰/⋮) kholein → Add page to / Add to Home screen → Install.';
+                return 'Install RAJA AI: open the Samsung Internet menu, choose "Add page to" or "Add to Home screen", then confirm Install.';
             }
-            return 'RAJA AI install: browser menu (⋮) kholein → Install app ya Add to Home screen select karein. Agar option foran na aaye to page ek dafa reload karein.';
+            return 'Install RAJA AI: open the browser menu and choose "Install app" or "Add to Home screen". If Chrome shows "Open in app", RAJA AI is already installed.';
         }
 
         async function installPWA() {
@@ -6333,7 +6343,7 @@
                 if (isRajaStandalone()) {
                     setInstallButtonVisible(false);
                 } else {
-                    setInstallButtonVisible(true);
+                    setInstallButtonVisible(isRajaTouchDevice());
                 }
             };
 
