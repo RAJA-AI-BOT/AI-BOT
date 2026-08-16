@@ -124,6 +124,15 @@
         .expiry-container { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-top: 3px; }
         .expiry-btn { background: rgba(18, 27, 48, 0.9); color: #fff; border: 1px solid rgba(255, 255, 255, 0.1); padding: 6px 0; border-radius: 5px; font-size: 9.5px; font-weight: 700; cursor: pointer; }
         .expiry-btn.active { background: linear-gradient(135deg, #00f2fe, #4facfe); color: #030712; border-color: transparent; }
+        .expiry-btn.expiry-disabled,
+        .expiry-btn:disabled {
+            opacity: .38;
+            cursor: not-allowed;
+            filter: grayscale(.8);
+            border-style: dashed;
+            box-shadow: none;
+        }
+
         
         .utility-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-top: 8px; }
         .utility-btn { background: rgba(16, 24, 43, 0.9); border: 1px solid rgba(0, 242, 254, 0.3); color: #60efff; padding: 7px 4px; border-radius: 5px; font-size: 8.5px; font-weight: 800; cursor: pointer; text-transform: uppercase; text-align: center; }
@@ -3072,15 +3081,7 @@
                 max-height: 66dvh !important;
             }
         }
-            /* Mobile clarity: make it obvious that market/pair selection lives in Settings. */
-        @media (max-width: 700px) {
-            .raja-mobile-settings-btn {
-                white-space: normal !important;
-                line-height: 1.12 !important;
-                font-size: 9.8px !important;
-            }
-        }
-</style>
+    </style>
 
 
     <style id="raja-v22-luxury-polish">
@@ -5013,7 +5014,7 @@
                 <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
                 <div class="raja-mobile-command-actions triple">
                     <button id="rajaMobileHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button>
-                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS &amp; PAIRS</button>
+                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS</button>
                     <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
                 </div>
             </div>
@@ -5148,7 +5149,7 @@
                                     <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
                                     <div class="ready-copy">
                                         <div class="ready-title">AI Deep Scan Ready</div>
-                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS & PAIRS / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
                                         <div class="scan-stage-list" style="margin-top:18px;">
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
@@ -5599,7 +5600,7 @@
                     </section>
 
                     <section class="config-panel">
-                        <div class="config-title">TRADING CONFIGURATION · SETTINGS &amp; PAIRS</div>
+                        <div class="config-title">TRADING CONFIGURATION</div>
                         <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
                             <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
@@ -5613,7 +5614,7 @@
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
                                 <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: 5-of-6, stronger agreement and higher score threshold.</div></div>
-                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn" data-time="15s" onclick="playClickSound(); setExpiry(this,'15s')">15s</button><button class="expiry-btn" data-time="30s" onclick="playClickSound(); setExpiry(this,'30s')">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
+                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button></div>
                             </div>
                         </div>
@@ -7257,6 +7258,7 @@
             if (expiryStr === "1m") return 60;
             if (expiryStr === "2m") return 120;
             if (expiryStr === "5m") return 300;
+            if (expiryStr === "10m") return 600;
             if (expiryStr === "15m") return 900;
             if (expiryStr === "30m") return 1800;
             return 60;
@@ -9689,7 +9691,7 @@
             }
             if (button) {
                 button.classList.toggle('active', nextOpen);
-                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS & PAIRS';
+                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS';
             }
 
             if (nextOpen) {
@@ -9712,7 +9714,7 @@
             const head = document.createElement('div');
             head.className = 'raja-mobile-sheet-head';
             head.innerHTML =
-                '<strong>⚙ SETTINGS & PAIRS</strong>' +
+                '<strong>⚙ QUICK SETTINGS</strong>' +
                 '<button type="button" class="raja-mobile-sheet-close">DONE</button>';
             panel.insertBefore(head, panel.firstChild);
 
