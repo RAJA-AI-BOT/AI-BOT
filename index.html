@@ -4883,6 +4883,92 @@
         @media(max-width:820px){.raja-scanning-market-badge{width:100%;margin-bottom:8px;padding:7px 8px;font-size:7.2px}.raja-scanning-market-badge strong{font-size:8px}.raja-otc-fallback-panel{padding:10px 9px}.raja-otc-fallback-btn{min-height:36px;font-size:7.5px}}
     </style>
 
+
+<style id="raja-approved-neon-login-v2">
+body:not(.raja-o2-dashboard-active){
+  background:radial-gradient(circle at 50% 8%,rgba(0,225,255,.11),transparent 31%),
+             linear-gradient(135deg,#010713 0%,#020b16 50%,#01050b 100%)!important;
+}
+body:not(.raja-o2-dashboard-active)>.container{
+  width:min(94vw,1040px)!important;max-width:1040px!important;margin:3.5vh auto 18px!important;
+  padding:20px 26px 26px!important;border:1px solid rgba(38,224,255,.58)!important;border-radius:24px!important;
+  background:linear-gradient(180deg,rgba(2,15,28,.96),rgba(1,8,16,.99))!important;
+  box-shadow:0 28px 90px rgba(0,0,0,.56),inset 0 0 58px rgba(0,214,255,.035)!important;
+}
+body:not(.raja-o2-dashboard-active)>.container>.market-notice{display:none!important}
+.raja-login-main-title{
+  margin:0 0 62px!important;font-size:clamp(27px,3vw,43px)!important;letter-spacing:1.2px!important;font-weight:950!important;
+  background:linear-gradient(90deg,#21f0d0,#35d8ff)!important;-webkit-background-clip:text!important;-webkit-text-fill-color:transparent!important;
+  text-shadow:0 0 26px rgba(30,225,255,.26)!important;
+}
+#activationScreen{
+  position:relative!important;width:min(100%,830px)!important;max-width:830px!important;margin:0 auto!important;
+  padding:72px 44px 30px!important;border:1px solid rgba(45,224,255,.48)!important;border-radius:24px!important;
+  background:linear-gradient(180deg,rgba(2,16,30,.92),rgba(2,10,20,.98))!important;
+  box-shadow:0 0 48px rgba(0,204,255,.10),inset 0 0 48px rgba(0,222,255,.035)!important;overflow:visible!important;
+}
+.raja-neon-crest{
+  position:absolute;top:-42px;left:50%;transform:translateX(-50%);width:86px;height:86px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;color:#22edff;border:2px solid #2ae9ff;
+  background:radial-gradient(circle,#073748 0%,#031624 65%,#01070d 100%);
+  box-shadow:0 0 34px rgba(35,235,255,.55),inset 0 0 22px rgba(35,235,255,.12);
+  animation:rajaLoginCrestGlow 2.4s ease-in-out infinite;z-index:4;
+}
+.raja-neon-crest strong{font-size:35px;line-height:1;font-weight:950;transform:translateY(5px);text-shadow:0 0 14px #22edff}
+.raja-neon-crown{position:absolute;top:8px;font-size:17px;line-height:1;color:#48f4ff;text-shadow:0 0 10px #2ae9ff}
+@keyframes rajaLoginCrestGlow{
+  0%,100%{filter:brightness(1);box-shadow:0 0 26px rgba(35,235,255,.40),inset 0 0 20px rgba(35,235,255,.10)}
+  50%{filter:brightness(1.16);box-shadow:0 0 42px rgba(35,235,255,.68),inset 0 0 24px rgba(35,235,255,.15)}
+}
+.raja-login-welcome{margin:0 0 18px!important;color:#fff!important;font-size:clamp(18px,1.6vw,24px)!important;font-weight:900!important;text-shadow:0 0 13px rgba(255,255,255,.12)}
+#activationScreen .raja-login-steps{
+  counter-reset:rajaStep;padding:16px 22px!important;margin-bottom:14px!important;border:1px solid rgba(38,224,255,.38)!important;
+  border-radius:14px!important;background:rgba(1,10,20,.72)!important;font-size:13px!important;line-height:1.45!important;
+}
+#activationScreen .raja-login-steps .step-title{
+  counter-increment:rajaStep;position:relative;margin:10px 0 3px 46px!important;color:#18f3b4!important;font-size:14px!important;font-weight:950!important;
+}
+#activationScreen .raja-login-steps .step-title:first-child{margin-top:0!important}
+#activationScreen .raja-login-steps .step-title::before{
+  content:counter(rajaStep);position:absolute;left:-46px;top:-3px;width:31px;height:31px;border-radius:50%;display:grid;place-items:center;
+  color:#23f2d1;border:2px solid #23e9ff;background:#031520;font-size:13px;font-weight:950;box-shadow:0 0 14px rgba(30,230,255,.34);
+}
+#activationScreen .raja-login-steps .step-title+div,
+#activationScreen .raja-login-steps .step-title~a,
+#activationScreen .raja-login-steps .step-title~.raja-pocket-support{
+  margin-left:46px;
+}
+#activationScreen .raja-login-steps .link-text{color:#28eaff!important;font-size:13px!important;font-weight:900!important}
+.raja-pocket-support{
+  display:inline-flex!important;margin-top:8px!important;padding:7px 10px!important;border:1px solid rgba(38,226,255,.34)!important;
+  border-radius:7px!important;color:#31eaff!important;background:rgba(22,214,255,.06)!important;font-size:12px!important;font-weight:850!important;
+}
+#activationScreen .label-text{margin:10px 0 5px!important;font-size:11px!important;color:#29eaff!important;font-weight:900!important}
+#activationScreen .input-field{
+  min-height:46px!important;padding:10px 14px!important;border:1px solid rgba(38,231,255,.50)!important;border-radius:9px!important;
+  background:#020b14!important;color:#fff!important;font-size:13px!important;box-shadow:inset 0 0 18px rgba(0,213,255,.025);
+}
+#activationScreen #verifyAccessBtn,#activationScreen #activationInstallAppBtn{
+  min-height:52px!important;align-items:center;justify-content:center;border-radius:9px!important;font-size:13px!important;font-weight:950!important;letter-spacing:1.2px!important;
+}
+#activationScreen #verifyAccessBtn{background:linear-gradient(90deg,#11e7c1,#29d9df,#3d9fff)!important;color:#04111a!important;box-shadow:0 0 24px rgba(30,226,255,.30)!important}
+#activationScreen #activationInstallAppBtn{background:linear-gradient(90deg,#1bcff3,#2b61ff)!important;color:#fff!important;border:1px solid rgba(95,227,255,.50)!important;box-shadow:0 0 22px rgba(38,121,255,.28)!important}
+#activationScreen #verifyMessage{min-height:38px;align-items:center;justify-content:center;font-size:11px!important;border-radius:8px!important}
+@media(max-width:760px){
+  body:not(.raja-o2-dashboard-active)>.container{width:100%!important;margin:0!important;min-height:100dvh!important;border-radius:0!important;padding:34px 9px 14px!important}
+  .raja-login-main-title{font-size:22px!important;margin-bottom:54px!important}
+  #activationScreen{width:100%!important;padding:55px 13px 18px!important;border-radius:16px!important}
+  .raja-neon-crest{width:70px;height:70px;top:-36px}.raja-neon-crest strong{font-size:29px}.raja-neon-crown{font-size:14px;top:7px}
+  .raja-login-welcome{font-size:16px!important}
+  #activationScreen .raja-login-steps{padding:12px 10px!important}
+  #activationScreen .raja-login-steps .step-title{margin-left:36px!important;font-size:12px!important}
+  #activationScreen .raja-login-steps .step-title::before{left:-36px;width:27px;height:27px;font-size:11px}
+  #activationScreen .raja-login-steps .step-title+div,
+  #activationScreen .raja-login-steps .step-title~a,
+  #activationScreen .raja-login-steps .step-title~.raja-pocket-support{margin-left:36px}
+}
+</style>
+
 </head>
 <body>
 
@@ -4969,19 +5055,20 @@
     <!-- RAJA AI UI V13: momentum graph removed; entry-window timer moved into the signal result area -->
 
     <div class="container">
-        <h2>RAJA AI PREMIUM - PREMIUM UI V13</h2>
-        
-        <div class="market-notice">
-            💡 Best Market Hours: 9:00 AM – 5:00 PM  🚫 Avoid Trade on Saturday and Sunday
-        </div>
-
-        <div id="activationScreen" style="display: block; text-align: center;">
-            <h3 style="color: #fff; font-size: 13px; margin-bottom: 10px; font-weight: 800;">Welcome to Multi-Broker AI Service.</h3>
+        <h2 class="raja-login-main-title">RAJA AI PREMIUM</h2>
+<div id="activationScreen" style="display: block; text-align: center;">
+            <div class="raja-neon-crest" aria-hidden="true">
+                <span class="raja-neon-crown">♛</span>
+                <strong>R</strong>
+            </div>
+            <h3 class="raja-login-welcome">Welcome to Multi-Broker AI Service.</h3>
             
-            <div class="instruction-box">
+            <div class="instruction-box raja-login-steps">
                 <div class="step-title">Step 1:</div>
-                <div style="color: #cbd5e1;">Create your Broker account (Quotex):</div>
-                <a class="link-text" href="https://broker-qx.pro/sign-up/?lid=2209395" target="_blank">Quotex Partner Link</a>
+                <div style="color: #cbd5e1;">Create your supported Broker account: Quotex or Pocket Option.</div>
+                <a class="link-text" href="https://broker-qx.pro/sign-up/?lid=2209395" target="_blank" rel="noopener">Quotex Partner Link</a><br>
+                <a class="link-text" href="https://u3.shortink.io/smart/txvQPFrBEgdZmL" target="_blank" rel="noopener">Pocket Option Partner Link</a>
+                <div class="raja-pocket-support">ⓘ Pocket Option is supported inside RAJA AI after login.</div>
 
                 <div class="step-title">Step 2:</div>
                 <div style="color: #cbd5e1;">Deposit minimum $50</div>
@@ -5004,6 +5091,8 @@
             <input type="password" id="verifyLicenseKey" class="input-field" placeholder="RAJA-VIP-XXXXXX" style="border-color: #00ff87;">
 
             <button id="verifyAccessBtn" class="scan-btn" style="margin-top: 12px;" onclick="verifyAccess()">🔓 VERIFY & UNLOCK AI</button>
+            <button id="activationInstallAppBtn" class="scan-btn raja-activation-install-btn" type="button"
+                    style="display:none; margin-top:8px;" onclick="installPWA()">⬇ INSTALL RAJA AI APP</button>
             <div id="verifyMessage" style="font-size: 11px; font-weight: 900; margin-top: 8px; display: none; padding: 6px; border-radius: 5px;"></div>
         </div>
 
@@ -5858,16 +5947,23 @@
         }
 
         function setInstallButtonVisible(visible) {
-            const btn = document.getElementById('installAppBtn');
-            if (!btn) return;
+            const buttons = [
+                document.getElementById('installAppBtn'),
+                document.getElementById('activationInstallAppBtn')
+            ].filter(Boolean);
+            if (!buttons.length) return;
 
-            if (isRajaStandalone()) {
-                btn.style.display = 'none';
-                return;
-            }
-
-            btn.style.display = visible ? 'inline-flex' : 'none';
-            btn.innerText = '⬇ INSTALL APP';
+            const standalone = isRajaStandalone();
+            buttons.forEach((btn) => {
+                if (standalone) {
+                    btn.style.display = 'none';
+                    return;
+                }
+                btn.style.display = visible ? 'inline-flex' : 'none';
+                btn.innerText = btn.id === 'activationInstallAppBtn'
+                    ? '⬇ INSTALL RAJA AI APP'
+                    : '⬇ INSTALL APP';
+            });
         }
 
         // Chrome / Edge fires this event only when the current site
