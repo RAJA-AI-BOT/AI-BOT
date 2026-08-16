@@ -5662,10 +5662,10 @@
 
                             <div class="raja-forex-otc-fallback-actions">
                                 <button type="button" id="rajaForexOtcAutoAllBtn" class="raja-forex-otc-auto-all-btn">
-                                    ▶ USE NORMAL AUTO SCAN · ALL 21
+                                    ▶ AUTO SCAN ALL 21 · GO TO SCAN BUTTON
                                 </button>
                                 <button type="button" id="rajaForexOtcRetryBtn" class="raja-forex-otc-open-btn">
-                                    ▶ USE NORMAL SCAN · SELECTED PAIR
+                                    ▶ SELECTED PAIR · GO TO SCAN BUTTON
                                 </button>
                                 <button type="button" id="rajaForexOtcSettingsBtn" class="raja-forex-otc-direct-btn">
                                     ⚙ SETTINGS &amp; PAIRS
@@ -8326,7 +8326,8 @@
         }
 
         function displaySignalResult(signalData) {
-            cacheRajaLastSignal(signalData);
+            const isFallbackReference = Boolean(signalData && signalData.fallbackReference);
+            if (!isFallbackReference) cacheRajaLastSignal(signalData);
             completeScanSession('signal');
             let signalView = document.getElementById('signalView');
 
@@ -8348,12 +8349,12 @@
             
             // Render actual backend multi-timeframe breakdown.
             renderTimeframeBreakdown(signalData);
-            registerSignalForTracking(signalData);
+            if (!isFallbackReference) registerSignalForTracking(signalData);
             let isBuy = signalData.dir.includes("CALL");
             playSignalAlertSound(isBuy);
             if (typeof v23SmartAlert === 'function') v23SmartAlert(isBuy ? 'buy' : 'sell');
             if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
-            if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('PENDING','pending');
+            if (!isFallbackReference && typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('PENDING','pending');
             if (typeof v23RenderWinnerReason === 'function') v23RenderWinnerReason(signalData);
             if (typeof v23UpdateFreshnessFromSignal === 'function') v23UpdateFreshnessFromSignal(signalData);
             if (containerEl) {
@@ -8370,14 +8371,16 @@
             if (signalConfidenceValue) signalConfidenceValue.innerText = confluenceString;
             if (signal3dShell) signal3dShell.className = isBuy ? 'premium-signal-result signal-live-buy' : 'premium-signal-result signal-live-sell';
 
-            dynamicHistory.unshift({
-                pair: signalData.pair,
-                dir: isBuy ? "UP (BUY)" : "DOWN (SELL)",
-                acc: confluenceString,
-                result: null
-            });
-            if (dynamicHistory.length > 10) dynamicHistory.pop();
-            localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+            if (!isFallbackReference) {
+                dynamicHistory.unshift({
+                    pair: signalData.pair,
+                    dir: isBuy ? "UP (BUY)" : "DOWN (SELL)",
+                    acc: confluenceString,
+                    result: null
+                });
+                if (dynamicHistory.length > 10) dynamicHistory.pop();
+                localStorage.setItem('raja_signal_history', JSON.stringify(dynamicHistory));
+            }
 
             if (isBuy) {
                 hudBox.className = "ai-hud-box glow-buy";
@@ -8385,16 +8388,36 @@
                 targetPairDisplay.style.color = "#00ff87";
                 resDir.className = "signal-direction dir-up";
                 resDir.innerHTML = `⬆ UP (BUY) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
-                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+                resMeta.innerHTML = isFallbackReference
+                    ? `CALL 🔺 | FALLBACK REFERENCE: ${confluenceString} | ${selectedExpiry} EXPIRY | NOT LIVE QUOTEX DATA`
+                    : `CALL 🔺 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
             } else {
                 hudBox.className = "ai-hud-box glow-sell";
                 targetPairBox.className = "selected-pair-box pair-glow-sell";
                 targetPairDisplay.style.color = "#ff3366";
                 resDir.className = "signal-direction dir-down";
                 resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
-                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+                resMeta.innerHTML = isFallbackReference
+                    ? `PUT 🔻 | FALLBACK REFERENCE: ${confluenceString} | ${selectedExpiry} EXPIRY | NOT LIVE QUOTEX DATA`
+                    : `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
             }
-            notifyRajaSignal(signalData, isBuy, confluenceString);
+            if (!isFallbackReference) {
+                notifyRajaSignal(signalData, isBuy, confluenceString);
+            } else {
+                try {
+                    rajaPostNotification({
+                        title:'RAJA AI · FOREX OTC FALLBACK SIGNAL',
+                        options:{
+                            body:`${signalData.pair} · ${isBuy ? 'UP (BUY)' : 'DOWN (SELL)'} · ${selectedExpiry} · Reference confidence ${confluenceString} · NOT live Quotex data`,
+                            icon:'/raja-ai-icon-192.png',
+                            badge:'/raja-ai-icon-192.png',
+                            tag:'raja-fallback-signal',
+                            renotify:true,
+                            data:{url:'/'}
+                        }
+                    });
+                } catch (_) {}
+            }
             updateStabilityUI(signalData);
             activePremiumSignal = signalData;
             renderSignalIntelligence(signalData);
@@ -8403,7 +8426,7 @@
             if (currentSection === 'dashboard') renderPrimaryView();
             requestAnimationFrame(() => renderSignalChart(document.getElementById('signalMiniChart'), signalData.chartPreview || [], isBuy, null, null));
             startTimer();
-            setTimeout(refreshTrackedHistory, 700);
+            if (!isFallbackReference) setTimeout(refreshTrackedHistory, 700);
         }
     
 
@@ -11200,16 +11223,46 @@
             const summary = row.timeframe_summary && typeof row.timeframe_summary === 'object'
                 ? row.timeframe_summary
                 : {};
-            const valid = Object.entries(summary)
-                .filter(([,tf]) => tf && (tf.signal === 'CALL' || tf.signal === 'PUT') && Number(tf.score || 0) > 0)
-                .map(([name,tf]) => ({
-                    name,
-                    signal:String(tf.signal),
-                    score:Number(tf.score || 0),
-                    weight:Number(FOREX_OTC_TF_WEIGHTS[name] || 1)
-                }));
 
-            if (valid.length < 4) {
+            // Fallback mode can use two kinds of directional evidence:
+            // 1) a full CALL/PUT returned by the normal timeframe engine;
+            // 2) a weaker directional LEAN from bullish/bearish point imbalance.
+            // LEAN evidence is deliberately discounted so it cannot overpower
+            // strong confirmed TFs.
+            const valid = Object.entries(summary).map(([name,tf]) => {
+                if (!tf || typeof tf !== 'object') return null;
+
+                const normalSignal = String(tf.signal || '');
+                const normalScore = Number(tf.score || 0);
+                const bull = Number(tf.bullish_points || 0);
+                const bear = Number(tf.bearish_points || 0);
+                const diff = Math.abs(bull - bear);
+                const winning = Math.max(bull, bear);
+
+                if ((normalSignal === 'CALL' || normalSignal === 'PUT') && normalScore > 0) {
+                    return {
+                        name,
+                        signal:normalSignal,
+                        score:normalScore,
+                        weight:Number(FOREX_OTC_TF_WEIGHTS[name] || 1),
+                        confirmed:true
+                    };
+                }
+
+                if (winning >= 2.5 && diff >= 0.75) {
+                    return {
+                        name,
+                        signal:bull > bear ? 'CALL' : 'PUT',
+                        score:Math.min(72, 54 + diff * 7),
+                        weight:Number(FOREX_OTC_TF_WEIGHTS[name] || 1) * 0.72,
+                        confirmed:false
+                    };
+                }
+
+                return null;
+            }).filter(Boolean);
+
+            if (valid.length < 3) {
                 return {
                     pair:String(row.pair || ''),
                     qualified:false,
@@ -11219,13 +11272,13 @@
                     agreement:0,
                     validCount:valid.length,
                     ageLabel:String(row.data_age_label || '--'),
-                    reason:'NO SIGNAL · fewer than 4 timeframes have usable reference confluence.'
+                    reason:'NO SIGNAL · fewer than 3 timeframes show usable reference direction.'
                 };
             }
 
             const callWeight = valid.filter(x => x.signal === 'CALL').reduce((s,x)=>s+x.weight,0);
             const putWeight = valid.filter(x => x.signal === 'PUT').reduce((s,x)=>s+x.weight,0);
-            if (Math.abs(callWeight - putWeight) < 0.0001) {
+            if (Math.abs(callWeight - putWeight) < 0.12) {
                 return {
                     pair:String(row.pair || ''),
                     qualified:false,
@@ -11235,17 +11288,18 @@
                     agreement:50,
                     validCount:valid.length,
                     ageLabel:String(row.data_age_label || '--'),
-                    reason:'NO SIGNAL · weighted multi-timeframe direction is tied.'
+                    reason:'NO SIGNAL · weighted multi-timeframe reference direction is tied.'
                 };
             }
 
             const direction = callWeight > putWeight ? 'CALL' : 'PUT';
             const supporters = valid.filter(x => x.signal === direction);
+            const opponents = valid.filter(x => x.signal !== direction);
             const totalWeight = valid.reduce((s,x)=>s+x.weight,0);
             const supportWeight = supporters.reduce((s,x)=>s+x.weight,0);
             const agreement = totalWeight ? (supportWeight / totalWeight) * 100 : 0;
 
-            if (supporters.length < 4 || agreement < 66.7) {
+            if (supporters.length < 3 || agreement < 65) {
                 return {
                     pair:String(row.pair || ''),
                     qualified:false,
@@ -11254,14 +11308,24 @@
                     direction,
                     agreement,
                     validCount:valid.length,
+                    supporters:supporters.length,
                     ageLabel:String(row.data_age_label || '--'),
-                    reason:'NO SIGNAL · fallback requires at least 4 aligned timeframes and 66.7% weighted agreement.'
+                    reason:'NO SIGNAL · fallback needs at least 3 aligned reference timeframes and 65% weighted agreement.'
                 };
             }
 
             const requiredTf = fallbackExpiryRequiredTf();
-            const requiredSignal = String(summary?.[requiredTf]?.signal || '');
-            if (requiredTf && requiredSignal !== direction) {
+            const requiredRaw = summary?.[requiredTf] || {};
+            let requiredSignal = String(requiredRaw.signal || '');
+            if (requiredSignal !== 'CALL' && requiredSignal !== 'PUT') {
+                const bull = Number(requiredRaw.bullish_points || 0);
+                const bear = Number(requiredRaw.bearish_points || 0);
+                if (Math.max(bull,bear) >= 2.5 && Math.abs(bull-bear) >= 0.75) {
+                    requiredSignal = bull > bear ? 'CALL' : 'PUT';
+                }
+            }
+
+            if (requiredTf && requiredSignal && requiredSignal !== direction) {
                 return {
                     pair:String(row.pair || ''),
                     qualified:false,
@@ -11270,34 +11334,38 @@
                     direction,
                     agreement,
                     validCount:valid.length,
+                    supporters:supporters.length,
                     ageLabel:String(row.data_age_label || '--'),
-                    reason:`NO SIGNAL · ${requiredTf} does not confirm the selected expiry direction.`
+                    reason:`NO SIGNAL · ${requiredTf} reference direction conflicts with the selected expiry.`
                 };
             }
 
-            const supportScore = supporters.reduce((s,x)=>s+(x.score*x.weight),0) /
-                Math.max(0.0001, supporters.reduce((s,x)=>s+x.weight,0));
+            const supporterWeight = Math.max(0.0001, supporters.reduce((s,x)=>s+x.weight,0));
+            const supportScore = supporters.reduce((s,x)=>s+(x.score*x.weight),0) / supporterWeight;
+            const confirmedCount = supporters.filter(x => x.confirmed).length;
 
             const chart = fallbackChartDirection(row.chart_preview);
-            let confidence = (supportScore * 0.58) + (agreement * 0.34);
+            let confidence = (supportScore * 0.54) + (agreement * 0.36);
 
             if (chart.dir && chart.dir === direction) confidence += 5 * chart.strength;
             else if (chart.dir && chart.dir !== direction) confidence -= 7 * Math.max(.4, chart.strength);
 
-            if (supporters.length >= 5) confidence += 2.5;
-            if (supporters.length === valid.length) confidence += 2.5;
+            confidence += Math.min(5, confirmedCount * 1.25);
+            if (supporters.length >= 5) confidence += 2;
+            if (opponents.length === 0) confidence += 1.5;
 
-            // Old reference data must never be presented with extreme confidence.
+            // Reference age caps confidence. Old weekend data is never allowed
+            // to masquerade as a high-confidence live signal.
             const ageHours = Math.max(0, Number(row.data_age_seconds || 0) / 3600);
             let ageCap = 90;
             if (ageHours > 12) ageCap = 88;
-            if (ageHours > 24) ageCap = 86;
-            if (ageHours > 48) ageCap = 82;
-            if (ageHours > 72) ageCap = 78;
+            if (ageHours > 24) ageCap = 85;
+            if (ageHours > 48) ageCap = 81;
+            if (ageHours > 72) ageCap = 77;
 
             confidence = Math.max(0, Math.min(ageCap, confidence));
-            const qualified = confidence >= FOREX_OTC_FALLBACK_MIN_CONFIDENCE;
-            const watch = !qualified && confidence >= FOREX_OTC_FALLBACK_WATCH_CONFIDENCE;
+            const qualified = confidence >= 78;
+            const watch = !qualified && confidence >= 70;
 
             return {
                 pair:String(row.pair || ''),
@@ -11308,14 +11376,56 @@
                 agreement:Math.round(agreement * 10) / 10,
                 validCount:valid.length,
                 supporters:supporters.length,
+                confirmedCount,
                 ageLabel:String(row.data_age_label || '--'),
                 dataAgeSeconds:Number(row.data_age_seconds || 0),
                 requiredTf,
+                alignedTimeframes:supporters.map(x=>x.name),
+                opposingTimeframes:opponents.map(x=>x.name),
                 reason: qualified
-                    ? `REFERENCE FALLBACK · ${supporters.length}/${valid.length} valid TFs align ${direction}.`
+                    ? `REFERENCE FALLBACK · ${supporters.length}/${valid.length} directional TFs align ${direction} (${confirmedCount} fully confirmed).`
                     : (watch
-                        ? `WATCH ONLY · confidence below ${FOREX_OTC_FALLBACK_MIN_CONFIDENCE}% signal floor.`
-                        : `NO SIGNAL · confidence below fallback safety floor.`)
+                        ? 'WATCH ONLY · directional setup exists but confidence is below the fallback signal floor.'
+                        : 'NO SIGNAL · fallback reference confidence is below the safety floor.')
+            };
+        }
+
+        function buildForexOtcFallbackSignal(item, rawRow) {
+            const summary = rawRow?.timeframe_summary || {};
+            const preferredTf = item?.requiredTf || '1m';
+            const representative =
+                summary?.[preferredTf] ||
+                summary?.['5m'] ||
+                summary?.['2m'] ||
+                summary?.['1m'] ||
+                {};
+
+            const confidence = Number(item?.confidence || 0);
+            return {
+                pair:String(item?.pair || rawRow?.pair || ''),
+                confluence:confidence,
+                dir:item?.direction === 'CALL' ? 'CALL (UP)' : 'PUT (DOWN)',
+                reason:`FALLBACK · REFERENCE BASED · ${String(item?.reason || '')}`,
+                rsi:representative?.rsi ?? null,
+                bullishPoints:Number(representative?.bullish_points || 0),
+                bearishPoints:Number(representative?.bearish_points || 0),
+                dataAge:Number(rawRow?.data_age_seconds || 0),
+                timeframeSummary:summary,
+                alignedTimeframes:Array.isArray(item?.alignedTimeframes) ? item.alignedTimeframes : [],
+                opposingTimeframes:Array.isArray(item?.opposingTimeframes) ? item.opposingTimeframes : [],
+                multiTfAgreement:Number(item?.agreement || 0),
+                confirmationMode:`FALLBACK REFERENCE · ${Number(item?.supporters || 0)}-of-${Number(item?.validCount || 0)} directional TFs`,
+                duplicateProtection:false,
+                marketStabilityScore:Math.max(50, Math.min(85, confidence - 3)),
+                marketRiskLevel:'REFERENCE',
+                volatilityPct:0,
+                chartPreview:Array.isArray(rawRow?.chart_preview) ? rawRow.chart_preview : [],
+                scanMode:'FALLBACK',
+                scanThresholds:{},
+                fallbackReference:true,
+                fallbackWarning:'REFERENCE-BASED FALLBACK · NOT LIVE QUOTEX OTC DATA',
+                source:'Yahoo Finance',
+                sourceMode:'fallback_reference_only'
             };
         }
 
@@ -11424,14 +11534,35 @@
         }
 
         async function runForexOtcFallbackScan(pairs, autoMode = false) {
-            if (!forexOtcFallbackArmed || forexOtcFallbackBusy) return;
+            if (!forexOtcFallbackArmed || forexOtcFallbackBusy) return null;
             forexOtcFallbackBusy = true;
 
+            const list = Array.isArray(pairs) ? pairs.filter(Boolean).slice(0,21) : [];
             const autoBtn = document.getElementById('rajaForexOtcAutoAllBtn');
             const retryBtn = document.getElementById('rajaForexOtcRetryBtn');
             const scanBtn = document.getElementById('scanBtn');
             const meta = document.getElementById('rajaForexOtcFallbackMeta');
             const oldScanText = scanBtn ? scanBtn.innerText : '';
+
+            // Give fallback the same visual scan lifecycle as the normal scanner.
+            currentSection = 'dashboard';
+            clearAutoRescanSchedule(true);
+            rajaScanStopRequested = false;
+            rajaScanStartPending = false;
+
+            if (!scanSessionState.running) {
+                beginScanSession(false, list.length);
+                setScanProgress(10);
+                renderPrimaryView();
+            }
+
+            const scanConsole = document.getElementById('liveScanConsole');
+            const scanStep = document.getElementById('scanStepText');
+
+            if (scanConsole) {
+                scanConsole.innerHTML = `<div class="live-scan-row scanning">⚡ FOREX OTC FALLBACK · ${autoMode ? `AUTO SCAN ${list.length} PAIRS` : escapeHtml(list[0] || 'SELECTED PAIR')}</div>`;
+            }
+            if (scanStep) scanStep.innerText = 'Checking Yahoo recovery, then fallback reference structure...';
 
             if (autoBtn) autoBtn.disabled = true;
             if (retryBtn) retryBtn.disabled = true;
@@ -11445,43 +11576,93 @@
             try {
                 if (meta) {
                     meta.textContent = autoMode
-                        ? 'JS FALLBACK · analyzing all 21 Forex OTC reference snapshots...'
-                        : 'JS FALLBACK · analyzing selected Forex OTC reference snapshot...';
+                        ? 'NORMAL SCAN UI · fallback is analyzing all Forex OTC reference snapshots...'
+                        : 'NORMAL SCAN UI · fallback is analyzing the selected Forex OTC reference snapshot...';
                 }
 
-                const payload = await fetchForexOtcFallbackSnapshots(pairs);
+                setScanProgress(28);
+                const payload = await fetchForexOtcFallbackSnapshots(list);
+                setScanProgress(58);
 
-                // Yahoo always wins. If fresh data is detected during a fallback request,
-                // immediately close fallback and resume the normal RAJA AI Yahoo scanner.
+                // Yahoo always gets first priority.
                 const liveRow = payload.data.find(row => row && row.live_fresh);
                 if (liveRow) {
+                    completeScanSession('ready');
                     await handleForexOtcYahooRecovery(liveRow);
-                    return;
+                    return {recovered:true};
                 }
 
                 const scored = payload.data.map(scoreForexOtcFallbackRow);
                 renderForexOtcFallbackResults(scored, autoMode);
+                setScanProgress(82);
 
-                const qualified = scored.filter(x => x.qualified).sort((a,b)=>b.confidence-a.confidence);
-                if (meta) {
-                    if (qualified.length) {
-                        const best = qualified[0];
-                        meta.textContent = `JS FALLBACK ACTIVE · ${qualified.length} qualified reference signal${qualified.length===1?'':'s'} · Top: ${best.pair} ${best.direction} ${best.confidence.toFixed(1)}% · Yahoo recovery check remains ON.`;
-                    } else {
-                        meta.textContent = 'JS FALLBACK ACTIVE · No pair passed the strict signal floor. No direction was forced · Yahoo recovery check remains ON.';
+                const qualified = scored
+                    .filter(x => x.qualified)
+                    .sort((a,b)=>(b.confidence-a.confidence)||(b.agreement-a.agreement));
+
+                if (qualified.length) {
+                    const best = qualified[0];
+                    const rawRow = payload.data.find(row => String(row?.pair || '') === best.pair) || payload.data[0];
+                    const signalData = buildForexOtcFallbackSignal(best, rawRow);
+
+                    if (scanConsole) {
+                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${escapeHtml(best.pair)}</span><span>${best.direction} · ${best.confidence.toFixed(1)}%</span></div>`;
                     }
+                    if (scanStep) scanStep.innerText = 'Fallback reference signal qualified · opening normal signal result...';
+                    setScanProgress(100);
+
+                    if (meta) {
+                        meta.textContent = `JS FALLBACK ACTIVE · Top qualified signal: ${best.pair} ${best.direction} ${best.confidence.toFixed(1)}% · Yahoo recovery remains ON.`;
+                    }
+
+                    // Display in the SAME normal signal screen the user already knows.
+                    displaySignalResult(signalData);
+                    return {signal:true, signalData, scored};
                 }
+
+                completeScanSession('nosignal');
+                currentSection = 'dashboard';
+                const titleEl = document.getElementById('noSignalTitle');
+                const descEl = document.getElementById('noSignalDesc');
+                const reasonBox = document.getElementById('noTradeReasonBox');
+
+                if (titleEl) titleEl.innerText = '🟡 FOREX OTC FALLBACK · NO QUALIFIED SIGNAL';
+                if (descEl) descEl.innerText = autoMode
+                    ? 'All available Forex OTC reference setups were analyzed. None passed the fallback confidence gate.'
+                    : 'The selected Forex OTC reference setup did not pass the fallback confidence gate.';
+                if (reasonBox) {
+                    reasonBox.style.display = 'block';
+                    const bestWatch = scored.filter(x=>x.watch).sort((a,b)=>b.confidence-a.confidence)[0];
+                    reasonBox.innerText = bestWatch
+                        ? `${bestWatch.pair} is WATCH ONLY at ${bestWatch.confidence.toFixed(1)}% reference confidence. No BUY/SELL was forced.`
+                        : 'Reference structure is too weak or conflicting. No BUY/SELL was forced.';
+                }
+                renderPrimaryView();
+
+                if (meta) {
+                    meta.textContent = 'JS FALLBACK ACTIVE · scan completed but no setup passed the signal floor. Yahoo recovery remains ON.';
+                }
+                return {signal:false, scored};
             } catch (error) {
+                completeScanSession('error');
+                currentSection = 'dashboard';
+                const titleEl = document.getElementById('noSignalTitle');
+                const descEl = document.getElementById('noSignalDesc');
+                if (titleEl) titleEl.innerText = '⚠ FOREX OTC FALLBACK SCAN ERROR';
+                if (descEl) descEl.innerText = String(error?.message || 'Fallback reference scan failed.');
+                renderPrimaryView();
+
                 if (meta) {
                     meta.textContent = error && error.name === 'AbortError'
                         ? 'JS FALLBACK request timed out. Yahoo recovery monitor is still active.'
                         : `JS FALLBACK error · ${String(error?.message || 'Reference analysis failed.')}`;
                 }
+                return {error:true};
             } finally {
                 forexOtcFallbackBusy = false;
                 if (autoBtn) autoBtn.disabled = false;
                 if (retryBtn) retryBtn.disabled = false;
-                if (scanBtn) {
+                if (scanBtn && !scanSessionState.running) {
                     scanBtn.disabled = false;
                     scanBtn.innerText = oldScanText || (rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN');
                 }
@@ -11558,12 +11739,67 @@
             return true;
         }
 
+        function moveToNormalForexOtcScanButton(mode = 'single') {
+            // This action is valid ONLY while the dedicated Forex OTC fallback
+            // is armed. If Yahoo has already recovered, normal Yahoo scanning wins.
+            if (!forexOtcFallbackArmed) return false;
+
+            const marketEl = document.getElementById('marketType');
+            const pairEl = document.getElementById('pairSelect');
+            const scanBtn = document.getElementById('scanBtn');
+            const meta = document.getElementById('rajaForexOtcFallbackMeta');
+
+            if (!marketEl || !pairEl || !scanBtn) return false;
+
+            marketEl.value = 'ForexOTC';
+
+            if (mode === 'auto') {
+                const autoOption = Array.from(pairEl.options || []).find(option =>
+                    /auto scan/i.test(String(option.value || option.textContent || ''))
+                );
+                if (autoOption) pairEl.value = autoOption.value;
+                forexOtcFallbackSelectedPair = '';
+            } else {
+                const selected = String(forexOtcFallbackSelectedPair || '').trim();
+                if (selected && Array.from(pairEl.options || []).some(option => option.value === selected)) {
+                    pairEl.value = selected;
+                }
+            }
+
+            try { if (typeof syncTargetPairDisplay === 'function') syncTargetPairDisplay(); } catch (_) {}
+            try { if (typeof showDefaultView === 'function') showDefaultView(); } catch (_) {}
+
+            if (meta) {
+                meta.textContent = mode === 'auto'
+                    ? 'AUTO SCAN ALL 21 selected · press the NORMAL START AI MARKET SCAN button. While Yahoo is unavailable, that button uses Forex OTC fallback. Yahoo recovery switches it back automatically.'
+                    : `${pairEl.value || 'Selected pair'} selected · press the NORMAL START AI MARKET SCAN button. While Yahoo is unavailable, that button uses Forex OTC fallback.`;
+            }
+
+            // Use the same behavior on mobile, tablet and desktop.
+            try {
+                scanBtn.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' });
+            } catch (_) {
+                try { window.scrollTo({ top:Math.max(0, scanBtn.getBoundingClientRect().top + window.scrollY - 160), behavior:'smooth' }); } catch (_) {}
+            }
+
+            setTimeout(() => {
+                try { scanBtn.focus({ preventScroll:true }); } catch (_) { try { scanBtn.focus(); } catch (_) {} }
+                scanBtn.classList.add('raja-normal-scan-focus');
+                clearTimeout(scanBtn.__rajaFallbackFocusTimer);
+                scanBtn.__rajaFallbackFocusTimer = setTimeout(() => {
+                    scanBtn.classList.remove('raja-normal-scan-focus');
+                }, 4000);
+            }, 420);
+
+            return true;
+        }
+
         async function autoScanAllForexOtcFallbackPairs() {
-            focusNormalForexOtcScanButton('auto');
+            moveToNormalForexOtcScanButton('auto');
         }
 
         async function retryForexOtcFallbackPair() {
-            focusNormalForexOtcScanButton('single');
+            moveToNormalForexOtcScanButton('single');
         }
 
         async function checkForexOtcLiveRecovery(forceUi = false) {
@@ -11612,6 +11848,10 @@
 
         async function handleForexOtcYahooRecovery(row) {
             if (!forexOtcFallbackArmed) return;
+
+            if (scanSessionState && scanSessionState.running) {
+                completeScanSession('ready');
+            }
 
             const state = document.getElementById('rajaForexOtcFallbackState');
             const meta = document.getElementById('rajaForexOtcFallbackMeta');
