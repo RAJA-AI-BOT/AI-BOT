@@ -20,7 +20,8 @@ const API_PREFIXES = [
   '/track-signal',
   '/user/profile',
   '/admin/',
-  '/telegram/'
+  '/telegram/',
+  '/otc-fallback-config'
 ];
 
 function isApiPath(pathname) {
