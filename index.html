@@ -3072,7 +3072,15 @@
                 max-height: 66dvh !important;
             }
         }
-    </style>
+            /* Mobile clarity: make it obvious that market/pair selection lives in Settings. */
+        @media (max-width: 700px) {
+            .raja-mobile-settings-btn {
+                white-space: normal !important;
+                line-height: 1.12 !important;
+                font-size: 9.8px !important;
+            }
+        }
+</style>
 
 
     <style id="raja-v22-luxury-polish">
@@ -5005,7 +5013,7 @@
                 <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
                 <div class="raja-mobile-command-actions triple">
                     <button id="rajaMobileHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button>
-                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS</button>
+                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS &amp; PAIRS</button>
                     <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
                 </div>
             </div>
@@ -5140,7 +5148,7 @@
                                     <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
                                     <div class="ready-copy">
                                         <div class="ready-title">AI Deep Scan Ready</div>
-                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS & PAIRS / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
                                         <div class="scan-stage-list" style="margin-top:18px;">
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
@@ -5591,7 +5599,7 @@
                     </section>
 
                     <section class="config-panel">
-                        <div class="config-title">TRADING CONFIGURATION</div>
+                        <div class="config-title">TRADING CONFIGURATION · SETTINGS &amp; PAIRS</div>
                         <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
                             <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
@@ -9681,7 +9689,7 @@
             }
             if (button) {
                 button.classList.toggle('active', nextOpen);
-                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS';
+                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS & PAIRS';
             }
 
             if (nextOpen) {
@@ -9704,7 +9712,7 @@
             const head = document.createElement('div');
             head.className = 'raja-mobile-sheet-head';
             head.innerHTML =
-                '<strong>⚙ QUICK SETTINGS</strong>' +
+                '<strong>⚙ SETTINGS & PAIRS</strong>' +
                 '<button type="button" class="raja-mobile-sheet-close">DONE</button>';
             panel.insertBefore(head, panel.firstChild);
 
