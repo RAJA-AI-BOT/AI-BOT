@@ -4969,6 +4969,228 @@ body:not(.raja-o2-dashboard-active)>.container>.market-notice{display:none!impor
 }
 </style>
 
+
+<style id="raja-scan-layout-sound-fix-v1">
+/* ===== QUICK EXPIRY + SCAN CONTROLS AT THE TOP ===== */
+.raja-top-trade-controls{
+    margin:0 0 9px;
+    padding:9px 10px;
+    border:1px solid rgba(96,239,255,.22);
+    border-radius:11px;
+    background:linear-gradient(180deg,rgba(4,18,32,.92),rgba(2,10,19,.96));
+    box-shadow:inset 0 0 26px rgba(0,242,254,.025);
+}
+.raja-top-control-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:7px;
+}
+.raja-top-control-head>div:first-child{min-width:0}
+.raja-top-control-head strong{
+    display:block;
+    color:#60efff;
+    font-size:9px;
+    font-weight:950;
+    letter-spacing:.65px;
+}
+.raja-top-control-head span{
+    display:block;
+    margin-top:2px;
+    color:#7993a8;
+    font-size:7px;
+    font-weight:750;
+}
+.raja-top-control-live{
+    display:flex;
+    align-items:center;
+    gap:5px;
+    color:#00ff9a;
+    font-size:7px;
+    font-weight:950;
+    white-space:nowrap;
+}
+.raja-top-control-live i{
+    width:7px;height:7px;border-radius:50%;background:#00ff9a;
+    box-shadow:0 0 10px #00ff9a;
+    animation:pulseDot 1s infinite;
+}
+.raja-top-control-body{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) minmax(220px,31%);
+    gap:8px;
+    align-items:end;
+}
+.raja-top-expiry-mount,.raja-top-scan-mount{min-width:0}
+#rajaTopExpiryMount .config-field.expiry-wide{
+    margin:0!important;
+    padding:0!important;
+    background:transparent!important;
+    border:0!important;
+}
+#rajaTopExpiryMount .config-field.expiry-wide>label{
+    display:block!important;
+    margin:0 0 4px!important;
+    color:#a9c7d8!important;
+    font-size:7px!important;
+    font-weight:900!important;
+    letter-spacing:.45px;
+}
+#rajaTopExpiryMount .expiry-container{
+    display:grid!important;
+    grid-template-columns:repeat(8,minmax(42px,1fr))!important;
+    gap:4px!important;
+    margin:0!important;
+}
+#rajaTopExpiryMount .expiry-btn{
+    min-height:31px!important;
+    padding:5px 2px!important;
+    font-size:8px!important;
+    border-radius:6px!important;
+}
+#rajaTopScanMount .v32-scan-action-row{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) 92px!important;
+    gap:6px!important;
+    margin:0!important;
+    width:100%!important;
+}
+#rajaTopScanMount #scanBtn{
+    margin:0!important;
+    min-height:38px!important;
+    height:38px!important;
+    padding:7px 10px!important;
+    font-size:9.5px!important;
+    border-radius:7px!important;
+    box-shadow:0 0 18px rgba(0,255,135,.22)!important;
+}
+#rajaTopScanMount #stopScanBtn{
+    margin:0!important;
+    min-height:38px!important;
+    height:38px!important;
+    font-size:7.5px!important;
+}
+
+/* ===== FIX LIVE SCANNING HUD THAT WAS SQUEEZED / "STUCK" =====
+   There are two children: premium-intensity-hud + scan-process-panel.
+   Older CSS incorrectly reserved 3 grid columns. */
+.scan-view{width:100%!important;min-width:0!important}
+.scan-live-grid{
+    width:100%!important;
+    display:grid!important;
+    grid-template-columns:minmax(0,1.75fr) minmax(215px,.72fr)!important;
+    gap:10px!important;
+    align-items:stretch!important;
+}
+.premium-intensity-hud{
+    width:100%!important;
+    min-width:0!important;
+    min-height:238px!important;
+    grid-template-columns:160px minmax(0,1fr)!important;
+    gap:12px!important;
+    padding:14px!important;
+}
+.premium-orbit-shell{width:145px!important}
+.premium-progress-ring{width:116px!important}
+.premium-progress-value{font-size:29px!important}
+.premium-wave-panel{height:72px!important}
+.premium-intensity-title{font-size:10px!important}
+.premium-intensity-band{gap:4px!important}
+.premium-intensity-segment{min-width:0!important;padding:6px 2px!important;font-size:6.5px!important}
+.premium-intensity-segment strong{font-size:5.5px!important}
+.scan-process-panel{
+    width:100%!important;
+    min-width:0!important;
+    padding:10px!important;
+    overflow:hidden!important;
+}
+.scan-process-panel .scan-stage{font-size:8px!important}
+
+/* ===== SOUND & VOICE CENTER ===== */
+.raja-sound-center{border-color:rgba(155,92,255,.30)!important;box-shadow:inset 0 0 22px rgba(155,92,255,.025)}
+.raja-sound-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:7px;
+    margin-top:8px;
+}
+.raja-sound-grid label{
+    display:block;
+    padding:8px;
+    border:1px solid rgba(96,239,255,.12);
+    border-radius:8px;
+    background:#05111f;
+    color:#a9bfce;
+    font-size:8px;
+    font-weight:850;
+}
+.raja-sound-grid label b{float:right;color:#60efff}
+.raja-sound-grid input[type=range]{width:100%;margin-top:6px}
+.raja-sound-grid select{width:100%;margin-top:6px;font-size:9px}
+.raja-sound-options{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:6px;
+    margin-top:8px;
+}
+.raja-sound-options label{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:7px;
+    border:1px solid rgba(96,239,255,.10);
+    border-radius:7px;
+    background:rgba(255,255,255,.018);
+    color:#9fb7c8;
+    font-size:7.5px;
+    font-weight:850;
+}
+.raja-sound-tests{display:flex;gap:6px;margin-top:8px}
+.raja-sound-tests button{
+    flex:1;
+    min-height:34px;
+    border:1px solid rgba(85,233,255,.23);
+    border-radius:8px;
+    background:#061423;
+    color:#dff7ff;
+    font-size:8px;
+    font-weight:950;
+    cursor:pointer;
+}
+.raja-sound-tests button:first-child{color:#00ff9a;border-color:rgba(0,255,154,.30)}
+.raja-sound-tests button:nth-child(2){color:#ff5d7d;border-color:rgba(255,93,125,.32)}
+
+/* Desktop/laptop responsive */
+@media(max-width:1250px){
+    .raja-top-control-body{grid-template-columns:minmax(0,1fr) 230px}
+    #rajaTopExpiryMount .expiry-container{grid-template-columns:repeat(4,1fr)!important}
+    .scan-live-grid{grid-template-columns:minmax(0,1.5fr) minmax(195px,.72fr)!important}
+    .premium-intensity-hud{grid-template-columns:138px minmax(0,1fr)!important;padding:11px!important}
+    .premium-orbit-shell{width:126px!important}
+    .premium-progress-ring{width:100px!important}
+    .premium-wave-panel{height:64px!important}
+}
+@media(max-width:900px){
+    .raja-top-control-body{grid-template-columns:1fr}
+    #rajaTopScanMount .v32-scan-action-row{grid-template-columns:1fr 105px!important}
+    .scan-live-grid{grid-template-columns:1fr!important}
+    .premium-intensity-hud{grid-template-columns:145px minmax(0,1fr)!important}
+    .scan-process-panel{min-height:145px!important}
+}
+@media(max-width:620px){
+    .raja-top-trade-controls{padding:8px}
+    .raja-top-control-head span{display:none}
+    #rajaTopExpiryMount .expiry-container{grid-template-columns:repeat(4,1fr)!important}
+    #rajaTopScanMount .v32-scan-action-row{grid-template-columns:1fr 86px!important}
+    .premium-intensity-hud{grid-template-columns:1fr!important;text-align:center}
+    .premium-intensity-left{margin-bottom:4px}
+    .premium-intensity-kicker{justify-content:center;flex-wrap:wrap}
+    .raja-sound-grid{grid-template-columns:1fr}
+    .raja-sound-options{grid-template-columns:1fr}
+}
+</style>
+
 </head>
 <body>
 
@@ -5201,6 +5423,21 @@ body:not(.raja-o2-dashboard-active)>.container>.market-notice{display:none!impor
                         </div>
 
 
+
+
+                        <section id="rajaTopTradeControls" class="raja-top-trade-controls" aria-label="Quick trade controls">
+                            <div class="raja-top-control-head">
+                                <div>
+                                    <strong>⚡ QUICK TRADE CONTROL</strong>
+                                    <span>Choose expiry / candle, then start the live AI scan.</span>
+                                </div>
+                                <div class="raja-top-control-live"><i></i> LIVE ENGINE</div>
+                            </div>
+                            <div class="raja-top-control-body">
+                                <div id="rajaTopExpiryMount" class="raja-top-expiry-mount"></div>
+                                <div id="rajaTopScanMount" class="raja-top-scan-mount"></div>
+                            </div>
+                        </section>
 
                         <section class="intel-heatmap-shell" id="premiumMarketHeatmap">
                             <div class="intel-title-row"><div class="intel-title">◉ LIVE MARKET HEATMAP</div><div class="intel-caption" id="heatmapCaption">Latest authenticated scan snapshot · click a pair to select</div></div>
@@ -5568,7 +5805,50 @@ body:not(.raja-o2-dashboard-active)>.container>.market-notice{display:none!impor
                                 <div class="inline-title">⚙️ AI Engine Settings</div>
                                 <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
                                 <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
-                                <div class="settings-section"><h4>Voice Alerts</h4><div class="switch-row"><span>Speak signal aloud (example: “USD CAD, Down signal, one minute”)</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div></div>
+                                <div class="settings-section raja-sound-center">
+                                    <h4>🔊 Sound & Voice Center</h4>
+                                    <div class="switch-row"><span>Master Sound</span><input id="rajaMasterSound" type="checkbox" checked onchange="saveRajaSoundCenter()"></div>
+                                    <div class="switch-row"><span>Speak confirmed CALL / PUT signals aloud</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked);saveRajaSoundCenter()"></div>
+                                    <div class="switch-row"><span>Quiet Mode · only signal + entry alerts</span><input id="rajaQuietMode" type="checkbox" onchange="saveRajaSoundCenter()"></div>
+
+                                    <div class="raja-sound-grid">
+                                        <label>Voice Volume
+                                            <input id="rajaVoiceVolume" type="range" min="0" max="100" value="75" oninput="saveRajaSoundCenter()">
+                                            <b id="rajaVoiceVolumeValue">75%</b>
+                                        </label>
+                                        <label>Alert Volume
+                                            <input id="rajaAlertVolume" type="range" min="0" max="100" value="55" oninput="saveRajaSoundCenter()">
+                                            <b id="rajaAlertVolumeValue">55%</b>
+                                        </label>
+                                        <label>Voice Speed
+                                            <select id="rajaVoiceSpeed" onchange="saveRajaSoundCenter()">
+                                                <option value="0.82">Slow</option>
+                                                <option value="1" selected>Normal</option>
+                                                <option value="1.18">Fast</option>
+                                            </select>
+                                        </label>
+                                        <label>Voice
+                                            <select id="rajaVoiceGender" onchange="saveRajaSoundCenter()">
+                                                <option value="auto">Auto</option>
+                                                <option value="female">Female</option>
+                                                <option value="male">Male</option>
+                                            </select>
+                                        </label>
+                                    </div>
+
+                                    <div class="raja-sound-options">
+                                        <label><input id="rajaAPlusSound" type="checkbox" checked onchange="saveRajaSoundCenter()"> A+ Double Alert</label>
+                                        <label><input id="rajaCountdownSound" type="checkbox" checked onchange="saveRajaSoundCenter()"> Entry Countdown</label>
+                                        <label><input id="rajaOutcomeSound" type="checkbox" checked onchange="saveRajaSoundCenter()"> WIN / LOSS Sounds</label>
+                                    </div>
+
+                                    <div class="raja-sound-tests">
+                                        <button type="button" onclick="testRajaCallSound()">↑ TEST CALL</button>
+                                        <button type="button" onclick="testRajaPutSound()">↓ TEST PUT</button>
+                                        <button type="button" onclick="testRajaVoice()">🔊 TEST VOICE</button>
+                                    </div>
+                                    <div class="app-feature-status">CALL rising tone · PUT falling tone · A+ double alert · NO TRADE / bad-market warning · 10/5/3/2/1 entry countdown · expiry · WIN/LOSS tones.</div>
+                                </div>
 
                                 <div class="settings-section">
                                     <h4>Appearance & Safety</h4>
@@ -11302,6 +11582,345 @@ body:not(.raja-o2-dashboard-active)>.container>.market-notice{display:none!impor
         });
     })();
     </script>
+
+
+<script id="raja-old-design-sound-and-layout-v1">
+(function(){
+    const $ = (id) => document.getElementById(id);
+
+    /* ---------- MOVE REAL EXPIRY + SCAN CONTROLS TO THE TOP ---------- */
+    function mountTopTradeControls(){
+        const expiry = document.querySelector('.config-field.expiry-wide');
+        const scanRow = document.querySelector('.v32-scan-action-row');
+        const expiryMount = $('rajaTopExpiryMount');
+        const scanMount = $('rajaTopScanMount');
+
+        if(expiry && expiryMount && expiry.parentElement !== expiryMount){
+            expiryMount.appendChild(expiry);
+            const label = expiry.querySelector('label');
+            if(label) label.textContent = 'TRADE EXPIRY / CANDLE';
+        }
+        if(scanRow && scanMount && scanRow.parentElement !== scanMount){
+            scanMount.appendChild(scanRow);
+        }
+    }
+
+    /* ---------- SOUND PREFERENCES ---------- */
+    let prefs = {
+        master:true,
+        quiet:false,
+        voiceVolume:.75,
+        alertVolume:.55,
+        speed:1,
+        gender:'auto',
+        aPlus:true,
+        countdown:true,
+        outcomes:true
+    };
+    let soundHistorySeeded = false;
+    const knownOutcomes = new Map();
+    let countdownSignalKey = '';
+    const countdownSpoken = new Set();
+    let expirySoundKey = '';
+
+    function readPrefs(){
+        try{
+            const saved = JSON.parse(localStorage.getItem('raja_sound_center_v1') || '{}');
+            prefs = {...prefs, ...saved};
+        }catch(_){}
+        return prefs;
+    }
+
+    window.saveRajaSoundCenter = function(){
+        const p = readPrefs();
+        p.master = $('rajaMasterSound') ? $('rajaMasterSound').checked : p.master;
+        p.quiet = $('rajaQuietMode') ? $('rajaQuietMode').checked : p.quiet;
+        p.voiceVolume = Math.max(0,Math.min(1,Number($('rajaVoiceVolume')?.value || 75)/100));
+        p.alertVolume = Math.max(0,Math.min(1,Number($('rajaAlertVolume')?.value || 55)/100));
+        p.speed = Math.max(.65,Math.min(1.4,Number($('rajaVoiceSpeed')?.value || 1)));
+        p.gender = String($('rajaVoiceGender')?.value || 'auto');
+        p.aPlus = $('rajaAPlusSound') ? $('rajaAPlusSound').checked : p.aPlus;
+        p.countdown = $('rajaCountdownSound') ? $('rajaCountdownSound').checked : p.countdown;
+        p.outcomes = $('rajaOutcomeSound') ? $('rajaOutcomeSound').checked : p.outcomes;
+
+        localStorage.setItem('raja_sound_center_v1', JSON.stringify(p));
+
+        if($('rajaVoiceVolumeValue')) $('rajaVoiceVolumeValue').textContent = Math.round(p.voiceVolume*100)+'%';
+        if($('rajaAlertVolumeValue')) $('rajaAlertVolumeValue').textContent = Math.round(p.alertVolume*100)+'%';
+
+        if(typeof soundEnabled !== 'undefined'){
+            soundEnabled = p.master !== false;
+            const btn = $('soundToggleBtn');
+            if(btn){
+                btn.textContent = soundEnabled ? '🔊 SOUND: ON' : '🔇 SOUND: OFF';
+                btn.style.color = soundEnabled ? '#00ff87' : '#ff3366';
+            }
+        }
+    };
+
+    function hydrateSoundCenter(){
+        const p = readPrefs();
+        if($('rajaMasterSound')) $('rajaMasterSound').checked = p.master !== false;
+        if($('rajaQuietMode')) $('rajaQuietMode').checked = !!p.quiet;
+        if($('rajaVoiceVolume')) $('rajaVoiceVolume').value = Math.round(p.voiceVolume*100);
+        if($('rajaAlertVolume')) $('rajaAlertVolume').value = Math.round(p.alertVolume*100);
+        if($('rajaVoiceSpeed')) $('rajaVoiceSpeed').value = String(p.speed);
+        if($('rajaVoiceGender')) $('rajaVoiceGender').value = p.gender || 'auto';
+        if($('rajaAPlusSound')) $('rajaAPlusSound').checked = p.aPlus !== false;
+        if($('rajaCountdownSound')) $('rajaCountdownSound').checked = p.countdown !== false;
+        if($('rajaOutcomeSound')) $('rajaOutcomeSound').checked = p.outcomes !== false;
+        if($('rajaVoiceVolumeValue')) $('rajaVoiceVolumeValue').textContent = Math.round(p.voiceVolume*100)+'%';
+        if($('rajaAlertVolumeValue')) $('rajaAlertVolumeValue').textContent = Math.round(p.alertVolume*100)+'%';
+        if($('voiceAlertEnabled')) $('voiceAlertEnabled').checked = !!voiceAlertEnabled;
+    }
+
+    function audioAllowed(kind='signal'){
+        const p = readPrefs();
+        if(p.master === false) return false;
+        if(typeof soundEnabled !== 'undefined' && !soundEnabled) return false;
+        if(p.quiet && !['call','put','entry','countdown','a+'].includes(kind)) return false;
+        return true;
+    }
+
+    function tone(notes, opts={}){
+        const kind = opts.kind || 'signal';
+        if(!audioAllowed(kind)) return;
+        try{
+            if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if(audioCtx.state === 'suspended') audioCtx.resume();
+
+            const p = readPrefs();
+            const now = audioCtx.currentTime;
+            (notes || []).forEach((freq,i)=>{
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const start = now + i*(opts.gap || .09);
+                osc.type = opts.type || 'sine';
+                osc.frequency.setValueAtTime(freq,start);
+                gain.gain.setValueAtTime(Math.max(.008,p.alertVolume*(opts.gain || .22)),start);
+                gain.gain.exponentialRampToValueAtTime(.004,start+(opts.duration || .16));
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(start);
+                osc.stop(start+(opts.duration || .17));
+            });
+        }catch(_){}
+    }
+
+    function pickVoice(gender){
+        if(!('speechSynthesis' in window)) return null;
+        const voices = window.speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang || ''));
+        if(!voices.length) return null;
+        const femaleRx = /female|zira|samantha|victoria|karen|moira|tessa|ava|aria|jenny|susan|hazel|sonia/i;
+        const maleRx = /male|david|mark|daniel|george|james|alex|fred|tom|guy/i;
+        if(gender === 'female') return voices.find(v => femaleRx.test(v.name)) || voices[0];
+        if(gender === 'male') return voices.find(v => maleRx.test(v.name)) || voices[0];
+        return voices.find(v => /natural|google|microsoft/i.test(v.name)) || voices[0];
+    }
+
+    function speakText(text, force=false){
+        const p = readPrefs();
+        if(!text || !('speechSynthesis' in window)) return;
+        if(!force && (!voiceAlertEnabled || p.master === false)) return;
+        try{
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(String(text));
+            utterance.lang = 'en-US';
+            utterance.rate = p.speed;
+            utterance.volume = p.voiceVolume;
+            const voice = pickVoice(p.gender);
+            if(voice) utterance.voice = voice;
+            window.speechSynthesis.speak(utterance);
+        }catch(_){}
+    }
+
+    function expiryWords(tf){
+        const s = String(tf || '1m').toLowerCase();
+        if(s.endsWith('h')){
+            const n = parseInt(s) || 1;
+            return `${n} hour${n===1?'':'s'}`;
+        }
+        const n = parseInt(s) || 1;
+        return `${n} minute${n===1?'':'s'}`;
+    }
+
+    /* ---------- UPGRADE EXISTING CALL / PUT SOUND + VOICE ---------- */
+    window.playSignalAlertSound = function(isBuy=true){
+        if(isBuy){
+            tone([620,840,1120,1480],{kind:'call',gap:.085,duration:.15,gain:.28,type:'sine'});
+        }else{
+            tone([1480,1120,820,560],{kind:'put',gap:.085,duration:.15,gain:.28,type:'sine'});
+        }
+    };
+
+    window.speakSignal = function(signalData,isBuy){
+        if(!voiceAlertEnabled) return;
+        const pair = String(signalData?.pair || '').replace(/[-/]/g,' ');
+        speakText(`RAJA AI. ${pair}. ${isBuy?'CALL':'PUT'} signal. ${expiryWords(selectedExpiry)} expiry.`);
+    };
+
+    /* Existing no-trade + entry hook */
+    window.v23Tone = function(kind){
+        if(kind === 'entry') return tone([820,1120,1520,1960],{kind:'entry',gain:.25});
+        if(kind === 'no-trade') return tone([410,340],{kind:'no-trade',gain:.13,type:'triangle',duration:.20});
+    };
+
+    window.testRajaCallSound = function(){
+        tone([620,840,1120,1480],{kind:'call',gain:.28});
+        speakText('RAJA AI. Bitcoin U S D. CALL signal. Five minute expiry.',true);
+    };
+    window.testRajaPutSound = function(){
+        tone([1480,1120,820,560],{kind:'put',gain:.28});
+        speakText('RAJA AI. Bitcoin U S D. PUT signal. Five minute expiry.',true);
+    };
+    window.testRajaVoice = function(){
+        speakText('RAJA AI voice alert is ready.',true);
+    };
+
+    /* ---------- A+ DOUBLE ALERT ---------- */
+    try{
+        const originalDisplaySignalResult = window.displaySignalResult;
+        if(typeof originalDisplaySignalResult === 'function'){
+            window.displaySignalResult = function(signalData){
+                const result = originalDisplaySignalResult.apply(this,arguments);
+                setTimeout(()=>{
+                    let grade = '';
+                    try{
+                        if(typeof v31SignalGrade === 'function'){
+                            grade = String(v31SignalGrade(
+                                Number(signalData?.confluence || 0),
+                                Number(signalData?.multiTfAgreement || 0),
+                                Number(signalData?.marketStabilityScore || 0)
+                            )?.[0] || '');
+                        }
+                    }catch(_){}
+                    if(grade === 'A+' && readPrefs().aPlus !== false){
+                        setTimeout(()=>tone([1046,1318,1568,2093,1568,2093],{kind:'a+',gap:.075,gain:.20}),320);
+                    }
+                },0);
+                return result;
+            };
+        }
+    }catch(_){}
+
+    /* ---------- STALE / BAD MARKET WARNING ---------- */
+    try{
+        const originalBadMarket = window.renderRajaBadMarketState;
+        let lastBadKey = '';
+        if(typeof originalBadMarket === 'function'){
+            window.renderRajaBadMarketState = function(state){
+                const result = originalBadMarket.apply(this,arguments);
+                const key = JSON.stringify([state?.pair,state?.marketStatus,state?.dataAgeSeconds || state?.ageSeconds]);
+                if(result && key !== lastBadKey){
+                    lastBadKey = key;
+                    tone([520,420,320],{kind:'bad-market',gain:.12,type:'triangle',duration:.18});
+                }
+                return result;
+            };
+        }
+    }catch(_){}
+
+    /* ---------- WIN / LOSS OUTCOME SOUNDS ---------- */
+    function outcomeWatcher(){
+        const rows = Array.isArray(backendTrackedHistory) ? backendTrackedHistory : [];
+        if(!soundHistorySeeded){
+            rows.forEach(x => knownOutcomes.set(x.id,String(x.result || '')));
+            soundHistorySeeded = true;
+            return;
+        }
+
+        rows.forEach(x=>{
+            const id = x.id;
+            const now = String(x.result || '').toUpperCase();
+            const prev = String(knownOutcomes.get(id) || '').toUpperCase();
+
+            if(id && now && now !== prev && ['WIN','LOSS','DRAW'].includes(now) && readPrefs().outcomes !== false){
+                if(now === 'WIN') tone([784,988,1174,1568],{kind:'win',gain:.17});
+                else if(now === 'LOSS') tone([440,392],{kind:'loss',gain:.09,type:'triangle',duration:.22});
+                else tone([620],{kind:'result',gain:.10});
+            }
+            if(id) knownOutcomes.set(id,now);
+        });
+    }
+
+    /* ---------- 10 / 5 / 3 / 2 / 1 + ENTER NOW + EXPIRY ---------- */
+    function countdownWatcher(){
+        const entryMs = Number(activeSignalEntryEpochMs || 0);
+        const signalId = String(activeTrackedSignalId || entryMs || '');
+        if(!entryMs || !signalId) return;
+
+        if(signalId !== countdownSignalKey){
+            countdownSignalKey = signalId;
+            countdownSpoken.clear();
+            expirySoundKey = '';
+        }
+
+        const seconds = Math.ceil((entryMs - Date.now())/1000);
+        const p = readPrefs();
+        [10,5,3,2,1].forEach(n=>{
+            if(seconds === n && !countdownSpoken.has(n)){
+                countdownSpoken.add(n);
+                if(p.countdown !== false){
+                    tone([820+(10-n)*20],{kind:'countdown',gain:.10,duration:.10});
+                    if(voiceAlertEnabled) speakText(String(n));
+                }
+            }
+        });
+
+        if(seconds <= 0 && !countdownSpoken.has(0)){
+            countdownSpoken.add(0);
+            if(p.countdown !== false){
+                tone([960,1320,1760],{kind:'entry',gain:.18});
+                if(voiceAlertEnabled) speakText('ENTER NOW');
+            }
+        }
+
+        const item = (Array.isArray(backendTrackedHistory) ? backendTrackedHistory : [])
+            .find(x => String(x.id) === String(activeTrackedSignalId));
+        const expiryEpoch = Number(item?.expiry_epoch || 0);
+        if(expiryEpoch && Date.now() >= expiryEpoch*1000){
+            const key = String(item.id)+':expiry';
+            if(expirySoundKey !== key){
+                expirySoundKey = key;
+                tone([620,520,420],{kind:'expiry',gain:.10,type:'triangle'});
+            }
+        }
+    }
+
+    /* Keep master sound preference aligned when the old top toggle is clicked. */
+    try{
+        const originalToggleSound = window.toggleSound;
+        if(typeof originalToggleSound === 'function'){
+            window.toggleSound = function(){
+                const result = originalToggleSound.apply(this,arguments);
+                const p = readPrefs();
+                p.master = !!soundEnabled;
+                localStorage.setItem('raja_sound_center_v1',JSON.stringify(p));
+                if($('rajaMasterSound')) $('rajaMasterSound').checked = p.master;
+                return result;
+            };
+        }
+    }catch(_){}
+
+    function init(){
+        mountTopTradeControls();
+        hydrateSoundCenter();
+        saveRajaSoundCenter();
+        setTimeout(mountTopTradeControls,250);
+        setTimeout(mountTopTradeControls,1200);
+        setInterval(()=>{
+            outcomeWatcher();
+            countdownWatcher();
+        },500);
+    }
+
+    if(document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded',init,{once:true});
+    }else{
+        init();
+    }
+})();
+</script>
 
 </body>
 </html>
