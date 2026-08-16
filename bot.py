@@ -12,6 +12,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from collections import Counter
 from datetime import datetime, timezone
 from urllib.request import Request as UrlRequest, urlopen
+from urllib.parse import urlencode
+from urllib.error import HTTPError, URLError
 
 # Lazy-load yfinance only when a market scan actually starts.
 # This keeps the Flask/Gunicorn web shell lighter during Render cold boot.
@@ -28,6 +30,20 @@ def _get_yfinance():
     return _yf_module
 
 
+# Pandas is used only when Twelve Data backup candles are needed.
+_pd_module = None
+_pd_import_lock = threading.Lock()
+
+def _get_pandas():
+    global _pd_module
+    if _pd_module is None:
+        with _pd_import_lock:
+            if _pd_module is None:
+                import pandas as _pd
+                _pd_module = _pd
+    return _pd_module
+
+
 try:
     import psycopg
 except Exception:
@@ -38,12 +54,13 @@ CORS(app)
 
 # =========================================================
 # RAJA AI MULTI-TIMEFRAME BACKEND
-# Yahoo Finance 1-minute OHLCV is the base/reference feed.
-# 2m, 5m, 10m, 15m and 30m are built from the same Yahoo
-# 1-minute candles so every timeframe stays synchronized.
+# Yahoo Finance 1-minute OHLCV is the PRIMARY base/reference feed.
+# If Yahoo is unavailable/stale and TWELVE_DATA_API_KEY is configured,
+# Twelve Data 1-minute OHLCV becomes the LIVE BACKUP reference feed.
+# 2m, 5m, 10m, 15m and 30m are resampled from the chosen 1-minute feed.
 #
-# IMPORTANT: "(OTC)" assets are underlying-market proxies.
-# They are NOT exact Quotex OTC quotes.
+# IMPORTANT: "(OTC)" assets are underlying-market/reference proxies.
+# They are NOT exact broker OTC quotes (Quotex/Pocket Option).
 # =========================================================
 
 YAHOO_SYMBOLS = {
@@ -124,10 +141,105 @@ YAHOO_SYMBOLS = {
     "NZD/USD (OTC)": "NZDUSD=X",
     "NZD/CAD (OTC)": "NZDCAD=X",
     "CAD/CHF (OTC)": "CADCHF=X",
+
+    # ---------------- Pocket Option OTC reference proxies ----------------
+    # Pocket Option pair lists are broker-specific in index.html.
+    # These Yahoo symbols are REFERENCE proxies only, not exact Pocket Option OTC candles.
+
+    # Pocket Option Crypto OTC additions
+    "BNB (OTC)": "BNB-USD",
+    "Cardano (OTC)": "ADA-USD",
+    "Polygon (OTC)": "MATIC-USD",
+    "TRON (OTC)": "TRX-USD",
+    "Bitcoin ETF (OTC)": "IBIT",
+    "Dogecoin (OTC)": "DOGE-USD",
+
+    # Pocket Option Forex OTC additions (30-pair preferred set)
+    "EUR/USD (OTC)": "EURUSD=X",
+    "GBP/USD (OTC)": "GBPUSD=X",
+    "USD/JPY (OTC)": "USDJPY=X",
+    "AUD/USD (OTC)": "AUDUSD=X",
+    "USD/CAD (OTC)": "USDCAD=X",
+    "USD/CHF (OTC)": "USDCHF=X",
+    "EUR/JPY (OTC)": "EURJPY=X",
+    "GBP/JPY (OTC)": "GBPJPY=X",
+    "AUD/JPY (OTC)": "AUDJPY=X",
+    "CAD/JPY (OTC)": "CADJPY=X",
+    "EUR/CHF (OTC)": "EURCHF=X",
+    "EUR/GBP (OTC)": "EURGBP=X",
+    "AUD/CAD (OTC)": "AUDCAD=X",
+    "AUD/CHF (OTC)": "AUDCHF=X",
+    "GBP/AUD (OTC)": "GBPAUD=X",
+    "CHF/JPY (OTC)": "CHFJPY=X",
+    "USD/SGD (OTC)": "USDSGD=X",
+    "USD/CNH (OTC)": "USDCNH=X",
+    "USD/MYR (OTC)": "USDMYR=X",
+    "EUR/TRY (OTC)": "EURTRY=X",
+
+    # Pocket Option Stocks OTC
+    "Apple (OTC)": "AAPL",
+    "American Express (OTC)": "AXP",
+    "Boeing Company (OTC)": "BA",
+    "Cisco (OTC)": "CSCO",
+    "Facebook Inc (OTC)": "META",
+    "Intel (OTC)": "INTC",
+    "Johnson & Johnson (OTC)": "JNJ",
+    "McDonald's (OTC)": "MCD",
+    "Microsoft (OTC)": "MSFT",
+    "Pfizer Inc (OTC)": "PFE",
+    "Tesla (OTC)": "TSLA",
+    "ExxonMobil (OTC)": "XOM",
+    "Advanced Micro Devices (OTC)": "AMD",
 }
+# Twelve Data LIVE BACKUP symbols. These are underlying/reference instruments,
+# never exact Quotex/Pocket Option OTC candles.
+TWELVE_DATA_SYMBOLS = {
+    # Crypto Live
+    "BTC-USD": "BTC/USD", "ETH-USD": "ETH/USD", "SOL-USD": "SOL/USD",
+    "LTC-USD": "LTC/USD", "XRP-USD": "XRP/USD", "ADA-USD": "ADA/USD",
+    "DOGE-USD": "DOGE/USD",
+
+    # Crypto OTC reference instruments
+    "Zcash (OTC)": "ZEC/USD", "Chainlink (OTC)": "LINK/USD",
+    "Bitcoin (OTC)": "BTC/USD", "Binance Coin (OTC)": "BNB/USD",
+    "Ethereum (OTC)": "ETH/USD", "Bitcoin Cash (OTC)": "BCH/USD",
+    "Cosmos (OTC)": "ATOM/USD", "Ethereum Classic (OTC)": "ETC/USD",
+    "Axie Infinity (OTC)": "AXS/USD", "Trump (OTC)": "TRUMP/USD",
+    "Dash (OTC)": "DASH/USD", "Solana (OTC)": "SOL/USD",
+    "Toncoin (OTC)": "TON/USD", "Litecoin (OTC)": "LTC/USD",
+    "Avalanche (OTC)": "AVAX/USD", "Polkadot (OTC)": "DOT/USD",
+    "Ripple (OTC)": "XRP/USD", "BNB (OTC)": "BNB/USD",
+    "Cardano (OTC)": "ADA/USD", "Polygon (OTC)": "MATIC/USD",
+    "TRON (OTC)": "TRX/USD", "Dogecoin (OTC)": "DOGE/USD",
+    "Bitcoin ETF (OTC)": "IBIT",
+
+    # Gold
+    "XAUUSD": "XAU/USD",
+
+    # Pocket Option Stocks OTC reference instruments
+    "Apple (OTC)": "AAPL", "American Express (OTC)": "AXP",
+    "Boeing Company (OTC)": "BA", "Cisco (OTC)": "CSCO",
+    "Facebook Inc (OTC)": "META", "Intel (OTC)": "INTC",
+    "Johnson & Johnson (OTC)": "JNJ", "McDonald's (OTC)": "MCD",
+    "Microsoft (OTC)": "MSFT", "Pfizer Inc (OTC)": "PFE",
+    "Tesla (OTC)": "TSLA", "ExxonMobil (OTC)": "XOM",
+    "Advanced Micro Devices (OTC)": "AMD",
+}
+
+# Forex Live/OTC symbols already use slash notation in the app. Twelve Data accepts
+# that notation directly, so populate the remaining FX mappings automatically.
+for _raja_pair in YAHOO_SYMBOLS:
+    _clean_pair = str(_raja_pair).replace(" (OTC)", "").strip()
+    if "/" in _clean_pair:
+        TWELVE_DATA_SYMBOLS.setdefault(_raja_pair, _clean_pair)
 
 ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
 UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
+FOREX_OTC_PAIRS = [pair for pair in YAHOO_SYMBOLS if pair.endswith(" (OTC)") and "/" in pair]
+
+POCKET_OPTION_FOREX_OTC_PAIRS = ['EUR/USD (OTC)', 'GBP/USD (OTC)', 'USD/JPY (OTC)', 'AUD/USD (OTC)', 'USD/CAD (OTC)', 'USD/CHF (OTC)', 'EUR/JPY (OTC)', 'GBP/JPY (OTC)', 'AUD/JPY (OTC)', 'CAD/JPY (OTC)', 'EUR/CHF (OTC)', 'EUR/GBP (OTC)', 'AUD/CAD (OTC)', 'AUD/CHF (OTC)', 'CAD/CHF (OTC)', 'NZD/JPY (OTC)', 'AUD/NZD (OTC)', 'EUR/NZD (OTC)', 'GBP/AUD (OTC)', 'CHF/JPY (OTC)', 'USD/MXN (OTC)', 'USD/BRL (OTC)', 'USD/INR (OTC)', 'USD/SGD (OTC)', 'USD/CNH (OTC)', 'USD/IDR (OTC)', 'USD/PHP (OTC)', 'USD/MYR (OTC)', 'USD/COP (OTC)', 'EUR/TRY (OTC)']
+POCKET_OPTION_CRYPTO_OTC_PAIRS = ['BNB (OTC)', 'Polkadot (OTC)', 'Ethereum (OTC)', 'Toncoin (OTC)', 'Cardano (OTC)', 'Polygon (OTC)', 'TRON (OTC)', 'Avalanche (OTC)', 'Bitcoin (OTC)', 'Bitcoin ETF (OTC)', 'Solana (OTC)', 'Chainlink (OTC)', 'Litecoin (OTC)', 'Dogecoin (OTC)']
+POCKET_OPTION_STOCKS_OTC_PAIRS = ['Apple (OTC)', 'American Express (OTC)', 'Boeing Company (OTC)', 'Cisco (OTC)', 'Facebook Inc (OTC)', 'Intel (OTC)', 'Johnson & Johnson (OTC)', "McDonald's (OTC)", 'Microsoft (OTC)', 'Pfizer Inc (OTC)', 'Tesla (OTC)', 'ExxonMobil (OTC)', 'Advanced Micro Devices (OTC)']
 
 TIMEFRAMES = {
     "1m": 1,
@@ -169,6 +281,23 @@ MAX_SOURCE_CANDLE_AGE_SECONDS = max(120, min(3600, int(os.environ.get("RAJA_MAX_
 # so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
 # 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
 BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(75.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "58"))))
+FOREX_OTC_FALLBACK_DEADLINE_SECONDS = max(BATCH_SCAN_DEADLINE_SECONDS, min(78.0, float(os.environ.get("RAJA_FOREX_OTC_FALLBACK_DEADLINE_SECONDS", "72"))))
+
+# Twelve Data live backup. The key stays server-side in Railway environment variables.
+TWELVE_DATA_API_KEY = (
+    os.environ.get("TWELVE_DATA_API_KEY")
+    or os.environ.get("RAJA_TWELVE_DATA_API_KEY")
+    or ""
+).strip()
+TWELVE_DATA_ENABLED = bool(TWELVE_DATA_API_KEY)
+TWELVE_DATA_BASE_URL = (os.environ.get("RAJA_TWELVE_DATA_BASE_URL") or "https://api.twelvedata.com/time_series").strip()
+TWELVE_DATA_OUTPUTSIZE = max(900, min(5000, int(os.environ.get("RAJA_TWELVE_DATA_OUTPUTSIZE", "4000"))))
+TWELVE_DATA_CACHE_SECONDS = max(15, int(os.environ.get("RAJA_TWELVE_DATA_CACHE_SECONDS", "45")))
+TWELVE_DATA_FAILURE_COOLDOWN = max(30, int(os.environ.get("RAJA_TWELVE_DATA_FAILURE_COOLDOWN", "120")))
+TWELVE_DATA_GLOBAL_RATE_LIMIT_COOLDOWN = max(30, int(os.environ.get("RAJA_TWELVE_DATA_RATE_LIMIT_COOLDOWN", "90")))
+TWELVE_DATA_REQUEST_TIMEOUT_SECONDS = max(3.0, min(20.0, float(os.environ.get("RAJA_TWELVE_DATA_REQUEST_TIMEOUT", "9"))))
+TWELVE_DATA_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_TWELVE_DATA_CONCURRENCY", "2"))))
+TWELVE_DATA_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_TWELVE_DATA_MIN_GAP", "0.20")))
 
 market_cache = {}
 cache_lock = threading.RLock()
@@ -181,6 +310,20 @@ failed_symbol_lock = threading.Lock()
 yahoo_fetch_semaphore = threading.BoundedSemaphore(YAHOO_FETCH_CONCURRENCY)
 yahoo_pace_lock = threading.Lock()
 last_yahoo_fetch_started = 0.0
+
+# Twelve Data backup cache/circuit breaker. It is separate from Yahoo so the
+# primary feed and backup feed never overwrite one another.
+twelve_data_cache = {}
+twelve_data_cache_lock = threading.RLock()
+twelve_data_symbol_locks = {}
+twelve_data_symbol_locks_guard = threading.Lock()
+twelve_data_failed_until = {}
+twelve_data_failed_lock = threading.Lock()
+twelve_data_global_blocked_until = 0.0
+twelve_data_global_lock = threading.Lock()
+twelve_data_fetch_semaphore = threading.BoundedSemaphore(TWELVE_DATA_FETCH_CONCURRENCY)
+twelve_data_pace_lock = threading.Lock()
+last_twelve_data_fetch_started = 0.0
 
 batch_cache = {}
 batch_cache_lock = threading.RLock()
@@ -240,6 +383,13 @@ LICENSE_FILE = DATA_DIR / "licenses.json"
 license_lock = threading.RLock()
 
 ADMIN_PASSWORD = (os.environ.get("RAJA_ADMIN_PASSWORD") or "").strip()
+
+# Quotex Forex OTC fallback.
+# Manual open uses the public Quotex web platform by default.
+# Direct Quotex candle scanning remains disabled unless a separate trusted
+# companion/data bridge URL is explicitly configured.
+RAJA_QUOTEX_OTC_URL = (os.environ.get("RAJA_QUOTEX_OTC_URL") or "https://qxbroker.com/en/").strip()
+RAJA_QUOTEX_OTC_COMPANION_URL = (os.environ.get("RAJA_QUOTEX_OTC_COMPANION_URL") or "").strip()
 
 # Permanent license storage:
 # - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
@@ -1020,47 +1170,51 @@ def dataframe_epoch_rows(df):
 
 
 def resolve_tracked_signal(item):
-    """Resolve a pending theoretical signal from Yahoo 1m candles.
-
-    Entry = Open of the next 1-minute candle after the signal was displayed.
-    Exit  = Close of the final 1-minute candle inside the selected expiry.
-    """
+    """Resolve a pending theoretical signal using the same live reference provider when possible."""
     pair = item.get("pair")
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
+    yahoo_symbol = YAHOO_SYMBOLS.get(pair)
+    if not yahoo_symbol:
         return False
 
-    update_symbol_cache(symbol)
+    preferred_source = str(item.get("source") or "Yahoo Finance")
+    data = None
+    resolved_source = None
 
-    with cache_lock:
-        cached = market_cache.get(symbol)
+    if preferred_source == "Twelve Data" and TWELVE_DATA_ENABLED:
+        data, _ = get_twelve_data_market_data(pair, force=True)
+        if data is not None and not data.empty:
+            resolved_source = "Twelve Data"
 
-    if not cached:
-        return False
+    if data is None or getattr(data, "empty", True):
+        update_symbol_cache(yahoo_symbol, force=True)
+        with cache_lock:
+            cached = market_cache.get(yahoo_symbol)
+        if cached:
+            data = cached.get("data")
+            resolved_source = "Yahoo Finance"
 
-    rows = dataframe_epoch_rows(cached.get("data"))
+    if (data is None or getattr(data, "empty", True)) and TWELVE_DATA_ENABLED:
+        data, _ = get_twelve_data_market_data(pair, force=True)
+        if data is not None and not data.empty:
+            resolved_source = "Twelve Data"
+
+    rows = dataframe_epoch_rows(data)
     if not rows:
         return False
 
     entry_epoch = int(item.get("entry_epoch", 0))
     expiry_epoch = int(item.get("expiry_epoch", 0))
 
-    # Allow a small tolerance for delayed/missing minute bars.
-    entry_candidates = [
-        (epoch, row) for epoch, row in rows
-        if entry_epoch <= epoch < entry_epoch + 120
-    ]
+    entry_candidates = [(epoch, row) for epoch, row in rows if entry_epoch <= epoch < entry_epoch + 120]
     exit_candidates = [
         (epoch, row) for epoch, row in rows
         if max(entry_epoch, expiry_epoch - 120) <= epoch < expiry_epoch
     ]
-
     if not entry_candidates or not exit_candidates:
         return False
 
     entry_epoch_actual, entry_row = entry_candidates[0]
     exit_epoch_actual, exit_row = exit_candidates[-1]
-
     try:
         entry_price = float(entry_row["Open"])
         exit_price = float(exit_row["Close"])
@@ -1068,7 +1222,6 @@ def resolve_tracked_signal(item):
         return False
 
     direction = item.get("signal")
-
     if exit_price == entry_price:
         result = "DRAW"
     elif direction == "CALL":
@@ -1083,8 +1236,16 @@ def resolve_tracked_signal(item):
     item["entry_candle_epoch"] = entry_epoch_actual
     item["exit_candle_epoch"] = exit_epoch_actual
     item["result"] = result
-    item["yahoo_result"] = result
-    item["result_source"] = "yahoo_live"
+    item["reference_result"] = result
+    item["result_reference_source"] = resolved_source or preferred_source
+
+    if resolved_source == "Yahoo Finance":
+        item["yahoo_result"] = result
+        item["result_source"] = "yahoo_live"
+    else:
+        item["backup_result"] = result
+        item["result_source"] = "twelve_data_live"
+
     item["status"] = "COMPLETED"
     item["resolved_at"] = int(time.time())
     return True
@@ -1124,7 +1285,7 @@ def resolve_due_signals(items, now=None):
         item_status = str(item.get("status") or "").upper()
         if item_status not in {"PENDING", "AWAITING_QX"}:
             continue
-        if item_status == "AWAITING_QX" and item.get("yahoo_result"):
+        if item_status == "AWAITING_QX" and (item.get("reference_result") or item.get("yahoo_result") or item.get("backup_result")):
             continue
 
         expiry_epoch = int(item.get("expiry_epoch") or 0)
@@ -1141,7 +1302,8 @@ def resolve_due_signals(items, now=None):
             if resolve_tracked_signal(proxy_item):
                 for field in (
                     "entry_price", "exit_price", "entry_candle_epoch",
-                    "exit_candle_epoch", "yahoo_result"
+                    "exit_candle_epoch", "yahoo_result", "backup_result",
+                    "reference_result", "result_reference_source"
                 ):
                     if field in proxy_item:
                         item[field] = proxy_item.get(field)
@@ -1340,33 +1502,282 @@ def update_symbol_cache(symbol, force=False):
         symbol_lock.release()
 
 
-def get_market_data(pair):
-    symbol = YAHOO_SYMBOLS.get(pair)
-    if not symbol:
-        return None, None, None
+
+def _get_twelve_data_symbol_lock(provider_symbol):
+    with twelve_data_symbol_locks_guard:
+        lock = twelve_data_symbol_locks.get(provider_symbol)
+        if lock is None:
+            lock = threading.Lock()
+            twelve_data_symbol_locks[provider_symbol] = lock
+        return lock
+
+
+def _pace_twelve_data_request():
+    global last_twelve_data_fetch_started
+    with twelve_data_pace_lock:
+        now = time.time()
+        wait_for = TWELVE_DATA_MIN_GAP_SECONDS - (now - last_twelve_data_fetch_started)
+        if wait_for > 0:
+            time.sleep(wait_for)
+        last_twelve_data_fetch_started = time.time()
+
+
+def _twelve_data_cache_get(provider_symbol, allow_stale=False):
+    now = time.time()
+    with twelve_data_cache_lock:
+        cached = twelve_data_cache.get(provider_symbol)
+        if not cached:
+            return None
+        cache_age = now - float(cached.get("timestamp") or 0)
+        if allow_stale or cache_age <= TWELVE_DATA_CACHE_SECONDS:
+            return cached.get("data").copy()
+    return None
+
+
+def _twelve_data_mark_failure(provider_symbol, code=None):
+    global twelve_data_global_blocked_until
+    now = time.time()
+    with twelve_data_failed_lock:
+        twelve_data_failed_until[provider_symbol] = now + TWELVE_DATA_FAILURE_COOLDOWN
+
+    try:
+        code = int(code or 0)
+    except Exception:
+        code = 0
+    if code in {401, 403, 429}:
+        with twelve_data_global_lock:
+            twelve_data_global_blocked_until = max(
+                twelve_data_global_blocked_until,
+                now + TWELVE_DATA_GLOBAL_RATE_LIMIT_COOLDOWN,
+            )
+
+
+def _twelve_data_global_allowed():
+    with twelve_data_global_lock:
+        return time.time() >= float(twelve_data_global_blocked_until or 0.0)
+
+
+def _parse_twelve_data_frame(payload):
+    values = payload.get("values") if isinstance(payload, dict) else None
+    if not isinstance(values, list) or not values:
+        return None
+
+    pd = _get_pandas()
+    df = pd.DataFrame(values)
+    required = {"datetime", "open", "high", "low", "close"}
+    if not required.issubset(df.columns):
+        return None
+
+    df["Datetime"] = pd.to_datetime(df["datetime"], utc=True, errors="coerce")
+    for src, dst in (("open", "Open"), ("high", "High"), ("low", "Low"), ("close", "Close")):
+        df[dst] = pd.to_numeric(df[src], errors="coerce")
+
+    if "volume" in df.columns:
+        df["Volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0.0)
+    else:
+        df["Volume"] = 0.0
+
+    df = (
+        df.dropna(subset=["Datetime", "Open", "High", "Low", "Close"])
+          .set_index("Datetime")
+          .sort_index()
+    )
+    df = df[~df.index.duplicated(keep="last")]
+    if len(df) < 120:
+        return None
+    return df[["Open", "High", "Low", "Close", "Volume"]]
+
+
+def fetch_twelve_data_1m(pair):
+    """Fetch Twelve Data 1-minute OHLCV backup candles for one RAJA pair."""
+    if not TWELVE_DATA_ENABLED:
+        return None, None
+
+    provider_symbol = TWELVE_DATA_SYMBOLS.get(pair)
+    if not provider_symbol:
+        return None, None
+
+    params = {
+        "symbol": provider_symbol,
+        "interval": "1min",
+        "outputsize": TWELVE_DATA_OUTPUTSIZE,
+        "timezone": "UTC",
+        "apikey": TWELVE_DATA_API_KEY,
+    }
+    url = TWELVE_DATA_BASE_URL + "?" + urlencode(params)
+    req = UrlRequest(url, headers={"User-Agent": "RAJA-AI/1.0", "Accept": "application/json"})
+
+    try:
+        with urlopen(req, timeout=TWELVE_DATA_REQUEST_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except HTTPError as exc:
+        _twelve_data_mark_failure(provider_symbol, getattr(exc, "code", None))
+        print(f"Twelve Data HTTP error for {provider_symbol}: {getattr(exc, 'code', 'unknown')}")
+        return None, provider_symbol
+    except URLError as exc:
+        _twelve_data_mark_failure(provider_symbol)
+        print(f"Twelve Data network error for {provider_symbol}: {exc.reason}")
+        return None, provider_symbol
+    except Exception as exc:
+        _twelve_data_mark_failure(provider_symbol)
+        print(f"Twelve Data fetch error for {provider_symbol}: {exc}")
+        return None, provider_symbol
+
+    if not isinstance(payload, dict) or str(payload.get("status") or "").lower() == "error":
+        code = payload.get("code") if isinstance(payload, dict) else None
+        _twelve_data_mark_failure(provider_symbol, code)
+        message = str(payload.get("message") or "API returned an error") if isinstance(payload, dict) else "Invalid response"
+        print(f"Twelve Data API error for {provider_symbol}: {message}")
+        return None, provider_symbol
+
+    df = _parse_twelve_data_frame(payload)
+    if df is None or df.empty:
+        _twelve_data_mark_failure(provider_symbol)
+        return None, provider_symbol
+
+    return df, provider_symbol
+
+
+def get_twelve_data_market_data(pair, force=False):
+    """Return cached/fresh Twelve Data candles without exposing the API key."""
+    if not TWELVE_DATA_ENABLED:
+        return None, None
+
+    provider_symbol = TWELVE_DATA_SYMBOLS.get(pair)
+    if not provider_symbol:
+        return None, None
+
+    cached = _twelve_data_cache_get(provider_symbol, allow_stale=False)
+    if cached is not None and not force:
+        return cached, provider_symbol
+
+    if not _twelve_data_global_allowed():
+        return _twelve_data_cache_get(provider_symbol, allow_stale=True), provider_symbol
 
     now = time.time()
+    with twelve_data_failed_lock:
+        blocked_until = float(twelve_data_failed_until.get(provider_symbol, 0.0) or 0.0)
+    if blocked_until > now:
+        return _twelve_data_cache_get(provider_symbol, allow_stale=True), provider_symbol
+
+    symbol_lock = _get_twelve_data_symbol_lock(provider_symbol)
+    acquired = symbol_lock.acquire(timeout=min(12.0, TWELVE_DATA_REQUEST_TIMEOUT_SECONDS + 2.0))
+    if not acquired:
+        return _twelve_data_cache_get(provider_symbol, allow_stale=True), provider_symbol
+
+    try:
+        cached = _twelve_data_cache_get(provider_symbol, allow_stale=False)
+        if cached is not None and not force:
+            return cached, provider_symbol
+
+        acquired_slot = twelve_data_fetch_semaphore.acquire(timeout=TWELVE_DATA_REQUEST_TIMEOUT_SECONDS + 2.0)
+        if not acquired_slot:
+            return _twelve_data_cache_get(provider_symbol, allow_stale=True), provider_symbol
+
+        try:
+            _pace_twelve_data_request()
+            df, provider_symbol = fetch_twelve_data_1m(pair)
+        finally:
+            twelve_data_fetch_semaphore.release()
+
+        if df is None or df.empty:
+            return _twelve_data_cache_get(provider_symbol, allow_stale=True), provider_symbol
+
+        with twelve_data_cache_lock:
+            twelve_data_cache[provider_symbol] = {"data": df.copy(), "timestamp": time.time()}
+        with twelve_data_failed_lock:
+            twelve_data_failed_until.pop(provider_symbol, None)
+
+        return df.copy(), provider_symbol
+    finally:
+        symbol_lock.release()
+
+
+def _market_source_info(pair, yahoo_symbol, source="Yahoo Finance", provider_symbol=None):
+    source = str(source or "Yahoo Finance")
+    is_backup = source == "Twelve Data"
+    if is_backup:
+        mode = "underlying_proxy_backup" if "(OTC)" in pair else "live_backup_reference"
+    else:
+        mode = "underlying_proxy" if "(OTC)" in pair else "live_reference"
+    return {
+        "source": source,
+        "source_mode": mode,
+        "provider_symbol": provider_symbol or yahoo_symbol,
+        "yahoo_symbol": yahoo_symbol,
+        "backup_used": bool(is_backup),
+    }
+
+
+def get_market_data(pair):
+    """
+    Priority: Yahoo fresh -> Twelve Data fresh -> freshest stale reference.
+    Normal scanning still blocks stale data; OTC fallback may use the stale history.
+    """
+    yahoo_symbol = YAHOO_SYMBOLS.get(pair)
+    if not yahoo_symbol:
+        return None, None, None, _market_source_info(pair, None)
+
+    yahoo_data = None
+    yahoo_age = None
+    now = time.time()
     with cache_lock:
-        cached = market_cache.get(symbol)
+        cached = market_cache.get(yahoo_symbol)
 
     if cached:
-        cache_age = now - cached["timestamp"]
+        cache_age = now - float(cached.get("timestamp") or 0.0)
         if cache_age <= CACHE_DURATION:
-            data = cached["data"].copy()
-            return data, _source_candle_age_seconds(data), symbol
+            yahoo_data = cached["data"].copy()
+            yahoo_age = _source_candle_age_seconds(yahoo_data)
 
-    refreshed = update_symbol_cache(symbol)
+    if yahoo_data is None:
+        refreshed = update_symbol_cache(yahoo_symbol)
+        with cache_lock:
+            cached = market_cache.get(yahoo_symbol)
+        if cached:
+            cache_age = time.time() - float(cached.get("timestamp") or 0.0)
+            if refreshed or cache_age <= STALE_CACHE_MAX_AGE:
+                yahoo_data = cached["data"].copy()
+                yahoo_age = _source_candle_age_seconds(yahoo_data)
 
-    with cache_lock:
-        cached = market_cache.get(symbol)
+    if yahoo_data is not None and not yahoo_data.empty:
+        if yahoo_age is None or yahoo_age <= MAX_SOURCE_CANDLE_AGE_SECONDS:
+            return yahoo_data, yahoo_age, yahoo_symbol, _market_source_info(
+                pair, yahoo_symbol, "Yahoo Finance", yahoo_symbol
+            )
 
-    if cached:
-        cache_age = time.time() - cached["timestamp"]
-        if refreshed or cache_age <= STALE_CACHE_MAX_AGE:
-            data = cached["data"].copy()
-            return data, _source_candle_age_seconds(data), symbol
+    td_data = None
+    td_age = None
+    td_symbol = TWELVE_DATA_SYMBOLS.get(pair)
+    if TWELVE_DATA_ENABLED and td_symbol:
+        td_data, td_symbol = get_twelve_data_market_data(pair)
+        if td_data is not None and not td_data.empty:
+            td_age = _source_candle_age_seconds(td_data)
+            if td_age is None or td_age <= MAX_SOURCE_CANDLE_AGE_SECONDS:
+                return td_data, td_age, yahoo_symbol, _market_source_info(
+                    pair, yahoo_symbol, "Twelve Data", td_symbol
+                )
 
-    return None, None, symbol
+    candidates = []
+    if yahoo_data is not None and not yahoo_data.empty:
+        candidates.append((
+            float(yahoo_age) if yahoo_age is not None else float("inf"),
+            yahoo_data, yahoo_age,
+            _market_source_info(pair, yahoo_symbol, "Yahoo Finance", yahoo_symbol),
+        ))
+    if td_data is not None and not td_data.empty:
+        candidates.append((
+            float(td_age) if td_age is not None else float("inf"),
+            td_data, td_age,
+            _market_source_info(pair, yahoo_symbol, "Twelve Data", td_symbol),
+        ))
+
+    if candidates:
+        _, data, age, source_info = min(candidates, key=lambda item: item[0])
+        return data.copy(), age, yahoo_symbol, source_info
+
+    return None, None, yahoo_symbol, _market_source_info(pair, yahoo_symbol)
+
 
 def background_market_poller():
     """Disabled intentionally: full-market polling caused Yahoo rate limits."""
@@ -1845,7 +2256,8 @@ def batch_results_are_countable(results):
     return any(market_result_is_countable(row) for row in rows)
 
 
-def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
+def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, source_info=None):
+    source_info = source_info or _market_source_info(pair, symbol)
     return {
         "pair": pair,
         "score": 0,
@@ -1858,8 +2270,10 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None):
         "bullish_points": 0,
         "bearish_points": 0,
         "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
+        "source": source_info.get("source") or "Yahoo Finance",
+        "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
+        "backup_used": bool(source_info.get("backup_used")),
+        "provider_symbol": source_info.get("provider_symbol"),
         "otc_proxy_warning": "(OTC)" in pair,
         "yahoo_symbol": symbol,
         "timeframe_summary": timeframes or {},
@@ -1946,13 +2360,14 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
         result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
         return result
 
-    base_df, data_age, symbol = get_market_data(pair)
+    base_df, data_age, symbol, source_info = get_market_data(pair)
     if base_df is None or base_df.empty:
         result = no_signal_result(
             pair,
             "Live reference data is temporarily unavailable. Scan safely paused; retry when the source responds.",
             symbol=symbol,
             data_age=data_age,
+            source_info=source_info,
         )
         result.update({
             "scan_mode": opts["mode"],
@@ -1971,12 +2386,14 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
 
     if data_age is not None and data_age > MAX_SOURCE_CANDLE_AGE_SECONDS:
         age_label = format_market_data_age(data_age)
+        provider_name = str(source_info.get("source") or "reference source")
         result = no_signal_result(
             pair,
-            f"BAD MARKET / STALE DATA — latest Yahoo 1m reference candle is {age_label} old. "
-            "The market may be closed or the OTC reference feed is not currently fresh.",
+            f"BAD MARKET / STALE DATA — latest {provider_name} 1m reference candle is {age_label} old. "
+            "Yahoo primary and the configured live backup did not provide a fresh usable candle.",
             symbol=symbol,
             data_age=data_age,
+            source_info=source_info,
         )
         result.update({
             "scan_mode": opts["mode"],
@@ -2011,7 +2428,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
     }
 
     def rejected(reason):
-        result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary)
+        result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary, source_info=source_info)
         result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview})
         return result
 
@@ -2099,7 +2516,10 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
         "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
         "bearish_points": representative.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": "Yahoo Finance", "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
+        "source": source_info.get("source") or "Yahoo Finance",
+        "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
+        "backup_used": bool(source_info.get("backup_used")),
+        "provider_symbol": source_info.get("provider_symbol"),
         "otc_proxy_warning": "(OTC)" in pair, "yahoo_symbol": symbol,
         "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
         "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
@@ -2111,6 +2531,87 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
         "volatility_pct": volatility_pct, "chart_preview": chart_preview,
         "no_trade": False, "quality_gate": "PASSED",
     }
+
+
+def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
+    """
+    Build a REFERENCE-ONLY snapshot from the last Yahoo candles even when the
+    normal live freshness gate is closed.
+
+    Important:
+    - This is NOT live broker OTC data.
+    - This function does not write signal history/performance records.
+    - Frontend JavaScript applies the separate fallback confidence gate.
+    """
+    if pair not in FOREX_OTC_PAIRS:
+        return {
+            "pair": pair,
+            "available": False,
+            "live_fresh": False,
+            "reason": "Pair is not part of the configured Forex OTC list.",
+            "source": "Yahoo Finance",
+            "source_mode": "fallback_reference_only",
+        }
+
+    base_df, data_age, symbol, source_info = get_market_data(pair)
+    if base_df is None or base_df.empty:
+        return {
+            "pair": pair,
+            "available": False,
+            "live_fresh": False,
+            "reason": "No Yahoo/Twelve Data reference history is currently available for this pair.",
+            "source": source_info.get("source") or "Yahoo Finance",
+            "source_mode": "fallback_reference_only",
+            "backup_used": bool(source_info.get("backup_used")),
+            "provider_symbol": source_info.get("provider_symbol"),
+            "yahoo_symbol": symbol,
+            "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
+            "data_age_label": format_market_data_age(data_age) if data_age is not None else "--",
+        }
+
+    age_value = float(data_age or 0.0)
+    live_fresh = age_value <= float(MAX_SOURCE_CANDLE_AGE_SECONDS)
+
+    results = {}
+    for tf_name, minutes in TIMEFRAMES.items():
+        tf_df = build_timeframe(base_df, minutes)
+        results[tf_name] = analyze_timeframe(tf_df, tf_name)
+
+    summary = {
+        tf: {
+            "signal": row.get("signal"),
+            "score": row.get("score", 0),
+            "rsi": row.get("rsi"),
+            "adx": row.get("adx"),
+            "atr": row.get("atr"),
+            "price": row.get("price"),
+            "bullish_points": row.get("bullish_points", 0),
+            "bearish_points": row.get("bearish_points", 0),
+            "closed_candle_epoch": row.get("closed_candle_epoch"),
+        }
+        for tf, row in results.items()
+    }
+
+    return {
+        "pair": pair,
+        "available": True,
+        "live_fresh": bool(live_fresh),
+        "normal_scan_required": bool(live_fresh),
+        "reference_stale": not bool(live_fresh),
+        "source": source_info.get("source") or "Yahoo Finance",
+        "source_mode": "fallback_reference_only",
+        "backup_used": bool(source_info.get("backup_used")),
+        "provider_symbol": source_info.get("provider_symbol"),
+        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE BROKER OTC DATA",
+        "yahoo_symbol": symbol,
+        "data_age_seconds": round(age_value, 2),
+        "data_age_label": format_market_data_age(age_value),
+        "selected_expiry": str(selected_expiry or ""),
+        "timeframe_summary": summary,
+        "timeframes_scanned": list(TIMEFRAMES.keys()),
+        "chart_preview": serialize_candles(base_df, 60),
+    }
+
 
 
 # =========================================================
@@ -2338,6 +2839,31 @@ def disable_html_cache(response):
     return response
 
 
+@app.route("/otc-fallback-config", methods=["GET"])
+def otc_fallback_config():
+    auth, error = _auth_session(request.args)
+    if error:
+        return error
+
+    companion_url = RAJA_QUOTEX_OTC_COMPANION_URL
+    return jsonify({
+        "status": "success",
+        "data": {
+            "enabled": bool(RAJA_QUOTEX_OTC_URL),
+            "market": "ForexOTC",
+            "launch_url": RAJA_QUOTEX_OTC_URL,
+            "companion_connected": bool(companion_url),
+            "companion_url": companion_url,
+            "direct_scan_available": bool(companion_url),
+            "message": (
+                "Direct Quotex OTC companion/data bridge is connected."
+                if companion_url
+                else "Manual Quotex open is available. Direct Quotex OTC candle scanning is not connected."
+            ),
+        },
+    })
+
+
 @app.route("/health", methods=["GET"])
 def health():
     with cache_lock:
@@ -2362,10 +2888,22 @@ def health():
         "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
         "yahoo_symbol_lock_wait_seconds": YAHOO_SYMBOL_LOCK_WAIT_SECONDS,
         "yahoo_semaphore_wait_seconds": YAHOO_SEMAPHORE_WAIT_SECONDS,
+        "twelve_data_backup_configured": TWELVE_DATA_ENABLED,
+        "twelve_data_outputsize": TWELVE_DATA_OUTPUTSIZE,
+        "twelve_data_cache_seconds": TWELVE_DATA_CACHE_SECONDS,
+        "twelve_data_fetch_concurrency": TWELVE_DATA_FETCH_CONCURRENCY,
+        "twelve_data_request_timeout_seconds": TWELVE_DATA_REQUEST_TIMEOUT_SECONDS,
+        "market_data_priority": ["Yahoo Finance", "Twelve Data", "stale reference fallback"],
         "max_source_candle_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
         "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
+        "forex_otc_fallback_deadline_seconds": FOREX_OTC_FALLBACK_DEADLINE_SECONDS,
         "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
         "closed_candle_analysis": True,
+        "pocket_option_reference_assets": {
+            "forex_otc": len(POCKET_OPTION_FOREX_OTC_PAIRS),
+            "crypto_otc": len(POCKET_OPTION_CRYPTO_OTC_PAIRS),
+            "stocks_otc": len(POCKET_OPTION_STOCKS_OTC_PAIRS),
+        },
         "license_store": LICENSE_STORE_MODE,
         "persistent_license_store": bool(DATABASE_URL),
     })
@@ -2810,8 +3348,10 @@ def track_signal():
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
         "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
         "expiry_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
-        "status": "PENDING", "result_source": "pending", "source": "Yahoo Finance",
-        "source_mode": "underlying_proxy" if "(OTC)" in pair else "live_reference",
+        "status": "PENDING", "result_source": "pending",
+        "source": str(data.get("source") or "Yahoo Finance"),
+        "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
+        "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
         "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
         "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
@@ -2847,6 +3387,8 @@ def set_signal_result():
         "result": result,
         "result_source": "quotex_manual",
         "yahoo_proxy_result": target.get("yahoo_result"),
+        "reference_proxy_result": target.get("reference_result") or target.get("yahoo_result") or target.get("backup_result"),
+        "reference_proxy_source": target.get("result_reference_source") or target.get("source"),
     })
 
 
@@ -2912,6 +3454,107 @@ def signals_stats():
 
     items = [x for x in all_items if normalize_user_id(x.get("user", "")) == auth["user"]]
     return jsonify({"status": "success", "stats": signal_stats(items)})
+
+
+@app.route("/forex-otc-fallback-data", methods=["POST"])
+def forex_otc_fallback_data():
+    """
+    Authenticated data endpoint used only by the in-app Forex OTC fallback UI.
+    Normal RAJA AI scans continue to use /scan and /scan-batch.
+    """
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+
+    maintenance = scan_maintenance_state()
+    if maintenance:
+        return jsonify({
+            "status": "error",
+            "maintenance": True,
+            "message": maintenance.get("maintenance_message") or "RAJA AI scans are temporarily paused.",
+        }), 503
+
+    action = str(data.get("action") or "scan").strip().lower()
+    selected_expiry = str(data.get("expiry") or "").strip()
+
+    if action == "status":
+        pair = str(data.get("pair") or "").strip()
+        if pair not in FOREX_OTC_PAIRS:
+            pair = FOREX_OTC_PAIRS[0] if FOREX_OTC_PAIRS else ""
+        if not pair:
+            return jsonify({"status": "error", "message": "No Forex OTC pairs are configured."}), 400
+
+        snapshot = calculate_forex_otc_fallback_snapshot(pair, selected_expiry)
+        return jsonify({
+            "status": "success",
+            "mode": "forex_otc_reference_status",
+            "data": snapshot,
+            "max_fresh_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
+        })
+
+    requested = data.get("pairs")
+    if not isinstance(requested, list):
+        requested = [data.get("pair")] if data.get("pair") else []
+
+    pairs = []
+    seen = set()
+    for raw in requested[:30]:
+        pair = str(raw or "").strip()
+        if pair in FOREX_OTC_PAIRS and pair not in seen:
+            pairs.append(pair)
+            seen.add(pair)
+
+    if not pairs:
+        return jsonify({"status": "error", "message": "No supported Forex OTC pairs were supplied."}), 400
+
+    results_by_pair = {}
+    workers = min(3, len(pairs))
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-forex-otc-fallback")
+    future_map = {
+        pool.submit(calculate_forex_otc_fallback_snapshot, pair, selected_expiry): pair
+        for pair in pairs
+    }
+
+    done, pending = wait(future_map.keys(), timeout=FOREX_OTC_FALLBACK_DEADLINE_SECONDS)
+    for future in done:
+        pair = future_map[future]
+        try:
+            results_by_pair[pair] = future.result()
+        except Exception as exc:
+            print(f"Forex OTC fallback snapshot error for {pair}: {exc}")
+            results_by_pair[pair] = {
+                "pair": pair,
+                "available": False,
+                "live_fresh": False,
+                "reason": "Fallback reference analysis failed for this pair.",
+                "source": "Yahoo Finance",
+                "source_mode": "fallback_reference_only",
+            }
+
+    for future in pending:
+        pair = future_map[future]
+        future.cancel()
+        results_by_pair[pair] = {
+            "pair": pair,
+            "available": False,
+            "live_fresh": False,
+            "reason": "Fallback reference analysis timed out for this pair.",
+            "source": "Yahoo Finance",
+            "source_mode": "fallback_reference_only",
+        }
+
+    pool.shutdown(wait=False, cancel_futures=True)
+    rows = [results_by_pair[pair] for pair in pairs]
+
+    return jsonify({
+        "status": "success",
+        "mode": "forex_otc_reference_fallback",
+        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE BROKER OTC DATA",
+        "data": rows,
+        "live_restored": any(bool(row.get("live_fresh")) for row in rows),
+        "max_fresh_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
+    })
 
 
 @app.route("/scan-batch", methods=["POST"])
