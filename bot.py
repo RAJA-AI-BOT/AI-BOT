@@ -2881,6 +2881,8 @@ def health():
         "cache_duration_seconds": CACHE_DURATION,
         "confirmation_mode": "4-of-6 Strong",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
+        "client_pair_lock_seconds": 600,
+        "client_pair_lock_scope": "broker+market+pair per browser/device",
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
         "yahoo_failure_cooldown_seconds": YAHOO_FAILURE_COOLDOWN,
