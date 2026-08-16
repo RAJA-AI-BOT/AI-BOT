@@ -128,6 +128,7 @@ YAHOO_SYMBOLS = {
 
 ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
 UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
+FOREX_OTC_PAIRS = [pair for pair in YAHOO_SYMBOLS if pair.endswith(" (OTC)") and "/" in pair]
 
 TIMEFRAMES = {
     "1m": 1,
@@ -2120,6 +2121,83 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
     }
 
 
+def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
+    """
+    Build a REFERENCE-ONLY snapshot from the last Yahoo candles even when the
+    normal live freshness gate is closed.
+
+    Important:
+    - This is NOT live Quotex OTC data.
+    - This function does not write signal history/performance records.
+    - Frontend JavaScript applies the separate fallback confidence gate.
+    """
+    if pair not in FOREX_OTC_PAIRS:
+        return {
+            "pair": pair,
+            "available": False,
+            "live_fresh": False,
+            "reason": "Pair is not part of the configured Forex OTC list.",
+            "source": "Yahoo Finance",
+            "source_mode": "fallback_reference_only",
+        }
+
+    base_df, data_age, symbol = get_market_data(pair)
+    if base_df is None or base_df.empty:
+        return {
+            "pair": pair,
+            "available": False,
+            "live_fresh": False,
+            "reason": "No Yahoo reference history is currently available for this pair.",
+            "source": "Yahoo Finance",
+            "source_mode": "fallback_reference_only",
+            "yahoo_symbol": symbol,
+            "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
+            "data_age_label": format_market_data_age(data_age) if data_age is not None else "--",
+        }
+
+    age_value = float(data_age or 0.0)
+    live_fresh = age_value <= float(MAX_SOURCE_CANDLE_AGE_SECONDS)
+
+    results = {}
+    for tf_name, minutes in TIMEFRAMES.items():
+        tf_df = build_timeframe(base_df, minutes)
+        results[tf_name] = analyze_timeframe(tf_df, tf_name)
+
+    summary = {
+        tf: {
+            "signal": row.get("signal"),
+            "score": row.get("score", 0),
+            "rsi": row.get("rsi"),
+            "adx": row.get("adx"),
+            "atr": row.get("atr"),
+            "price": row.get("price"),
+            "bullish_points": row.get("bullish_points", 0),
+            "bearish_points": row.get("bearish_points", 0),
+            "closed_candle_epoch": row.get("closed_candle_epoch"),
+        }
+        for tf, row in results.items()
+    }
+
+    return {
+        "pair": pair,
+        "available": True,
+        "live_fresh": bool(live_fresh),
+        "normal_scan_required": bool(live_fresh),
+        "reference_stale": not bool(live_fresh),
+        "source": "Yahoo Finance",
+        "source_mode": "fallback_reference_only",
+        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE QUOTEX OTC DATA",
+        "yahoo_symbol": symbol,
+        "data_age_seconds": round(age_value, 2),
+        "data_age_label": format_market_data_age(age_value),
+        "selected_expiry": str(selected_expiry or ""),
+        "timeframe_summary": summary,
+        "timeframes_scanned": list(TIMEFRAMES.keys()),
+        "chart_preview": serialize_candles(base_df, 60),
+    }
+
+
+
 # =========================================================
 # LIVE ECONOMIC NEWS / CALENDAR
 # =========================================================
@@ -2944,6 +3022,107 @@ def signals_stats():
 
     items = [x for x in all_items if normalize_user_id(x.get("user", "")) == auth["user"]]
     return jsonify({"status": "success", "stats": signal_stats(items)})
+
+
+@app.route("/forex-otc-fallback-data", methods=["POST"])
+def forex_otc_fallback_data():
+    """
+    Authenticated data endpoint used only by the in-app Forex OTC fallback UI.
+    Normal RAJA AI scans continue to use /scan and /scan-batch.
+    """
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+
+    maintenance = scan_maintenance_state()
+    if maintenance:
+        return jsonify({
+            "status": "error",
+            "maintenance": True,
+            "message": maintenance.get("maintenance_message") or "RAJA AI scans are temporarily paused.",
+        }), 503
+
+    action = str(data.get("action") or "scan").strip().lower()
+    selected_expiry = str(data.get("expiry") or "").strip()
+
+    if action == "status":
+        pair = str(data.get("pair") or "").strip()
+        if pair not in FOREX_OTC_PAIRS:
+            pair = FOREX_OTC_PAIRS[0] if FOREX_OTC_PAIRS else ""
+        if not pair:
+            return jsonify({"status": "error", "message": "No Forex OTC pairs are configured."}), 400
+
+        snapshot = calculate_forex_otc_fallback_snapshot(pair, selected_expiry)
+        return jsonify({
+            "status": "success",
+            "mode": "forex_otc_reference_status",
+            "data": snapshot,
+            "max_fresh_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
+        })
+
+    requested = data.get("pairs")
+    if not isinstance(requested, list):
+        requested = [data.get("pair")] if data.get("pair") else []
+
+    pairs = []
+    seen = set()
+    for raw in requested[:21]:
+        pair = str(raw or "").strip()
+        if pair in FOREX_OTC_PAIRS and pair not in seen:
+            pairs.append(pair)
+            seen.add(pair)
+
+    if not pairs:
+        return jsonify({"status": "error", "message": "No supported Forex OTC pairs were supplied."}), 400
+
+    results_by_pair = {}
+    workers = min(3, len(pairs))
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-forex-otc-fallback")
+    future_map = {
+        pool.submit(calculate_forex_otc_fallback_snapshot, pair, selected_expiry): pair
+        for pair in pairs
+    }
+
+    done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
+    for future in done:
+        pair = future_map[future]
+        try:
+            results_by_pair[pair] = future.result()
+        except Exception as exc:
+            print(f"Forex OTC fallback snapshot error for {pair}: {exc}")
+            results_by_pair[pair] = {
+                "pair": pair,
+                "available": False,
+                "live_fresh": False,
+                "reason": "Fallback reference analysis failed for this pair.",
+                "source": "Yahoo Finance",
+                "source_mode": "fallback_reference_only",
+            }
+
+    for future in pending:
+        pair = future_map[future]
+        future.cancel()
+        results_by_pair[pair] = {
+            "pair": pair,
+            "available": False,
+            "live_fresh": False,
+            "reason": "Fallback reference analysis timed out for this pair.",
+            "source": "Yahoo Finance",
+            "source_mode": "fallback_reference_only",
+        }
+
+    pool.shutdown(wait=False, cancel_futures=True)
+    rows = [results_by_pair[pair] for pair in pairs]
+
+    return jsonify({
+        "status": "success",
+        "mode": "forex_otc_reference_fallback",
+        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE QUOTEX OTC DATA",
+        "data": rows,
+        "live_restored": any(bool(row.get("live_fresh")) for row in rows),
+        "max_fresh_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
+    })
 
 
 @app.route("/scan-batch", methods=["POST"])
