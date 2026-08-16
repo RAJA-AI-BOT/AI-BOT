@@ -6172,6 +6172,30 @@
             setInstallButtonVisible(true);
         }, { once:true });
 
+
+        // =========================================================
+        // UNIVERSAL INSTALL ROUTER
+        // =========================================================
+        // Add the real public URLs when the native apps are published.
+        // Android can be a Google Play URL or a signed APK HTTPS URL.
+        // iOS can be an App Store or TestFlight URL.
+        const RAJA_NATIVE_INSTALL_TARGETS = {
+            android: '',
+            ios: ''
+        };
+
+        function rajaDeviceFamily() {
+            const ua = String(navigator.userAgent || '');
+            if (/iPhone|iPad|iPod/i.test(ua)) return 'ios';
+            if (/Android/i.test(ua)) return 'android';
+            return 'desktop';
+        }
+
+        function rajaConfiguredInstallTarget(family) {
+            const value = String(RAJA_NATIVE_INSTALL_TARGETS[family] || '').trim();
+            return /^https:\/\//i.test(value) ? value : '';
+        }
+
         async function installPWA() {
             if (isRajaStandalone()) {
                 deferredInstallPrompt = null;
@@ -6179,46 +6203,38 @@
                 return;
             }
 
-            const buttons = [
-                document.getElementById('installAppBtn'),
-                document.getElementById('activationInstallAppBtn')
-            ].filter(Boolean);
+            const family = rajaDeviceFamily();
+            const nativeTarget = rajaConfiguredInstallTarget(family);
 
-            const setTemporaryLabel = (label) => {
-                buttons.forEach(btn => {
-                    btn.innerText = label;
-                    btn.disabled = true;
-                });
-            };
+            // Android / iPhone / iPad:
+            // once a real Play/APK/App Store/TestFlight URL is configured,
+            // one tap routes directly to that native installation destination.
+            if ((family === 'android' || family === 'ios') && nativeTarget) {
+                window.location.assign(nativeTarget);
+                return;
+            }
 
-            // New Chromium Web Install API (2026). When available, this is the
-            // cleanest direct path from the user's click to the browser's native
-            // install experience. The manifest already has an explicit "id".
+            // Desktop or Android browsers that expose the new install API.
             if (typeof navigator.install === 'function') {
                 try {
-                    setTemporaryLabel('OPENING INSTALLER...');
                     await navigator.install();
                     setInstallButtonVisible(false);
                     return;
                 } catch (err) {
-                    // AbortError means the user dismissed/cancelled the browser UI.
                     if (err && err.name === 'AbortError') {
                         setInstallButtonVisible(true);
                         return;
                     }
-                    console.warn('RAJA AI navigator.install failed; trying legacy prompt:', err);
-                    setInstallButtonVisible(true);
+                    console.warn('RAJA AI navigator.install failed:', err);
                 }
             }
 
-            // Legacy Chromium/Samsung path, when the browser supplies
-            // beforeinstallprompt for this installable PWA.
+            // Legacy Chromium install event.
             if (deferredInstallPrompt) {
                 const promptEvent = deferredInstallPrompt;
                 deferredInstallPrompt = null;
 
                 try {
-                    setTemporaryLabel('OPENING INSTALLER...');
                     await promptEvent.prompt();
                     const choice = await promptEvent.userChoice;
 
@@ -6235,11 +6251,24 @@
                 }
             }
 
-            // There is no standards-based JavaScript call that can force a native
-            // installer in a browser that exposes neither API. Keep everything in
-            // English and do not show a custom Add-to-Home popup.
-            setTemporaryLabel('NATIVE INSTALL NOT AVAILABLE');
-            setTimeout(() => setInstallButtonVisible(true), 1800);
+            // No fake/manual Add-to-Home popup.
+            // Keep the button visible until a real native target or browser prompt exists.
+            const buttons = [
+                document.getElementById('installAppBtn'),
+                document.getElementById('activationInstallAppBtn')
+            ].filter(Boolean);
+
+            buttons.forEach(btn => {
+                const original = btn.innerText;
+                btn.innerText = family === 'ios'
+                    ? 'IOS APP LINK REQUIRED'
+                    : family === 'android'
+                        ? 'ANDROID APP LINK REQUIRED'
+                        : 'NATIVE INSTALL NOT AVAILABLE';
+                setTimeout(() => {
+                    if (!isRajaStandalone()) btn.innerText = original;
+                }, 1800);
+            });
         }
 
         // =========================================================
