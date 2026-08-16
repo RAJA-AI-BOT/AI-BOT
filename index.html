@@ -6131,16 +6131,14 @@
 
             if (!buttons.length) return;
 
-            // Native-install-only mode:
-            // show the button ONLY when this browser gives us a real
-            // beforeinstallprompt event. No manual Add-to-Home fallback popup.
-            const show = Boolean(visible) &&
-                         Boolean(deferredInstallPrompt) &&
-                         !isRajaStandalone();
+            // Keep the install action visible on phone, tablet and desktop
+            // whenever RAJA AI is not currently running in standalone mode.
+            const show = !isRajaStandalone();
 
             buttons.forEach(btn => {
                 btn.style.display = show ? 'inline-flex' : 'none';
-                btn.disabled = !show;
+                btn.disabled = false;
+                btn.dataset.nativeInstallReady = deferredInstallPrompt ? '1' : '0';
             });
 
             const dashboardBtn = document.getElementById('installAppBtn');
@@ -6165,7 +6163,7 @@
         });
 
         document.addEventListener('DOMContentLoaded', () => {
-            setInstallButtonVisible(false);
+            setInstallButtonVisible(true);
         }, { once:true });
 
         async function installPWA() {
@@ -6178,7 +6176,22 @@
             // Directly invoke the browser's REAL native install dialog.
             // No RAJA AI custom popup, no Add-to-Home instructions.
             if (!deferredInstallPrompt) {
-                setInstallButtonVisible(false);
+                // Browser has not provided a native install event yet.
+                // Do not show a custom popup or manual Add-to-Home message.
+                // Keep the install button visible so it becomes immediately
+                // usable if/when beforeinstallprompt fires later in this session.
+                setInstallButtonVisible(true);
+                const buttons = [
+                    document.getElementById('installAppBtn'),
+                    document.getElementById('activationInstallAppBtn')
+                ].filter(Boolean);
+                buttons.forEach(btn => {
+                    const original = btn.innerText;
+                    btn.innerText = 'INSTALL APP · NATIVE PROMPT NOT READY';
+                    setTimeout(() => {
+                        if (!isRajaStandalone()) btn.innerText = original;
+                    }, 1800);
+                });
                 return;
             }
 
@@ -6307,7 +6320,7 @@
                 if (isRajaStandalone()) {
                     setInstallButtonVisible(false);
                 } else {
-                    setInstallButtonVisible(Boolean(deferredInstallPrompt));
+                    setInstallButtonVisible(true);
                 }
             };
 
