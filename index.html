@@ -4880,7 +4880,38 @@
         .raja-otc-fallback-btn:hover,.raja-otc-fallback-btn:active{border-color:#facc15;background:linear-gradient(90deg,rgba(250,204,21,.28),rgba(245,158,11,.20))}
         .raja-otc-fallback-btn:disabled{opacity:.50;cursor:not-allowed}
         .raja-otc-fallback-meta{margin-top:6px;color:#837b61;font-size:6.1px;line-height:1.45;font-weight:800}
-        @media(max-width:820px){.raja-scanning-market-badge{width:100%;margin-bottom:8px;padding:7px 8px;font-size:7.2px}.raja-scanning-market-badge strong{font-size:8px}.raja-otc-fallback-panel{padding:10px 9px}.raja-otc-fallback-btn{min-height:36px;font-size:7.5px}}
+
+        .raja-forex-otc-fallback-panel{
+            margin-top:9px;padding:11px;border:1px solid rgba(251,191,36,.40);border-radius:11px;
+            background:radial-gradient(circle at 12% 0%,rgba(251,191,36,.12),transparent 42%),linear-gradient(180deg,rgba(28,18,5,.72),rgba(12,10,5,.72));
+            box-shadow:inset 0 0 26px rgba(251,191,36,.035),0 0 22px rgba(245,158,11,.04)
+        }
+        .raja-forex-otc-fallback-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+        .raja-forex-otc-fallback-badge{flex:0 0 auto;border:1px solid rgba(251,113,133,.45);background:rgba(244,63,94,.10);color:#ff9eaf;border-radius:999px;padding:4px 7px;font-size:6.2px;font-weight:950;letter-spacing:.45px;text-transform:uppercase;white-space:nowrap}
+        .raja-forex-otc-fallback-kicker{color:#ffd66b;font-size:6.5px;font-weight:950;letter-spacing:.7px;text-transform:uppercase}
+        .raja-forex-otc-fallback-title{margin-top:4px;color:#fff7d1;font-size:9.5px;font-weight:950;letter-spacing:.35px}
+        .raja-forex-otc-fallback-copy{margin-top:6px;color:#b4a883;font-size:6.7px;line-height:1.55;font-weight:760}
+        .raja-forex-otc-fallback-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:9px}
+        .raja-forex-otc-open-btn,.raja-forex-otc-direct-btn{width:100%;min-height:38px;padding:8px 7px;border-radius:8px;font-size:7.2px;font-weight:950;cursor:pointer;text-transform:uppercase;letter-spacing:.2px}
+        .raja-forex-otc-open-btn{border:1px solid rgba(250,204,21,.52);background:linear-gradient(90deg,rgba(250,204,21,.20),rgba(245,158,11,.15));color:#ffe88d}
+        .raja-forex-otc-open-btn:hover,.raja-forex-otc-open-btn:active{border-color:#facc15;background:linear-gradient(90deg,rgba(250,204,21,.30),rgba(245,158,11,.23))}
+        .raja-forex-otc-direct-btn{border:1px solid rgba(96,239,255,.28);background:rgba(96,239,255,.065);color:#a7f4ff}
+        .raja-forex-otc-direct-btn.connected{border-color:rgba(0,255,154,.42);background:linear-gradient(90deg,rgba(0,255,154,.13),rgba(96,239,255,.09));color:#9fffdc}
+        .raja-forex-otc-direct-btn:disabled{opacity:.46;cursor:not-allowed;filter:saturate(.5)}
+        .raja-forex-otc-fallback-meta{margin-top:7px;padding-top:7px;border-top:1px solid rgba(250,204,21,.10);color:#8f8568;font-size:6.2px;line-height:1.5;font-weight:820}
+
+        @media(max-width:820px){
+            .raja-scanning-market-badge{width:100%;margin-bottom:8px;padding:7px 8px;font-size:7.2px}
+            .raja-scanning-market-badge strong{font-size:8px}
+            .raja-otc-fallback-panel{padding:10px 9px}
+            .raja-otc-fallback-btn{min-height:36px;font-size:7.5px}
+            .raja-forex-otc-fallback-panel{padding:10px 9px}
+            .raja-forex-otc-fallback-actions{grid-template-columns:1fr}
+            .raja-forex-otc-open-btn,.raja-forex-otc-direct-btn{min-height:40px;font-size:7.8px}
+        }
+        @media(min-width:821px) and (max-width:1180px){
+            .raja-forex-otc-fallback-actions{grid-template-columns:1fr}
+        }
     </style>
 
 </head>
@@ -5014,7 +5045,7 @@
                 <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
                 <div class="raja-mobile-command-actions triple">
                     <button id="rajaMobileHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button>
-                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS</button>
+                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS &amp; PAIRS</button>
                     <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
                 </div>
             </div>
@@ -5433,6 +5464,26 @@
 
                         <div id="rajaScanReadyList" class="raja-market-ready-list">
                             <div class="raja-scan-ready-empty">Checking market availability…</div>
+                        </div>
+
+                        <div id="rajaForexOtcFallbackPanel" class="raja-forex-otc-fallback-panel" style="display:none;">
+                            <div class="raja-forex-otc-fallback-head">
+                                <div>
+                                    <div class="raja-forex-otc-fallback-kicker">⚡ FOREX OTC · REFERENCE OFFLINE</div>
+                                    <div class="raja-forex-otc-fallback-title">QUOTEX FOREX OTC FALLBACK MODE</div>
+                                </div>
+                                <span id="rajaForexOtcFallbackState" class="raja-forex-otc-fallback-badge">UNAVAILABLE</span>
+                            </div>
+                            <div class="raja-forex-otc-fallback-copy">
+                                Yahoo reference data for Forex OTC is stale or unavailable, so RAJA AI has paused automatic Forex OTC proxy signals. Other available RAJA AI markets remain active above.
+                            </div>
+                            <div class="raja-forex-otc-fallback-actions">
+                                <button type="button" id="rajaForexOtcOpenBtn" class="raja-forex-otc-open-btn">⚡ OPEN QUOTEX FOREX OTC</button>
+                                <button type="button" id="rajaForexOtcDirectBtn" class="raja-forex-otc-direct-btn" disabled>🤖 DIRECT QUOTEX OTC SCAN · NOT CONNECTED</button>
+                            </div>
+                            <div id="rajaForexOtcFallbackMeta" class="raja-forex-otc-fallback-meta">
+                                Auto signal generation paused · No fake Quotex candles used.
+                            </div>
                         </div>
 
                         <div id="rajaOtcFallbackPanel" class="raja-otc-fallback-panel" style="display:none;">
@@ -9691,7 +9742,7 @@
             }
             if (button) {
                 button.classList.toggle('active', nextOpen);
-                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS';
+                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS & PAIRS';
             }
 
             if (nextOpen) {
@@ -9714,7 +9765,7 @@
             const head = document.createElement('div');
             head.className = 'raja-mobile-sheet-head';
             head.innerHTML =
-                '<strong>⚙ QUICK SETTINGS</strong>' +
+                '<strong>⚙ SETTINGS & PAIRS</strong>' +
                 '<button type="button" class="raja-mobile-sheet-close">DONE</button>';
             panel.insertBefore(head, panel.firstChild);
 
@@ -10690,9 +10741,21 @@
                 }
                 otcFallbackConfig = payload.data || {};
             } catch (error) {
-                otcFallbackConfig = {enabled:false,companion_connected:false,launch_url:'',message:String(error?.message || 'Fallback configuration unavailable.')};
+                otcFallbackConfig = {enabled:false,companion_connected:false,launch_url:'',companion_url:'',message:String(error?.message || 'Fallback configuration unavailable.')};
             }
             return otcFallbackConfig;
+        }
+
+        function openExternalSafely(url) {
+            const target = String(url || '').trim();
+            if (!target) return false;
+            try {
+                const opened = window.open(target, '_blank', 'noopener,noreferrer');
+                if (!opened) window.location.href = target;
+            } catch (_) {
+                window.location.href = target;
+            }
+            return true;
         }
 
         async function openOtcFallback() {
@@ -10701,20 +10764,53 @@
             if (btn) btn.disabled = true;
 
             const cfg = await loadOtcFallbackConfig(true);
-            if (cfg && cfg.launch_url) {
-                try { window.open(String(cfg.launch_url), '_blank', 'noopener,noreferrer'); }
-                catch (_) { window.location.href = String(cfg.launch_url); }
-            }
+            const target = cfg?.companion_connected && cfg?.companion_url ? cfg.companion_url : cfg?.launch_url;
+            const opened = openExternalSafely(target);
 
             if (meta) {
-                meta.textContent = cfg?.companion_connected
-                    ? 'Configured Quotex OTC companion launcher opened.'
-                    : 'Quotex opened. Direct Quotex candle scanning is not connected in this build; RAJA AI will not fake OTC candles.';
+                meta.textContent = opened
+                    ? (cfg?.companion_connected
+                        ? 'Configured Quotex OTC companion launcher opened.'
+                        : 'Quotex opened. Direct Quotex candle scanning is not connected; RAJA AI will not fake OTC candles.')
+                    : 'Quotex fallback URL is not configured.';
             }
             if (btn) {
-                btn.disabled = false;
+                btn.disabled = !cfg?.enabled;
                 btn.textContent = cfg?.companion_connected ? '⚡ OPEN QUOTEX OTC COMPANION' : '⚡ OPEN QUOTEX OTC';
             }
+        }
+
+        async function openForexOtcManual() {
+            const btn = document.getElementById('rajaForexOtcOpenBtn');
+            const meta = document.getElementById('rajaForexOtcFallbackMeta');
+            if (btn) btn.disabled = true;
+
+            const cfg = await loadOtcFallbackConfig(true);
+            const opened = openExternalSafely(cfg?.launch_url);
+
+            if (meta) {
+                meta.textContent = opened
+                    ? 'Quotex opened for manual Forex OTC use. RAJA AI proxy scanning remains paused until Yahoo reference data is fresh.'
+                    : 'Quotex fallback URL is not configured.';
+            }
+            if (btn) btn.disabled = !cfg?.enabled;
+        }
+
+        async function openForexOtcDirectScan() {
+            const btn = document.getElementById('rajaForexOtcDirectBtn');
+            const meta = document.getElementById('rajaForexOtcFallbackMeta');
+            const cfg = await loadOtcFallbackConfig(true);
+
+            if (!cfg?.companion_connected || !cfg?.companion_url) {
+                if (meta) meta.textContent = 'Direct Quotex OTC scan is not connected. Add a trusted companion/data bridge URL before enabling this button.';
+                if (btn) btn.disabled = true;
+                return;
+            }
+
+            if (btn) btn.disabled = true;
+            const opened = openExternalSafely(cfg.companion_url);
+            if (meta) meta.textContent = opened ? 'Direct Quotex OTC companion/data bridge opened.' : 'Configured companion/data bridge could not be opened.';
+            if (btn) btn.disabled = false;
         }
 
         let refreshPromise = null;
@@ -10931,6 +11027,11 @@
             const fallbackPanel = document.getElementById('rajaOtcFallbackPanel');
             const fallbackBtn = document.getElementById('rajaOtcFallbackBtn');
             const fallbackMeta = document.getElementById('rajaOtcFallbackMeta');
+            const forexFallbackPanel = document.getElementById('rajaForexOtcFallbackPanel');
+            const forexFallbackState = document.getElementById('rajaForexOtcFallbackState');
+            const forexOpenBtn = document.getElementById('rajaForexOtcOpenBtn');
+            const forexDirectBtn = document.getElementById('rajaForexOtcDirectBtn');
+            const forexFallbackMeta = document.getElementById('rajaForexOtcFallbackMeta');
             if (!countEl || !summaryEl || !listEl || !updatedEl || !statusEl || !bestBtn) return;
 
             const store = readStore();
@@ -10947,6 +11048,42 @@
 
             const allFourChecked = MARKETS.every(market => isFreshSnapshot(store[market]));
             const allFourZeroReady = allFourChecked && MARKETS.every(market => snapshotReadyCount(store[market]) === 0);
+
+            const forexSnapshot = store.ForexOTC;
+            const forexChecked = isFreshSnapshot(forexSnapshot);
+            const forexReadyCount = forexChecked ? snapshotReadyCount(forexSnapshot) : 0;
+            const forexState = forexChecked ? String(forexSnapshot?.state || 'UNAVAILABLE').toUpperCase() : 'NOT CHECKED';
+            const forexFallbackVisible =
+                current === 'ForexOTC' &&
+                !checkingMarkets.has('ForexOTC') &&
+                forexChecked &&
+                forexReadyCount === 0 &&
+                !allFourZeroReady;
+
+            if (forexFallbackPanel) forexFallbackPanel.style.display = forexFallbackVisible ? 'block' : 'none';
+            if (forexFallbackState) forexFallbackState.textContent = forexState === 'READY' ? 'UNAVAILABLE' : forexState;
+
+            if (forexFallbackVisible) {
+                loadOtcFallbackConfig(false).then(cfg => {
+                    if (forexOpenBtn) {
+                        forexOpenBtn.disabled = !cfg?.enabled;
+                        forexOpenBtn.textContent = '⚡ OPEN QUOTEX FOREX OTC';
+                    }
+                    if (forexDirectBtn) {
+                        const connected = Boolean(cfg?.companion_connected && cfg?.companion_url);
+                        forexDirectBtn.disabled = !connected;
+                        forexDirectBtn.classList.toggle('connected', connected);
+                        forexDirectBtn.textContent = connected
+                            ? '🤖 DIRECT QUOTEX OTC SCAN · CONNECTED'
+                            : '🤖 DIRECT QUOTEX OTC SCAN · NOT CONNECTED';
+                    }
+                    if (forexFallbackMeta) {
+                        forexFallbackMeta.textContent = cfg?.companion_connected
+                            ? 'Forex OTC Yahoo reference is blocked · Quotex companion/data bridge is connected.'
+                            : 'Auto signal generation paused · No fake Quotex candles used · Manual Quotex open is available.';
+                    }
+                }).catch(() => {});
+            }
 
             if (fallbackPanel) {
                 fallbackPanel.style.display = (!checkingMarkets.size && allFourZeroReady) ? 'block' : 'none';
@@ -11185,6 +11322,27 @@
             if (fallbackBtn && !fallbackBtn.dataset.bound) {
                 fallbackBtn.dataset.bound = '1';
                 fallbackBtn.addEventListener('click', openOtcFallback);
+            }
+
+            const forexOpenBtn = document.getElementById('rajaForexOtcOpenBtn');
+            if (forexOpenBtn && !forexOpenBtn.dataset.bound) {
+                forexOpenBtn.dataset.bound = '1';
+                forexOpenBtn.addEventListener('click', openForexOtcManual);
+            }
+
+            const forexDirectBtn = document.getElementById('rajaForexOtcDirectBtn');
+            if (forexDirectBtn && !forexDirectBtn.dataset.bound) {
+                forexDirectBtn.dataset.bound = '1';
+                forexDirectBtn.addEventListener('click', openForexOtcDirectScan);
+            }
+
+            const marketSelect = document.getElementById('marketType');
+            if (marketSelect && !marketSelect.dataset.rajaFallbackBound) {
+                marketSelect.dataset.rajaFallbackBound = '1';
+                marketSelect.addEventListener('change', () => {
+                    try { setScanningMarketBadge(currentMarket()); } catch (_) {}
+                    try { render(new Set()); } catch (_) {}
+                });
             }
 
             try { setScanningMarketBadge(currentMarket()); } catch (_) {}
