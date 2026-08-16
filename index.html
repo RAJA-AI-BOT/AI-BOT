@@ -6196,79 +6196,130 @@
             return /^https:\/\//i.test(value) ? value : '';
         }
 
-        async function installPWA() {
+        function openRajaInstallModal() {
             if (isRajaStandalone()) {
-                deferredInstallPrompt = null;
+                setInstallButtonVisible(false);
+                return;
+            }
+
+            const modal = document.getElementById('rajaInstallModal');
+            const status = document.getElementById('rajaInstallStatus');
+            const installNow = document.getElementById('rajaInstallNowBtn');
+
+            if (status) status.innerText = '';
+            if (installNow) {
+                installNow.disabled = false;
+                installNow.innerText = 'INSTALL NOW';
+            }
+
+            if (modal) {
+                modal.classList.add('raja-install-open');
+            }
+        }
+
+        function closeRajaInstallModal() {
+            const modal = document.getElementById('rajaInstallModal');
+            if (modal) modal.classList.remove('raja-install-open');
+        }
+
+        async function installPWA() {
+            openRajaInstallModal();
+        }
+
+        async function confirmRajaInstall() {
+            if (isRajaStandalone()) {
+                closeRajaInstallModal();
                 setInstallButtonVisible(false);
                 return;
             }
 
             const family = rajaDeviceFamily();
             const nativeTarget = rajaConfiguredInstallTarget(family);
+            const status = document.getElementById('rajaInstallStatus');
+            const installNow = document.getElementById('rajaInstallNowBtn');
 
-            // Android / iPhone / iPad:
-            // once a real Play/APK/App Store/TestFlight URL is configured,
-            // one tap routes directly to that native installation destination.
+            const setBusy = (label) => {
+                if (installNow) {
+                    installNow.disabled = true;
+                    installNow.innerText = label;
+                }
+            };
+
+            const resetButton = () => {
+                if (installNow) {
+                    installNow.disabled = false;
+                    installNow.innerText = 'INSTALL NOW';
+                }
+            };
+
+            if (status) status.innerText = '';
+
+            // Native Android/iOS distribution route, once a real public store
+            // or signed-app URL is configured.
             if ((family === 'android' || family === 'ios') && nativeTarget) {
+                setBusy('OPENING INSTALLER...');
                 window.location.assign(nativeTarget);
+                setTimeout(resetButton, 1800);
                 return;
             }
 
-            // Desktop or Android browsers that expose the new install API.
+            // Browser-native install API, when exposed by the browser.
             if (typeof navigator.install === 'function') {
                 try {
+                    setBusy('OPENING INSTALLER...');
                     await navigator.install();
+                    closeRajaInstallModal();
                     setInstallButtonVisible(false);
                     return;
                 } catch (err) {
                     if (err && err.name === 'AbortError') {
-                        setInstallButtonVisible(true);
+                        resetButton();
                         return;
                     }
                     console.warn('RAJA AI navigator.install failed:', err);
+                    resetButton();
                 }
             }
 
-            // Legacy Chromium install event.
+            // Chromium PWA install prompt.
             if (deferredInstallPrompt) {
                 const promptEvent = deferredInstallPrompt;
                 deferredInstallPrompt = null;
 
                 try {
+                    setBusy('OPENING INSTALLER...');
                     await promptEvent.prompt();
                     const choice = await promptEvent.userChoice;
 
                     if (choice && choice.outcome === 'accepted') {
+                        closeRajaInstallModal();
                         setInstallButtonVisible(false);
                     } else {
-                        setInstallButtonVisible(true);
+                        resetButton();
                     }
                     return;
                 } catch (err) {
                     console.warn('RAJA AI beforeinstallprompt failed:', err);
-                    setInstallButtonVisible(true);
-                    return;
+                    resetButton();
                 }
             }
 
-            // No fake/manual Add-to-Home popup.
-            // Keep the button visible until a real native target or browser prompt exists.
-            const buttons = [
-                document.getElementById('installAppBtn'),
-                document.getElementById('activationInstallAppBtn')
-            ].filter(Boolean);
+            // A website cannot force an OS/app installation when the browser
+            // exposes no native install API. Keep the UI truthful.
+            if (status) {
+                if (family === 'android') {
+                    status.innerText =
+                        'This browser does not expose a native web-app installer. A Google Play link is required for reliable Android installation across browsers.';
+                } else if (family === 'ios') {
+                    status.innerText =
+                        'An App Store or TestFlight link is required for iPhone and iPad installation.';
+                } else {
+                    status.innerText =
+                        'Native installation is not available in this browser.';
+                }
+            }
 
-            buttons.forEach(btn => {
-                const original = btn.innerText;
-                btn.innerText = family === 'ios'
-                    ? 'IOS APP LINK REQUIRED'
-                    : family === 'android'
-                        ? 'ANDROID APP LINK REQUIRED'
-                        : 'NATIVE INSTALL NOT AVAILABLE';
-                setTimeout(() => {
-                    if (!isRajaStandalone()) btn.innerText = original;
-                }, 1800);
-            });
+            resetButton();
         }
 
         // =========================================================
@@ -12925,6 +12976,136 @@
         });
     })();
     </script>
+
+
+<style id="raja-install-modal-style">
+  #rajaInstallModal {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: rgba(0, 4, 12, 0.78);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  #rajaInstallModal.raja-install-open {
+    display: flex;
+  }
+
+  .raja-install-card {
+    width: min(92vw, 420px);
+    border: 1px solid rgba(22, 230, 196, 0.72);
+    border-radius: 22px;
+    background: #07111f;
+    box-shadow: 0 24px 80px rgba(0,0,0,.55);
+    padding: 24px 20px 20px;
+    text-align: center;
+    color: #fff;
+  }
+
+  .raja-install-logo {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 14px;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(145deg, #16e6c4, #0daecb);
+    color: #020712;
+    font-weight: 900;
+    font-size: 24px;
+    letter-spacing: 1px;
+  }
+
+  .raja-install-card h3 {
+    margin: 0 0 8px;
+    font-size: 21px;
+    color: #54ffe2;
+  }
+
+  .raja-install-card p {
+    margin: 0 auto 18px;
+    max-width: 330px;
+    color: #b7c6d8;
+    line-height: 1.45;
+    font-size: 14px;
+  }
+
+  .raja-install-now {
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    border-radius: 14px;
+    cursor: pointer;
+    font-weight: 900;
+    letter-spacing: .6px;
+    background: #16e6c4;
+    color: #020712;
+  }
+
+  .raja-install-now:disabled {
+    opacity: .7;
+    cursor: wait;
+  }
+
+  .raja-install-cancel {
+    margin-top: 9px;
+    min-height: 40px;
+    border: 0;
+    background: transparent;
+    color: #92a7bd;
+    cursor: pointer;
+    font-weight: 700;
+  }
+
+  #rajaInstallStatus {
+    min-height: 20px;
+    margin-top: 10px;
+    color: #ffcf66;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  @media (display-mode: standalone) {
+    #rajaInstallModal {
+      display: none !important;
+    }
+  }
+</style>
+
+<div id="rajaInstallModal" role="dialog" aria-modal="true" aria-labelledby="rajaInstallTitle">
+  <div class="raja-install-card">
+    <div class="raja-install-logo">RA</div>
+    <h3 id="rajaInstallTitle">Install RAJA AI</h3>
+    <p id="rajaInstallText">Install RAJA AI on this device for faster access and a full-screen app experience.</p>
+
+    <button id="rajaInstallNowBtn" class="raja-install-now" type="button" onclick="confirmRajaInstall()">
+      INSTALL NOW
+    </button>
+
+    <div id="rajaInstallStatus" aria-live="polite"></div>
+
+    <button class="raja-install-cancel" type="button" onclick="closeRajaInstallModal()">
+      NOT NOW
+    </button>
+  </div>
+</div>
+
+
+<script>
+document.addEventListener('click', function (event) {
+  const modal = document.getElementById('rajaInstallModal');
+  if (modal && event.target === modal) closeRajaInstallModal();
+});
+
+document.addEventListener('keydown', function (event) {
+  if (event.key === 'Escape') closeRajaInstallModal();
+});
+</script>
 
 </body>
 </html>
