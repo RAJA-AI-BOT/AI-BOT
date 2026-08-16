@@ -6160,6 +6160,12 @@
             event.preventDefault();
             deferredInstallPrompt = event;
             setInstallButtonVisible(true);
+
+            if (rajaInstallHandoffRequested()) {
+                setTimeout(() => {
+                    openRajaInstallModal();
+                }, 150);
+            }
         });
 
         // When installation finishes, remove the install button.
@@ -6194,6 +6200,32 @@
         function rajaConfiguredInstallTarget(family) {
             const value = String(RAJA_NATIVE_INSTALL_TARGETS[family] || '').trim();
             return /^https:\/\//i.test(value) ? value : '';
+        }
+
+        function rajaIsChromeAndroid() {
+            const ua = String(navigator.userAgent || '');
+            return /Android/i.test(ua) &&
+                   /Chrome\/|CriOS\//i.test(ua) &&
+                   !/SamsungBrowser|OPR\/|Opera|EdgA\/|Firefox|FxiOS/i.test(ua);
+        }
+
+        function rajaOpenChromeForInstall() {
+            const target = 'https://raja-ai-bot.up.railway.app/?raja_install=1';
+            const fallback = encodeURIComponent(target);
+            const intent =
+                'intent://raja-ai-bot.up.railway.app/?raja_install=1' +
+                '#Intent;scheme=https;package=com.android.chrome;' +
+                'S.browser_fallback_url=' + fallback + ';end';
+
+            window.location.href = intent;
+        }
+
+        function rajaInstallHandoffRequested() {
+            try {
+                return new URL(window.location.href).searchParams.get('raja_install') === '1';
+            } catch (_) {
+                return false;
+            }
         }
 
         function openRajaInstallModal() {
@@ -6304,15 +6336,25 @@
                 }
             }
 
-            // A website cannot force an OS/app installation when the browser
-            // exposes no native install API. Keep the UI truthful.
+            // Android fallback: if Samsung Internet / Opera / another Android
+            // browser does not expose the PWA prompt, hand the same secure URL to
+            // Chrome. Chrome can then expose its native PWA install prompt.
+            if (family === 'android' && !rajaIsChromeAndroid()) {
+                setBusy('OPENING CHROME INSTALLER...');
+                rajaOpenChromeForInstall();
+                setTimeout(resetButton, 2200);
+                return;
+            }
+
+            // If Chrome itself has no native prompt, or iOS has no native-store
+            // target configured, there is no web API that may approve installation.
             if (status) {
-                if (family === 'android') {
+                if (family === 'ios') {
                     status.innerText =
-                        'This browser does not expose a native web-app installer. A Google Play link is required for reliable Android installation across browsers.';
-                } else if (family === 'ios') {
+                        'RAJA AI for iPhone/iPad needs an App Store or TestFlight install link.';
+                } else if (family === 'android') {
                     status.innerText =
-                        'An App Store or TestFlight link is required for iPhone and iPad installation.';
+                        'Chrome has not exposed the native PWA install prompt yet.';
                 } else {
                     status.innerText =
                         'Native installation is not available in this browser.';
