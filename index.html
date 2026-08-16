@@ -6521,10 +6521,10 @@
         let scanCandleInterval = null;
         let marketNewsLoadedAt = 0;
 
-        // Auto Scan pair rotation: avoid feeding the same pair repeatedly.
-        // A displayed Auto-Scan signal blocks that pair for 5 minutes, then it becomes eligible again.
-        // Manual pair selection remains unrestricted.
-        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 5 * 60 * 1000;
+        // 10-minute same-pair signal lock: avoid feeding the same pair repeatedly.
+        // Any displayed signal locks that broker + market + pair for 10 minutes.
+        // Auto Scan skips locked pairs; manual scans are also blocked until the lock expires.
+        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 10 * 60 * 1000;
         let autoPairCooldowns = safeJsonParse(localStorage.getItem('raja_auto_pair_cooldowns'), {});
 
         function cleanAutoPairCooldowns() {
@@ -6549,6 +6549,13 @@
             cleanAutoPairCooldowns();
             const usedAt = Number(autoPairCooldowns[autoPairCooldownKey(pair)] || 0);
             return usedAt > 0 && (Date.now() - usedAt) < AUTO_PAIR_ROTATION_COOLDOWN_MS;
+        }
+
+        function autoPairCooldownRemainingMs(pair) {
+            cleanAutoPairCooldowns();
+            const usedAt = Number(autoPairCooldowns[autoPairCooldownKey(pair)] || 0);
+            if (!usedAt) return 0;
+            return Math.max(0, AUTO_PAIR_ROTATION_COOLDOWN_MS - (Date.now() - usedAt));
         }
 
         function rememberAutoPair(pair) {
@@ -8344,6 +8351,35 @@
             // Never carry a pair from the previous market/scan into a new Auto Scan.
             syncTargetPairDisplay();
 
+            if (!isAutoScan && isAutoPairCoolingDown(selectedPair)) {
+                const remaining = autoPairCooldownRemainingMs(selectedPair);
+                const remainingLabel = formatCountdown(remaining);
+
+                completeScanSession('nosignal');
+                syncTargetPairDisplay();
+                currentSection = 'dashboard';
+
+                const titleEl = document.getElementById('noSignalTitle');
+                const descEl = document.getElementById('noSignalDesc');
+                const reasonBox = document.getElementById('noTradeReasonBox');
+
+                if (titleEl) titleEl.innerText = '⏳ PAIR LOCKED · 10 MINUTE PROTECTION';
+                if (descEl) {
+                    descEl.innerText =
+                        `${selectedPair} already produced a signal recently. ` +
+                        `This pair can be scanned again in ${remainingLabel}.`;
+                }
+                if (reasonBox) {
+                    reasonBox.style.display = 'block';
+                    reasonBox.innerText =
+                        'Duplicate protection is active for this broker + market + pair. ' +
+                        'Choose another pair or wait for the 10-minute lock to expire.';
+                }
+
+                renderPrimaryView();
+                return;
+            }
+
             if (isAutoScan) {
                 allAutoPairs = brokerData[broker][market].slice(1);
                 cleanAutoPairCooldowns();
@@ -8354,7 +8390,7 @@
                     syncTargetPairDisplay();
                     currentSection = 'dashboard';
                     document.getElementById('noSignalTitle').innerText = '⏳ AUTO PAIR ROTATION COOLDOWN';
-                    document.getElementById('noSignalDesc').innerText = 'Recently signaled pairs can be scanned again after the 5-minute cooldown. Choose a pair manually or wait for Auto Re-Scan.';
+                    document.getElementById('noSignalDesc').innerText = 'Recently signaled pairs are locked for 10 minutes. Auto Re-Scan will scan other eligible pairs until each lock expires.';
                     renderPrimaryView();
                     return;
                 }
@@ -8515,7 +8551,6 @@
 
             setTimeout(() => {
                 if (bestSignalFound) {
-                    if (isAutoScan) rememberAutoPair(bestSignalFound.pair);
                     displaySignalResult(bestSignalFound);
                 } else {
                     completeScanSession(
@@ -8684,7 +8719,10 @@
 
         function displaySignalResult(signalData) {
             const isFallbackReference = Boolean(signalData && signalData.fallbackReference);
-            if (!isFallbackReference) cacheRajaLastSignal(signalData);
+            if (!isFallbackReference) {
+                rememberAutoPair(signalData?.pair);
+                cacheRajaLastSignal(signalData);
+            }
             completeScanSession('signal');
             let signalView = document.getElementById('signalView');
 
