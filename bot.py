@@ -58,21 +58,24 @@ YAHOO_SYMBOLS = {
 
     # ---------------- Crypto OTC proxies ----------------
     # Yahoo underlying-market proxies; not exact Quotex OTC quotes.
+    # Keep this list synchronized with the 17 Quotex Crypto OTC assets in index.html.
+    "Zcash (OTC)": "ZEC-USD",
+    "Chainlink (OTC)": "LINK-USD",
     "Bitcoin (OTC)": "BTC-USD",
+    "Binance Coin (OTC)": "BNB-USD",
     "Ethereum (OTC)": "ETH-USD",
-    "Litecoin (OTC)": "LTC-USD",
-    "Ripple (OTC)": "XRP-USD",
-    "Solana (OTC)": "SOL-USD",
-    "Toncoin (OTC)": "TON-USD",
+    "Bitcoin Cash (OTC)": "BCH-USD",
+    "Cosmos (OTC)": "ATOM-USD",
     "Ethereum Classic (OTC)": "ETC-USD",
     "Axie Infinity (OTC)": "AXS-USD",
-    "Binance Coin (OTC)": "BNB-USD",
-    "Polkadot (OTC)": "DOT-USD",
+    "Trump (OTC)": "TRUMP35336-USD",
+    "Dash (OTC)": "DASH-USD",
+    "Solana (OTC)": "SOL-USD",
+    "Toncoin (OTC)": "TON-USD",
+    "Litecoin (OTC)": "LTC-USD",
     "Avalanche (OTC)": "AVAX-USD",
-    "Chainlink (OTC)": "LINK-USD",
-    "Bitcoin Cash (OTC)": "BCH-USD",
-    "Zcash (OTC)": "ZEC-USD",
-    "Cosmos (OTC)": "ATOM-USD",
+    "Polkadot (OTC)": "DOT-USD",
+    "Ripple (OTC)": "XRP-USD",
 
     # ---------------- Forex Live ----------------
     "EUR/USD": "EURUSD=X",
