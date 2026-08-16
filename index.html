@@ -4892,6 +4892,9 @@
         .raja-forex-otc-fallback-title{margin-top:4px;color:#fff7d1;font-size:9.5px;font-weight:950;letter-spacing:.35px}
         .raja-forex-otc-fallback-copy{margin-top:6px;color:#b4a883;font-size:6.7px;line-height:1.55;font-weight:760}
         .raja-forex-otc-fallback-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:9px}
+        .raja-forex-otc-auto-all-btn{grid-column:1/-1;width:100%;min-height:42px;padding:9px 8px;border:1px solid rgba(0,255,154,.52);border-radius:8px;background:linear-gradient(90deg,rgba(0,255,154,.18),rgba(96,239,255,.14));color:#baffec;font-size:7.8px;font-weight:950;cursor:pointer;text-transform:uppercase;letter-spacing:.3px;box-shadow:0 0 18px rgba(0,255,154,.06)}
+        .raja-forex-otc-auto-all-btn:hover,.raja-forex-otc-auto-all-btn:active{border-color:#00ff9a;background:linear-gradient(90deg,rgba(0,255,154,.27),rgba(96,239,255,.20))}
+        .raja-forex-otc-auto-all-btn:disabled{opacity:.55;cursor:wait}
         .raja-forex-otc-open-btn,.raja-forex-otc-direct-btn{width:100%;min-height:38px;padding:8px 7px;border-radius:8px;font-size:7.2px;font-weight:950;cursor:pointer;text-transform:uppercase;letter-spacing:.2px}
         .raja-forex-otc-open-btn{border:1px solid rgba(250,204,21,.52);background:linear-gradient(90deg,rgba(250,204,21,.20),rgba(245,158,11,.15));color:#ffe88d}
         .raja-forex-otc-open-btn:hover,.raja-forex-otc-open-btn:active{border-color:#facc15;background:linear-gradient(90deg,rgba(250,204,21,.30),rgba(245,158,11,.23))}
@@ -4914,6 +4917,7 @@
             .raja-otc-fallback-btn{min-height:36px;font-size:7.5px}
             .raja-forex-otc-fallback-panel{padding:10px 9px}
             .raja-forex-otc-fallback-actions{grid-template-columns:1fr}
+            .raja-forex-otc-auto-all-btn{min-height:42px;font-size:8.1px}
             .raja-forex-otc-open-btn,.raja-forex-otc-direct-btn{min-height:40px;font-size:7.8px}
             .raja-forex-otc-pair-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-height:220px}
             .raja-forex-otc-pair-btn{min-height:35px;font-size:7px;padding:7px 6px}
@@ -5495,6 +5499,9 @@
                             <div id="rajaForexOtcPairGrid" class="raja-forex-otc-pair-grid" aria-label="Forex OTC pairs"></div>
 
                             <div class="raja-forex-otc-fallback-actions">
+                                <button type="button" id="rajaForexOtcAutoAllBtn" class="raja-forex-otc-auto-all-btn">
+                                    ▶ AUTO SCAN ALL 21 FOREX OTC PAIRS
+                                </button>
                                 <button type="button" id="rajaForexOtcRetryBtn" class="raja-forex-otc-open-btn">
                                     ↻ RETRY SELECTED PAIR
                                 </button>
@@ -10941,6 +10948,56 @@
             if (panel) panel.style.display = 'none';
         }
 
+        async function autoScanAllForexOtcFallbackPairs() {
+            const autoBtn = document.getElementById('rajaForexOtcAutoAllBtn');
+            const marketEl = document.getElementById('marketType');
+            const pairEl = document.getElementById('pairSelect');
+            const meta = document.getElementById('rajaForexOtcFallbackMeta');
+
+            if (!marketEl || !pairEl) return;
+
+            try {
+                if (autoBtn) {
+                    autoBtn.disabled = true;
+                    autoBtn.textContent = '▶ STARTING AUTO SCAN ALL 21...';
+                }
+
+                if (marketEl.value !== 'ForexOTC') {
+                    marketEl.value = 'ForexOTC';
+                    if (typeof updatePairs === 'function') updatePairs();
+                }
+
+                const autoOption = Array.from(pairEl.options || []).find(option =>
+                    /auto scan/i.test(String(option.value || option.textContent || ''))
+                );
+
+                if (!autoOption) {
+                    if (meta) meta.textContent = 'Forex OTC Auto Scan option was not found. Open SETTINGS & PAIRS and reselect Forex OTC.';
+                    return;
+                }
+
+                pairEl.value = autoOption.value;
+                forexOtcFallbackSelectedPair = '';
+
+                try { if (typeof syncTargetPairDisplay === 'function') syncTargetPairDisplay(); } catch (_) {}
+
+                if (meta) {
+                    meta.textContent = 'AUTO SCAN ALL 21: checking every Forex OTC Yahoo reference proxy in one shared batch. Signals remain blocked if the reference market is stale.';
+                }
+
+                disarmForexOtcFallback();
+
+                if (typeof startDeepScan === 'function') {
+                    await startDeepScan(false);
+                }
+            } finally {
+                if (autoBtn) {
+                    autoBtn.disabled = false;
+                    autoBtn.textContent = '▶ AUTO SCAN ALL 21 FOREX OTC PAIRS';
+                }
+            }
+        }
+
         async function retryForexOtcFallbackPair() {
             const retryBtn = document.getElementById('rajaForexOtcRetryBtn');
             const pairEl = document.getElementById('pairSelect');
@@ -11498,6 +11555,12 @@
             if (fallbackBtn && !fallbackBtn.dataset.bound) {
                 fallbackBtn.dataset.bound = '1';
                 fallbackBtn.addEventListener('click', openOtcFallback);
+            }
+
+            const forexAutoAllBtn = document.getElementById('rajaForexOtcAutoAllBtn');
+            if (forexAutoAllBtn && !forexAutoAllBtn.dataset.bound) {
+                forexAutoAllBtn.dataset.bound = '1';
+                forexAutoAllBtn.addEventListener('click', autoScanAllForexOtcFallbackPairs);
             }
 
             const forexRetryBtn = document.getElementById('rajaForexOtcRetryBtn');
