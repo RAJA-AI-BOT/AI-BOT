@@ -1,6 +1,6 @@
-const CACHE_VERSION = 'raja-ai-pwa-v11-auto-update';
-const STABLE_SHELL_CACHE = 'raja-ai-pwa-stable-shell';
-const ASSET_CACHE = 'raja-ai-pwa-v11-assets';
+const CACHE_VERSION = 'raja-ai-pwa-v12-install-flow';
+const STABLE_SHELL_CACHE = 'raja-ai-pwa-v12-stable-shell';
+const ASSET_CACHE = 'raja-ai-pwa-v12-assets';
 
 const STATIC_ASSETS = [
   '/manifest.json',
@@ -260,7 +260,6 @@ self.addEventListener('fetch', (event) => {
 
     event.respondWith(
       (async () => {
-        // Online = latest server version first.
         const network =
           await networkRefresh;
 
@@ -268,7 +267,6 @@ self.addEventListener('fetch', (event) => {
           return network;
         }
 
-        // Offline/server waking = use last working app shell.
         const stable =
           await caches.open(
             STABLE_SHELL_CACHE
