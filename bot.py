@@ -241,6 +241,13 @@ license_lock = threading.RLock()
 
 ADMIN_PASSWORD = (os.environ.get("RAJA_ADMIN_PASSWORD") or "").strip()
 
+# Quotex Forex OTC fallback.
+# Manual open uses the public Quotex web platform by default.
+# Direct Quotex candle scanning remains disabled unless a separate trusted
+# companion/data bridge URL is explicitly configured.
+RAJA_QUOTEX_OTC_URL = (os.environ.get("RAJA_QUOTEX_OTC_URL") or "https://qxbroker.com/en/").strip()
+RAJA_QUOTEX_OTC_COMPANION_URL = (os.environ.get("RAJA_QUOTEX_OTC_COMPANION_URL") or "").strip()
+
 # Permanent license storage:
 # - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
 # - If DATABASE_URL is absent, the app falls back to licenses.json. Render Free local files
@@ -2336,6 +2343,31 @@ def disable_html_cache(response):
     elif request.path == "/manifest.json":
         response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
     return response
+
+
+@app.route("/otc-fallback-config", methods=["GET"])
+def otc_fallback_config():
+    auth, error = _auth_session(request.args)
+    if error:
+        return error
+
+    companion_url = RAJA_QUOTEX_OTC_COMPANION_URL
+    return jsonify({
+        "status": "success",
+        "data": {
+            "enabled": bool(RAJA_QUOTEX_OTC_URL),
+            "market": "ForexOTC",
+            "launch_url": RAJA_QUOTEX_OTC_URL,
+            "companion_connected": bool(companion_url),
+            "companion_url": companion_url,
+            "direct_scan_available": bool(companion_url),
+            "message": (
+                "Direct Quotex OTC companion/data bridge is connected."
+                if companion_url
+                else "Manual Quotex open is available. Direct Quotex OTC candle scanning is not connected."
+            ),
+        },
+    })
 
 
 @app.route("/health", methods=["GET"])
