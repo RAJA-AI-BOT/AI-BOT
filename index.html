@@ -7904,21 +7904,26 @@
             // results do not activate the fallback.
             if (market === 'ForexOTC') {
                 const state = rajaLatestMarketState || null;
+
+                // captureRajaMarketState() returns normalized camelCase fields.
+                // Arm the in-app Forex OTC fallback only after the real scan
+                // confirms stale/unavailable Yahoo reference data.
                 const blockedByReference = Boolean(
                     state && (
-                        state.source_stale ||
-                        state.bad_market ||
-                        state.scan_paused ||
-                        /STALE|UNAVAILABLE|BAD/i.test(String(state.data_status || state.market_status || ''))
+                        state.stale ||
+                        state.badMarket ||
+                        state.unavailable ||
+                        /STALE|UNAVAILABLE|BAD/i.test(
+                            String(state.dataStatus || state.marketStatus || '')
+                        )
                     )
                 );
 
                 try {
                     if (blockedByReference && typeof window.rajaArmForexOtcFallback === 'function') {
                         const reason = String(
-                            state.reason ||
                             state.message ||
-                            state.data_age_label ||
+                            state.ageLabel ||
                             'Yahoo Forex OTC reference data is stale or unavailable.'
                         );
                         window.rajaArmForexOtcFallback(reason);
@@ -11237,7 +11242,12 @@
 
             if (forexFallbackPanel) forexFallbackPanel.style.display = forexFallbackVisible ? 'block' : 'none';
             if (forexFallbackState) {
-                const staleState = /STALE|BAD|CLOSED/i.test(forexState) ? 'MARKET CLOSED / STALE' : 'REFERENCE UNAVAILABLE';
+                const latestState = (typeof rajaLatestMarketState === 'object' && rajaLatestMarketState)
+                    ? String(rajaLatestMarketState.dataStatus || rajaLatestMarketState.marketStatus || forexState)
+                    : forexState;
+                const staleState = /STALE|BAD|CLOSED/i.test(latestState)
+                    ? 'MARKET CLOSED / STALE'
+                    : 'REFERENCE UNAVAILABLE';
                 forexFallbackState.textContent = staleState;
             }
 
