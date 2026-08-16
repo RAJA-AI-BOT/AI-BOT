@@ -58,6 +58,7 @@ CORS(app)
 # If Yahoo is unavailable/stale and TWELVE_DATA_API_KEY is configured,
 # Twelve Data 1-minute OHLCV becomes the LIVE BACKUP reference feed.
 # 2m, 5m, 10m, 15m and 30m are resampled from the chosen 1-minute feed.
+# 1H, 2H and 5H confirmations use cached Yahoo 30-minute history when selected.
 #
 # IMPORTANT: "(OTC)" assets are underlying-market/reference proxies.
 # They are NOT exact broker OTC quotes (Quotex/Pocket Option).
@@ -250,8 +251,17 @@ TIMEFRAMES = {
     "30m": 30,
 }
 
+# Swing confirmations use a separate cached Yahoo 30-minute history request.
+# This avoids trying to build 1H/2H/5H indicators from only a few days of 1-minute data.
+SWING_TIMEFRAMES = {
+    "1h": 60,
+    "2h": 120,
+    "5h": 300,
+}
+ALL_ANALYSIS_TIMEFRAMES = {**TIMEFRAMES, **SWING_TIMEFRAMES}
+
 # Selected trade expiry must be confirmed by the matching analysis timeframe.
-# 15s/30s are intentionally excluded because the base Yahoo feed is 1-minute.
+# Sub-minute expiries are intentionally unsupported because the live reference feed is 1-minute.
 EXPIRY_CONFIRMATION_TIMEFRAME = {
     "1m": "1m",
     "2m": "2m",
@@ -259,6 +269,9 @@ EXPIRY_CONFIRMATION_TIMEFRAME = {
     "10m": "10m",
     "15m": "15m",
     "30m": "30m",
+    "1h": "1h",
+    "2h": "2h",
+    "5h": "5h",
 }
 
 # One Yahoo 1m download per unique symbol; all higher TFs are resampled.
@@ -269,6 +282,9 @@ YAHOO_FAILURE_COOLDOWN = int(os.environ.get("RAJA_YAHOO_FAILURE_COOLDOWN", "180"
 # partial 21-pair scans without opening an aggressive request storm.
 YAHOO_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "3"))))
 YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
+SWING_HISTORY_CACHE_SECONDS = max(120, int(os.environ.get("RAJA_SWING_HISTORY_CACHE_SECONDS", "600")))
+SWING_HISTORY_PERIOD = (os.environ.get("RAJA_SWING_HISTORY_PERIOD") or "60d").strip()
+SWING_HISTORY_INTERVAL = (os.environ.get("RAJA_SWING_HISTORY_INTERVAL") or "30m").strip()
 BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
 BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "3"))))
 YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
@@ -301,6 +317,12 @@ TWELVE_DATA_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_TWELVE_DATA_MI
 
 market_cache = {}
 cache_lock = threading.RLock()
+
+# Longer-history cache used only for 1H / 2H / 5H confirmation.
+swing_market_cache = {}
+swing_market_cache_lock = threading.RLock()
+swing_symbol_locks = {}
+swing_symbol_locks_guard = threading.Lock()
 
 symbol_fetch_locks = {}
 symbol_fetch_locks_guard = threading.Lock()
@@ -426,6 +448,9 @@ AUTO_TRACK_EXPIRIES = {
     "10m": 600,
     "15m": 900,
     "30m": 1800,
+    "1h": 3600,
+    "2h": 7200,
+    "5h": 18000,
 }
 
 
@@ -1379,6 +1404,85 @@ def fetch_yahoo_1m(symbol):
     return df
 
 
+
+def fetch_yahoo_swing_history(symbol):
+    """Fetch enough 30-minute Yahoo history to build 1H/2H/5H closed candles."""
+    yf = _get_yfinance()
+    ticker = yf.Ticker(symbol)
+    df = ticker.history(
+        period=SWING_HISTORY_PERIOD,
+        interval=SWING_HISTORY_INTERVAL,
+        auto_adjust=False,
+        actions=False,
+        timeout=YAHOO_REQUEST_TIMEOUT_SECONDS,
+    )
+    if df is None or df.empty:
+        return None
+    required = ["Open", "High", "Low", "Close"]
+    if not all(col in df.columns for col in required):
+        return None
+    df = df.dropna(subset=required)
+    # 5H analysis needs 60+ closed 5H bars; 60d of 30m data normally gives ample history.
+    if len(df) < 600:
+        return None
+    return df
+
+
+def _get_swing_symbol_lock(symbol):
+    with swing_symbol_locks_guard:
+        lock = swing_symbol_locks.get(symbol)
+        if lock is None:
+            lock = threading.Lock()
+            swing_symbol_locks[symbol] = lock
+        return lock
+
+
+def get_swing_history(symbol, force=False):
+    """Cached Yahoo 30-minute history for 1H/2H/5H confirmation."""
+    now = time.time()
+    with swing_market_cache_lock:
+        cached = swing_market_cache.get(symbol)
+        if cached and not force and (now - float(cached.get("timestamp") or 0)) <= SWING_HISTORY_CACHE_SECONDS:
+            data = cached.get("data")
+            return data.copy() if data is not None else None
+
+    lock = _get_swing_symbol_lock(symbol)
+    acquired = lock.acquire(timeout=YAHOO_SYMBOL_LOCK_WAIT_SECONDS)
+    if not acquired:
+        with swing_market_cache_lock:
+            cached = swing_market_cache.get(symbol)
+            data = cached.get("data") if cached else None
+            return data.copy() if data is not None else None
+
+    try:
+        now = time.time()
+        with swing_market_cache_lock:
+            cached = swing_market_cache.get(symbol)
+            if cached and not force and (now - float(cached.get("timestamp") or 0)) <= SWING_HISTORY_CACHE_SECONDS:
+                data = cached.get("data")
+                return data.copy() if data is not None else None
+
+        acquired_slot = yahoo_fetch_semaphore.acquire(timeout=YAHOO_SEMAPHORE_WAIT_SECONDS)
+        if not acquired_slot:
+            return None
+        try:
+            _pace_yahoo_request()
+            df = fetch_yahoo_swing_history(symbol)
+        finally:
+            yahoo_fetch_semaphore.release()
+
+        if df is None or df.empty:
+            return None
+        with swing_market_cache_lock:
+            swing_market_cache[symbol] = {"data": df.copy(), "timestamp": time.time()}
+        return df.copy()
+    except Exception as exc:
+        print(f"Yahoo swing-history fetch error for {symbol}: {exc}")
+        return None
+    finally:
+        lock.release()
+
+
 def _get_symbol_fetch_lock(symbol):
     with symbol_fetch_locks_guard:
         lock = symbol_fetch_locks.get(symbol)
@@ -2277,7 +2381,7 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, 
         "otc_proxy_warning": "(OTC)" in pair,
         "yahoo_symbol": symbol,
         "timeframe_summary": timeframes or {},
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
+        "timeframes_scanned": list(ALL_ANALYSIS_TIMEFRAMES.keys()),
         "no_trade": True,
         "no_trade_reason": str(reason or "Current conditions did not pass the safety gate."),
         "quality_gate": "BLOCKED",
@@ -2418,12 +2522,33 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
         tf_df = build_timeframe(base_df, minutes)
         results[tf_name] = analyze_timeframe(tf_df, tf_name)
 
-    call_results = [r for r in results.values() if r.get("signal") == "CALL"]
-    put_results = [r for r in results.values() if r.get("signal") == "PUT"]
+    # Keep the existing six core timeframes as the consensus engine so the proven
+    # SAFE/BALANCED/AGGRESSIVE thresholds do not silently become weaker after adding swing expiries.
+    # 1H/2H/5H are fetched/analyzed when a swing expiry is selected and become a mandatory
+    # matching confirmation through EXPIRY_CONFIRMATION_TIMEFRAME.
+    selected_expiry_key = str(selected_expiry or "").strip().lower()
+    if selected_expiry_key in SWING_TIMEFRAMES:
+        swing_base = get_swing_history(symbol)
+        for tf_name, minutes in SWING_TIMEFRAMES.items():
+            if swing_base is None or getattr(swing_base, "empty", True):
+                results[tf_name] = {
+                    "timeframe": tf_name,
+                    "signal": "NO SIGNAL",
+                    "score": 0,
+                    "reason": "Swing history temporarily unavailable",
+                }
+            else:
+                tf_df = build_timeframe(swing_base, minutes)
+                results[tf_name] = analyze_timeframe(tf_df, tf_name)
+
+    core_results = [results[name] for name in TIMEFRAMES.keys() if name in results]
+    call_results = [r for r in core_results if r.get("signal") == "CALL"]
+    put_results = [r for r in core_results if r.get("signal") == "PUT"]
     valid_count = len(call_results) + len(put_results)
     summary = {
         tf: {"signal": r.get("signal"), "score": r.get("score", 0), "rsi": r.get("rsi"),
-             "adx": r.get("adx"), "closed_candle_epoch": r.get("closed_candle_epoch")}
+             "adx": r.get("adx"), "closed_candle_epoch": r.get("closed_candle_epoch"),
+             "reason": r.get("reason")}
         for tf, r in results.items()
     }
 
@@ -2509,6 +2634,20 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
 
     aligned_tfs = [r["timeframe"] for r in supporters]
     opposing_tfs = [r["timeframe"] for r in opponents]
+
+    # If a selected swing timeframe confirmed the same direction, surface it in the
+    # aligned list without changing the six-core consensus ratio.
+    if required_tf in SWING_TIMEFRAMES:
+        required_result = results.get(required_tf) or {}
+        if required_result.get("signal") == signal and required_tf not in aligned_tfs:
+            aligned_tfs.append(required_tf)
+
+    expiry_candidates = [
+        r for r in results.values()
+        if r.get("signal") == signal and float(r.get("score") or 0) > 0
+    ]
+    best_expiry = max(expiry_candidates, key=lambda r: float(r.get("score") or 0)).get("timeframe") if expiry_candidates else selected_expiry
+
     return {
         "pair": pair, "score": round(multi_tf_score, 2), "signal": signal,
         "reason": f"{opts['mode']} · Multi-TF agreement: {len(supporters)}/{valid_count} valid timeframes -> {signal}",
@@ -2521,11 +2660,13 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None):
         "backup_used": bool(source_info.get("backup_used")),
         "provider_symbol": source_info.get("provider_symbol"),
         "otc_proxy_warning": "(OTC)" in pair, "yahoo_symbol": symbol,
-        "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
+        "timeframes_scanned": list(results.keys()), "aligned_timeframes": aligned_tfs,
         "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
         "multi_tf_agreement": round(agreement_ratio * 100, 1), "selected_expiry": selected_expiry,
         "required_expiry_timeframe": required_tf,
-        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-6 + {required_tf or 'TF'} Required",
+        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-6 CORE + {required_tf or 'TF'} Required",
+        "best_expiry": best_expiry,
+        "swing_confirmation": required_tf if required_tf in SWING_TIMEFRAMES else None,
         "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
         "market_stability_score": stability_score, "market_risk_level": risk_level,
         "volatility_pct": volatility_pct, "chart_preview": chart_preview,
@@ -2877,7 +3018,11 @@ def health():
         "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
         "cached_symbols": cached_symbols,
         "base_interval": "1m",
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
+        "timeframes_scanned": list(ALL_ANALYSIS_TIMEFRAMES.keys()),
+        "core_confirmation_timeframes": list(TIMEFRAMES.keys()),
+        "swing_timeframes_on_demand": list(SWING_TIMEFRAMES.keys()),
+        "swing_history_interval": SWING_HISTORY_INTERVAL,
+        "swing_history_period": SWING_HISTORY_PERIOD,
         "cache_duration_seconds": CACHE_DURATION,
         "confirmation_mode": "4-of-6 Strong",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
@@ -3342,7 +3487,7 @@ def track_signal():
         return jsonify({"status": "error", "message": "Signal must be CALL or PUT."}), 400
     if expiry not in AUTO_TRACK_EXPIRIES:
         return jsonify({"status": "success", "auto_tracking": False,
-                        "message": "15s/30s outcome tracking is disabled because the Yahoo base feed is 1-minute."})
+                        "message": "Selected expiry is not supported for automatic outcome tracking."})
     now = int(time.time()); duration = AUTO_TRACK_EXPIRIES[expiry]
     entry_epoch = ((now // duration) + 1) * duration; expiry_epoch = entry_epoch + duration
     signal_id = "sig_" + secrets.token_hex(8)
@@ -3358,6 +3503,7 @@ def track_signal():
         "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
         "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
         "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
+        "broker": str(data.get("broker") or "Quotex"),
     }
     with signals_lock:
         items = load_signals(); items.insert(0, item); save_signals(items[:2000])
