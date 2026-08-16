@@ -6131,39 +6131,23 @@
 
             if (!buttons.length) return;
 
-            const nativePromptReady = Boolean(deferredInstallPrompt);
-            const touchDevice = isRajaTouchDevice();
-
-            // Desktop/laptop:
-            // show INSTALL only when the browser exposes its native PWA prompt.
-            // If Chrome already shows "Open in app", the app is normally already
-            // installed and no install prompt is available.
-            //
-            // Phone/tablet:
-            // keep an install affordance visible even when the browser requires
-            // Add to Home Screen from its own menu.
-            const show = !isRajaStandalone() && (
-                nativePromptReady ||
-                (touchDevice && Boolean(visible))
-            );
+            // Native-install-only mode:
+            // show the button ONLY when this browser gives us a real
+            // beforeinstallprompt event. No manual Add-to-Home fallback popup.
+            const show = Boolean(visible) &&
+                         Boolean(deferredInstallPrompt) &&
+                         !isRajaStandalone();
 
             buttons.forEach(btn => {
                 btn.style.display = show ? 'inline-flex' : 'none';
+                btn.disabled = !show;
             });
 
             const dashboardBtn = document.getElementById('installAppBtn');
             const activationBtn = document.getElementById('activationInstallAppBtn');
 
-            if (dashboardBtn) {
-                dashboardBtn.innerText = nativePromptReady
-                    ? '⬇ INSTALL APP'
-                    : '⬇ INSTALL RAJA AI';
-            }
-            if (activationBtn) {
-                activationBtn.innerText = nativePromptReady
-                    ? '⬇ INSTALL RAJA AI APP'
-                    : '⬇ INSTALL RAJA AI';
-            }
+            if (dashboardBtn) dashboardBtn.innerText = '⬇ INSTALL APP';
+            if (activationBtn) activationBtn.innerText = '⬇ INSTALL RAJA AI APP';
         }
 
         // Chrome / Edge fires this event only when the current site
@@ -6181,53 +6165,33 @@
         });
 
         document.addEventListener('DOMContentLoaded', () => {
-            setInstallButtonVisible(isRajaTouchDevice());
+            setInstallButtonVisible(false);
         }, { once:true });
 
-        function rajaInstallHelpMessage() {
-            const ua = String(navigator.userAgent || '');
-            const isIOS = /iPhone|iPad|iPod/i.test(ua);
-            const isSamsung = /SamsungBrowser/i.test(ua);
-
-            if (isIOS) {
-                return 'Install RAJA AI: tap the Safari Share button, choose "Add to Home Screen", then tap "Add".';
-            }
-            if (isSamsung) {
-                return 'Install RAJA AI: open the Samsung Internet menu, choose "Add page to" or "Add to Home screen", then confirm Install.';
-            }
-            return 'Install RAJA AI: open the browser menu and choose "Install app" or "Add to Home screen". If Chrome shows "Open in app", RAJA AI is already installed.';
-        }
-
         async function installPWA() {
-            // If already running as the installed app, nothing to install.
             if (isRajaStandalone()) {
+                deferredInstallPrompt = null;
                 setInstallButtonVisible(false);
                 return;
             }
 
-            // Best path: use the browser's real native PWA install prompt.
-            if (deferredInstallPrompt) {
-                try {
-                    const promptEvent = deferredInstallPrompt;
-                    deferredInstallPrompt = null;
-
-                    await promptEvent.prompt();
-                    const choice = await promptEvent.userChoice;
-
-                    // If user dismisses, keep the install affordance available.
-                    setInstallButtonVisible(choice?.outcome !== 'accepted');
-                    return;
-                } catch (err) {
-                    console.warn('RAJA AI native install prompt error:', err);
-                }
+            // Directly invoke the browser's REAL native install dialog.
+            // No RAJA AI custom popup, no Add-to-Home instructions.
+            if (!deferredInstallPrompt) {
+                setInstallButtonVisible(false);
+                return;
             }
 
-            // Some phone/tablet browsers do not fire beforeinstallprompt even
-            // though Add to Home Screen / Install is available in the browser UI.
-            // Keep the button visible and give the exact manual path instead of
-            // making the button disappear/dead.
-            setInstallButtonVisible(true);
-            alert(rajaInstallHelpMessage());
+            const promptEvent = deferredInstallPrompt;
+            deferredInstallPrompt = null;
+            setInstallButtonVisible(false);
+
+            try {
+                await promptEvent.prompt();
+                await promptEvent.userChoice;
+            } catch (err) {
+                console.warn('RAJA AI native install prompt error:', err);
+            }
         }
 
         // =========================================================
@@ -6343,7 +6307,7 @@
                 if (isRajaStandalone()) {
                     setInstallButtonVisible(false);
                 } else {
-                    setInstallButtonVisible(isRajaTouchDevice());
+                    setInstallButtonVisible(Boolean(deferredInstallPrompt));
                 }
             };
 
