@@ -71,7 +71,7 @@ YAHOO_SYMBOLS = {
     "Trump (OTC)": "TRUMP35336-USD",
     "Dash (OTC)": "DASH-USD",
     "Solana (OTC)": "SOL-USD",
-    "Toncoin (OTC)": "TON-USD",
+    "Toncoin (OTC)": "TON11419-USD",
     "Litecoin (OTC)": "LTC-USD",
     "Avalanche (OTC)": "AVAX-USD",
     "Polkadot (OTC)": "DOT-USD",
@@ -144,6 +144,7 @@ EXPIRY_CONFIRMATION_TIMEFRAME = {
     "1m": "1m",
     "2m": "2m",
     "5m": "5m",
+    "10m": "10m",
     "15m": "15m",
     "30m": "30m",
 }
@@ -272,6 +273,7 @@ AUTO_TRACK_EXPIRIES = {
     "1m": 60,
     "2m": 120,
     "5m": 300,
+    "10m": 600,
     "15m": 900,
     "30m": 1800,
 }
