@@ -5046,7 +5046,7 @@
                     <div class="engine-mini">
                         <div>AI Engine Status <strong>LIVE</strong></div>
                         <div>Engine: Multi-TF 4-of-6</div>
-                        <div>Source: Yahoo 1m reference</div>
+                        <div id="rajaEngineSourceText">Source: AUTO · Yahoo → Twelve Data</div>
                         <div>Re-scan interval: <strong>5 min</strong></div>
                     </div>
                 </aside>
@@ -7366,7 +7366,7 @@
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{}};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
         }
 
 
@@ -9929,7 +9929,7 @@
     </script>
 
     <script id="raja-v23-command-center-js">
-    let v23LastFreshness = { age:null, elapsed:null, cacheHit:false, count:0, updatedAt:0 };
+    let v23LastFreshness = { age:null, elapsed:null, cacheHit:false, count:0, updatedAt:0, source:'AUTO' };
     let v23LastEntryAlertKey = null;
 
     function v23SetHeroStatus(text){ const el=document.getElementById('v23HeroStatus'); if(el) el.textContent=String(text||'READY FOR DEEP SCAN'); }
@@ -9994,25 +9994,38 @@
         if(n<60) return Math.max(0,Math.round(n))+'s';
         return (n/60).toFixed(1)+'m';
     }
+    function v23FeedLabel(source){
+        const s=String(source||'AUTO');
+        if(/Twelve Data/i.test(s)) return 'TWELVE DATA 1m · BACKUP LIVE';
+        if(/Yahoo/i.test(s)) return 'YAHOO 1m · PRIMARY LIVE';
+        if(/MIXED/i.test(s)) return 'YAHOO + TWELVE · LIVE';
+        return 'AUTO 1m · YAHOO FIRST';
+    }
     function v23PaintFreshness(){
         const f=v23LastFreshness;
         const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+        const feedLabel=v23FeedLabel(f.source);
+        set('v23FreshFeed',feedLabel);
         set('v23FreshAge',v23FormatAge(f.age));
         set('v23FreshLatency',Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--');
         set('v23FreshCache',!f.updatedAt?'READY':(f.cacheHit?'SHARED CACHE':'FRESH SNAPSHOT'));
+        const engine=document.getElementById('rajaEngineSourceText');
+        if(engine) engine.textContent='Source: '+feedLabel;
         const result=document.getElementById('v23ResultFreshness');
-        if(result) result.textContent='Yahoo 1m · age '+v23FormatAge(f.age)+' · scan '+(Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--')+' · '+(f.cacheHit?'shared cache':'fresh snapshot');
+        if(result) result.textContent=feedLabel+' · age '+v23FormatAge(f.age)+' · scan '+(Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--')+' · '+(f.cacheHit?'shared cache':'fresh snapshot');
     }
     function v23UpdateFreshnessFromRaw(rows, diagnostics, cacheHit){
         rows=Array.isArray(rows)?rows:[];
         const ages=rows.map(x=>Number(x&&x.data_age)).filter(Number.isFinite);
-        v23LastFreshness={age:ages.length?Math.min(...ages):null,elapsed:Number(diagnostics&&diagnostics.elapsed_seconds),cacheHit:Boolean(cacheHit),count:Number(diagnostics&&diagnostics.total_pairs)||rows.length,updatedAt:Date.now()};
+        const sources=[...new Set(rows.map(x=>String(x&&x.source||'')).filter(Boolean))];
+        const source=sources.length>1?'MIXED':(sources[0]||'AUTO');
+        v23LastFreshness={age:ages.length?Math.min(...ages):null,elapsed:Number(diagnostics&&diagnostics.elapsed_seconds),cacheHit:Boolean(cacheHit),count:Number(diagnostics&&diagnostics.total_pairs)||rows.length,updatedAt:Date.now(),source};
         v23PaintFreshness(); v23RenderTop3();
     }
     function v23UpdateFreshnessFromSignal(signal){
         if(!signal) return;
         const elapsed=scanSessionState.startedAt?Math.max(0,(Date.now()-scanSessionState.startedAt)/1000):v23LastFreshness.elapsed;
-        v23LastFreshness={...v23LastFreshness,age:Number(signal.dataAge),elapsed:elapsed,cacheHit:(v23LastFreshness.count>1?v23LastFreshness.cacheHit:false),count:v23LastFreshness.count||1,updatedAt:Date.now()};
+        v23LastFreshness={...v23LastFreshness,age:Number(signal.dataAge),elapsed:elapsed,cacheHit:(v23LastFreshness.count>1?v23LastFreshness.cacheHit:false),count:v23LastFreshness.count||1,updatedAt:Date.now(),source:String(signal.source||v23LastFreshness.source||'AUTO')};
         v23PaintFreshness();
     }
 
