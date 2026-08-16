@@ -138,6 +138,27 @@
         .utility-btn { background: rgba(16, 24, 43, 0.9); border: 1px solid rgba(0, 242, 254, 0.3); color: #60efff; padding: 7px 4px; border-radius: 5px; font-size: 8.5px; font-weight: 800; cursor: pointer; text-transform: uppercase; text-align: center; }
         
         .scan-btn { background: linear-gradient(135deg, #00ff87 0%, #60efff 100%); color: #030712; font-size: 12px; font-weight: 900; padding: 10px; border: none; border-radius: 8px; cursor: pointer; width: 100%; text-transform: uppercase; box-shadow: 0 4px 15px rgba(0, 255, 135, 0.4); letter-spacing: 0.5px; }
+        .scan-btn.raja-normal-scan-focus {
+            outline:2px solid rgba(250,204,21,.95);
+            outline-offset:3px;
+            box-shadow:0 0 0 5px rgba(250,204,21,.12),0 0 28px rgba(0,255,135,.42);
+            animation:rajaNormalScanFocusPulse .85s ease-in-out 3;
+        }
+        @keyframes rajaNormalScanFocusPulse {
+            0%,100% { transform:scale(1); }
+            50% { transform:scale(1.012); }
+        }
+        .raja-activation-install-btn {
+            align-items:center;
+            justify-content:center;
+            gap:6px;
+            background:linear-gradient(135deg,rgba(0,242,254,.96),rgba(79,172,254,.96));
+            color:#03111a;
+            border:1px solid rgba(96,239,255,.72);
+            box-shadow:0 4px 18px rgba(0,242,254,.22);
+        }
+        .raja-activation-install-btn:hover { filter:brightness(1.06); }
+        .raja-activation-install-btn:active { transform:translateY(1px); }
         .input-field { padding: 8px; width: 100%; background: #050811; border: 1px solid rgba(0, 242, 254, 0.4); color: #fff; border-radius: 6px; outline: none; font-size: 11px; font-weight: bold; margin-top: 3px; }
         .panel-box { background: #0d1426; border: 1px dashed #60efff; border-radius: 8px; padding: 12px; margin-top: 8px; display: none; }
         .action-btn { background: #ff3366; color: #fff; border: none; padding: 10px; border-radius: 6px; cursor: pointer; font-weight: 800; width: 100%; margin-top: 8px; text-transform: uppercase; font-size: 11px; }
@@ -5070,6 +5091,16 @@
             <input type="password" id="verifyLicenseKey" class="input-field" placeholder="RAJA-VIP-XXXXXX" style="border-color: #00ff87;">
 
             <button id="verifyAccessBtn" class="scan-btn" style="margin-top: 12px;" onclick="verifyAccess()">🔓 VERIFY & UNLOCK AI</button>
+
+            <button id="activationInstallAppBtn"
+                    class="scan-btn raja-activation-install-btn"
+                    type="button"
+                    style="display:none; margin-top:8px;"
+                    onclick="installPWA()"
+                    aria-label="Install RAJA AI app">
+                ⬇ INSTALL RAJA AI APP
+            </button>
+
             <div id="verifyMessage" style="font-size: 11px; font-weight: 900; margin-top: 8px; display: none; padding: 6px; border-radius: 5px;"></div>
         </div>
 
@@ -5511,7 +5542,7 @@
                             </div>
 
                             <div class="raja-forex-otc-fallback-copy">
-                                RAJA AI checked Yahoo live data first. Because the Forex OTC reference is stale/unavailable, the isolated JavaScript fallback engine is active. It analyzes the last available Yahoo reference structure only — it is NOT live Quotex OTC candle data. Yahoo remains first priority and will automatically take control again as soon as fresh 1-minute data returns.
+                                RAJA AI checked Yahoo live data first. Because Forex OTC Yahoo reference data is stale/unavailable, fallback mode is active. Select a pair below or choose Auto Scan, then press the fallback action button: RAJA AI will take you directly to the NORMAL SCAN button. You scan from the same normal scanner UI; while fallback is active that normal button uses fallback reference analysis. As soon as Yahoo becomes fresh, the same normal button automatically returns to Yahoo live scanning.
                             </div>
 
                             <div class="raja-forex-otc-pair-head">
@@ -5522,10 +5553,10 @@
 
                             <div class="raja-forex-otc-fallback-actions">
                                 <button type="button" id="rajaForexOtcAutoAllBtn" class="raja-forex-otc-auto-all-btn">
-                                    ▶ AUTO SCAN ALL 21 FOREX OTC PAIRS
+                                    ▶ USE NORMAL AUTO SCAN · ALL 21
                                 </button>
                                 <button type="button" id="rajaForexOtcRetryBtn" class="raja-forex-otc-open-btn">
-                                    ⚡ FALLBACK SCAN SELECTED PAIR
+                                    ▶ USE NORMAL SCAN · SELECTED PAIR
                                 </button>
                                 <button type="button" id="rajaForexOtcSettingsBtn" class="raja-forex-otc-direct-btn">
                                     ⚙ SETTINGS &amp; PAIRS
@@ -5971,16 +6002,24 @@
         }
 
         function setInstallButtonVisible(visible) {
-            const btn = document.getElementById('installAppBtn');
-            if (!btn) return;
+            const buttons = [
+                document.getElementById('installAppBtn'),
+                document.getElementById('activationInstallAppBtn')
+            ].filter(Boolean);
 
-            if (isRajaStandalone()) {
-                btn.style.display = 'none';
-                return;
-            }
+            if (!buttons.length) return;
 
-            btn.style.display = visible ? 'inline-flex' : 'none';
-            btn.innerText = '⬇ INSTALL APP';
+            const show = Boolean(visible) && !isRajaStandalone();
+
+            buttons.forEach(btn => {
+                btn.style.display = show ? 'inline-flex' : 'none';
+            });
+
+            const dashboardBtn = document.getElementById('installAppBtn');
+            const activationBtn = document.getElementById('activationInstallAppBtn');
+
+            if (dashboardBtn) dashboardBtn.innerText = '⬇ INSTALL APP';
+            if (activationBtn) activationBtn.innerText = '⬇ INSTALL RAJA AI APP';
         }
 
         // Chrome / Edge fires this event only when the current site
@@ -5996,6 +6035,10 @@
             deferredInstallPrompt = null;
             setInstallButtonVisible(false);
         });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setInstallButtonVisible(Boolean(deferredInstallPrompt));
+        }, { once:true });
 
         async function installPWA() {
             // If already running as the installed app, nothing to install.
@@ -7711,9 +7754,43 @@
             let market = document.getElementById('marketType').value;
             let selectedPair = document.getElementById('pairSelect').value;
 
-            // Forex OTC fallback is not shown merely by selecting the market.
-            // It is armed only after this fresh scan attempt proves Yahoo reference
-            // data is stale/unavailable.
+            // Forex OTC failover rule:
+            // - Before fallback is armed, the normal Yahoo scan always gets first priority.
+            // - Once a real Forex OTC Yahoo scan proves data stale/unavailable, the
+            //   normal SCAN button keeps working through the isolated JS fallback engine
+            //   until Yahoo becomes fresh again.
+            const forexOtcFallbackAlreadyActive = Boolean(
+                market === 'ForexOTC' &&
+                typeof window.rajaIsForexOtcFallbackActive === 'function' &&
+                window.rajaIsForexOtcFallbackActive()
+            );
+
+            if (forexOtcFallbackAlreadyActive) {
+                try {
+                    // First do a lightweight Yahoo recovery check. If Yahoo is fresh,
+                    // recovery logic switches fallback OFF and automatically resumes
+                    // the normal Yahoo scanner.
+                    if (typeof window.rajaCheckForexOtcLiveRecovery === 'function') {
+                        await window.rajaCheckForexOtcLiveRecovery(true);
+                    }
+
+                    const stillFallback = Boolean(
+                        typeof window.rajaIsForexOtcFallbackActive === 'function' &&
+                        window.rajaIsForexOtcFallbackActive()
+                    );
+
+                    if (stillFallback && typeof window.rajaRunForexOtcFailoverScan === 'function') {
+                        await window.rajaRunForexOtcFailoverScan(selectedPair);
+                    }
+                    return;
+                } catch (error) {
+                    console.error('Forex OTC failover scan failed:', error);
+                    return;
+                }
+            }
+
+            // For every other case, keep the old rule: do not show fallback merely
+            // because Forex OTC was selected. It must be armed by a real failed Yahoo scan.
             try {
                 if (typeof window.rajaDisarmForexOtcFallback === 'function') {
                     window.rajaDisarmForexOtcFallback();
@@ -11243,10 +11320,18 @@
 
             const autoBtn = document.getElementById('rajaForexOtcAutoAllBtn');
             const retryBtn = document.getElementById('rajaForexOtcRetryBtn');
+            const scanBtn = document.getElementById('scanBtn');
             const meta = document.getElementById('rajaForexOtcFallbackMeta');
+            const oldScanText = scanBtn ? scanBtn.innerText : '';
 
             if (autoBtn) autoBtn.disabled = true;
             if (retryBtn) retryBtn.disabled = true;
+            if (scanBtn) {
+                scanBtn.disabled = true;
+                scanBtn.innerText = autoMode
+                    ? '⚡ FOREX OTC FALLBACK · SCANNING ALL 21...'
+                    : '⚡ FOREX OTC FALLBACK · SCANNING PAIR...';
+            }
 
             try {
                 if (meta) {
@@ -11287,33 +11372,89 @@
                 forexOtcFallbackBusy = false;
                 if (autoBtn) autoBtn.disabled = false;
                 if (retryBtn) retryBtn.disabled = false;
+                if (scanBtn) {
+                    scanBtn.disabled = false;
+                    scanBtn.innerText = oldScanText || (rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN');
+                }
             }
+        }
+
+        async function runForexOtcFailoverFromNormalScan(selectedPair) {
+            if (!forexOtcFallbackArmed) return false;
+
+            const pair = String(selectedPair || '').trim();
+            const autoMode = !pair || /auto scan/i.test(pair);
+
+            if (autoMode) {
+                const pairs = forexOtcPairsFromCurrentSelect();
+                if (!pairs.length) return false;
+                await runForexOtcFallbackScan(pairs, true);
+                return true;
+            }
+
+            forexOtcFallbackSelectedPair = pair;
+            try { renderForexOtcFallbackPairs(); } catch (_) {}
+            await runForexOtcFallbackScan([pair], false);
+            return true;
+        }
+
+        function focusNormalForexOtcScanButton(mode = 'single') {
+            const marketEl = document.getElementById('marketType');
+            const pairEl = document.getElementById('pairSelect');
+            const scanBtn = document.getElementById('scanBtn');
+            const meta = document.getElementById('rajaForexOtcFallbackMeta');
+
+            if (!marketEl || !pairEl || !scanBtn) return false;
+
+            marketEl.value = 'ForexOTC';
+
+            if (mode === 'auto') {
+                const autoOption = Array.from(pairEl.options || []).find(option =>
+                    /auto scan/i.test(String(option.value || option.textContent || ''))
+                );
+                if (autoOption) {
+                    pairEl.value = autoOption.value;
+                    forexOtcFallbackSelectedPair = '';
+                }
+            } else {
+                const selected = String(forexOtcFallbackSelectedPair || '').trim();
+                if (selected) {
+                    const exists = Array.from(pairEl.options || []).some(option => option.value === selected);
+                    if (exists) pairEl.value = selected;
+                }
+            }
+
+            try { if (typeof syncTargetPairDisplay === 'function') syncTargetPairDisplay(); } catch (_) {}
+            try { if (typeof showDefaultView === 'function') showDefaultView(); } catch (_) {}
+
+            if (meta) {
+                meta.textContent = mode === 'auto'
+                    ? 'AUTO SCAN ALL 21 selected · use the NORMAL START AI MARKET SCAN button. Fallback stays active until Yahoo recovers.'
+                    : `${pairEl.value || 'Selected pair'} ready · use the NORMAL START AI MARKET SCAN button. Fallback stays active until Yahoo recovers.`;
+            }
+
+            try {
+                scanBtn.scrollIntoView({ behavior:'smooth', block:'center', inline:'nearest' });
+            } catch (_) {}
+
+            setTimeout(() => {
+                try { scanBtn.focus({ preventScroll:true }); } catch (_) { try { scanBtn.focus(); } catch (_) {} }
+                scanBtn.classList.add('raja-normal-scan-focus');
+                clearTimeout(scanBtn.__rajaFallbackFocusTimer);
+                scanBtn.__rajaFallbackFocusTimer = setTimeout(() => {
+                    scanBtn.classList.remove('raja-normal-scan-focus');
+                }, 3500);
+            }, 380);
+
+            return true;
         }
 
         async function autoScanAllForexOtcFallbackPairs() {
-            const pairs = forexOtcPairsFromCurrentSelect();
-            if (!pairs.length) return;
-            const autoBtn = document.getElementById('rajaForexOtcAutoAllBtn');
-
-            if (autoBtn) autoBtn.textContent = '▶ JS FALLBACK SCANNING ALL 21...';
-            try {
-                await runForexOtcFallbackScan(pairs, true);
-            } finally {
-                if (autoBtn) autoBtn.textContent = '▶ AUTO SCAN ALL 21 FOREX OTC PAIRS';
-            }
+            focusNormalForexOtcScanButton('auto');
         }
 
         async function retryForexOtcFallbackPair() {
-            const pair = String(forexOtcFallbackSelectedPair || '').trim();
-            const retryBtn = document.getElementById('rajaForexOtcRetryBtn');
-            if (!pair) return;
-
-            if (retryBtn) retryBtn.textContent = '⚡ JS FALLBACK SCANNING...';
-            try {
-                await runForexOtcFallbackScan([pair], false);
-            } finally {
-                if (retryBtn) retryBtn.textContent = '⚡ FALLBACK SCAN SELECTED PAIR';
-            }
+            focusNormalForexOtcScanButton('single');
         }
 
         async function checkForexOtcLiveRecovery(forceUi = false) {
@@ -11679,10 +11820,12 @@
             const forexChecked = isFreshSnapshot(forexSnapshot);
             const forexReadyCount = forexChecked ? snapshotReadyCount(forexSnapshot) : 0;
             const forexState = forexChecked ? String(forexSnapshot?.state || 'UNAVAILABLE').toUpperCase() : 'UNAVAILABLE';
+            // Dedicated Forex OTC fallback must appear immediately after the real
+            // Forex OTC Yahoo scan fails. Do NOT wait for the separate all-market
+            // availability checker to finish probing Forex OTC again.
             const forexFallbackVisible =
                 current === 'ForexOTC' &&
-                forexOtcFallbackArmed &&
-                !checkingMarkets.has('ForexOTC');
+                forexOtcFallbackArmed;
 
             if (forexFallbackPanel) forexFallbackPanel.style.display = forexFallbackVisible ? 'block' : 'none';
             if (forexFallbackState) {
@@ -11982,6 +12125,9 @@
         window.rajaScanBestAvailableMarket = scanBestAvailableMarket;
         window.rajaArmForexOtcFallback = armForexOtcFallback;
         window.rajaDisarmForexOtcFallback = disarmForexOtcFallback;
+        window.rajaIsForexOtcFallbackActive = () => Boolean(forexOtcFallbackArmed);
+        window.rajaCheckForexOtcLiveRecovery = checkForexOtcLiveRecovery;
+        window.rajaRunForexOtcFailoverScan = runForexOtcFailoverFromNormalScan;
 
         document.addEventListener('DOMContentLoaded', () => {
             install();
