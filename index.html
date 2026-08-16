@@ -5651,7 +5651,7 @@
                             </div>
 
                             <div class="raja-forex-otc-fallback-copy">
-                                RAJA AI checked Yahoo live data first. Because Forex OTC Yahoo reference data is stale/unavailable, fallback mode is active. Select a pair below or choose Auto Scan, then press the fallback action button: RAJA AI will take you directly to the NORMAL SCAN button. You scan from the same normal scanner UI; while fallback is active that normal button uses fallback reference analysis. As soon as Yahoo becomes fresh, the same normal button automatically returns to Yahoo live scanning.
+                                RAJA AI checked Yahoo live data first. Because Forex OTC Yahoo reference data is stale/unavailable, fallback mode is active. Select a pair below or choose Auto Scan, then press the fallback action button once. RAJA AI immediately starts the SAME normal scanner UI using fallback reference analysis. As soon as Yahoo becomes fresh, fallback switches OFF automatically and the normal scanner returns to Yahoo live data.
                             </div>
 
                             <div class="raja-forex-otc-pair-head">
@@ -5662,10 +5662,10 @@
 
                             <div class="raja-forex-otc-fallback-actions">
                                 <button type="button" id="rajaForexOtcAutoAllBtn" class="raja-forex-otc-auto-all-btn">
-                                    ▶ AUTO SCAN ALL 21 · GO TO SCAN BUTTON
+                                    ▶ RUN FALLBACK AUTO SCAN · ALL 21
                                 </button>
                                 <button type="button" id="rajaForexOtcRetryBtn" class="raja-forex-otc-open-btn">
-                                    ▶ SELECTED PAIR · GO TO SCAN BUTTON
+                                    ▶ RUN FALLBACK SCAN · SELECTED PAIR
                                 </button>
                                 <button type="button" id="rajaForexOtcSettingsBtn" class="raja-forex-otc-direct-btn">
                                     ⚙ SETTINGS &amp; PAIRS
@@ -11795,11 +11795,60 @@
         }
 
         async function autoScanAllForexOtcFallbackPairs() {
-            moveToNormalForexOtcScanButton('auto');
+            if (!forexOtcFallbackArmed) return;
+
+            const marketEl = document.getElementById('marketType');
+            const pairEl = document.getElementById('pairSelect');
+            const meta = document.getElementById('rajaForexOtcFallbackMeta');
+            if (!marketEl || !pairEl) return;
+
+            marketEl.value = 'ForexOTC';
+
+            const autoOption = Array.from(pairEl.options || []).find(option =>
+                /auto scan/i.test(String(option.value || option.textContent || ''))
+            );
+            if (!autoOption) {
+                if (meta) meta.textContent = 'Forex OTC Auto Scan option was not found.';
+                return;
+            }
+
+            pairEl.value = autoOption.value;
+            forexOtcFallbackSelectedPair = '';
+            try { if (typeof syncTargetPairDisplay === 'function') syncTargetPairDisplay(); } catch (_) {}
+
+            if (meta) {
+                meta.textContent = 'Starting fallback AUTO SCAN ALL 21 in the normal RAJA AI scanner...';
+            }
+
+            // One click = start the normal scan lifecycle immediately.
+            // startDeepScan() detects active Forex OTC fallback and routes the
+            // scan to the isolated fallback engine. Mobile/tablet/desktop all
+            // use this exact same path.
+            await startDeepScan(false);
         }
 
         async function retryForexOtcFallbackPair() {
-            moveToNormalForexOtcScanButton('single');
+            if (!forexOtcFallbackArmed) return;
+
+            const marketEl = document.getElementById('marketType');
+            const pairEl = document.getElementById('pairSelect');
+            const meta = document.getElementById('rajaForexOtcFallbackMeta');
+            if (!marketEl || !pairEl) return;
+
+            marketEl.value = 'ForexOTC';
+
+            const selected = String(forexOtcFallbackSelectedPair || '').trim();
+            if (selected && Array.from(pairEl.options || []).some(option => option.value === selected)) {
+                pairEl.value = selected;
+            }
+
+            try { if (typeof syncTargetPairDisplay === 'function') syncTargetPairDisplay(); } catch (_) {}
+
+            if (meta) {
+                meta.textContent = `Starting fallback scan for ${pairEl.value || 'selected pair'} in the normal RAJA AI scanner...`;
+            }
+
+            await startDeepScan(false);
         }
 
         async function checkForexOtcLiveRecovery(forceUi = false) {
