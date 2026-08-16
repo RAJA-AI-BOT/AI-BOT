@@ -42,8 +42,8 @@ CORS(app)
 # 2m, 5m, 10m, 15m and 30m are built from the same Yahoo
 # 1-minute candles so every timeframe stays synchronized.
 #
-# IMPORTANT: "(OTC)" assets are underlying-market proxies.
-# They are NOT exact Quotex OTC quotes.
+# IMPORTANT: "(OTC)" assets are underlying-market/reference proxies.
+# They are NOT exact broker OTC quotes (Quotex/Pocket Option).
 # =========================================================
 
 YAHOO_SYMBOLS = {
@@ -71,7 +71,7 @@ YAHOO_SYMBOLS = {
     "Trump (OTC)": "TRUMP35336-USD",
     "Dash (OTC)": "DASH-USD",
     "Solana (OTC)": "SOL-USD",
-    "Toncoin (OTC)": "TON-USD",
+    "Toncoin (OTC)": "TON11419-USD",
     "Litecoin (OTC)": "LTC-USD",
     "Avalanche (OTC)": "AVAX-USD",
     "Polkadot (OTC)": "DOT-USD",
@@ -124,11 +124,64 @@ YAHOO_SYMBOLS = {
     "NZD/USD (OTC)": "NZDUSD=X",
     "NZD/CAD (OTC)": "NZDCAD=X",
     "CAD/CHF (OTC)": "CADCHF=X",
+
+    # ---------------- Pocket Option OTC reference proxies ----------------
+    # Pocket Option pair lists are broker-specific in index.html.
+    # These Yahoo symbols are REFERENCE proxies only, not exact Pocket Option OTC candles.
+
+    # Pocket Option Crypto OTC additions
+    "BNB (OTC)": "BNB-USD",
+    "Cardano (OTC)": "ADA-USD",
+    "Polygon (OTC)": "MATIC-USD",
+    "TRON (OTC)": "TRX-USD",
+    "Bitcoin ETF (OTC)": "IBIT",
+    "Dogecoin (OTC)": "DOGE-USD",
+
+    # Pocket Option Forex OTC additions (30-pair preferred set)
+    "EUR/USD (OTC)": "EURUSD=X",
+    "GBP/USD (OTC)": "GBPUSD=X",
+    "USD/JPY (OTC)": "USDJPY=X",
+    "AUD/USD (OTC)": "AUDUSD=X",
+    "USD/CAD (OTC)": "USDCAD=X",
+    "USD/CHF (OTC)": "USDCHF=X",
+    "EUR/JPY (OTC)": "EURJPY=X",
+    "GBP/JPY (OTC)": "GBPJPY=X",
+    "AUD/JPY (OTC)": "AUDJPY=X",
+    "CAD/JPY (OTC)": "CADJPY=X",
+    "EUR/CHF (OTC)": "EURCHF=X",
+    "EUR/GBP (OTC)": "EURGBP=X",
+    "AUD/CAD (OTC)": "AUDCAD=X",
+    "AUD/CHF (OTC)": "AUDCHF=X",
+    "GBP/AUD (OTC)": "GBPAUD=X",
+    "CHF/JPY (OTC)": "CHFJPY=X",
+    "USD/SGD (OTC)": "USDSGD=X",
+    "USD/CNH (OTC)": "USDCNH=X",
+    "USD/MYR (OTC)": "USDMYR=X",
+    "EUR/TRY (OTC)": "EURTRY=X",
+
+    # Pocket Option Stocks OTC
+    "Apple (OTC)": "AAPL",
+    "American Express (OTC)": "AXP",
+    "Boeing Company (OTC)": "BA",
+    "Cisco (OTC)": "CSCO",
+    "Facebook Inc (OTC)": "META",
+    "Intel (OTC)": "INTC",
+    "Johnson & Johnson (OTC)": "JNJ",
+    "McDonald's (OTC)": "MCD",
+    "Microsoft (OTC)": "MSFT",
+    "Pfizer Inc (OTC)": "PFE",
+    "Tesla (OTC)": "TSLA",
+    "ExxonMobil (OTC)": "XOM",
+    "Advanced Micro Devices (OTC)": "AMD",
 }
 
 ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
 UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
 FOREX_OTC_PAIRS = [pair for pair in YAHOO_SYMBOLS if pair.endswith(" (OTC)") and "/" in pair]
+
+POCKET_OPTION_FOREX_OTC_PAIRS = ['EUR/USD (OTC)', 'GBP/USD (OTC)', 'USD/JPY (OTC)', 'AUD/USD (OTC)', 'USD/CAD (OTC)', 'USD/CHF (OTC)', 'EUR/JPY (OTC)', 'GBP/JPY (OTC)', 'AUD/JPY (OTC)', 'CAD/JPY (OTC)', 'EUR/CHF (OTC)', 'EUR/GBP (OTC)', 'AUD/CAD (OTC)', 'AUD/CHF (OTC)', 'CAD/CHF (OTC)', 'NZD/JPY (OTC)', 'AUD/NZD (OTC)', 'EUR/NZD (OTC)', 'GBP/AUD (OTC)', 'CHF/JPY (OTC)', 'USD/MXN (OTC)', 'USD/BRL (OTC)', 'USD/INR (OTC)', 'USD/SGD (OTC)', 'USD/CNH (OTC)', 'USD/IDR (OTC)', 'USD/PHP (OTC)', 'USD/MYR (OTC)', 'USD/COP (OTC)', 'EUR/TRY (OTC)']
+POCKET_OPTION_CRYPTO_OTC_PAIRS = ['BNB (OTC)', 'Polkadot (OTC)', 'Ethereum (OTC)', 'Toncoin (OTC)', 'Cardano (OTC)', 'Polygon (OTC)', 'TRON (OTC)', 'Avalanche (OTC)', 'Bitcoin (OTC)', 'Bitcoin ETF (OTC)', 'Solana (OTC)', 'Chainlink (OTC)', 'Litecoin (OTC)', 'Dogecoin (OTC)']
+POCKET_OPTION_STOCKS_OTC_PAIRS = ['Apple (OTC)', 'American Express (OTC)', 'Boeing Company (OTC)', 'Cisco (OTC)', 'Facebook Inc (OTC)', 'Intel (OTC)', 'Johnson & Johnson (OTC)', "McDonald's (OTC)", 'Microsoft (OTC)', 'Pfizer Inc (OTC)', 'Tesla (OTC)', 'ExxonMobil (OTC)', 'Advanced Micro Devices (OTC)']
 
 TIMEFRAMES = {
     "1m": 1,
@@ -170,6 +223,7 @@ MAX_SOURCE_CANDLE_AGE_SECONDS = max(120, min(3600, int(os.environ.get("RAJA_MAX_
 # so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
 # 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
 BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(75.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "58"))))
+FOREX_OTC_FALLBACK_DEADLINE_SECONDS = max(BATCH_SCAN_DEADLINE_SECONDS, min(78.0, float(os.environ.get("RAJA_FOREX_OTC_FALLBACK_DEADLINE_SECONDS", "72"))))
 
 market_cache = {}
 cache_lock = threading.RLock()
@@ -2127,7 +2181,7 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
     normal live freshness gate is closed.
 
     Important:
-    - This is NOT live Quotex OTC data.
+    - This is NOT live broker OTC data.
     - This function does not write signal history/performance records.
     - Frontend JavaScript applies the separate fallback confidence gate.
     """
@@ -2186,7 +2240,7 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
         "reference_stale": not bool(live_fresh),
         "source": "Yahoo Finance",
         "source_mode": "fallback_reference_only",
-        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE QUOTEX OTC DATA",
+        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE BROKER OTC DATA",
         "yahoo_symbol": symbol,
         "data_age_seconds": round(age_value, 2),
         "data_age_label": format_market_data_age(age_value),
@@ -2474,8 +2528,14 @@ def health():
         "yahoo_semaphore_wait_seconds": YAHOO_SEMAPHORE_WAIT_SECONDS,
         "max_source_candle_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
         "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
+        "forex_otc_fallback_deadline_seconds": FOREX_OTC_FALLBACK_DEADLINE_SECONDS,
         "automatic_outcome_tracking": list(AUTO_TRACK_EXPIRIES.keys()),
         "closed_candle_analysis": True,
+        "pocket_option_reference_assets": {
+            "forex_otc": len(POCKET_OPTION_FOREX_OTC_PAIRS),
+            "crypto_otc": len(POCKET_OPTION_CRYPTO_OTC_PAIRS),
+            "stocks_otc": len(POCKET_OPTION_STOCKS_OTC_PAIRS),
+        },
         "license_store": LICENSE_STORE_MODE,
         "persistent_license_store": bool(DATABASE_URL),
     })
@@ -3067,7 +3127,7 @@ def forex_otc_fallback_data():
 
     pairs = []
     seen = set()
-    for raw in requested[:21]:
+    for raw in requested[:30]:
         pair = str(raw or "").strip()
         if pair in FOREX_OTC_PAIRS and pair not in seen:
             pairs.append(pair)
@@ -3084,7 +3144,7 @@ def forex_otc_fallback_data():
         for pair in pairs
     }
 
-    done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
+    done, pending = wait(future_map.keys(), timeout=FOREX_OTC_FALLBACK_DEADLINE_SECONDS)
     for future in done:
         pair = future_map[future]
         try:
@@ -3118,7 +3178,7 @@ def forex_otc_fallback_data():
     return jsonify({
         "status": "success",
         "mode": "forex_otc_reference_fallback",
-        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE QUOTEX OTC DATA",
+        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE BROKER OTC DATA",
         "data": rows,
         "live_restored": any(bool(row.get("live_fresh")) for row in rows),
         "max_fresh_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
