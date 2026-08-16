@@ -5252,7 +5252,7 @@
                     <div class="engine-mini">
                         <div>AI Engine Status <strong>LIVE</strong></div>
                         <div>Engine: Multi-TF 4-of-6</div>
-                        <div>Source: Yahoo 1m reference</div>
+                        <div id="rajaEngineSourceText">Source: AUTO · Yahoo → Twelve Data</div>
                         <div>Re-scan interval: <strong>5 min</strong></div>
                     </div>
                 </aside>
@@ -5285,7 +5285,7 @@
                                 <button class="v31-system-chip v31-alert-chip" id="v31AlertState" type="button" onclick="openSettingsInline()"><span>ALERTS</span><b>ON</b></button>
                             </div>
                             <div class="v23-freshness-row">
-                                <div class="v23-fresh-chip"><small>FEED</small><strong id="v23FreshFeed">YAHOO 1m · LIVE</strong></div>
+                                <div class="v23-fresh-chip"><small>FEED</small><strong id="v23FreshFeed">AUTO 1m · YAHOO FIRST</strong></div>
                                 <div class="v23-fresh-chip"><small>DATA AGE</small><strong id="v23FreshAge">--</strong></div>
                                 <div class="v23-fresh-chip"><small>SCAN TIME</small><strong id="v23FreshLatency">--</strong></div>
                                 <div class="v23-fresh-chip"><small>SNAPSHOT</small><strong id="v23FreshCache">READY</strong></div>
@@ -5652,7 +5652,7 @@
                             </div>
 
                             <div class="raja-forex-otc-fallback-copy">
-                                RAJA AI checked Yahoo reference data first. Because Forex OTC Yahoo reference data is stale/unavailable, broker fallback mode is active. Select a pair below or choose Auto Scan, then press the fallback action button once. RAJA AI immediately starts the SAME normal scanner UI using the last available Yahoo reference structure. This is not the broker's live OTC candle feed. As soon as Yahoo becomes fresh, fallback switches OFF automatically and the normal scanner returns to Yahoo data.
+                                RAJA AI checks Yahoo first, then Twelve Data live backup when configured. This panel appears only when neither live reference source has a fresh usable 1-minute candle. Fallback then analyzes the freshest last-available reference structure. It is NOT the broker's live OTC candle feed. As soon as Yahoo or Twelve Data becomes fresh, fallback switches OFF automatically and normal scanning resumes.
                             </div>
 
                             <div class="raja-forex-otc-pair-head">
@@ -5674,7 +5674,7 @@
                             </div>
 
                             <div id="rajaForexOtcFallbackMeta" class="raja-forex-otc-fallback-meta">
-                                JS FALLBACK ENGINE ACTIVE · REFERENCE-BASED ONLY · Yahoo auto-recovery check is running.
+                                JS FALLBACK ENGINE ACTIVE · REFERENCE-BASED ONLY · Live-feed auto-recovery check is running.
                             </div>
 
                             <div id="rajaForexOtcFallbackResults" class="raja-forex-otc-results" style="display:none;">
@@ -5684,7 +5684,7 @@
                                 </div>
                                 <div id="rajaForexOtcFallbackResultsBody"></div>
                                 <div class="raja-forex-otc-results-note">
-                                    Fallback signals use last available Yahoo reference history and are kept separate from normal RAJA AI live-scan history/performance.
+                                    Fallback signals use the freshest last-available reference history and are kept separate from normal RAJA AI live-scan history/performance.
                                 </div>
                             </div>
                         </div>
@@ -5838,7 +5838,7 @@
 
                     <div class="status-grid">
                         <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><span class="selected-pair-label">SELECTED TARGET PAIR</span><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
-                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong>Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="v23BaseFeed">Auto · Yahoo → Twelve</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
                     </div>
 
                     <section class="upgrade-card" id="dailyPerformancePanel">
@@ -5868,7 +5868,7 @@
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
                                 <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: 5-of-6, stronger agreement and higher score threshold.</div></div>
-                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
+                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: base market feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: base market feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button></div>
                             </div>
                         </div>
@@ -7809,11 +7809,11 @@
 
         // ==========================================
         // REAL BACKEND SCAN ENGINE
-        // Yahoo/yfinance market data + backend indicators
+        // Yahoo primary + Twelve Data live backup + backend indicators
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{}};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
         }
 
 
@@ -8335,7 +8335,7 @@
                         const reason = String(
                             state.message ||
                             state.ageLabel ||
-                            'Yahoo Forex OTC reference data is stale or unavailable.'
+                            'Forex OTC live reference data is stale or unavailable.'
                         );
                         window.rajaArmForexOtcFallback(reason);
                     } else if (typeof window.rajaDisarmForexOtcFallback === 'function') {
@@ -8395,7 +8395,7 @@
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
                             const unavailableOnly = Math.max(0, dataBad - skippedSlow);
-                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
+                            descEl.innerText = `Reference data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
                         }
                     } else {
                         titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
@@ -8433,6 +8433,9 @@
                         volatility_pct: signalData.volatilityPct,
                         scan_mode: signalData.scanMode,
                         market: document.getElementById('marketType')?.value || '',
+                        source: signalData.source || 'Yahoo Finance',
+                        source_mode: signalData.sourceMode || '',
+                        provider_symbol: signalData.providerSymbol || '',
                         snapshot: {
                             rsi: signalData.rsi,
                             reason: signalData.reason,
@@ -10478,7 +10481,7 @@
     </script>
 
     <script id="raja-v23-command-center-js">
-    let v23LastFreshness = { age:null, elapsed:null, cacheHit:false, count:0, updatedAt:0 };
+    let v23LastFreshness = { age:null, elapsed:null, cacheHit:false, count:0, updatedAt:0, source:'AUTO' };
     let v23LastEntryAlertKey = null;
 
     function v23SetHeroStatus(text){ const el=document.getElementById('v23HeroStatus'); if(el) el.textContent=String(text||'READY FOR DEEP SCAN'); }
@@ -10543,25 +10546,42 @@
         if(n<60) return Math.max(0,Math.round(n))+'s';
         return (n/60).toFixed(1)+'m';
     }
+    function v23FeedLabel(source){
+        const s=String(source||'AUTO');
+        if(/Twelve Data/i.test(s)) return 'TWELVE DATA 1m · BACKUP LIVE';
+        if(/Yahoo/i.test(s)) return 'YAHOO 1m · PRIMARY LIVE';
+        if(/MIXED/i.test(s)) return 'YAHOO + TWELVE · LIVE';
+        return 'AUTO 1m · YAHOO FIRST';
+    }
+
     function v23PaintFreshness(){
         const f=v23LastFreshness;
         const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
+        const feedLabel=v23FeedLabel(f.source);
+        set('v23FreshFeed',feedLabel);
+        set('v23BaseFeed',/Twelve Data/i.test(String(f.source||''))?'Twelve Data 1m Backup':(/MIXED/i.test(String(f.source||''))?'Yahoo + Twelve 1m':'Yahoo 1m Primary'));
+        const engine=document.getElementById('rajaEngineSourceText');
+        if(engine) engine.textContent='Source: '+feedLabel;
         set('v23FreshAge',v23FormatAge(f.age));
         set('v23FreshLatency',Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--');
         set('v23FreshCache',!f.updatedAt?'READY':(f.cacheHit?'SHARED CACHE':'FRESH SNAPSHOT'));
         const result=document.getElementById('v23ResultFreshness');
-        if(result) result.textContent='Yahoo 1m · age '+v23FormatAge(f.age)+' · scan '+(Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--')+' · '+(f.cacheHit?'shared cache':'fresh snapshot');
+        if(result) result.textContent=feedLabel+' · age '+v23FormatAge(f.age)+' · scan '+(Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--')+' · '+(f.cacheHit?'shared cache':'fresh snapshot');
     }
+
     function v23UpdateFreshnessFromRaw(rows, diagnostics, cacheHit){
         rows=Array.isArray(rows)?rows:[];
         const ages=rows.map(x=>Number(x&&x.data_age)).filter(Number.isFinite);
-        v23LastFreshness={age:ages.length?Math.min(...ages):null,elapsed:Number(diagnostics&&diagnostics.elapsed_seconds),cacheHit:Boolean(cacheHit),count:Number(diagnostics&&diagnostics.total_pairs)||rows.length,updatedAt:Date.now()};
+        const sources=[...new Set(rows.map(x=>String(x&&x.source||'')).filter(Boolean))];
+        const source=sources.length>1?'MIXED':(sources[0]||'AUTO');
+        v23LastFreshness={age:ages.length?Math.min(...ages):null,elapsed:Number(diagnostics&&diagnostics.elapsed_seconds),cacheHit:Boolean(cacheHit),count:Number(diagnostics&&diagnostics.total_pairs)||rows.length,updatedAt:Date.now(),source};
         v23PaintFreshness(); v23RenderTop3();
     }
+
     function v23UpdateFreshnessFromSignal(signal){
         if(!signal) return;
         const elapsed=scanSessionState.startedAt?Math.max(0,(Date.now()-scanSessionState.startedAt)/1000):v23LastFreshness.elapsed;
-        v23LastFreshness={...v23LastFreshness,age:Number(signal.dataAge),elapsed:elapsed,cacheHit:(v23LastFreshness.count>1?v23LastFreshness.cacheHit:false),count:v23LastFreshness.count||1,updatedAt:Date.now()};
+        v23LastFreshness={...v23LastFreshness,age:Number(signal.dataAge),elapsed:elapsed,cacheHit:(v23LastFreshness.count>1?v23LastFreshness.cacheHit:false),count:v23LastFreshness.count||1,updatedAt:Date.now(),source:signal.source||v23LastFreshness.source||'AUTO'};
         v23PaintFreshness();
     }
 
@@ -11416,7 +11436,7 @@
 
             const meta = document.getElementById('rajaForexOtcFallbackMeta');
             if (meta) {
-                meta.textContent = `${selected} selected · JS fallback is ready. Yahoo live recovery continues automatically in the background.`;
+                meta.textContent = `${selected} selected · JS fallback is ready. Live reference recovery continues automatically in the background.`;
             }
         }
 
@@ -11454,7 +11474,7 @@
                     agreement:0,
                     validCount:0,
                     reason:row?.live_fresh
-                        ? 'Yahoo live data is fresh again; fallback is no longer allowed.'
+                        ? 'A live reference feed is fresh again; fallback is no longer allowed.'
                         : String(row?.reason || 'No fallback reference data.')
                 };
             }
@@ -11663,8 +11683,9 @@
                 scanThresholds:{},
                 fallbackReference:true,
                 fallbackWarning:forexOtcFallbackWarning(),
-                source:'Yahoo Finance',
-                sourceMode:'fallback_reference_only'
+                source:String(rawRow?.source || 'Yahoo Finance'),
+                sourceMode:'fallback_reference_only',
+                providerSymbol:String(rawRow?.provider_symbol || rawRow?.yahoo_symbol || '')
             };
         }
 
@@ -11802,7 +11823,7 @@
             if (scanConsole) {
                 scanConsole.innerHTML = `<div class="live-scan-row scanning">⚡ FOREX OTC FALLBACK · ${autoMode ? `AUTO SCAN ${list.length} PAIRS` : escapeHtml(list[0] || 'SELECTED PAIR')}</div>`;
             }
-            if (scanStep) scanStep.innerText = 'Checking Yahoo recovery, then fallback reference structure...';
+            if (scanStep) scanStep.innerText = 'Checking live-feed recovery, then fallback reference structure...';
 
             if (autoBtn) autoBtn.disabled = true;
             if (retryBtn) retryBtn.disabled = true;
@@ -11852,7 +11873,7 @@
                     setScanProgress(100);
 
                     if (meta) {
-                        meta.textContent = `JS FALLBACK ACTIVE · Top qualified signal: ${best.pair} ${best.direction} ${best.confidence.toFixed(1)}% · Yahoo recovery remains ON.`;
+                        meta.textContent = `JS FALLBACK ACTIVE · Top qualified signal: ${best.pair} ${best.direction} ${best.confidence.toFixed(1)}% · Live-feed recovery remains ON.`;
                     }
 
                     // Display in the SAME normal signal screen the user already knows.
@@ -11880,7 +11901,7 @@
                 renderPrimaryView();
 
                 if (meta) {
-                    meta.textContent = 'JS FALLBACK ACTIVE · scan completed but no setup passed the signal floor. Yahoo recovery remains ON.';
+                    meta.textContent = 'JS FALLBACK ACTIVE · scan completed but no setup passed the signal floor. Live-feed recovery remains ON.';
                 }
                 return {signal:false, scored};
             } catch (error) {
@@ -11894,7 +11915,7 @@
 
                 if (meta) {
                     meta.textContent = error && error.name === 'AbortError'
-                        ? 'JS FALLBACK request timed out. Yahoo recovery monitor is still active.'
+                        ? 'JS FALLBACK request timed out. Live-feed recovery monitor is still active.'
                         : `JS FALLBACK error · ${String(error?.message || 'Reference analysis failed.')}`;
                 }
                 return {error:true};
@@ -11959,8 +11980,8 @@
 
             if (meta) {
                 meta.textContent = mode === 'auto'
-                    ? `${`AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length}`} selected · use the NORMAL START AI MARKET SCAN button. Fallback stays active until Yahoo recovers.`
-                    : `${pairEl.value || 'Selected pair'} ready · use the NORMAL START AI MARKET SCAN button. Fallback stays active until Yahoo recovers.`;
+                    ? `${`AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length}`} selected · use the NORMAL START AI MARKET SCAN button. Fallback stays active until a live reference feed recovers.`
+                    : `${pairEl.value || 'Selected pair'} ready · use the NORMAL START AI MARKET SCAN button. Fallback stays active until a live reference feed recovers.`;
             }
 
             try {
@@ -12011,8 +12032,8 @@
 
             if (meta) {
                 meta.textContent = mode === 'auto'
-                    ? `${`AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length}`} selected · press the NORMAL START AI MARKET SCAN button. While Yahoo is unavailable, that button uses Forex OTC fallback. Yahoo recovery switches it back automatically.`
-                    : `${pairEl.value || 'Selected pair'} selected · press the NORMAL START AI MARKET SCAN button. While Yahoo is unavailable, that button uses Forex OTC fallback.`;
+                    ? `${`AUTO SCAN ALL ${forexOtcPairsFromCurrentSelect().length}`} selected · press the NORMAL START AI MARKET SCAN button. While live reference data is unavailable, that button uses Forex OTC fallback. Live-feed recovery switches it back automatically.`
+                    : `${pairEl.value || 'Selected pair'} selected · press the NORMAL START AI MARKET SCAN button. While live reference data is unavailable, that button uses Forex OTC fallback.`;
             }
 
             // Use the same behavior on mobile, tablet and desktop.
@@ -12126,7 +12147,7 @@
                 }
 
                 if (forceUi && meta) {
-                    meta.textContent = `JS FALLBACK ACTIVE · Yahoo still stale (${payload.data.data_age_label || '--'} old) · automatic recovery check continues.`;
+                    meta.textContent = `${payload.data.source || 'Reference feed'} is still stale (${payload.data.data_age_label || '--'} old) · automatic recovery check continues.`;
                 }
                 return false;
             } catch (_) {
@@ -12146,7 +12167,7 @@
             const state = document.getElementById('rajaForexOtcFallbackState');
             const meta = document.getElementById('rajaForexOtcFallbackMeta');
             if (state) state.textContent = 'YAHOO LIVE RESTORED';
-            if (meta) meta.textContent = `Yahoo fresh data restored (${row?.data_age_label || 'fresh'}). ${forexOtcFallbackBrokerName()} fallback is switching OFF and normal RAJA AI Yahoo scanning is resuming.`;
+            if (meta) meta.textContent = `${row?.source || 'Live reference'} fresh data restored (${row?.data_age_label || 'fresh'}). ${forexOtcFallbackBrokerName()} fallback is switching OFF and normal RAJA AI scanning is resuming.`;
 
             forexOtcFallbackArmed = false;
             forexOtcFallbackReason = '';
@@ -12180,7 +12201,7 @@
                 return;
             }
             forexOtcFallbackArmed = true;
-            forexOtcFallbackReason = String(reason || 'Yahoo Forex OTC reference data is stale or unavailable.');
+            forexOtcFallbackReason = String(reason || 'Forex OTC live reference data is stale or unavailable.');
 
             const marketEl = document.getElementById('marketType');
             const pairEl = document.getElementById('pairSelect');
@@ -12504,7 +12525,7 @@
                 renderForexOtcFallbackPairs();
                 if (forexRetryBtn) forexRetryBtn.disabled = false;
                 if (forexFallbackMeta && forexOtcFallbackReason && !forexOtcFallbackBusy) {
-                    forexFallbackMeta.textContent = `${forexOtcFallbackBrokerName()} JS FALLBACK ACTIVE · ${forexOtcFallbackReason} · Reference-based signals are available below while Yahoo auto-recovery runs.`;
+                    forexFallbackMeta.textContent = `${forexOtcFallbackBrokerName()} JS FALLBACK ACTIVE · ${forexOtcFallbackReason} · Reference-based signals are available below while live-feed auto-recovery runs.`;
                 }
             }
 
