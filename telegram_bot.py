@@ -27,7 +27,7 @@ BOT_TOKEN = (os.environ.get("TELEGRAM_BOT_TOKEN") or "").strip()
 BOT_USERNAME = (os.environ.get("TELEGRAM_BOT_USERNAME") or "Raja_Aii_bot").strip().lstrip("@")
 SUPPORT_USERNAME = (os.environ.get("TELEGRAM_SUPPORT_USERNAME") or "RAJASIGNALAIPREMIUM").strip().lstrip("@")
 PARTNER_URL = (os.environ.get("RAJA_QUOTEX_PARTNER_URL") or "https://broker-qx.pro/sign-up/?lid=2209395").strip()
-PUBLIC_BASE_URL = (os.environ.get("RAJA_PUBLIC_BASE_URL") or "https://raja-ai-bot.onrender.com").strip().rstrip("/")
+PUBLIC_BASE_URL = (os.environ.get("RAJA_PUBLIC_BASE_URL") or "https://raja-ai-bot.up.railway.app").strip().rstrip("/")
 ADMIN_SETUP_CODE = (os.environ.get("TELEGRAM_ADMIN_SETUP_CODE") or "").strip()
 ADMIN_ID_ENV = (os.environ.get("TELEGRAM_ADMIN_ID") or "").strip()
 DATABASE_URL = (os.environ.get("DATABASE_URL") or os.environ.get("RAJA_DATABASE_URL") or "").strip()
@@ -47,9 +47,10 @@ TELEGRAM_API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else
 MARKET_PAIRS = {
     "CryptoLive": ["BTC-USD", "ETH-USD", "SOL-USD", "LTC-USD", "XRP-USD", "ADA-USD", "DOGE-USD"],
     "CryptoOTC": [
-        "Bitcoin (OTC)", "Ethereum (OTC)", "Litecoin (OTC)", "Ripple (OTC)", "Solana (OTC)",
-        "Toncoin (OTC)", "Ethereum Classic (OTC)", "Axie Infinity (OTC)", "Binance Coin (OTC)",
-        "Polkadot (OTC)", "Avalanche (OTC)", "Chainlink (OTC)", "Bitcoin Cash (OTC)", "Zcash (OTC)", "Cosmos (OTC)"
+        "Zcash (OTC)", "Chainlink (OTC)", "Bitcoin (OTC)", "Binance Coin (OTC)", "Ethereum (OTC)",
+        "Bitcoin Cash (OTC)", "Cosmos (OTC)", "Ethereum Classic (OTC)", "Axie Infinity (OTC)",
+        "Trump (OTC)", "Dash (OTC)", "Solana (OTC)", "Toncoin (OTC)", "Litecoin (OTC)",
+        "Avalanche (OTC)", "Polkadot (OTC)", "Ripple (OTC)"
     ],
     "ForexLive": [
         "EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "USD/CAD", "USD/CHF", "NZD/USD", "EUR/GBP", "EUR/JPY",
