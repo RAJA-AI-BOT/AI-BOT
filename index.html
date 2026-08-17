@@ -5736,13 +5736,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 <aside class="side-panel">
                     <div class="brand"><span class="brand-mark">♛</span><span>RAJA AI PREMIUM</span><span class="vip-pill">VIP</span></div>
                     <div class="nav-list">
-                        <button class="nav-item active" onclick="showDefaultView()">▦ Dashboard</button>
-                        <button class="nav-item" onclick="showDefaultView()">◉ AI Market Scan</button>
-                        <button class="nav-item" onclick="openHistoryInline()">◷ History</button>
-                        <button class="nav-item" onclick="openSettingsInline()">⚙ Settings</button>
-                        <button class="nav-item" onclick="openNewsInline()">▤ News · LIVE</button>
-                        <button class="nav-item" onclick="openRiskInline()">♢ Risk & Recovery</button>
-                        <button class="nav-item" onclick="openProfileInline()">👤 Profile</button>
+                        <button class="nav-item active" data-section="dashboard" onclick="showDefaultView()">▦ Dashboard</button>
+                        <button class="nav-item" data-section="scan" onclick="showDefaultView()">◉ AI Market Scan</button>
+                        <button class="nav-item" data-section="history" onclick="openHistoryInline()">◷ History</button>
+                        <button class="nav-item" data-section="settings" onclick="openSettingsInline()">⚙ Settings</button>
+                        <button class="nav-item" data-section="news" onclick="openNewsInline()">▤ News · LIVE</button>
+                        <button class="nav-item" data-section="risk" onclick="openRiskInline()">♢ Risk & Recovery</button>
+                        <button class="nav-item" data-section="profile" onclick="openProfileInline()">👤 Profile</button>
                     </div>
                     <div class="premium-risk-mini" onclick="openRiskInline()" role="button" tabindex="0" title="Open Risk & Recovery">
                         <div class="premium-risk-mini-title"><span>Risk & Recovery Premium</span><b>LIVE</b></div>
@@ -7185,8 +7185,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval);
             if (historyRefreshInterval) clearInterval(historyRefreshInterval);
             // The current session has already been verified by login/checkRoute.
-            // Start the first heartbeat after 30s instead of firing a duplicate request immediately.
-            licenseHeartbeatInterval = setInterval(heartbeatLicense, 30000);
+            // Login/checkRoute already verified this session. A 60s heartbeat is well inside
+            // the 5-minute server TTL and halves steady DB authentication traffic.
+            licenseHeartbeatInterval = setInterval(heartbeatLicense, 60000);
             historyRefreshInterval = setInterval(() => { if (isUserVerified) refreshTrackedHistory(); }, 10000);
         }
 
@@ -7337,11 +7338,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (!(trustVerifiedSession && isUserVerified && localSessionReady)) {
                 isUserVerified=false;
                 if (localSessionReady) {
+                    const sessionController = new AbortController();
+                    const sessionTimeout = setTimeout(() => sessionController.abort(), 25000);
                     try {
-                        const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...auth,device_label:getCurrentDeviceLabel(),heartbeat:true})});
+                        const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...auth,device_label:getCurrentDeviceLabel(),heartbeat:true}),signal:sessionController.signal});
                         const result=await response.json().catch(()=>null); isUserVerified=Boolean(response.ok && result && result.status==='success');
                         if (!isUserVerified && [401,403,409].includes(response.status)) { localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key); }
-                    } catch(error){ isUserVerified=false; }
+                    } catch(error){
+                        // Keep saved credentials on a temporary cold-start/network timeout so retry remains possible.
+                        isUserVerified=false;
+                    } finally {
+                        clearTimeout(sessionTimeout);
+                    }
                 }
             }
 
@@ -7440,7 +7448,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 await checkRoute({trustVerifiedSession:true});
                 startTimer();
             } catch(error) {
+                isUserVerified=false;
                 localStorage.removeItem('raja_active_key');
+                localStorage.removeItem('raja_active_user');
                 localStorage.removeItem('raja_session_'+key);
                 localStorage.removeItem('raja_token_'+key);
                 msgBox.style.color='#fff';
@@ -7628,8 +7638,16 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (ready) ready.style.display = 'flex';
         }
 
+        function syncSidebarNavActive(section) {
+            const wanted = String(section || 'dashboard');
+            document.querySelectorAll('.side-panel .nav-item[data-section]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.section === wanted);
+            });
+        }
+
         function showDefaultView() {
             currentSection = 'dashboard';
+            syncSidebarNavActive('dashboard');
             if (scanSessionState.running) primaryViewState = 'scanning';
             renderPrimaryView();
         }
@@ -7642,6 +7660,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function openHistoryInline() {
             currentSection = 'history';
+            syncSidebarNavActive('history');
             hideAllHudViews();
             document.getElementById('historyInlineView').style.display = "block";
             refreshTrackedHistory();
@@ -7724,6 +7743,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function openSettingsInline() {
             currentSection = 'settings';
+            syncSidebarNavActive('settings');
             hideAllHudViews();
             document.getElementById('settingsInlineView').style.display = "block";
         }
@@ -7791,6 +7811,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function openNewsInline() {
             currentSection = 'news';
+            syncSidebarNavActive('news');
             hideAllHudViews();
             document.getElementById('newsInlineView').style.display = "block";
             loadMarketNews(false);
@@ -7798,6 +7819,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function openRiskInline() {
             currentSection = 'risk';
+            syncSidebarNavActive('risk');
             hideAllHudViews();
             document.getElementById('riskInlineView').style.display = "block";
             calculateRisk();
@@ -9149,7 +9171,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const item=backendTrackedHistory.find(x=>x.id===signalId); if(!item)return; currentSection='replay';hideAllHudViews();document.getElementById('replayInlineView').style.display='block';const s=item.snapshot||{};const outcome=item.result||item.status||'PENDING';document.getElementById('replaySummary').innerHTML=`<div class="inline-item"><span>Pair</span><strong>${escapeHtml(item.pair||'--')}</strong></div><div class="inline-item"><span>Signal / Expiry</span><strong>${escapeHtml(item.signal||'--')} · ${escapeHtml(item.expiry||'--')}</strong></div><div class="inline-item"><span>Confluence / Mode</span><strong>${Number(item.score||0).toFixed(1)}% · ${escapeHtml(item.scan_mode||'--')}</strong></div><div class="inline-item"><span>Market Stability</span><strong>${escapeHtml(item.market_stability_score??'--')} / 100 · ${escapeHtml(item.market_risk_level||'--')}</strong></div><div class="inline-item"><span>RSI / Agreement</span><strong>${escapeHtml(s.rsi??'--')} · ${escapeHtml(s.multi_tf_agreement??'--')}%</strong></div><div class="inline-item"><span>Entry → Exit</span><strong>${escapeHtml(item.entry_price??'--')} → ${escapeHtml(item.exit_price??'--')}</strong></div><div class="inline-item"><span>Outcome</span><strong style="color:${outcome==='WIN'?'#00ff87':(outcome==='LOSS'?'#ff3366':'#facc15')}">${escapeHtml(outcome)}</strong></div><div style="padding:6px;color:#8ea8bd;font-size:8px;">${escapeHtml(s.reason||'Historical signal snapshot')}</div>`;renderSignalChart(document.getElementById('replayMiniChart'),item.chart_preview||[],item.signal==='CALL',item.entry_price,item.exit_price);const tf=item.timeframe_summary||{};document.getElementById('replayTimeframes').innerHTML=['1m','2m','5m','10m','15m','30m'].map(k=>{const v=tf[k]||{};const cls=v.signal==='CALL'?'tf-call':(v.signal==='PUT'?'tf-put':'tf-none');return `<div class="tf-chip ${cls}">${k}<br>${escapeHtml(v.signal||'WAIT')} ${Number(v.score||0).toFixed(0)}%</div>`;}).join('');replayPlaybackItem=item;replayPlaybackIndex=Math.min(Math.max(4,(item.chart_preview||[]).length>4?4:(item.chart_preview||[]).length),(item.chart_preview||[]).length);replayPause();renderReplayFrame();
         }
 
-        async function openProfileInline(){currentSection='profile';hideAllHudViews();document.getElementById('profileInlineView').style.display='block';await loadUserProfile();}
+        async function openProfileInline(){currentSection='profile';syncSidebarNavActive('profile');hideAllHudViews();document.getElementById('profileInlineView').style.display='block';await loadUserProfile();}
         async function loadUserProfile(){const grid=document.getElementById('profileGrid');if(!grid||!isUserVerified)return;grid.innerHTML='<div class="profile-cell"><small>Status</small><strong>Loading...</strong></div>';try{const response=await fetch('/user/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(getAuthPayload())});const result=await response.json();if(!response.ok||!result||result.status!=='success')throw new Error((result&&result.message)||'Unable to load profile.');const p=result.data||{};grid.innerHTML=`<div class="profile-cell"><small>User / UID</small><strong>${escapeHtml(p.user||'--')}</strong></div><div class="profile-cell"><small>Plan</small><strong>${escapeHtml(p.plan||'VIP')}</strong></div><div class="profile-cell"><small>Expiry</small><strong>${escapeHtml(formatExpiryDate(p.expires_at))}</strong></div><div class="profile-cell"><small>Device</small><strong>${escapeHtml(p.device_label||'--')}</strong></div><div class="profile-cell"><small>Last Login</small><strong>${escapeHtml(formatDateTime(p.last_login_at))}</strong></div><div class="profile-cell"><small>Scans Today</small><strong>${Number(p.scans_today||0)}</strong></div><div class="profile-cell"><small>Total Scans</small><strong>${Number(p.total_scans||0)}</strong></div><div class="profile-cell"><small>Joined</small><strong>${escapeHtml(formatDateTime(p.created_at))}</strong></div>`;}catch(error){grid.innerHTML=`<div class="profile-cell"><small>Error</small><strong>${escapeHtml(error.message)}</strong></div>`;}}
 
         function installHistoryMirror() {
