@@ -361,6 +361,8 @@ def _compute_app_build_id():
         BASE_DIR / "index.html",
         BASE_DIR / "sw.js",
         BASE_DIR / "manifest.json",
+        BASE_DIR / "raja-ai-icon-192.png",
+        BASE_DIR / "raja-ai-icon-512.png",
     ]
     found = False
     for path in build_files:
@@ -2847,8 +2849,38 @@ def app_version():
 
 @app.route("/manifest.json", methods=["GET"])
 def pwa_manifest():
-    response = send_from_directory(str(BASE_DIR), "manifest.json", mimetype="application/manifest+json")
-    response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
+    # Serve a build-versioned manifest so Android/Chrome sees changed icon URLs
+    # after every real deployment. Keep app id/start_url untouched so this updates
+    # the existing installation instead of creating a second app.
+    manifest_path = BASE_DIR / "manifest.json"
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+        def _version_icons(rows):
+            if not isinstance(rows, list):
+                return
+            for icon in rows:
+                if not isinstance(icon, dict):
+                    continue
+                src = str(icon.get("src") or "").strip()
+                if not src:
+                    continue
+                base = src.split("?", 1)[0]
+                icon["src"] = f"{base}?v={APP_BUILD_ID}"
+
+        _version_icons(payload.get("icons"))
+        for shortcut in payload.get("shortcuts") or []:
+            if isinstance(shortcut, dict):
+                _version_icons(shortcut.get("icons"))
+
+        response = jsonify(payload)
+        response.mimetype = "application/manifest+json"
+    except Exception:
+        response = send_from_directory(str(BASE_DIR), "manifest.json", mimetype="application/manifest+json")
+
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     return response
 
 
@@ -2866,7 +2898,12 @@ def pwa_service_worker():
 def pwa_icon(size):
     if size not in {"192", "512"}:
         return jsonify({"status": "error", "message": "Icon not found."}), 404
-    return send_from_directory(str(BASE_DIR), f"raja-ai-icon-{size}.png", mimetype="image/png")
+    response = send_from_directory(str(BASE_DIR), f"raja-ai-icon-{size}.png", mimetype="image/png")
+    # Icon URLs are build-versioned, and the response itself is never pinned.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.after_request
@@ -2879,7 +2916,7 @@ def disable_html_cache(response):
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
     elif request.path == "/manifest.json":
-        response.headers["Cache-Control"] = "no-cache, must-revalidate, max-age=0"
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return response
 
 
