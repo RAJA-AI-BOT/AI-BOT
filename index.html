@@ -5727,7 +5727,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
                 <div class="raja-mobile-command-actions triple">
                     <button id="rajaMobileHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button>
-                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">⚙ SETTINGS</button>
+                    <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">🧭 MARKET SETUP</button>
                     <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
                 </div>
             </div>
@@ -10615,7 +10615,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
             if (button) {
                 button.classList.toggle('active', nextOpen);
-                button.textContent = nextOpen ? '✕ CLOSE' : '⚙ SETTINGS';
+                button.textContent = nextOpen ? '✕ CLOSE' : '🧭 MARKET SETUP';
             }
 
             if (nextOpen) {
@@ -10678,7 +10678,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     return;
                 }
                 settings.classList.toggle('active', document.body.classList.contains('raja-config-open'));
-                settings.textContent = document.body.classList.contains('raja-config-open') ? '✕ CLOSE' : '⚙ SETTINGS';
+                settings.textContent = document.body.classList.contains('raja-config-open') ? '✕ CLOSE' : '🧭 MARKET SETUP';
             });
         }
 
