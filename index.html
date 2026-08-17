@@ -9,13 +9,13 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="/manifest.json?v=__RAJA_APP_BUILD__">
     <meta name="application-name" content="RAJA AI PREMIUM">
     <meta name="apple-mobile-web-app-title" content="RAJA AI">
     <meta name="format-detection" content="telephone=no">
-    <link rel="icon" type="image/png" sizes="192x192" href="/raja-ai-icon-192.png">
-    <link rel="icon" type="image/png" sizes="512x512" href="/raja-ai-icon-512.png">
-    <link rel="apple-touch-icon" sizes="192x192" href="/raja-ai-icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/raja-ai-icon-192.png?v=__RAJA_APP_BUILD__">
+    <link rel="icon" type="image/png" sizes="512x512" href="/raja-ai-icon-512.png?v=__RAJA_APP_BUILD__">
+    <link rel="apple-touch-icon" sizes="192x192" href="/raja-ai-icon-192.png?v=__RAJA_APP_BUILD__">
 
 
     <script id="raja-theme-bootstrap-v2">
@@ -7077,6 +7077,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
         }
 
+        async function purgeRajaPwaCachesForUpdate() {
+            // Cache Storage is separate from localStorage/session data.
+            // Clearing it on a confirmed new deployment forces fresh HTML/assets
+            // without logging the customer out or deleting app preferences.
+            if (!("caches" in window)) return;
+            try {
+                const keys = await caches.keys();
+                await Promise.all(keys.map(key => caches.delete(key)));
+            } catch (_) {}
+        }
+
         async function checkRajaAppVersion(force = false) {
             if (rajaUpdateReloadStarted || !navigator.onLine) return;
 
@@ -7099,6 +7110,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 }
 
                 rajaBuildMismatchDetected = true;
+
+                // A confirmed deployment must never be blocked by an old PWA cache.
+                await purgeRajaPwaCachesForUpdate();
 
                 // Ask the browser to fetch a fresh service worker first.
                 if (rajaSwRegistration) {
