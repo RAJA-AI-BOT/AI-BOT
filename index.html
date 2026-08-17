@@ -6451,15 +6451,15 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
                                 <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
                                 <div class="settings-section" id="rajaVoiceSettingsSection">
-                                    <h4>🔊 Voice Alerts · Clear Male / Female</h4>
+                                    <h4>🔊 Voice Alerts · Male / Female</h4>
                                     <div class="switch-row"><span>Speak signal + entry countdown aloud</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div>
                                     <div class="raja-voice-controls">
                                         <div class="raja-voice-grid">
                                             <div class="raja-voice-field">
                                                 <label for="rajaVoiceGender">Voice Type</label>
                                                 <select id="rajaVoiceGender" onchange="setRajaVoiceGender(this.value)">
-                                                    <option value="female">👩 Female · Clear</option>
-                                                    <option value="male">👨 Male · Clear</option>
+                                                    <option value="female">👩 Female</option>
+                                                    <option value="male">👨 Male</option>
                                                 </select>
                                             </div>
                                             <div class="raja-voice-field">
