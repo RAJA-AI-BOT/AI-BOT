@@ -13,9 +13,9 @@
     <meta name="application-name" content="RAJA AI PREMIUM">
     <meta name="apple-mobile-web-app-title" content="RAJA AI">
     <meta name="format-detection" content="telephone=no">
-    <link rel="icon" type="image/png" sizes="192x192" href="/raja-ai-icon-192-v2.png?v=__RAJA_APP_BUILD__">
-    <link rel="icon" type="image/png" sizes="512x512" href="/raja-ai-icon-512-v2.png?v=__RAJA_APP_BUILD__">
-    <link rel="apple-touch-icon" sizes="192x192" href="/raja-ai-icon-192-v2.png?v=__RAJA_APP_BUILD__">
+    <link rel="icon" type="image/png" sizes="192x192" href="/raja-ai-icon-192-v3.png?v=__RAJA_APP_BUILD__">
+    <link rel="icon" type="image/png" sizes="512x512" href="/raja-ai-icon-512-v3.png?v=__RAJA_APP_BUILD__">
+    <link rel="apple-touch-icon" sizes="192x192" href="/raja-ai-icon-192-v3.png?v=__RAJA_APP_BUILD__">
 
 
     <script id="raja-theme-bootstrap-v2">
@@ -7026,8 +7026,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         let rajaInstallIntent = false;
         let rajaInstallPrepareTimer = null;
-        let rajaInstalledPwaDetected = false;
-        let rajaInstalledPwaCheckDone = false;
 
         function rajaInstallEnvironment() {
             const ua = String(navigator.userAgent || '');
@@ -7104,34 +7102,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             modal.setAttribute('aria-hidden','false');
         }
 
-        async function detectRajaInstalledPWA() {
-            if (isRajaStandalone()) {
-                rajaInstalledPwaDetected = true;
-                rajaInstalledPwaCheckDone = true;
-                return true;
-            }
-            if (!('getInstalledRelatedApps' in navigator)) {
-                rajaInstalledPwaCheckDone = true;
-                return false;
-            }
-            try {
-                const apps = await navigator.getInstalledRelatedApps();
-                rajaInstalledPwaDetected = Array.isArray(apps) && apps.some(app => {
-                    const platform = String(app?.platform || '').toLowerCase();
-                    const url = String(app?.url || '');
-                    const id = String(app?.id || '');
-                    return platform === 'webapp' && (
-                        !url || url.includes('/manifest.json') ||
-                        id === '/' || id.includes('raja-ai-bot.up.railway.app')
-                    );
-                });
-            } catch (_) {
-                rajaInstalledPwaDetected = false;
-            }
-            rajaInstalledPwaCheckDone = true;
-            return rajaInstalledPwaDetected;
-        }
-
         function setInstallButtonVisible() {
             const btn = document.getElementById('installAppBtn');
             if (!btn) return;
@@ -7141,7 +7111,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             btn.style.opacity = '1';
             btn.style.cursor = 'pointer';
 
-            if (isRajaStandalone() || rajaInstalledPwaDetected) {
+            if (isRajaStandalone()) {
                 btn.innerText = '✓ APP INSTALLED';
                 btn.setAttribute('aria-label','RAJA AI is installed');
                 btn.dataset.installState = 'installed';
@@ -7185,19 +7155,16 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         rajaCleanLegacyInstallQuery();
-        // First detect an already-installed WebAPK/PWA. Chrome intentionally does not
-        // fire beforeinstallprompt again for an app that is already installed.
-        // Without this check the browser page could show PREPARING INSTALL forever.
+        // Chromium-family browsers should never advertise a clickable INSTALL button
+        // before the browser has actually exposed its trusted native install event.
+        // This avoids the misleading fallback popup seen on Android/Samsung/Chrome.
+        try {
+            const initialInstallEnv = rajaInstallEnvironment();
+            if (!isRajaStandalone() && initialInstallEnv.chromium && !deferredInstallPrompt) {
+                rajaInstallIntent = true;
+            }
+        } catch (_) {}
         setInstallButtonVisible();
-        detectRajaInstalledPWA().finally(() => {
-            try {
-                const initialInstallEnv = rajaInstallEnvironment();
-                if (!isRajaStandalone() && !rajaInstalledPwaDetected && initialInstallEnv.chromium && !deferredInstallPrompt) {
-                    rajaInstallIntent = true;
-                }
-            } catch (_) {}
-            setInstallButtonVisible();
-        });
 
         // Chromium browsers expose a trusted native install event only after the
         // browser's own installability/engagement checks pass. Save it and use it
@@ -7222,13 +7189,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         window.addEventListener('appinstalled', () => {
             deferredInstallPrompt = null;
             rajaInstallIntent = false;
-            rajaInstalledPwaDetected = true;
-            rajaInstalledPwaCheckDone = true;
             setInstallButtonVisible();
         });
 
         async function installPWA() {
-            if (isRajaStandalone() || rajaInstalledPwaDetected) {
+            if (isRajaStandalone()) {
                 setInstallButtonVisible();
                 return;
             }
@@ -7291,14 +7256,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 setInstallButtonVisible();
             }, 36000);
         }
-
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState !== 'visible') return;
-            detectRajaInstalledPWA().finally(setInstallButtonVisible);
-        });
-        window.addEventListener('focus', () => {
-            detectRajaInstalledPWA().finally(setInstallButtonVisible);
-        });
 
         // =========================================================
         // GLOBAL PWA AUTO-UPDATE
@@ -10496,8 +10453,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 title:'RAJA AI · Test Alert',
                 options:{
                     body:'Notifications are ready on this device.',
-                    icon:'/raja-ai-icon-192-v2.png',
-                    badge:'/raja-ai-icon-192-v2.png',
+                    icon:'/raja-ai-icon-192-v3.png',
+                    badge:'/raja-ai-icon-192-v3.png',
                     tag:'raja-test',
                     renotify:false,
                     data:{ url:'/' }
@@ -10514,8 +10471,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 title:'RAJA AI · SIGNAL CONFIRMED',
                 options:{
                     body,
-                    icon:'/raja-ai-icon-192-v2.png',
-                    badge:'/raja-ai-icon-192-v2.png',
+                    icon:'/raja-ai-icon-192-v3.png',
+                    badge:'/raja-ai-icon-192-v3.png',
                     tag:'raja-live-signal',
                     renotify:true,
                     requireInteraction:false,
@@ -11058,8 +11015,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         title:'RAJA AI · VIP EXPIRY ALERT',
                         options:{
                             body:message,
-                            icon:'/raja-ai-icon-192-v2.png',
-                            badge:'/raja-ai-icon-192-v2.png',
+                            icon:'/raja-ai-icon-192-v3.png',
+                            badge:'/raja-ai-icon-192-v3.png',
                             tag:'raja-license-expiry',
                             data:{url:'/'}
                         }
