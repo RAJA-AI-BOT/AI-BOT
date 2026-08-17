@@ -1570,6 +1570,16 @@
         .history-replay-btn { border:1px solid rgba(96,239,255,.35); background:rgba(96,239,255,.08); color:#60efff; font-size:7px; font-weight:900; padding:4px 6px; border-radius:5px; cursor:pointer; }
         .settings-section { background:rgba(2,8,18,.72); border:1px solid rgba(96,239,255,.16); border-radius:9px; padding:8px; margin-bottom:7px; text-align:left; }
         .settings-section h4 { color:#60efff; font-size:9px; margin-bottom:6px; text-transform:uppercase; }
+        .raja-voice-controls { margin-top:7px; padding-top:7px; border-top:1px solid rgba(96,239,255,.10); }
+        .raja-voice-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; }
+        .raja-voice-field label { display:block; color:#8da8bd; font-size:7px; font-weight:900; letter-spacing:.45px; text-transform:uppercase; margin-bottom:4px; }
+        .raja-voice-field select { min-height:34px; font-size:9px; font-weight:850; }
+        .raja-voice-test-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin-top:7px; }
+        .raja-voice-test-btn { border:1px solid rgba(96,239,255,.28); background:linear-gradient(180deg,rgba(11,28,45,.96),rgba(4,14,27,.96)); color:#dffbff; border-radius:7px; min-height:33px; padding:7px 8px; cursor:pointer; font-size:8px; font-weight:950; letter-spacing:.25px; }
+        .raja-voice-test-btn:hover { border-color:rgba(0,255,135,.55); box-shadow:0 0 12px rgba(0,255,135,.10); }
+        .raja-voice-status { margin-top:6px; color:#7f9bb0; font-size:7px; line-height:1.45; font-weight:750; }
+        .raja-voice-status strong { color:#60efff; }
+        @media(max-width:520px) { .raja-voice-grid,.raja-voice-test-row { grid-template-columns:1fr 1fr; } }
         .guard-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:5px; }
         .guard-grid input { width:100%; padding:6px; border-radius:6px; border:1px solid rgba(96,239,255,.22); background:#050b16; color:#fff; font-size:9px; }
         .switch-row { display:flex; align-items:center; justify-content:space-between; gap:8px; color:#cbd5e1; font-size:9px; }
@@ -6440,7 +6450,34 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 <div class="inline-title">⚙️ AI Engine Settings</div>
                                 <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Min TF (4–6)</label><input id="customMinTf" type="number" min="4" max="6" value="4" oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="60" max="100" value="66.7" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="65" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
                                 <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
-                                <div class="settings-section"><h4>Voice Alerts</h4><div class="switch-row"><span>Speak signal aloud (example: “USD CAD, Down signal, one minute”)</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div></div>
+                                <div class="settings-section" id="rajaVoiceSettingsSection">
+                                    <h4>🔊 Voice Alerts · Clear Male / Female</h4>
+                                    <div class="switch-row"><span>Speak signal + entry countdown aloud</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div>
+                                    <div class="raja-voice-controls">
+                                        <div class="raja-voice-grid">
+                                            <div class="raja-voice-field">
+                                                <label for="rajaVoiceGender">Voice Type</label>
+                                                <select id="rajaVoiceGender" onchange="setRajaVoiceGender(this.value)">
+                                                    <option value="female">👩 Female · Clear</option>
+                                                    <option value="male">👨 Male · Clear</option>
+                                                </select>
+                                            </div>
+                                            <div class="raja-voice-field">
+                                                <label for="rajaVoiceSpeed">Voice Speed</label>
+                                                <select id="rajaVoiceSpeed" onchange="setRajaVoiceSpeed(this.value)">
+                                                    <option value="slow">Slow · Extra Clear</option>
+                                                    <option value="normal">Normal · Clear</option>
+                                                    <option value="fast">Fast</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="raja-voice-test-row">
+                                            <button type="button" class="raja-voice-test-btn" onclick="testRajaVoice('female')">👩 TEST FEMALE</button>
+                                            <button type="button" class="raja-voice-test-btn" onclick="testRajaVoice('male')">👨 TEST MALE</button>
+                                        </div>
+                                        <div id="rajaVoiceStatus" class="raja-voice-status">Loading the clearest English system voice available on this device…</div>
+                                    </div>
+                                </div>
 
                                 <div class="settings-section">
                                     <h4>Appearance & Safety</h4>
@@ -6679,6 +6716,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         let scanMode = 'SAFE';
         try { localStorage.setItem('raja_scan_mode', 'SAFE'); } catch (_) {}
         let voiceAlertEnabled = localStorage.getItem('raja_voice_alert') === 'true';
+        let rajaVoiceGender = localStorage.getItem('raja_voice_gender') === 'male' ? 'male' : 'female';
+        let rajaVoiceSpeed = ['slow','normal','fast'].includes(localStorage.getItem('raja_voice_speed')) ? localStorage.getItem('raja_voice_speed') : 'normal';
+        let rajaSpeechVoices = [];
         let guardSettings = safeJsonParse(localStorage.getItem('raja_guard_settings'), { enabled:true, maxTrades:20, maxLosses:5 });
         let customScanSettings = safeJsonParse(localStorage.getItem('raja_custom_scan_settings'), { min_tf:4, min_agreement:66.7, min_score:65, vol_min:0, vol_max:3 });
         let deferredInstallPrompt = null;
@@ -6765,17 +6805,154 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         function toggleVoiceAlert(enabled) {
             voiceAlertEnabled = Boolean(enabled);
             localStorage.setItem('raja_voice_alert', voiceAlertEnabled ? 'true' : 'false');
+            updateRajaVoiceStatus();
+        }
+
+        function setRajaVoiceGender(value) {
+            rajaVoiceGender = value === 'male' ? 'male' : 'female';
+            localStorage.setItem('raja_voice_gender', rajaVoiceGender);
+            updateRajaVoiceStatus();
+        }
+
+        function setRajaVoiceSpeed(value) {
+            rajaVoiceSpeed = ['slow','normal','fast'].includes(value) ? value : 'normal';
+            localStorage.setItem('raja_voice_speed', rajaVoiceSpeed);
+            updateRajaVoiceStatus();
+        }
+
+        function rajaRefreshSpeechVoices() {
+            if (!('speechSynthesis' in window)) {
+                rajaSpeechVoices = [];
+                updateRajaVoiceStatus();
+                return rajaSpeechVoices;
+            }
+            try {
+                const voices = window.speechSynthesis.getVoices() || [];
+                if (voices.length) rajaSpeechVoices = voices.slice();
+            } catch (_) {}
+            updateRajaVoiceStatus();
+            return rajaSpeechVoices;
+        }
+
+        function rajaVoiceScore(voice, gender) {
+            const name = String(voice?.name || '').toLowerCase();
+            const lang = String(voice?.lang || '').toLowerCase();
+            let score = lang === 'en-us' ? 100 : (lang.startsWith('en-us') ? 95 : (lang.startsWith('en-gb') ? 85 : (lang.startsWith('en') ? 70 : 0)));
+
+            const femaleNames = ['female','samantha','zira','aria','jenny','ava','susan','karen','moira','tessa','victoria','serena','hazel','salli','joanna','kendra','kimberly','amy','emma','olivia','sonia','libby','natasha'];
+            const maleNames = ['male','david','mark','guy','george','daniel','alex','fred','ralph','thomas','ryan','christopher','roger','matthew','brian','joey','justin','arthur','liam'];
+            const preferred = gender === 'male' ? maleNames : femaleNames;
+            const opposite = gender === 'male' ? femaleNames : maleNames;
+
+            if (preferred.some(k => name.includes(k))) score += 160;
+            if (opposite.some(k => name.includes(k))) score -= 110;
+            if (/natural|neural|enhanced|premium|online/.test(name)) score += 35;
+            if (/google|microsoft|apple|siri|samsung/.test(name)) score += 22;
+            if (voice?.default) score += 7;
+            if (voice?.localService) score += 4;
+            return score;
+        }
+
+        function getRajaPreferredVoice(gender = rajaVoiceGender) {
+            let voices = rajaSpeechVoices;
+            if (!voices.length && 'speechSynthesis' in window) {
+                try {
+                    const fresh = window.speechSynthesis.getVoices() || [];
+                    if (fresh.length) {
+                        rajaSpeechVoices = fresh.slice();
+                        voices = rajaSpeechVoices;
+                    }
+                } catch (_) {}
+            }
+            if (!voices.length) return null;
+            const english = voices.filter(v => String(v?.lang || '').toLowerCase().startsWith('en'));
+            const pool = english.length ? english : voices;
+            return pool.slice().sort((a,b) => rajaVoiceScore(b, gender) - rajaVoiceScore(a, gender))[0] || null;
+        }
+
+        function getRajaVoiceRate() {
+            return rajaVoiceSpeed === 'slow' ? 0.82 : (rajaVoiceSpeed === 'fast' ? 1.06 : 0.92);
+        }
+
+        function rajaSpokenExpiry(expiry) {
+            const map = {
+                '15s':'fifteen second', '30s':'thirty second',
+                '1m':'one minute', '2m':'two minute', '5m':'five minute',
+                '10m':'ten minute', '15m':'fifteen minute', '30m':'thirty minute'
+            };
+            return map[String(expiry || '').toLowerCase()] || String(expiry || '').replace('m',' minute').replace('s',' second');
+        }
+
+        function speakRajaText(text, options = {}) {
+            const force = Boolean(options.force);
+            if ((!voiceAlertEnabled && !force) || !('speechSynthesis' in window)) return false;
+            try {
+                if (options.cancel !== false) window.speechSynthesis.cancel();
+                const gender = options.gender === 'male' ? 'male' : (options.gender === 'female' ? 'female' : rajaVoiceGender);
+                const utterance = new SpeechSynthesisUtterance(String(text || ''));
+                const voice = getRajaPreferredVoice(gender);
+                if (voice) {
+                    utterance.voice = voice;
+                    utterance.lang = voice.lang || 'en-US';
+                } else {
+                    utterance.lang = 'en-US';
+                }
+                utterance.rate = getRajaVoiceRate();
+                // Keep the pitch difference subtle: distinct male/female character without robotic distortion.
+                utterance.pitch = gender === 'male' ? 0.92 : 1.06;
+                utterance.volume = 1.0;
+                window.speechSynthesis.speak(utterance);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function updateRajaVoiceStatus() {
+            const status = document.getElementById('rajaVoiceStatus');
+            if (!status) return;
+            if (!('speechSynthesis' in window)) {
+                status.innerHTML = '⚠ Voice synthesis is not supported by this browser.';
+                return;
+            }
+            const chosen = getRajaPreferredVoice(rajaVoiceGender);
+            const label = rajaVoiceGender === 'male' ? 'Male' : 'Female';
+            const speedLabel = rajaVoiceSpeed === 'slow' ? 'Slow / Extra Clear' : (rajaVoiceSpeed === 'fast' ? 'Fast' : 'Normal / Clear');
+            const voiceName = chosen ? String(chosen.name || 'System English') : 'System English';
+            const lang = chosen ? String(chosen.lang || 'en-US') : 'en-US';
+            status.innerHTML = `<strong>${label}</strong> · ${speedLabel} · ${voiceName} (${lang})${voiceAlertEnabled ? ' · Alerts ON' : ' · Alerts OFF'}`;
+        }
+
+        function testRajaVoice(gender) {
+            const selected = gender === 'male' ? 'male' : 'female';
+            speakRajaText(
+                selected === 'male'
+                    ? 'RAJA AI. Male voice test. Market intelligence is ready.'
+                    : 'RAJA AI. Female voice test. Market intelligence is ready.',
+                { gender:selected, force:true }
+            );
+            const status = document.getElementById('rajaVoiceStatus');
+            const voice = getRajaPreferredVoice(selected);
+            if (status) status.innerHTML = `<strong>${selected === 'male' ? 'Male' : 'Female'} test</strong> · ${voice ? String(voice.name || 'System English') : 'System English'} · ${rajaVoiceSpeed === 'slow' ? 'Slow / Extra Clear' : (rajaVoiceSpeed === 'fast' ? 'Fast' : 'Normal / Clear')}`;
         }
 
         function speakSignal(signalData, isBuy) {
-            if (!voiceAlertEnabled || !('speechSynthesis' in window)) return;
+            const pair = String(signalData?.pair || '')
+                .replace(/\(OTC\)/gi, ' O T C ')
+                .replace(/[\/-]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            const direction = isBuy ? 'CALL. UP signal.' : 'PUT. DOWN signal.';
+            const expiry = rajaSpokenExpiry(selectedExpiry);
+            speakRajaText(`RAJA AI. ${pair}. ${direction} ${expiry} expiry.`);
+        }
+
+        if ('speechSynthesis' in window) {
             try {
-                window.speechSynthesis.cancel();
-                const pair = String(signalData.pair || '').replace('/', ' ');
-                const direction = isBuy ? 'Up buy' : 'Down sell';
-                const expiry = String(selectedExpiry || '').replace('m',' minute').replace('s',' second');
-                window.speechSynthesis.speak(new SpeechSynthesisUtterance(`${pair}, ${direction} signal, ${expiry}`));
-            } catch(e) {}
+                window.speechSynthesis.addEventListener('voiceschanged', rajaRefreshSpeechVoices);
+                setTimeout(rajaRefreshSpeechVoices, 80);
+                setTimeout(rajaRefreshSpeechVoices, 700);
+            } catch (_) {}
         }
 
         function localDayKey(epochSeconds) {
@@ -9256,7 +9433,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         function hydrateUpgradeSettings() {
             setScanMode(scanMode);
             const map={customMinTf:customScanSettings.min_tf,customMinAgreement:customScanSettings.min_agreement,customMinScore:customScanSettings.min_score,customVolMin:customScanSettings.vol_min,customVolMax:customScanSettings.vol_max,guardMaxTrades:guardSettings.maxTrades,guardMaxLosses:guardSettings.maxLosses};
-            Object.entries(map).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;}); const ge=document.getElementById('guardEnabled');if(ge)ge.checked=guardSettings.enabled!==false;const ve=document.getElementById('voiceAlertEnabled');if(ve)ve.checked=voiceAlertEnabled;updateDailyPerformance();
+            Object.entries(map).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;}); const ge=document.getElementById('guardEnabled');if(ge)ge.checked=guardSettings.enabled!==false;const ve=document.getElementById('voiceAlertEnabled');if(ve)ve.checked=voiceAlertEnabled;const vg=document.getElementById('rajaVoiceGender');if(vg)vg.value=rajaVoiceGender;const vs=document.getElementById('rajaVoiceSpeed');if(vs)vs.value=rajaVoiceSpeed;rajaRefreshSpeechVoices();updateRajaVoiceStatus();updateDailyPerformance();
         }
 
         function updateStabilityUI(signalData) {
@@ -13550,13 +13727,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 
     function rajaSpeak(text) {
+        if (typeof speakRajaText === 'function') {
+            speakRajaText(String(text || ''), { cancel:true });
+            return;
+        }
         if (typeof voiceAlertEnabled !== 'undefined' && !voiceAlertEnabled) return;
         if (!('speechSynthesis' in window)) return;
         try {
             const u = new SpeechSynthesisUtterance(String(text || ''));
             u.lang = 'en-US';
-            u.rate = 1;
-            u.volume = 0.85;
+            u.rate = 0.92;
+            u.volume = 1;
             window.speechSynthesis.speak(u);
         } catch (_) {}
     }
