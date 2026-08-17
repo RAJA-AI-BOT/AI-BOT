@@ -4883,6 +4883,17 @@
         @media(max-width:820px){.raja-scanning-market-badge{width:100%;margin-bottom:8px;padding:7px 8px;font-size:7.2px}.raja-scanning-market-badge strong{font-size:8px}.raja-otc-fallback-panel{padding:10px 9px}.raja-otc-fallback-btn{min-height:36px;font-size:7.5px}}
     </style>
 
+
+<style id="raja-clean-dashboard-removals-v1">
+/* User-requested clean dashboard: heatmap/chart panels removed; replay fills the row. */
+.signal-intel-bottom{
+    grid-template-columns:1fr!important;
+}
+.replay-spotlight-card{
+    width:100%!important;
+}
+</style>
+
 </head>
 <body>
 
@@ -5111,13 +5122,6 @@
                             </div>
                             <div class="shared-pill">👥 SHARED MULTI-USER SCAN</div>
                         </div>
-
-
-
-                        <section class="intel-heatmap-shell" id="premiumMarketHeatmap">
-                            <div class="intel-title-row"><div class="intel-title">◉ LIVE MARKET HEATMAP</div><div class="intel-caption" id="heatmapCaption">Latest authenticated scan snapshot · click a pair to select</div></div>
-                            <div id="marketHeatmapGrid" class="market-heatmap-grid"></div>
-                        </section>
                         <section class="setup-build-shell" id="setupBuildShell">
                             <div class="intel-title-row"><div class="intel-title">◎ SETUP BUILD-UP METER</div><div class="intel-caption">Technical setup formation · not a win probability</div></div>
                             <div class="setup-build-grid">
@@ -5350,8 +5354,7 @@
                                         <div id="candleTimer" class="signal-entry-timer">00:31</div>
                                         <div id="tradeAlert" class="signal-entry-alert">⏳ WAIT FOR CANDLE CLOSE</div>
                                     </div>
-
-                                    <div class="mini-chart-wrap"><div class="mini-chart-label">LIVE CANDLE PREVIEW · PRO CHART</div><div class="chart-legend"><span style="color:#00ff87">UP</span><span style="color:#ff5d7d">DOWN</span></div><div id="signalMiniChart" class="mini-chart-host"></div><a class="mini-chart-credit" href="https://www.tradingview.com/" target="_blank" rel="noopener">Lightweight Charts™ by TradingView</a></div>
+<div id="signalMiniChart" class="mini-chart-host"></div><a class="mini-chart-credit" href="https://www.tradingview.com/" target="_blank" rel="noopener">Lightweight Charts™ by TradingView</a></div>
 
                                     <section class="ai-explain-card" id="aiExplainCard">
                                         <div class="intel-title-row"><div class="intel-title">✦ AI EXPLANATION · WHY THIS SIGNAL</div><div class="intel-caption">Based on current closed-candle indicators</div></div>
@@ -5374,12 +5377,7 @@
                                     <div id="tfSummaryLine" class="tf-summary-line">Multi-TF: waiting for backend data...</div>
 
                                     <div class="signal-intel-bottom">
-                                        <section class="perf-heatmap-card">
-                                            <div class="intel-title-row"><div class="intel-title">▦ PERFORMANCE HEATMAP</div><div class="intel-caption">Recorded completed results</div></div>
-                                            <div class="perf-table-wrap"><table class="perf-table"><thead><tr><th>Pair</th><th>1m</th><th>2m</th><th>5m</th><th>15m</th><th>30m</th></tr></thead><tbody id="performanceHeatmapBody"><tr><td class="pair">Waiting for history</td><td>--</td><td>--</td><td>--</td><td>--</td><td>--</td></tr></tbody></table></div>
-                                            <div class="perf-note">Historical recorded outcomes only; they do not guarantee future results.</div>
-                                        </section>
-                                        <section class="replay-spotlight-card">
+<section class="replay-spotlight-card">
                                             <div class="intel-title-row"><div class="intel-title">▶ HISTORY / REPLAY</div><div class="intel-caption">Latest tracked setup</div></div>
                                             <div id="replaySpotlight" class="replay-spotlight-body"><span>No tracked signal available yet.</span></div>
                                         </section>
