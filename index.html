@@ -7024,58 +7024,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                    window.navigator.standalone === true;
         }
 
-        let rajaInstallIntent = false;
-        let rajaInstallPrepareTimer = null;
         let rajaInstalledPwaDetected = false;
-        let rajaInstalledPwaCheckDone = false;
-        const RAJA_INSTALL_HINT_KEY = 'raja_pwa_installed_hint_v1';
-
-        const RAJA_PWA_LAUNCH_PARAM = 'raja_pwa';
-        let rajaInstallBroadcast = null;
-
-        function rajaMarkInstalledFromPwaLaunch() {
-            try {
-                const url = new URL(location.href);
-                if (url.searchParams.get(RAJA_PWA_LAUNCH_PARAM) !== '1') return false;
-                rajaInstalledPwaDetected = true;
-                rajaInstalledPwaCheckDone = true;
-                rajaSetInstallHint(true);
-                url.searchParams.delete(RAJA_PWA_LAUNCH_PARAM);
-                const clean = url.pathname + (url.search ? url.search : '') + (url.hash || '');
-                history.replaceState(history.state, document.title, clean || '/');
-                return true;
-            } catch (_) {
-                return false;
-            }
-        }
-
-        function rajaInitInstallBroadcast() {
-            try {
-                if (!('BroadcastChannel' in window)) return;
-                rajaInstallBroadcast = new BroadcastChannel('raja_ai_pwa_install_state_v1');
-                rajaInstallBroadcast.onmessage = (event) => {
-                    if (event?.data?.type !== 'RAJA_PWA_INSTALLED') return;
-                    rajaInstalledPwaDetected = true;
-                    rajaInstalledPwaCheckDone = true;
-                    rajaSetInstallHint(true);
-                    setInstallButtonVisible();
-                };
-                if (isRajaStandalone() || rajaGetInstallHint()) {
-                    rajaInstallBroadcast.postMessage({ type:'RAJA_PWA_INSTALLED', ts:Date.now() });
-                }
-            } catch (_) {}
-        }
-
-        function rajaGetInstallHint() {
-            try { return localStorage.getItem(RAJA_INSTALL_HINT_KEY) === '1'; } catch (_) { return false; }
-        }
-
-        function rajaSetInstallHint(installed) {
-            try {
-                if (installed) localStorage.setItem(RAJA_INSTALL_HINT_KEY, '1');
-                else localStorage.removeItem(RAJA_INSTALL_HINT_KEY);
-            } catch (_) {}
-        }
+        let rajaInstalledPwaCheckBusy = false;
 
         function rajaInstallEnvironment() {
             const ua = String(navigator.userAgent || '');
@@ -7085,108 +7035,44 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const samsung = /SamsungBrowser/i.test(ua);
             const opera = /OPR\//i.test(ua) || (/Opera/i.test(ua) && !operaMini);
             const edge = /EdgA?\//i.test(ua) || /EdgiOS/i.test(ua);
-            const firefox = /Firefox|FxiOS/i.test(ua);
-            const chromium = !ios && (/Chrome|Chromium|CriOS/i.test(ua) || edge || opera || samsung);
-            return { ua, ios, operaMini, samsung, opera, edge, firefox, chromium };
-        }
-
-        function rajaCleanLegacyInstallQuery() {
-            try {
-                const url = new URL(location.href);
-                if (!url.searchParams.has('raja_install')) return;
-                url.searchParams.delete('raja_install');
-                const clean = url.pathname + (url.search ? url.search : '') + (url.hash || '');
-                history.replaceState(history.state, document.title, clean || '/');
-            } catch (_) {}
-        }
-
-        function rajaEnsureInstallHelpModal() {
-            let modal = document.getElementById('rajaInstallHelpModal');
-            if (modal) return modal;
-
-            modal = document.createElement('div');
-            modal.id = 'rajaInstallHelpModal';
-            modal.setAttribute('aria-hidden','true');
-            modal.style.cssText = 'position:fixed;inset:0;z-index:2147483000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(0,5,14,.76);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);';
-            modal.innerHTML = `
-                <div style="width:min(440px,100%);border:1px solid rgba(96,239,255,.38);border-radius:18px;background:linear-gradient(180deg,#071321,#030913);box-shadow:0 24px 80px rgba(0,0,0,.55),0 0 32px rgba(0,242,254,.10);padding:18px;color:#eaf8ff;font-family:inherit;">
-                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-                        <strong id="rajaInstallHelpTitle" style="font-size:15px;color:#60efff;">INSTALL RAJA AI</strong>
-                        <button id="rajaInstallHelpClose" type="button" style="border:1px solid rgba(255,255,255,.15);background:#08111d;color:#fff;border-radius:8px;padding:6px 9px;font-weight:900;cursor:pointer;">✕</button>
-                    </div>
-                    <div id="rajaInstallHelpBody" style="margin-top:12px;color:#b7cadb;font-size:12px;line-height:1.65;"></div>
-                    <button id="rajaInstallHelpDone" type="button" style="margin-top:14px;width:100%;border:0;border-radius:10px;padding:12px;background:linear-gradient(90deg,#00ff9a,#60efff);color:#021018;font-weight:950;cursor:pointer;">OK</button>
-                </div>`;
-            document.body.appendChild(modal);
-            const close = () => { modal.style.display='none'; modal.setAttribute('aria-hidden','true'); };
-            modal.querySelector('#rajaInstallHelpClose')?.addEventListener('click', close);
-            modal.querySelector('#rajaInstallHelpDone')?.addEventListener('click', close);
-            modal.addEventListener('click', (event) => { if (event.target === modal) close(); });
-            return modal;
-        }
-
-        function showRajaInstallHelp(reason = 'manual') {
-            const env = rajaInstallEnvironment();
-            const modal = rajaEnsureInstallHelpModal();
-            const title = modal.querySelector('#rajaInstallHelpTitle');
-            const body = modal.querySelector('#rajaInstallHelpBody');
-            if (!body) return;
-
-            if (env.ios) {
-                if (title) title.textContent = 'INSTALL ON iPHONE / iPAD';
-                body.innerHTML = '<b style="color:#fff">Apple requires one system confirmation step.</b><br>Tap the browser <b>Share</b> button → <b>Add to Home Screen</b> → keep <b>Open as Web App</b> enabled (when shown) → <b>Add</b>.';
-            } else if (env.operaMini) {
-                if (title) title.textContent = 'INSTALL FROM OPERA MINI';
-                body.innerHTML = 'Opera Mini does not reliably expose the native PWA install prompt to web pages. Use its menu / <b>+</b> option if <b>Add to Home Screen</b> is offered. For the full RAJA AI installed-app experience, open this same link in <b>Chrome, Edge, Samsung Internet, or full Opera</b>.';
-            } else if (env.firefox && !env.chromium) {
-                if (title) title.textContent = 'INSTALL RAJA AI';
-                body.innerHTML = 'This browser has not exposed a direct install prompt to the page. Open the browser menu and choose <b>Install</b> or <b>Add to Home Screen</b> when available.';
-            } else {
-                if (title) title.textContent = 'INSTALL / OPEN RAJA AI';
-                body.innerHTML = 'If RAJA AI is already installed, open the installed app once and return here; this page will switch to <b>APP INSTALLED</b>. If it is not installed and the native popup is not available, use the browser menu and choose <b>Install app</b> / <b>Add to Home Screen</b>. When Chromium exposes its native install event, this same button opens the native Install/Cancel dialog directly.';
-            }
-
-            modal.style.display = 'flex';
-            modal.setAttribute('aria-hidden','false');
+            const chromium = !ios && (/Chrome|Chromium/i.test(ua) || edge || opera || samsung);
+            return { ios, operaMini, samsung, opera, edge, chromium };
         }
 
         async function detectRajaInstalledPWA() {
             if (isRajaStandalone()) {
                 rajaInstalledPwaDetected = true;
-                rajaInstalledPwaCheckDone = true;
-                rajaSetInstallHint(true);
                 return true;
             }
 
-            // Keep a same-browser hint from a previous successful install/app launch.
-            rajaInstalledPwaDetected = rajaGetInstallHint();
+            // Never keep a permanent localStorage "installed" flag. If the user
+            // uninstalls the PWA, this page must be able to return to INSTALL APP.
+            rajaInstalledPwaDetected = false;
 
-            if (!('getInstalledRelatedApps' in navigator)) {
-                rajaInstalledPwaCheckDone = true;
+            if (rajaInstalledPwaCheckBusy || typeof navigator.getInstalledRelatedApps !== 'function') {
                 return rajaInstalledPwaDetected;
             }
 
+            rajaInstalledPwaCheckBusy = true;
             try {
                 const apps = await navigator.getInstalledRelatedApps();
-                const detected = Array.isArray(apps) && apps.some(app => {
+                rajaInstalledPwaDetected = Array.isArray(apps) && apps.some(app => {
                     const platform = String(app?.platform || '').toLowerCase();
                     const url = String(app?.url || '');
                     const id = String(app?.id || '');
+                    const resolvedId = location.origin + '/';
                     return platform === 'webapp' && (
                         url.includes('/manifest.json') ||
                         id === '/' ||
-                        id === location.origin + '/' ||
-                        id.includes('raja-ai-bot.up.railway.app')
+                        id === resolvedId ||
+                        id === location.origin
                     );
                 });
-                rajaInstalledPwaDetected = detected;
-                rajaSetInstallHint(detected);
             } catch (_) {
-                // If the browser exposes the API but it temporarily fails, keep the local hint.
-                rajaInstalledPwaDetected = rajaGetInstallHint();
+                rajaInstalledPwaDetected = false;
+            } finally {
+                rajaInstalledPwaCheckBusy = false;
             }
-
-            rajaInstalledPwaCheckDone = true;
             return rajaInstalledPwaDetected;
         }
 
@@ -7194,171 +7080,120 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const btn = document.getElementById('installAppBtn');
             if (!btn) return;
             const env = rajaInstallEnvironment();
+
             btn.style.display = 'inline-flex';
             btn.disabled = false;
             btn.style.opacity = '1';
             btn.style.cursor = 'pointer';
 
-            if (isRajaStandalone() || rajaInstalledPwaDetected || rajaGetInstallHint()) {
+            if (isRajaStandalone() || rajaInstalledPwaDetected) {
                 btn.innerText = '✓ APP INSTALLED';
-                btn.setAttribute('aria-label','RAJA AI is installed');
                 btn.dataset.installState = 'installed';
-                return;
-            }
-
-            if (deferredInstallPrompt) {
-                btn.innerText = '⬇ INSTALL APP';
-                btn.setAttribute('aria-label','Install RAJA AI app');
-                btn.dataset.installState = 'ready';
+                btn.setAttribute('aria-label', 'RAJA AI is installed');
                 return;
             }
 
             if (env.ios) {
                 btn.innerText = '＋ ADD TO HOME';
-                btn.setAttribute('aria-label','Add RAJA AI to iPhone or iPad Home Screen');
                 btn.dataset.installState = 'ios';
-                return;
-            }
-
-            if (env.operaMini) {
-                btn.innerText = '＋ ADD TO HOME';
-                btn.setAttribute('aria-label','Add RAJA AI from Opera Mini');
-                btn.dataset.installState = 'opera-mini';
+                btn.setAttribute('aria-label', 'Add RAJA AI to Home Screen');
                 return;
             }
 
             btn.innerText = '⬇ INSTALL APP';
-            btn.setAttribute('aria-label','Install or check RAJA AI app');
-            btn.dataset.installState = deferredInstallPrompt ? 'ready' : 'checking';
-            btn.style.opacity = '1';
-            btn.disabled = false;
-            btn.style.cursor = 'pointer';
+            btn.dataset.installState = deferredInstallPrompt ? 'ready' : 'waiting-native';
+            btn.setAttribute('aria-label', 'Install RAJA AI app');
         }
 
-        rajaCleanLegacyInstallQuery();
-        rajaMarkInstalledFromPwaLaunch();
-        if (isRajaStandalone()) {
-            rajaInstalledPwaDetected = true;
-            rajaInstalledPwaCheckDone = true;
-            rajaSetInstallHint(true);
-        }
-        rajaInitInstallBroadcast();
-        // Detect an already-installed PWA first. Browsers intentionally do not fire
-        // beforeinstallprompt again for an app that is already installed.
+        // Initial state: never show PREPARING. Browser mode starts with INSTALL APP;
+        // installed mode starts with APP INSTALLED.
         setInstallButtonVisible();
-        detectRajaInstalledPWA().finally(() => {
-            try {
-                const initialInstallEnv = rajaInstallEnvironment();
-                if (!isRajaStandalone() && !rajaInstalledPwaDetected && initialInstallEnv.chromium && !deferredInstallPrompt) {
-                    rajaInstallIntent = true;
-                }
-            } catch (_) {}
-            setInstallButtonVisible();
-        });
+        detectRajaInstalledPWA().finally(setInstallButtonVisible);
 
-        // Chromium browsers expose a trusted native install event only after the
-        // browser's own installability/engagement checks pass. Save it and use it
-        // from the user's INSTALL APP tap; no RAJA AI alert is inserted in between.
         window.addEventListener('beforeinstallprompt', (event) => {
+            // Chromium only permits direct install when it supplies this trusted event.
             event.preventDefault();
             deferredInstallPrompt = event;
-            rajaInstallIntent = false;
-            if (rajaInstallPrepareTimer) clearTimeout(rajaInstallPrepareTimer);
-            rajaInstallPrepareTimer = null;
+            rajaInstalledPwaDetected = false;
             setInstallButtonVisible();
-            const btn = document.getElementById('installAppBtn');
-            if (btn) {
-                btn.animate?.([
-                    { transform:'scale(1)', boxShadow:'0 0 0 rgba(0,255,135,0)' },
-                    { transform:'scale(1.04)', boxShadow:'0 0 22px rgba(0,255,135,.45)' },
-                    { transform:'scale(1)', boxShadow:'0 0 0 rgba(0,255,135,0)' }
-                ], { duration:700, iterations:2 });
-            }
         });
 
         window.addEventListener('appinstalled', () => {
             deferredInstallPrompt = null;
-            rajaInstallIntent = false;
             rajaInstalledPwaDetected = true;
-            rajaInstalledPwaCheckDone = true;
-            rajaSetInstallHint(true);
-            try { rajaInstallBroadcast?.postMessage({ type:'RAJA_PWA_INSTALLED', ts:Date.now() }); } catch (_) {}
             setInstallButtonVisible();
         });
 
-        // Re-check whenever the browser/app returns to the foreground. This catches
-        // installs completed from the browser menu without requiring a page reload.
-        window.addEventListener('focus', () => {
-            detectRajaInstalledPWA().finally(setInstallButtonVisible);
-            if (isRajaStandalone() || rajaGetInstallHint()) {
-                try { rajaInstallBroadcast?.postMessage({ type:'RAJA_PWA_INSTALLED', ts:Date.now() }); } catch (_) {}
-            }
-        });
+        async function refreshRajaInstallState() {
+            await detectRajaInstalledPWA();
+            setInstallButtonVisible();
+        }
+
+        window.addEventListener('focus', refreshRajaInstallState);
         document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState !== 'visible') return;
-            detectRajaInstalledPWA().finally(setInstallButtonVisible);
+            if (document.visibilityState === 'visible') refreshRajaInstallState();
         });
 
         async function installPWA() {
-            if (isRajaStandalone() || rajaInstalledPwaDetected || rajaGetInstallHint()) {
-                rajaSetInstallHint(true);
+            if (isRajaStandalone()) {
+                rajaInstalledPwaDetected = true;
+                setInstallButtonVisible();
+                return;
+            }
+
+            // Re-check on every tap so uninstall is reflected without stale state.
+            if (await detectRajaInstalledPWA()) {
                 setInstallButtonVisible();
                 return;
             }
 
             const env = rajaInstallEnvironment();
 
-            // Future Chromium Web Install API, when a browser exposes it.
-            if (typeof navigator.install === 'function') {
-                try {
-                    await navigator.install();
-                    return;
-                } catch (_) {
-                    // Fall through to the established beforeinstallprompt flow.
-                }
-            }
-
             if (deferredInstallPrompt) {
+                const promptEvent = deferredInstallPrompt;
+                deferredInstallPrompt = null;
                 try {
-                    const promptEvent = deferredInstallPrompt;
-                    deferredInstallPrompt = null;
                     await promptEvent.prompt();
                     const choice = await promptEvent.userChoice;
-                    if (choice && choice.outcome === 'accepted') {
-                        rajaInstallIntent = false;
+                    if (choice?.outcome === 'accepted') {
+                        rajaInstalledPwaDetected = true;
                     }
                 } catch (err) {
                     console.warn('RAJA AI native install prompt error:', err);
-                } finally {
-                    setInstallButtonVisible();
+                }
+                setInstallButtonVisible();
+                return;
+            }
+
+            // iOS/iPadOS does not expose beforeinstallprompt. Best available action:
+            // open the native share sheet when supported, then the user selects
+            // Add to Home Screen. No custom blocking modal is shown.
+            if (env.ios) {
+                if (navigator.share) {
+                    try {
+                        await navigator.share({ title:'RAJA AI PREMIUM', url:location.href });
+                    } catch (_) {}
+                } else {
+                    const btn = document.getElementById('installAppBtn');
+                    if (btn) {
+                        btn.innerText = 'SHARE → ADD TO HOME';
+                        setTimeout(setInstallButtonVisible, 3500);
+                    }
                 }
                 return;
             }
 
-            if (env.ios || env.operaMini || (env.firefox && !env.chromium)) {
-                showRajaInstallHelp('manual');
-                return;
+            // If Chromium has not supplied beforeinstallprompt, JavaScript cannot
+            // force its native install dialog. Keep the button visible and provide
+            // a non-blocking hint instead of PREPARING or a popup/modal.
+            const btn = document.getElementById('installAppBtn');
+            if (btn) {
+                btn.innerText = env.operaMini ? 'MENU → ADD TO HOME' : 'MENU ⋮ → INSTALL APP';
+                btn.disabled = false;
+                setTimeout(() => {
+                    detectRajaInstalledPWA().finally(setInstallButtonVisible);
+                }, 3500);
             }
-
-            // No native event is currently available. Re-check installed state
-            // first; if still unknown, keep INSTALL APP clickable and show the
-            // browser's supported manual install path instead of a stuck PREPARING state.
-            rajaInstallIntent = true;
-            try {
-                const detected = await detectRajaInstalledPWA();
-                if (detected || isRajaStandalone() || rajaGetInstallHint()) {
-                    setInstallButtonVisible();
-                    return;
-                }
-                fetch('/manifest.json?install_check=' + Date.now(), { cache:'no-store' }).catch(()=>{});
-                if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.getRegistration('/')
-                        .then(reg => reg ? reg.update() : null)
-                        .catch(()=>{});
-                }
-            } catch (_) {}
-            setInstallButtonVisible();
-            showRajaInstallHelp('manual');
         }
 
         // =========================================================
