@@ -290,11 +290,11 @@
             border-color: rgba(0, 255, 135, .70);
             color: #00ff87;
         }
-        /* Desktop/laptop: move FULL SCREEN away from the top-right button group so it does not cover the controls below. */
+        /* Desktop/laptop uses an inline FULL SCREEN control inside the Auto Re-Scan stack.
+           The original floating control stays for mobile/tablet only. */
         @media (min-width: 821px) {
-            .raja-fullscreen-btn {
-                top: 46px;
-                right: 260px;
+            #rajaFullscreenBtn {
+                display: none !important;
             }
         }
         @media (max-width: 700px) {
@@ -347,6 +347,34 @@
         .rescan-card { min-width:172px; text-align:left; background:linear-gradient(135deg,rgba(0,255,135,.10),rgba(56,189,248,.08)); border:1px solid rgba(0,255,135,.28); color:#eaffff; border-radius:10px; padding:8px 11px; cursor:pointer; }
         .rescan-card .rescan-title { display:block; color:#00ff87; font-size:10px; font-weight:900; }
         .rescan-card .rescan-time { display:block; margin-top:2px; color:#a9bad0; font-size:9px; }
+        .rescan-stack { display:flex; flex-direction:column; align-items:stretch; gap:5px; min-width:172px; }
+        .raja-fullscreen-inline {
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            gap:6px;
+            width:100%;
+            min-height:31px;
+            padding:6px 10px;
+            border:1px solid rgba(96,239,255,.52);
+            border-radius:8px;
+            background:rgba(3,15,28,.92);
+            color:#60efff;
+            font-size:9px;
+            font-weight:900;
+            letter-spacing:.35px;
+            text-transform:uppercase;
+            cursor:pointer;
+            box-shadow:0 0 14px rgba(0,242,254,.10);
+            transition:transform .18s ease,border-color .18s ease,color .18s ease,background .18s ease;
+        }
+        .raja-fullscreen-inline:hover { transform:translateY(-1px); border-color:#00ff87; color:#00ff87; background:rgba(4,18,25,.96); }
+        .raja-fullscreen-inline:active { transform:scale(.98); }
+        .raja-fullscreen-inline.is-fullscreen { border-color:rgba(0,255,135,.70); color:#00ff87; }
+        @media (max-width:820px) {
+            .raja-fullscreen-inline { display:none !important; }
+            .rescan-stack { display:contents; min-width:0; }
+        }
         .main-panel-card { border-radius:18px; padding:18px; position:relative; overflow:hidden; }
         .main-panel-card::before { content:""; position:absolute; inset:-30% 48% auto -20%; height:240px; background:radial-gradient(circle,rgba(0,255,135,.12),transparent 70%); pointer-events:none; }
         .scan-heading-row { position:relative; display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:14px; }
@@ -2093,6 +2121,7 @@
                 gap: 5px !important;
             }
             #scanSessionChip,
+            .rescan-stack,
             #autoRescanCard {
                 grid-column: 1 / -1;
             }
@@ -5735,10 +5764,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         <div class="market-banner">💡 Best Market Hours: <strong>9:00 AM – 5:00 PM</strong>  🚫 <strong>Avoid Trade on Saturday and Sunday</strong></div>
                         <div class="top-actions">
                             <div id="scanSessionChip" class="scan-session-chip"><span class="session-pulse"></span><span id="scanSessionText">Scan Session Active · 0%</span></div>
-                            <button class="rescan-card" id="autoRescanCard" onclick="toggleAutoRescan()">
-                                <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
-                                <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
-                            </button>
+                            <div class="rescan-stack">
+                                <button class="rescan-card" id="autoRescanCard" onclick="toggleAutoRescan()">
+                                    <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
+                                    <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
+                                </button>
+                                <button id="rajaFullscreenDesktopBtn" class="raja-fullscreen-inline" type="button"
+                                        onclick="toggleRajaFullscreen()" title="Open dashboard in full screen"
+                                        aria-label="Open dashboard in full screen">
+                                    <span class="fs-icon">⛶</span>
+                                    <span class="fs-label">FULL SCREEN</span>
+                                </button>
+                            </div>
                             <button id="installAppBtn" class="top-btn install-btn" style="display:none" onclick="installPWA()">⬇ INSTALL APP</button>
                             <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
                             <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
@@ -9248,17 +9285,22 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function updateRajaFullscreenButton() {
-            const btn = document.getElementById('rajaFullscreenBtn');
-            const icon = document.getElementById('rajaFullscreenIcon');
-            const label = document.getElementById('rajaFullscreenLabel');
-            if (!btn || !icon || !label) return;
-
             const active = !!rajaFullscreenElement();
-            btn.classList.toggle('is-fullscreen', active);
-            icon.textContent = active ? '✕' : '⛶';
-            label.textContent = active ? 'EXIT FULL SCREEN' : 'FULL SCREEN';
-            btn.title = active ? 'Exit full screen' : 'Open dashboard in full screen';
-            btn.setAttribute('aria-label', btn.title);
+            const title = active ? 'Exit full screen' : 'Open dashboard in full screen';
+            const labelText = active ? 'EXIT FULL SCREEN' : 'FULL SCREEN';
+            const iconText = active ? '✕' : '⛶';
+
+            [document.getElementById('rajaFullscreenBtn'), document.getElementById('rajaFullscreenDesktopBtn')]
+                .filter(Boolean)
+                .forEach(function (btn) {
+                    btn.classList.toggle('is-fullscreen', active);
+                    const icon = btn.querySelector('.fs-icon');
+                    const label = btn.querySelector('.fs-label');
+                    if (icon) icon.textContent = iconText;
+                    if (label) label.textContent = labelText;
+                    btn.title = title;
+                    btn.setAttribute('aria-label', title);
+                });
         }
 
         async function toggleRajaFullscreen() {
