@@ -7918,11 +7918,10 @@
                 { value:'ForexOTC', label:'⚡ Forex OTC Market' }
             ],
             PocketOption: [
-                { value:'CryptoLive', label:'🔵 Pocket Crypto Live Market · 7' },
-                { value:'ForexLive', label:'🔵 Pocket Forex Live Market · 21' },
-                { value:'ForexOTC', label:'🔵 Pocket Forex OTC Market · 30' },
-                { value:'CryptoOTC', label:'🔵 Pocket Crypto OTC Market · 14' },
-                { value:'StocksOTC', label:'🔵 Pocket Stocks OTC Market · 13' }
+                { value:'CryptoLive', label:'🪙 Crypto Live Market' },
+                { value:'CryptoOTC', label:'🪙 Crypto OTC Market' },
+                { value:'ForexLive', label:'🟢 Forex Live Market' },
+                { value:'ForexOTC', label:'⚡ Forex OTC Market' }
             ]
         };
 
@@ -8415,6 +8414,9 @@
             startScanCandleTimer();
             startScanAnimation();
             renderPrimaryView();
+            // Mobile: immediately lock the scan action dock to the viewport so
+            // HOME / SETTINGS / STOP SCAN stay reachable without page scrolling.
+            if (typeof syncV32StopControls === 'function') syncV32StopControls();
 
             const scanConsoleEarly = document.getElementById('liveScanConsole');
             if (scanConsoleEarly) {
@@ -13254,6 +13256,67 @@
     }, 500);
 })();
 </script>
+
+
+<style id="raja-mobile-scanning-dock-fix-v34">
+/* Mobile scan dock reliability fix.
+   Some Android/Samsung browsers treat an ancestor with backdrop-filter as the
+   containing block for position:fixed descendants. During an active scan we
+   remove that containing-block trigger and force the command bar to the viewport. */
+@media (max-width:820px) {
+    body.raja-mobile-scanning .container,
+    body.v32-scan-running .container {
+        -webkit-backdrop-filter:none !important;
+        backdrop-filter:none !important;
+        filter:none !important;
+        transform:none !important;
+        perspective:none !important;
+    }
+
+    body.raja-mobile-scanning #mainAppContent,
+    body.v32-scan-running #mainAppContent {
+        min-height:0 !important;
+        height:auto !important;
+        padding-bottom:calc(92px + env(safe-area-inset-bottom)) !important;
+    }
+
+    body.raja-mobile-scanning #mainAppContent::after,
+    body.v32-scan-running #mainAppContent::after {
+        display:none !important;
+        height:0 !important;
+    }
+
+    body.raja-mobile-scanning .raja-mobile-command-bar,
+    body.v32-scan-running .raja-mobile-command-bar {
+        display:block !important;
+        visibility:visible !important;
+        opacity:1 !important;
+        position:fixed !important;
+        left:6px !important;
+        right:6px !important;
+        top:auto !important;
+        bottom:max(6px, env(safe-area-inset-bottom)) !important;
+        width:auto !important;
+        max-width:620px !important;
+        margin:0 auto !important;
+        transform:none !important;
+        z-index:2147483600 !important;
+        pointer-events:auto !important;
+    }
+
+    body.raja-mobile-scanning .raja-mobile-command-actions.triple,
+    body.v32-scan-running .raja-mobile-command-actions.triple {
+        grid-template-columns:88px 108px minmax(0,1fr) !important;
+    }
+}
+
+@media (max-width:390px) {
+    body.raja-mobile-scanning .raja-mobile-command-actions.triple,
+    body.v32-scan-running .raja-mobile-command-actions.triple {
+        grid-template-columns:74px 94px minmax(0,1fr) !important;
+    }
+}
+</style>
 
 </body>
 </html>
