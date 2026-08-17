@@ -11221,5 +11221,192 @@
     })();
     </script>
 
+
+<script id="raja-premium-sound-addon-v1">
+(() => {
+    /* Sound-only add-on. No scan, indicator, layout, broker or feed logic is changed. */
+    let rajaSoundHistoryReady = false;
+    const rajaKnownResults = new Map();
+    let rajaCountdownSignalKey = '';
+    const rajaCountdownDone = new Set();
+    const rajaExpiryDone = new Set();
+
+    function rajaTone(notes, options = {}) {
+        if (typeof soundEnabled !== 'undefined' && !soundEnabled) return;
+        try {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+
+            const now = audioCtx.currentTime;
+            const gap = Number(options.gap || 0.09);
+            const duration = Number(options.duration || 0.16);
+            const gainValue = Number(options.gain || 0.16);
+
+            (notes || []).forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                const start = now + i * gap;
+                osc.type = options.type || 'sine';
+                osc.frequency.setValueAtTime(Number(freq), start);
+                gain.gain.setValueAtTime(gainValue, start);
+                gain.gain.exponentialRampToValueAtTime(0.005, start + duration);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(start);
+                osc.stop(start + duration + 0.01);
+            });
+        } catch (_) {}
+    }
+
+    function rajaSpeak(text) {
+        if (typeof voiceAlertEnabled !== 'undefined' && !voiceAlertEnabled) return;
+        if (!('speechSynthesis' in window)) return;
+        try {
+            const u = new SpeechSynthesisUtterance(String(text || ''));
+            u.lang = 'en-US';
+            u.rate = 1;
+            u.volume = 0.85;
+            window.speechSynthesis.speak(u);
+        } catch (_) {}
+    }
+
+    /* Extra premium sounds */
+    function rajaAPlusAlert() {
+        rajaTone([1046, 1318, 1568, 2093, 1568, 2093], {gain:0.15, gap:0.075});
+    }
+    function rajaWinAlert() {
+        rajaTone([784, 988, 1174, 1568], {gain:0.15, gap:0.10});
+    }
+    function rajaLossAlert() {
+        rajaTone([440, 392], {gain:0.08, gap:0.16, duration:0.22, type:'triangle'});
+    }
+    function rajaExpiryAlert() {
+        rajaTone([620, 520, 420], {gain:0.10, gap:0.11, type:'triangle'});
+    }
+    function rajaCountdownAlert(n) {
+        rajaTone([860 + (10 - Number(n || 0)) * 20], {gain:0.10, duration:0.10});
+    }
+    function rajaEnterNowAlert() {
+        rajaTone([960, 1320, 1760], {gain:0.17, gap:0.08});
+    }
+
+    /* A+ = normal CALL/PUT alert first, then a short premium double alert. */
+    try {
+        const originalDisplaySignalResult = window.displaySignalResult;
+        if (typeof originalDisplaySignalResult === 'function') {
+            window.displaySignalResult = function(signalData) {
+                const result = originalDisplaySignalResult.apply(this, arguments);
+                try {
+                    if (typeof v31SignalGrade === 'function') {
+                        const gradeInfo = v31SignalGrade(
+                            Number(signalData?.confluence || signalData?.score || 0),
+                            Number(signalData?.multiTfAgreement || 0),
+                            Number(signalData?.marketStabilityScore || 0)
+                        );
+                        const grade = String(Array.isArray(gradeInfo) ? gradeInfo[0] : '');
+                        if (grade === 'A+') {
+                            setTimeout(rajaAPlusAlert, 330);
+                        }
+                    }
+                } catch (_) {}
+                return result;
+            };
+        }
+    } catch (_) {}
+
+    /* Detect newly completed backend-tracked outcomes without replaying old history on load. */
+    function rajaOutcomeWatcher() {
+        const rows = (typeof backendTrackedHistory !== 'undefined' && Array.isArray(backendTrackedHistory))
+            ? backendTrackedHistory : [];
+
+        if (!rajaSoundHistoryReady) {
+            rows.forEach(item => rajaKnownResults.set(String(item?.id || ''), String(item?.result || item?.status || '')));
+            rajaSoundHistoryReady = true;
+            return;
+        }
+
+        rows.forEach(item => {
+            const id = String(item?.id || '');
+            if (!id) return;
+
+            const nowResult = String(item?.result || '').toUpperCase();
+            const prevResult = String(rajaKnownResults.get(id) || '').toUpperCase();
+
+            if (nowResult && nowResult !== prevResult) {
+                if (nowResult === 'WIN') rajaWinAlert();
+                else if (nowResult === 'LOSS') rajaLossAlert();
+            }
+            rajaKnownResults.set(id, nowResult);
+        });
+    }
+
+    /* Entry countdown: 10, 5, 3, 2, 1, ENTER NOW. */
+    function rajaCountdownWatcher() {
+        const entryMs = (typeof activeSignalEntryEpochMs !== 'undefined')
+            ? Number(activeSignalEntryEpochMs || 0) : 0;
+        const trackedId = (typeof activeTrackedSignalId !== 'undefined')
+            ? String(activeTrackedSignalId || '') : '';
+        const key = trackedId || String(entryMs || '');
+
+        if (!entryMs || !key) return;
+
+        if (key !== rajaCountdownSignalKey) {
+            rajaCountdownSignalKey = key;
+            rajaCountdownDone.clear();
+        }
+
+        const sec = Math.ceil((entryMs - Date.now()) / 1000);
+
+        [10, 5, 3, 2, 1].forEach(n => {
+            if (sec === n && !rajaCountdownDone.has(n)) {
+                rajaCountdownDone.add(n);
+                rajaCountdownAlert(n);
+                rajaSpeak(String(n));
+            }
+        });
+
+        if (sec <= 0 && !rajaCountdownDone.has(0)) {
+            rajaCountdownDone.add(0);
+            rajaEnterNowAlert();
+            rajaSpeak('ENTER NOW');
+        }
+    }
+
+    /* One expiry tone for the active tracked signal. */
+    function rajaExpiryWatcher() {
+        const trackedId = (typeof activeTrackedSignalId !== 'undefined')
+            ? String(activeTrackedSignalId || '') : '';
+        if (!trackedId) return;
+
+        const rows = (typeof backendTrackedHistory !== 'undefined' && Array.isArray(backendTrackedHistory))
+            ? backendTrackedHistory : [];
+        const item = rows.find(x => String(x?.id || '') === trackedId);
+        if (!item) return;
+
+        const expiryEpoch = Number(item.expiry_epoch || 0);
+        if (!expiryEpoch) return;
+
+        const key = trackedId + ':expiry';
+        if (Date.now() >= expiryEpoch * 1000 && !rajaExpiryDone.has(key)) {
+            rajaExpiryDone.add(key);
+            rajaExpiryAlert();
+        }
+    }
+
+    /* Small test helpers available from browser console if ever needed. */
+    window.rajaTestCallSound = () => playSignalAlertSound(true);
+    window.rajaTestPutSound = () => playSignalAlertSound(false);
+    window.rajaTestAPlusSound = rajaAPlusAlert;
+    window.rajaTestWinSound = rajaWinAlert;
+    window.rajaTestLossSound = rajaLossAlert;
+
+    setInterval(() => {
+        rajaOutcomeWatcher();
+        rajaCountdownWatcher();
+        rajaExpiryWatcher();
+    }, 500);
+})();
+</script>
+
 </body>
 </html>
