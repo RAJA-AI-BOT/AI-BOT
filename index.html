@@ -5214,6 +5214,107 @@
 }
 </style>
 
+
+<style id="raja-mobile-ready-no-gap-v1">
+/* READY + RESULT + NO-SIGNAL:
+   keep the mobile command bar directly after the visible bot card.
+   Scanning state remains fixed so STOP/HOME controls stay reachable while scan runs. */
+@media (max-width:820px) {
+    body.raja-mobile-ready,
+    body.raja-mobile-result,
+    body.raja-mobile-nosignal {
+        padding-bottom:max(8px, env(safe-area-inset-bottom)) !important;
+    }
+
+    body.raja-mobile-ready #mainAppContent,
+    body.raja-mobile-result #mainAppContent,
+    body.raja-mobile-nosignal #mainAppContent {
+        display:flex !important;
+        flex-direction:column !important;
+        width:100% !important;
+        min-height:0 !important;
+        height:auto !important;
+    }
+
+    body.raja-mobile-ready #mainAppContent .app-shell,
+    body.raja-mobile-result #mainAppContent .app-shell,
+    body.raja-mobile-nosignal #mainAppContent .app-shell {
+        order:1 !important;
+        min-height:0 !important;
+        height:auto !important;
+        margin:0 !important;
+    }
+
+    body.raja-mobile-ready .raja-mobile-command-bar,
+    body.raja-mobile-result .raja-mobile-command-bar,
+    body.raja-mobile-nosignal .raja-mobile-command-bar {
+        order:2 !important;
+        position:static !important;
+        left:auto !important;
+        right:auto !important;
+        bottom:auto !important;
+        width:calc(100% - 12px) !important;
+        max-width:620px !important;
+        margin:7px auto max(7px, env(safe-area-inset-bottom)) !important;
+        transform:none !important;
+    }
+
+    /* Ready card should end where its content ends, not stretch to viewport height. */
+    body.raja-mobile-ready .main-column,
+    body.raja-mobile-ready .main-panel-card,
+    body.raja-mobile-ready .ai-hud-box,
+    body.raja-mobile-ready #defaultView {
+        min-height:0 !important;
+        height:auto !important;
+        margin-bottom:0 !important;
+    }
+
+    body.raja-mobile-ready .main-panel-card {
+        padding-bottom:8px !important;
+    }
+
+    /* Keep the command controls compact. */
+    body.raja-mobile-ready .raja-mobile-command-summary,
+    body.raja-mobile-nosignal .raja-mobile-command-summary {
+        padding:0 3px 5px !important;
+    }
+
+    body.raja-mobile-ready .raja-mobile-command-actions.triple,
+    body.raja-mobile-nosignal .raja-mobile-command-actions.triple {
+        grid-template-columns:86px 108px minmax(0,1fr) !important;
+        gap:6px !important;
+    }
+
+    body.raja-mobile-ready .raja-mobile-command-actions button,
+    body.raja-mobile-nosignal .raja-mobile-command-actions button {
+        min-height:48px !important;
+    }
+}
+
+@media (max-width:390px) {
+    body.raja-mobile-ready .raja-mobile-command-actions.triple,
+    body.raja-mobile-nosignal .raja-mobile-command-actions.triple {
+        grid-template-columns:74px 94px minmax(0,1fr) !important;
+        gap:5px !important;
+    }
+
+    body.raja-mobile-ready .raja-mobile-command-actions button,
+    body.raja-mobile-nosignal .raja-mobile-command-actions button {
+        min-height:45px !important;
+        font-size:10px !important;
+    }
+}
+
+/* Tablet landscape / small laptop: prevent unnecessary vertical stretching. */
+@media (min-width:821px) and (max-height:900px) {
+    #mainAppContent .app-shell,
+    #mainAppContent .main-column,
+    #mainAppContent .main-panel-card {
+        min-height:0 !important;
+    }
+}
+</style>
+
 </head>
 <body>
 
@@ -10057,6 +10158,7 @@
             body.classList.toggle('raja-mobile-scanning', scanning);
             body.classList.toggle('raja-mobile-result', result);
             body.classList.toggle('raja-mobile-nosignal', noSignal);
+            body.classList.toggle('raja-mobile-ready', isMobile && !scanning && !result && !noSignal);
 
             const state = scanning ? 'scanning' : (result ? 'result' : (noSignal ? 'nosignal' : 'ready'));
             if (isMobile && state !== lastMobileState) {
