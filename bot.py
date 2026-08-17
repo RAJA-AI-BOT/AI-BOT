@@ -363,6 +363,9 @@ def _compute_app_build_id():
         BASE_DIR / "manifest.json",
         BASE_DIR / "raja-ai-icon-192.png",
         BASE_DIR / "raja-ai-icon-512.png",
+        BASE_DIR / "raja-ai-icon-192-v2.png",
+        BASE_DIR / "raja-ai-icon-512-v2.png",
+        BASE_DIR / "raja-splash-logo.png",
     ]
     found = False
     for path in build_files:
@@ -2895,11 +2898,25 @@ def pwa_service_worker():
 
 
 @app.route("/raja-ai-icon-<size>.png", methods=["GET"])
+@app.route("/raja-ai-icon-<size>-v2.png", methods=["GET"])
 def pwa_icon(size):
     if size not in {"192", "512"}:
         return jsonify({"status": "error", "message": "Icon not found."}), 404
-    response = send_from_directory(str(BASE_DIR), f"raja-ai-icon-{size}.png", mimetype="image/png")
-    # Icon URLs are build-versioned, and the response itself is never pinned.
+    requested = request.path.rsplit("/", 1)[-1]
+    candidate = BASE_DIR / requested
+    if not candidate.exists():
+        requested = f"raja-ai-icon-{size}.png"
+    response = send_from_directory(str(BASE_DIR), requested, mimetype="image/png")
+    # PWA icon identity is versioned by filename/build and must never be pinned by HTTP cache.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@app.route("/raja-splash-logo.png", methods=["GET"])
+def pwa_splash_logo():
+    response = send_from_directory(str(BASE_DIR), "raja-splash-logo.png", mimetype="image/png")
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
