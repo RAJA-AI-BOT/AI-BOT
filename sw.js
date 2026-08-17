@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v21-native-ready-only';
+const CACHE_VERSION = 'raja-ai-pwa-v22-install-visible';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -120,12 +120,9 @@ async function networkFirstNavigation(request) {
       response.ok
     ) {
       /*
-        Normalize navigation variants like:
-        ?raja_install=1
-        build query tokens
-        temporary query parameters
-
-        into one stable cached app shell.
+        Normalize all navigation variants
+        (?raja_install=1, build tokens, etc.)
+        to one stable shell key.
       */
       await cache.put(
         '/',
@@ -192,8 +189,7 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    HTML / app navigation:
-    always latest network version first.
+    HTML / app navigation
   */
   if (
     request.mode === 'navigate'
@@ -206,8 +202,7 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    API requests:
-    never use stale cached API data.
+    API requests
   */
   if (
     isApiPath(url.pathname)
@@ -225,8 +220,7 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    Important PWA/update/icon files:
-    always network-first.
+    PWA / manifest / icon files
   */
   if (
     url.pathname === '/sw.js' ||
@@ -243,8 +237,7 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    Other same-origin assets:
-    network first, cached fallback.
+    Other same-origin assets
   */
   event.respondWith(
     networkFirstAsset(request)
