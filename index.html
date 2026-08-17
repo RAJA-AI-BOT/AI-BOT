@@ -7139,10 +7139,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 return;
             }
 
-            if (rajaInstallIntent && env.chromium) {
+            if (env.chromium && !deferredInstallPrompt) {
                 btn.innerText = '⏳ PREPARING INSTALL';
                 btn.setAttribute('aria-label','Browser is preparing RAJA AI installation');
                 btn.dataset.installState = 'preparing';
+                btn.style.opacity = '.78';
+                btn.disabled = true;
+                btn.style.cursor = 'default';
                 return;
             }
 
@@ -7152,6 +7155,15 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         rajaCleanLegacyInstallQuery();
+        // Chromium-family browsers should never advertise a clickable INSTALL button
+        // before the browser has actually exposed its trusted native install event.
+        // This avoids the misleading fallback popup seen on Android/Samsung/Chrome.
+        try {
+            const initialInstallEnv = rajaInstallEnvironment();
+            if (!isRajaStandalone() && initialInstallEnv.chromium && !deferredInstallPrompt) {
+                rajaInstallIntent = true;
+            }
+        } catch (_) {}
         setInstallButtonVisible();
 
         // Chromium browsers expose a trusted native install event only after the
@@ -7235,11 +7247,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             } catch (_) {}
 
             if (rajaInstallPrepareTimer) clearTimeout(rajaInstallPrepareTimer);
+            // Do not show a RAJA AI fallback popup on Chromium. The browser owns
+            // the trusted native install dialog and may expose it only after its
+            // own engagement/installability checks pass. Keep the button in a
+            // truthful PREPARING state until beforeinstallprompt arrives.
             rajaInstallPrepareTimer = setTimeout(() => {
                 if (deferredInstallPrompt || isRajaStandalone()) return;
-                rajaInstallIntent = false;
                 setInstallButtonVisible();
-                showRajaInstallHelp('waiting');
             }, 36000);
         }
 
