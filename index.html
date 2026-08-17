@@ -317,7 +317,7 @@
                 min-height: 100%;
                 overscroll-behavior-y: contain;
             }
-            #installAppBtn { display: none !important; }
+            #installAppBtn { display: inline-flex !important; }
         }
 
     </style>
@@ -5735,45 +5735,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         filter:blur(11px);
         z-index:-1;
     }
-    .raja-splash-ai-core {
-        display:grid;
-        place-items:center;
-        width:54px;
-        height:54px;
-        margin-bottom:8px;
-        border-radius:50%;
-        border:1px solid rgba(96,239,255,.58);
-        color:#efffff;
-        font-size:20px;
-        line-height:1;
-        font-weight:950;
-        letter-spacing:1px;
-        background:radial-gradient(circle at 38% 30%,rgba(96,239,255,.22),rgba(7,19,34,.45) 58%,rgba(255,61,166,.10));
-        box-shadow:0 0 18px rgba(45,229,255,.22),inset 0 0 18px rgba(45,229,255,.08);
-        text-shadow:0 0 10px rgba(96,239,255,.62);
-    }
     .raja-splash-center-brand strong {
         display:block;
-        font-size:clamp(22px,5.8vw,31px);
-        line-height:1;
+        font-size:clamp(22px,5.4vw,30px);
+        line-height:1.05;
         font-weight:950;
-        letter-spacing:1.3px;
+        letter-spacing:1.4px;
         white-space:nowrap;
-        background:linear-gradient(90deg,#f6fdff 0%,#8df5ff 38%,#35e4ff 61%,#ff63b3 100%);
+        background:linear-gradient(90deg,#f6fdff 0%,#8df5ff 34%,#35e4ff 58%,#ff63b3 100%);
         -webkit-background-clip:text;
         background-clip:text;
         color:transparent;
-        text-shadow:0 0 20px rgba(77,229,255,.08);
-    }
-    .raja-splash-center-brand small {
-        margin-top:7px;
-        color:#ff69b5;
-        font-size:10px;
-        line-height:1;
-        font-weight:950;
-        letter-spacing:4px;
-        text-transform:uppercase;
-        text-shadow:0 0 12px rgba(255,75,168,.5);
+        text-shadow:0 0 20px rgba(77,229,255,.10);
     }
     @keyframes rajaSplashBrandFloat {
         from { transform:translateY(-2px) scale(.985); opacity:.92; }
@@ -5880,9 +5853,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             <div class="raja-splash-ring"></div>
             <div class="raja-splash-logo-glow"></div>
             <div class="raja-splash-center-brand" aria-label="RAJA AI BOT">
-                <span class="raja-splash-ai-core">AI</span>
-                <strong>RAJA AI</strong>
-                <small>BOT</small>
+                <strong>RAJA AI BOT</strong>
             </div>
         </div>
         <h1 class="raja-splash-title">RAJA AI PREMIUM</h1>
@@ -6109,7 +6080,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                     <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
                                 </button>
                             </div>
-                            <button id="installAppBtn" class="top-btn install-btn" style="display:none" onclick="installPWA()">⬇ INSTALL APP</button>
+                            <button id="installAppBtn" class="top-btn install-btn" style="display:inline-flex" onclick="installPWA()">⬇ INSTALL APP</button>
                             <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
                             <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
                         </div>
@@ -7053,18 +7024,22 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                    window.navigator.standalone === true;
         }
 
-        function setInstallButtonVisible(visible) {
+        function setInstallButtonVisible(visible = true) {
             const btn = document.getElementById('installAppBtn');
             if (!btn) return;
 
+            btn.style.display = 'inline-flex';
             if (isRajaStandalone()) {
-                btn.style.display = 'none';
+                btn.innerText = '✓ APP INSTALLED';
+                btn.setAttribute('aria-label','RAJA AI is installed');
                 return;
             }
 
-            btn.style.display = visible ? 'inline-flex' : 'none';
             btn.innerText = '⬇ INSTALL APP';
+            btn.setAttribute('aria-label','Install RAJA AI app');
         }
+
+        setInstallButtonVisible(true);
 
         // Chrome / Edge fires this event only when the current site
         // is eligible for native PWA installation.
@@ -7077,20 +7052,21 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // When installation finishes, remove the install button.
         window.addEventListener('appinstalled', () => {
             deferredInstallPrompt = null;
-            setInstallButtonVisible(false);
+            setInstallButtonVisible(true);
         });
 
         async function installPWA() {
-            // If already running as the installed app, nothing to install.
+            // Installed/standalone mode: keep a visible installed-status button.
             if (isRajaStandalone()) {
-                setInstallButtonVisible(false);
+                setInstallButtonVisible(true);
                 return;
             }
 
-            // The browser must provide beforeinstallprompt first.
-            // Do not show the old "install not ready" alert.
+            // Some browsers expose the native prompt a little later. Keep the button
+            // visible instead of making it disappear when the prompt is not ready yet.
             if (!deferredInstallPrompt) {
-                setInstallButtonVisible(false);
+                setInstallButtonVisible(true);
+                alert('Install option is not ready yet. Use your browser menu and choose Install App / Add to Home Screen, or try this button again in a moment.');
                 return;
             }
 
@@ -7103,10 +7079,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 await promptEvent.prompt();
                 await promptEvent.userChoice;
 
-                setInstallButtonVisible(false);
+                setInstallButtonVisible(true);
             } catch (err) {
                 console.warn('RAJA AI native install prompt error:', err);
-                setInstallButtonVisible(false);
+                setInstallButtonVisible(true);
             }
         }
 
@@ -7234,9 +7210,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     checkRajaAppVersion(true);
                 }
 
-                if (isRajaStandalone()) {
-                    setInstallButtonVisible(false);
-                }
+                setInstallButtonVisible(true);
             };
 
             // Register as soon as the DOM is usable rather than waiting for
