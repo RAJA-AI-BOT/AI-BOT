@@ -6778,7 +6778,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (rajaBackendWarmPromise) return rajaBackendWarmPromise;
 
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 65000);
+            const timeoutId = setTimeout(() => controller.abort(), 20000);
             rajaBackendWarmPromise = fetch('/health', {
                 method:'GET',
                 cache:'no-store',
@@ -7994,7 +7994,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 isUserVerified=false;
                 if (localSessionReady) {
                     const sessionController = new AbortController();
-                    const sessionTimeout = setTimeout(() => sessionController.abort(), 25000);
+                    const sessionTimeout = setTimeout(() => sessionController.abort(), 12000);
                     try {
                         const response=await fetch('/verify-license',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...auth,device_label:getCurrentDeviceLabel(),heartbeat:true}),signal:sessionController.signal});
                         const result=await response.json().catch(()=>null); isUserVerified=Boolean(response.ok && result && result.status==='success');
@@ -8033,6 +8033,44 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             checkRoute();
         }
 
+        async function rajaVerifyLicenseFast(payload, onRetry) {
+            const attempts = [15000, 20000];
+            let lastError = null;
+
+            for (let i = 0; i < attempts.length; i += 1) {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), attempts[i]);
+                try {
+                    const response = await fetch('/verify-license', {
+                        method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify(payload),
+                        signal:controller.signal,
+                        cache:'no-store'
+                    });
+                    const result = await response.json().catch(()=>null);
+
+                    // Auth/license errors are real answers; retrying them only slows the user down.
+                    if ([400,401,403,409].includes(response.status)) return { response, result };
+                    if (response.ok) return { response, result };
+
+                    lastError = new Error((result && result.message) || `Server returned ${response.status}.`);
+                } catch (error) {
+                    lastError = error;
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+
+                if (i + 1 < attempts.length) {
+                    try { if (typeof onRetry === 'function') onRetry(); } catch (_) {}
+                    // The first timed-out request has already woken a sleeping Railway process.
+                    // A very short gap lets the server finish booting before the second attempt.
+                    await new Promise(resolve => setTimeout(resolve, 650));
+                }
+            }
+            throw lastError || new Error('RAJA AI server is temporarily unavailable.');
+        }
+
         async function verifyAccess() {
             if (rajaVerifyInFlight) return;
             playClickSound();
@@ -8060,29 +8098,24 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             msgBox.style.color='#030712';
             msgBox.style.background='#60efff';
             msgBox.innerText = rajaBackendReady
-                ? '🔄 Verifying license and switching active device...'
-                : '⏳ Server may be waking. Verifying license securely...';
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 75000);
+                ? '🔄 Checking license securely...'
+                : '⚡ Connecting to secure server...';
 
             try {
-                // Keep the warm-up non-blocking; the actual verify request can share the wake-up.
+                // Non-blocking wake-up starts immediately. The verification request runs in
+                // parallel and automatically retries once if a cold Railway boot outlives it.
                 warmRajaBackend();
 
-                const response = await fetch('/verify-license', {
-                    method:'POST',
-                    headers:{'Content-Type':'application/json'},
-                    body:JSON.stringify({
-                        key,
-                        user:uInput,
-                        device:deviceSessionId,
-                        device_label:getCurrentDeviceLabel()
-                    }),
-                    signal:controller.signal
+                const { response, result } = await rajaVerifyLicenseFast({
+                    key,
+                    user:uInput,
+                    device:deviceSessionId,
+                    device_label:getCurrentDeviceLabel()
+                }, () => {
+                    if (verifyBtn) verifyBtn.innerText = '⚡ SERVER WAKING · RETRYING...';
+                    msgBox.innerText = '⚡ Server is waking. Retrying login automatically...';
                 });
 
-                const result = await response.json().catch(()=>null);
                 if (!response.ok || !result || result.status !== 'success') {
                     throw new Error((result && result.message) || 'License verification failed.');
                 }
@@ -8110,12 +8143,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 localStorage.removeItem('raja_token_'+key);
                 msgBox.style.color='#fff';
                 msgBox.style.background='#ff3366';
-                msgBox.innerText = error && error.name === 'AbortError'
-                    ? '⚠️ Server wake-up took too long. Please press VERIFY once more.'
+                msgBox.innerText = (error && error.name === 'AbortError')
+                    ? '⚠️ Server is still waking. Please try VERIFY again in a few seconds.'
                     : '❌ ' + (error?.message || 'License verification failed.');
                 msgBox.style.display='block';
             } finally {
-                clearTimeout(timeoutId);
                 rajaVerifyInFlight = false;
                 if (verifyBtn) {
                     verifyBtn.disabled = false;
