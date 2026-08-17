@@ -437,18 +437,35 @@ def normalize_user_id(value):
     return user.casefold()
 
 
-def _db_connect():
+_license_store_ready = threading.Event()
+_license_store_init_lock = threading.Lock()
+
+
+def _raw_db_connect():
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is not configured")
     if psycopg is None:
         raise RuntimeError("psycopg is not installed; install requirements.txt")
-    return psycopg.connect(DATABASE_URL, connect_timeout=10)
+    return psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=10,
+        application_name="raja_ai_premium",
+    )
+
+
+def _db_connect():
+    # Database schema initialization is warmed in a background thread at startup.
+    # If a DB-backed request arrives before warmup finishes, wait for/perform the
+    # same one-time initialization here instead of failing with a missing table.
+    if DATABASE_URL and not _license_store_ready.is_set():
+        _ensure_license_store_initialized()
+    return _raw_db_connect()
 
 
 def initialize_license_store():
     if DATABASE_URL:
         # Persistent license + scan analytics storage.
-        with _db_connect() as conn:
+        with _raw_db_connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS raja_licenses (
@@ -546,6 +563,36 @@ def initialize_license_store():
     print("WARNING: RAJA license store is using local file storage (not persistent on Render Free).")
 
 
+def _ensure_license_store_initialized():
+    if _license_store_ready.is_set():
+        return
+    with _license_store_init_lock:
+        if _license_store_ready.is_set():
+            return
+        initialize_license_store()
+        _license_store_ready.set()
+
+
+def _background_license_store_warmup():
+    try:
+        _ensure_license_store_initialized()
+    except Exception as exc:
+        # Do not prevent Flask/Gunicorn from serving /health and the cached web shell.
+        # The first DB-backed request will retry initialization synchronously.
+        print(f"RAJA license store background warmup warning: {exc}")
+
+
+def _start_license_store_warmup():
+    if DATABASE_URL:
+        threading.Thread(
+            target=_background_license_store_warmup,
+            name="raja-license-store-warmup",
+            daemon=True,
+        ).start()
+    else:
+        _ensure_license_store_initialized()
+
+
 def load_licenses():
     with license_lock:
         if DATABASE_URL:
@@ -629,17 +676,16 @@ def load_license_record(key):
         return None
 
     if DATABASE_URL:
-        with license_lock:
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT active, user_id, device_id, device_label, created_at,
-                               last_verified_at, session_token, plan, expires_at, last_login_at
-                        FROM raja_licenses
-                        WHERE license_key = %s
-                        LIMIT 1
-                    """, (key,))
-                    row = cur.fetchone()
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT active, user_id, device_id, device_label, created_at,
+                           last_verified_at, session_token, plan, expires_at, last_login_at
+                    FROM raja_licenses
+                    WHERE license_key = %s
+                    LIMIT 1
+                """, (key,))
+                row = cur.fetchone()
         if not row:
             return None
         (active, user, device, device_label, created_at, last_verified_at,
@@ -675,26 +721,25 @@ def save_license_record(key, record):
             record.get("plan") or DEFAULT_LICENSE_PLAN, record.get("expires_at"),
             record.get("last_login_at"),
         )
-        with license_lock:
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        INSERT INTO raja_licenses
-                            (license_key, active, user_id, device_id, device_label, created_at,
-                             last_verified_at, session_token, plan, expires_at, last_login_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (license_key) DO UPDATE SET
-                            active = EXCLUDED.active,
-                            user_id = EXCLUDED.user_id,
-                            device_id = EXCLUDED.device_id,
-                            device_label = EXCLUDED.device_label,
-                            created_at = EXCLUDED.created_at,
-                            last_verified_at = EXCLUDED.last_verified_at,
-                            session_token = EXCLUDED.session_token,
-                            plan = EXCLUDED.plan,
-                            expires_at = EXCLUDED.expires_at,
-                            last_login_at = EXCLUDED.last_login_at
-                    """, values)
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO raja_licenses
+                        (license_key, active, user_id, device_id, device_label, created_at,
+                         last_verified_at, session_token, plan, expires_at, last_login_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (license_key) DO UPDATE SET
+                        active = EXCLUDED.active,
+                        user_id = EXCLUDED.user_id,
+                        device_id = EXCLUDED.device_id,
+                        device_label = EXCLUDED.device_label,
+                        created_at = EXCLUDED.created_at,
+                        last_verified_at = EXCLUDED.last_verified_at,
+                        session_token = EXCLUDED.session_token,
+                        plan = EXCLUDED.plan,
+                        expires_at = EXCLUDED.expires_at,
+                        last_login_at = EXCLUDED.last_login_at
+                """, values)
         return
 
     with license_lock:
@@ -712,18 +757,17 @@ def find_active_license_for_user(user_ref):
     now = int(time.time())
 
     if DATABASE_URL:
-        with license_lock:
-            with _db_connect() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("""
-                        SELECT license_key, active, user_id, device_id, device_label, created_at,
-                               last_verified_at, session_token, plan, expires_at, last_login_at
-                        FROM raja_licenses
-                        WHERE lower(user_id) = %s AND active = TRUE
-                        ORDER BY created_at DESC NULLS LAST
-                        LIMIT 20
-                    """, (user,))
-                    rows = cur.fetchall()
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT license_key, active, user_id, device_id, device_label, created_at,
+                           last_verified_at, session_token, plan, expires_at, last_login_at
+                    FROM raja_licenses
+                    WHERE lower(user_id) = %s AND active = TRUE
+                    ORDER BY created_at DESC NULLS LAST
+                    LIMIT 20
+                """, (user,))
+                rows = cur.fetchall()
         for row in rows:
             key, active, bound_user, device, device_label, created_at, last_verified_at, session_token, plan, expires_at, last_login_at = row
             record = {
@@ -1072,7 +1116,7 @@ def _auth_session(data):
     return {"key": key, "user": user, "device": device, "record": record}, None
 
 
-initialize_license_store()
+_start_license_store_warmup()
 
 
 # =========================================================
@@ -2873,6 +2917,7 @@ def health():
         "status": "success",
         "service": "RAJA AI multi-timeframe backend",
         "app_build": APP_BUILD_ID,
+        "license_store_ready": bool(_license_store_ready.is_set()),
         "yahoo_pairs": len(YAHOO_SYMBOLS),
         "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
         "cached_symbols": cached_symbols,
@@ -3040,9 +3085,112 @@ def verify_license():
     if not key or not user or not device:
         return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
 
-    # One indexed row lookup. This removes the old full-table read on every login/heartbeat.
-    record = load_license_record(key)
     now = int(time.time())
+
+    if DATABASE_URL:
+        # Fast PostgreSQL path: validate + update inside ONE DB connection/transaction.
+        # This avoids the previous load_license_record() connection followed by a
+        # second save_license_record() connection on every login/heartbeat.
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT active, user_id, device_id, device_label, created_at,
+                           last_verified_at, session_token, plan, expires_at, last_login_at
+                    FROM raja_licenses
+                    WHERE license_key = %s
+                    LIMIT 1
+                    FOR UPDATE
+                """, (key,))
+                row = cur.fetchone()
+
+                if not row:
+                    return jsonify({"status": "error", "message": "Invalid or revoked license key."}), 401
+
+                (active, bound_user_raw, previous_device_raw, previous_label_raw, created_at,
+                 last_verified_at, stored_token_raw, plan_raw, expires_at, last_login_at) = row
+                record = {
+                    "active": bool(active),
+                    "user": bound_user_raw,
+                    "device": previous_device_raw,
+                    "device_label": previous_label_raw,
+                    "created_at": created_at,
+                    "last_verified_at": last_verified_at,
+                    "session_token": stored_token_raw,
+                    "plan": plan_raw or DEFAULT_LICENSE_PLAN,
+                    "expires_at": expires_at,
+                    "last_login_at": last_login_at,
+                }
+
+                if not record["active"]:
+                    return jsonify({"status": "error", "message": "Invalid or revoked license key."}), 401
+                if license_is_expired(record, now):
+                    return jsonify({"status": "error", "message": "This license has expired. Contact admin to renew access."}), 401
+
+                bound_user = normalize_user_id(record.get("user", ""))
+                if bound_user and bound_user != user:
+                    return jsonify({"status": "error", "message": "This key is assigned to another user/UID."}), 403
+
+                is_free_trial = str(record.get("plan") or "").strip().upper() == "FREE TRIAL"
+                if is_free_trial and not heartbeat:
+                    cur.execute(
+                        "SELECT license_key FROM raja_trial_claims WHERE claim_type=%s AND claim_value=%s",
+                        ("device", device),
+                    )
+                    claim_row = cur.fetchone()
+                    if claim_row and str(claim_row[0] or "") != key:
+                        return jsonify({
+                            "status": "error",
+                            "message": "This device has already used a free trial. Contact admin for VIP access."
+                        }), 409
+
+                if heartbeat:
+                    if (str(record.get("device") or "") != device
+                            or not supplied_token
+                            or str(record.get("session_token") or "") != supplied_token):
+                        return jsonify({"status": "error", "message": "This session was replaced by a newer device login."}), 409
+
+                    cur.execute(
+                        "UPDATE raja_licenses SET last_verified_at=%s WHERE license_key=%s",
+                        (now, key),
+                    )
+                    return jsonify({
+                        "status": "success", "message": "Session active.", "user": user,
+                        "device_bound": True, "device_label": record.get("device_label"),
+                        "session_token": record.get("session_token"),
+                        "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
+                        "expires_at": record.get("expires_at"),
+                    })
+
+                previous_device = str(record.get("device") or "")
+                previous_label = str(record.get("device_label") or "")
+                new_token = secrets.token_urlsafe(32)
+                next_label = device_label or device
+                next_plan = record.get("plan") or DEFAULT_LICENSE_PLAN
+
+                cur.execute("""
+                    UPDATE raja_licenses
+                    SET device_id=%s, device_label=%s, user_id=%s, session_token=%s,
+                        last_verified_at=%s, last_login_at=%s, plan=%s
+                    WHERE license_key=%s
+                """, (device, next_label, user, new_token, now, now, next_plan, key))
+
+                if is_free_trial:
+                    cur.execute("""
+                        INSERT INTO raja_trial_claims(claim_type, claim_value, license_key, created_at)
+                        VALUES(%s,%s,%s,%s)
+                        ON CONFLICT(claim_type, claim_value) DO NOTHING
+                    """, ("device", device, key, now))
+
+                return jsonify({
+                    "status": "success", "message": "License verified successfully.", "user": user,
+                    "device_bound": True, "device_label": next_label, "session_token": new_token,
+                    "replaced_previous_device": bool(previous_device and previous_device != device),
+                    "previous_device_label": previous_label if previous_device and previous_device != device else None,
+                    "plan": next_plan, "expires_at": record.get("expires_at"),
+                })
+
+    # File-storage fallback keeps the existing behavior for local development/testing.
+    record = load_license_record(key)
     if not record or not record.get("active", False):
         return jsonify({"status": "error", "message": "Invalid or revoked license key."}), 401
     if license_is_expired(record, now):
@@ -3073,7 +3221,6 @@ def verify_license():
             "expires_at": record.get("expires_at"),
         })
 
-    # NEW DEVICE WINS: a valid login immediately replaces the previous browser session.
     previous_device = str(record.get("device") or "")
     previous_label = str(record.get("device_label") or "")
     new_token = secrets.token_urlsafe(32)
@@ -3105,6 +3252,19 @@ def logout_license():
     token = str(data.get("session_token", "")).strip()
     if not key or not user or not device:
         return jsonify({"status": "error", "message": "Key, user and device are required."}), 400
+
+    if DATABASE_URL:
+        with _db_connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE raja_licenses
+                    SET device_id=NULL, device_label=NULL, last_verified_at=NULL, session_token=NULL
+                    WHERE license_key=%s
+                      AND lower(COALESCE(user_id,''))=%s
+                      AND device_id=%s
+                      AND (session_token IS NULL OR session_token=%s)
+                """, (key, user, device, token))
+        return jsonify({"status": "success", "message": "Device session released."})
 
     record = load_license_record(key)
     if not record:
