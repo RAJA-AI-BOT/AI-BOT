@@ -1,34 +1,88 @@
-const CACHE_VERSION = 'raja-ai-pwa-v12-install-flow';
-const STABLE_SHELL_CACHE = 'raja-ai-pwa-v12-stable-shell';
-const ASSET_CACHE = 'raja-ai-pwa-v12-assets';
+const CACHE_VERSION = 'raja-ai-pwa-v13-cross-browser-install';
+const SHELL_CACHE = `${CACHE_VERSION}-shell`;
+const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
 const STATIC_ASSETS = [
   '/manifest.json',
-  '/raja-ai-icon-192.png',
-  '/raja-ai-icon-512.png'
+  '/raja-ai-icon-192-v2.png',
+  '/raja-ai-icon-512-v2.png',
+  '/raja-splash-logo.png'
 ];
 
 const API_PREFIXES = [
   '/app-version',
+  '/verify-license',
+  '/logout-license',
+  '/user/',
   '/signals/',
   '/scan',
-  '/verify-license',
-  '/health',
-  '/app-state',
+  '/batch-scan',
   '/market-news',
-  '/logout-license',
-  '/track-signal',
-  '/user/profile',
-  '/admin/',
-  '/telegram/',
-  '/otc-fallback-config'
+  '/otc-fallback-config',
+  '/admin/'
 ];
 
+self.addEventListener('install', event => {
+  event.waitUntil((async () => {
+    self.skipWaiting();
+    const cache = await caches.open(ASSET_CACHE);
+
+    await Promise.allSettled(
+      STATIC_ASSETS.map(async url => {
+        const response = await fetch(url, { cache: 'reload' });
+
+        if (response && response.ok) {
+          await cache.put(url, response.clone());
+        }
+      })
+    );
+  })());
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const keep = new Set([
+      SHELL_CACHE,
+      ASSET_CACHE
+    ]);
+
+    const keys = await caches.keys();
+
+    await Promise.all(
+      keys.map(key => {
+        if (
+          /^raja-ai-pwa-/i.test(key) &&
+          !keep.has(key)
+        ) {
+          return caches.delete(key);
+        }
+
+        return Promise.resolve(false);
+      })
+    );
+
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('message', event => {
+  if (
+    event.data &&
+    event.data.type === 'SKIP_WAITING'
+  ) {
+    self.skipWaiting();
+  }
+});
+
 function isApiPath(pathname) {
-  return API_PREFIXES.some((path) => pathname.startsWith(path));
+  return API_PREFIXES.some(
+    prefix =>
+      pathname === prefix ||
+      pathname.startsWith(prefix)
+  );
 }
 
-function offlineJson() {
+async function offlineJson() {
   return new Response(
     JSON.stringify({
       status: 'error',
@@ -38,162 +92,89 @@ function offlineJson() {
     {
       status: 503,
       headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Cache-Control': 'no-store'
+        'Content-Type': 'application/json'
       }
     }
   );
 }
 
-async function cacheResponse(cacheName, key, response) {
-  if (!response || !response.ok) return response;
+async function networkFirstNavigation(request) {
+  const cache = await caches.open(SHELL_CACHE);
 
   try {
-    const cache = await caches.open(cacheName);
-    await cache.put(key, response.clone());
-  } catch (_) {}
-
-  return response;
-}
-
-// ======================================================
-// INSTALL
-// ======================================================
-
-self.addEventListener('install', (event) => {
-  event.waitUntil((async () => {
-    const assetCache = await caches.open(ASSET_CACHE);
-
-    await Promise.allSettled(
-      STATIC_ASSETS.map((url) =>
-        assetCache.add(
-          new Request(url, {
-            cache: 'reload'
-          })
-        )
-      )
-    );
-
-    try {
-      const response = await fetch('/', {
+    const response = await fetch(
+      request,
+      {
         cache: 'no-store'
-      });
-
-      if (response && response.ok) {
-        await cacheResponse(
-          STABLE_SHELL_CACHE,
-          '/',
-          response
-        );
       }
-    } catch (_) {}
-
-    await self.skipWaiting();
-  })());
-});
-
-// ======================================================
-// ACTIVATE
-// ======================================================
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    const keys = await caches.keys();
-
-    const migratingFromV10 = keys.some((key) =>
-      key === 'raja-ai-pwa-v10-assets' ||
-      key === 'raja-ai-pwa-v10-stable-shell'
     );
 
-    const stable = await caches.open(
-      STABLE_SHELL_CACHE
-    );
+    if (
+      response &&
+      response.ok
+    ) {
+      /*
+        Normalize navigation URLs such as:
+        ?raja_install=1
+        build query tokens
+        other temporary query parameters
 
-    const alreadySaved = await stable.match('/');
-
-    if (!alreadySaved) {
-      for (const key of keys) {
-        if (!key.startsWith('raja-ai-pwa-')) {
-          continue;
-        }
-
-        if (
-          key === STABLE_SHELL_CACHE ||
-          key === ASSET_CACHE
-        ) {
-          continue;
-        }
-
-        try {
-          const oldCache = await caches.open(key);
-          const oldRoot = await oldCache.match('/');
-
-          if (oldRoot) {
-            await stable.put(
-              '/',
-              oldRoot.clone()
-            );
-
-            break;
-          }
-        } catch (_) {}
-      }
+        This prevents an old query URL from becoming
+        the permanent cached app shell.
+      */
+      await cache.put(
+        '/',
+        response.clone()
+      );
     }
 
-    await Promise.all(
-      keys
-        .filter(
-          (key) =>
-            key.startsWith('raja-ai-pwa-') &&
-            key !== STABLE_SHELL_CACHE &&
-            key !== ASSET_CACHE &&
-            key !== CACHE_VERSION
-        )
-        .map((key) => caches.delete(key))
+    return response;
+
+  } catch (_) {
+
+    return (
+      await cache.match('/')
+    ) || Response.error();
+  }
+}
+
+async function networkFirstAsset(request) {
+  const cache = await caches.open(ASSET_CACHE);
+
+  try {
+    const response = await fetch(
+      request,
+      {
+        cache: 'no-store'
+      }
     );
 
-    try {
-      if (
-        self.registration.navigationPreload
-      ) {
-        await self.registration
-          .navigationPreload
-          .enable();
-      }
-    } catch (_) {}
+    if (
+      response &&
+      response.ok
+    ) {
+      await cache.put(
+        request,
+        response.clone()
+      );
+    }
 
-    await self.clients.claim();
+    return response;
 
-    try {
-      const clientList = await self.clients.matchAll({
-        type: 'window',
-        includeUncontrolled: true
-      });
+  } catch (_) {
 
-      for (const client of clientList) {
-        client.postMessage({
-          type: 'RAJA_SW_ACTIVATED',
-          version: CACHE_VERSION
-        });
+    return (
+      await cache.match(request)
+    ) || Response.error();
+  }
+}
 
-        if (migratingFromV10 && 'navigate' in client) {
-          try {
-            await client.navigate(client.url);
-          } catch (_) {}
-        }
-      }
-    } catch (_) {}
-  })());
-});
-
-// ======================================================
-// FETCH
-// ======================================================
-
-self.addEventListener('fetch', (event) => {
+self.addEventListener('fetch', event => {
   const request = event.request;
 
-  if (request.method !== 'GET') {
+  if (
+    request.method !== 'GET'
+  ) {
     return;
   }
 
@@ -205,375 +186,61 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ------------------------------------------------------
-  // LIVE / AUTHENTICATED API
-  // ------------------------------------------------------
-
-  if (isApiPath(url.pathname)) {
-    event.respondWith(
-      fetch(request, {
-        cache: 'no-store'
-      }).catch(() => offlineJson())
-    );
-
-    return;
-  }
-
-  // ------------------------------------------------------
-  // NAVIGATION
-  // ------------------------------------------------------
-
-  if (request.mode === 'navigate') {
-    const networkRefresh = (async () => {
-      try {
-        const preload =
-          await event.preloadResponse;
-
-        const response =
-          preload ||
-          await fetch(request, {
-            cache: 'no-store'
-          });
-
-        if (
-          response &&
-          response.ok
-        ) {
-          await cacheResponse(
-            STABLE_SHELL_CACHE,
-            '/',
-            response
-          );
-        }
-
-        return response || null;
-      } catch (_) {
-        return null;
-      }
-    })();
-
-    event.waitUntil(
-      networkRefresh
-        .then(() => undefined)
-        .catch(() => undefined)
-    );
-
-    event.respondWith(
-      (async () => {
-        const network =
-          await networkRefresh;
-
-        if (network) {
-          return network;
-        }
-
-        const stable =
-          await caches.open(
-            STABLE_SHELL_CACHE
-          );
-
-        const cached =
-          await stable.match('/');
-
-        if (cached) {
-          return cached;
-        }
-
-        return new Response(
-          `<!doctype html>
-<html>
-<head>
-<meta
-  name="viewport"
-  content="width=device-width,initial-scale=1"
->
-<title>RAJA AI</title>
-
-<style>
-html,
-body {
-  margin: 0;
-  min-height: 100%;
-  background: #020712;
-  color: #fff;
-  font-family: system-ui;
-}
-
-body {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-}
-
-.box {
-  max-width: 420px;
-  margin: 20px;
-  padding: 24px;
-  border: 1px solid #0ddfc6;
-  border-radius: 18px;
-  background: #07111f;
-  text-align: center;
-}
-
-h1 {
-  font-size: 22px;
-  margin: 0 0 10px;
-  color: #4fffe0;
-}
-
-p {
-  color: #b8c6d8;
-  line-height: 1.5;
-}
-</style>
-
-</head>
-
-<body>
-
-<div class="box">
-  <h1>RAJA AI</h1>
-
-  <p>
-    The server is waking.
-    Reconnect and refresh in a moment.
-  </p>
-</div>
-
-</body>
-</html>`,
-          {
-            status: 503,
-            headers: {
-              'Content-Type':
-                'text/html; charset=utf-8',
-
-              'Cache-Control':
-                'no-store'
-            }
-          }
-        );
-      })()
-    );
-
-    return;
-  }
-
-  // ------------------------------------------------------
-  // STATIC PWA ASSETS
-  // ------------------------------------------------------
-
+  /*
+    HTML / app navigation
+    Always try latest network version first.
+  */
   if (
-    STATIC_ASSETS.includes(
-      url.pathname
-    )
+    request.mode === 'navigate'
   ) {
-    const refresh =
-      fetch(request, {
-        cache: 'no-cache'
-      })
-        .then(async (response) => {
-          if (
-            response &&
-            response.ok
-          ) {
-            await cacheResponse(
-              ASSET_CACHE,
-              request,
-              response
-            );
-          }
-
-          return response;
-        })
-        .catch(() => null);
-
-    event.waitUntil(
-      refresh
-        .then(() => undefined)
-        .catch(() => undefined)
-    );
-
     event.respondWith(
-      (async () => {
-        const cached =
-          await caches.match(request);
-
-        if (cached) {
-          return cached;
-        }
-
-        const network =
-          await refresh;
-
-        return (
-          network ||
-          new Response(
-            'RAJA AI asset unavailable.',
-            {
-              status: 503,
-              headers: {
-                'Content-Type':
-                  'text/plain; charset=utf-8'
-              }
-            }
-          )
-        );
-      })()
+      networkFirstNavigation(request)
     );
 
     return;
   }
 
-  // ------------------------------------------------------
-  // EVERYTHING ELSE
-  // ------------------------------------------------------
-
-  event.respondWith(
-    fetch(request, {
-      cache: 'no-cache'
-    }).catch(() =>
-      new Response(
-        'RAJA AI is temporarily offline. Please reconnect to use live data.',
+  /*
+    API requests must never use an old cached result.
+  */
+  if (
+    isApiPath(url.pathname)
+  ) {
+    event.respondWith(
+      fetch(
+        request,
         {
-          status: 503,
-          headers: {
-            'Content-Type':
-              'text/plain; charset=utf-8',
-
-            'Cache-Control':
-              'no-store'
-          }
+          cache: 'no-store'
         }
-      )
-    )
+      ).catch(offlineJson)
+    );
+
+    return;
+  }
+
+  /*
+    Important PWA/update files always use
+    network-first loading.
+  */
+  if (
+    url.pathname === '/sw.js' ||
+    url.pathname === '/manifest.json' ||
+    url.pathname === '/app-version' ||
+    /^\/raja-ai-icon-/.test(url.pathname) ||
+    url.pathname === '/raja-splash-logo.png'
+  ) {
+    event.respondWith(
+      networkFirstAsset(request)
+    );
+
+    return;
+  }
+
+  /*
+    Other same-origin assets:
+    network first, cache only as offline fallback.
+  */
+  event.respondWith(
+    networkFirstAsset(request)
   );
 });
-
-// ======================================================
-// MESSAGES + SYSTEM NOTIFICATIONS
-// ======================================================
-
-self.addEventListener(
-  'message',
-  (event) => {
-    const data =
-      event.data || {};
-
-    if (
-      data.type ===
-      'SKIP_WAITING'
-    ) {
-      event.waitUntil(
-        self.skipWaiting()
-      );
-
-      return;
-    }
-
-    if (
-      data.type !==
-      'RAJA_SHOW_NOTIFICATION'
-    ) {
-      return;
-    }
-
-    const payload =
-      data.payload || {};
-
-    const title =
-      String(
-        payload.title ||
-        'RAJA AI'
-      );
-
-    const options =
-      Object.assign(
-        {
-          icon:
-            '/raja-ai-icon-192.png',
-
-          badge:
-            '/raja-ai-icon-192.png',
-
-          tag:
-            'raja-ai-alert',
-
-          data: {
-            url: '/'
-          }
-        },
-
-        payload.options || {}
-      );
-
-    event.waitUntil(
-      self.registration
-        .showNotification(
-          title,
-          options
-        )
-    );
-  }
-);
-
-// ======================================================
-// OPEN / FOCUS APP WHEN NOTIFICATION CLICKED
-// ======================================================
-
-self.addEventListener(
-  'notificationclick',
-  (event) => {
-    event.notification.close();
-
-    const targetUrl =
-      (
-        event.notification.data &&
-        event.notification.data.url
-      ) ||
-      '/';
-
-    event.waitUntil(
-      clients
-        .matchAll({
-          type: 'window',
-          includeUncontrolled: true
-        })
-
-        .then(
-          async (clientList) => {
-            for (
-              const client
-              of clientList
-            ) {
-              try {
-                if (
-                  'navigate' in client
-                ) {
-                  await client.navigate(
-                    targetUrl
-                  );
-                }
-
-                if (
-                  'focus' in client
-                ) {
-                  return client.focus();
-                }
-              } catch (_) {}
-            }
-
-            if (
-              clients.openWindow
-            ) {
-              return clients.openWindow(
-                targetUrl
-              );
-            }
-
-            return undefined;
-          }
-        )
-    );
-  }
-);
