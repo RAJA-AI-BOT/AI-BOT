@@ -6635,7 +6635,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                     <div class="status-grid">
                         <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><div class="selected-pair-head"><span class="selected-pair-label">SELECTED TARGET PAIR</span><div class="selected-pair-badges"><span id="selectedBrokerBadge" class="target-context-badge broker-badge">⚡ QUOTEX</span><span id="selectedMarketBadge" class="target-context-badge market-badge">📈 CRYPTO LIVE</span></div></div><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
-                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong>Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="rajaBaseFeedLabel">Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
                     </div>
 
                     <section class="upgrade-card" id="dailyPerformancePanel">
@@ -6665,7 +6665,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
                                 <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: 5-of-6, stronger agreement and higher score threshold.</div></div>
-                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: Yahoo base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
+                                <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
                         </div>
@@ -9002,6 +9002,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             expiry: selectedExpiry,
                             client_id: deviceSessionId,
                             market: document.getElementById('marketType')?.value || '',
+                            broker: document.getElementById('brokerSelect')?.value || 'Quotex',
                             scan_options: getScanOptions(),
                             ...getAuthPayload()
                         }),
@@ -9077,7 +9078,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 const response = await fetch('/scan-batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', scan_options: getScanOptions(), ...getAuthPayload() }),
+                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', broker: document.getElementById('brokerSelect')?.value || 'Quotex', scan_options: getScanOptions(), ...getAuthPayload() }),
                     signal: controller.signal
                 });
 
@@ -11646,6 +11647,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
     function v23FeedLabel(source){
         const s=String(source||'AUTO');
+        if(/Quotex Bridge/i.test(s)) return 'QUOTEX OTC 1m · EXACT BRIDGE';
         if(/Twelve Data/i.test(s)) return 'TWELVE DATA 1m · BACKUP LIVE';
         if(/Yahoo/i.test(s)) return 'YAHOO 1m · PRIMARY LIVE';
         if(/MIXED/i.test(s)) return 'YAHOO + TWELVE · LIVE';
@@ -14194,6 +14196,116 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 }
 </style>
+
+
+<script id="raja-quotex-bridge-ui-v1">
+(() => {
+    let bridgeConnected = false;
+    let bridgeStatusTimer = null;
+
+    function bridgeAuth() {
+        try { return (typeof getAuthPayload === 'function') ? getAuthPayload() : {}; }
+        catch (_) { return {}; }
+    }
+
+    function currentBridgePair() {
+        return String(document.getElementById('pairSelect')?.value || '').trim();
+    }
+
+    function updateBridgeUi(status) {
+        bridgeConnected = Boolean(status && status.connected);
+        const btn = document.getElementById('rajaQuotexBridgeBtn');
+        if (btn) {
+            btn.textContent = bridgeConnected ? '🟢 QUOTEX BRIDGE CONNECTED' : '🔗 CONNECT QUOTEX BRIDGE';
+            btn.title = bridgeConnected
+                ? `Exact Quotex OTC feed active${status?.pair ? ' · ' + status.pair : ''}`
+                : 'Generate a one-time pairing code for the RAJA Quotex Bridge extension.';
+        }
+        const base = document.getElementById('rajaBaseFeedLabel');
+        const broker = String(document.getElementById('brokerSelect')?.value || '');
+        const market = String(document.getElementById('marketType')?.value || '');
+        if (base) {
+            if (broker === 'Quotex' && /OTC/i.test(market)) {
+                base.textContent = bridgeConnected ? 'Quotex Bridge 1m' : 'Bridge Required';
+            } else {
+                base.textContent = 'Yahoo 1m';
+            }
+        }
+    }
+
+    async function refreshBridgeStatus() {
+        const auth = bridgeAuth();
+        if (!auth.key || !auth.user || !auth.device || !auth.session_token) {
+            updateBridgeUi(null);
+            return null;
+        }
+        try {
+            const response = await fetch('/quotex-bridge/status', {
+                method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
+                body:JSON.stringify({ pair:currentBridgePair(), ...auth })
+            });
+            const payload = await response.json().catch(() => null);
+            if (response.ok && payload?.status === 'success') {
+                updateBridgeUi(payload.data || {});
+                return payload.data || {};
+            }
+        } catch (_) {}
+        updateBridgeUi(null);
+        return null;
+    }
+
+    async function createBridgePairCode() {
+        const auth = bridgeAuth();
+        if (!auth.key || !auth.user || !auth.device || !auth.session_token) {
+            alert('Login to RAJA AI first, then connect the Quotex Bridge.');
+            return;
+        }
+        try {
+            const response = await fetch('/quotex-bridge/pair-code', {
+                method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
+                body:JSON.stringify(auth)
+            });
+            const payload = await response.json().catch(() => null);
+            if (!response.ok || payload?.status !== 'success') throw new Error(payload?.message || 'Pairing code could not be created.');
+            const code = String(payload.data?.pair_code || '');
+            try { await navigator.clipboard.writeText(code); } catch (_) {}
+            window.prompt(
+                'RAJA QUOTEX BRIDGE PAIR CODE\n\n1) Open the RAJA Quotex Bridge extension on your PC.\n2) Enter this code.\n3) Keep Quotex open on the OTC pair you want to scan.\n\nCode is valid for about 10 minutes and has also been copied:',
+                code
+            );
+        } catch (error) {
+            alert('Bridge pairing error: ' + String(error?.message || error));
+        }
+    }
+
+    function installBridgeButton() {
+        if (document.getElementById('rajaQuotexBridgeBtn')) return;
+        const grid = document.querySelector('.utility-grid');
+        if (!grid) return;
+        const btn = document.createElement('button');
+        btn.id = 'rajaQuotexBridgeBtn';
+        btn.type = 'button';
+        btn.className = 'utility-btn';
+        btn.textContent = '🔗 CONNECT QUOTEX BRIDGE';
+        btn.addEventListener('click', createBridgePairCode);
+        grid.appendChild(btn);
+        refreshBridgeStatus();
+    }
+
+    window.rajaCreateQuotexBridgePairCode = createBridgePairCode;
+    window.rajaRefreshQuotexBridgeStatus = refreshBridgeStatus;
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installBridgeButton, {once:true});
+    else installBridgeButton();
+
+    document.addEventListener('change', (event) => {
+        if (event.target && (event.target.id === 'brokerSelect' || event.target.id === 'marketType' || event.target.id === 'pairSelect')) {
+            setTimeout(refreshBridgeStatus, 80);
+        }
+    });
+    bridgeStatusTimer = setInterval(refreshBridgeStatus, 12000);
+})();
+</script>
 
 </body>
 </html>
