@@ -3,7 +3,7 @@
   "name": "RAJA AI PREMIUM",
   "short_name": "RAJA AI",
   "description": "RAJA AI Premium multi-timeframe market intelligence app",
-  "start_url": "/?raja_pwa=1",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "background_color": "#020713",
