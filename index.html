@@ -5546,6 +5546,22 @@
 }
 </style>
 
+
+<style id="raja-mobile-auth-guard-v1">
+/* Prevent the mobile dashboard from leaking underneath the login screen after logout/session expiry. */
+body:not(.raja-authenticated) #mainAppContent,
+body:not(.raja-authenticated) #rajaMobileCommandBar,
+body:not(.raja-authenticated) #rajaMobileConfigBackdrop {
+    display: none !important;
+}
+body:not(.raja-authenticated).raja-mobile-ready,
+body:not(.raja-authenticated).raja-mobile-result,
+body:not(.raja-authenticated).raja-mobile-nosignal,
+body:not(.raja-authenticated).raja-mobile-scanning {
+    padding-bottom: 0 !important;
+}
+</style>
+
 </head>
 <body>
 
@@ -7161,7 +7177,10 @@
                 localStorage.removeItem('raja_session_'+auth.key); localStorage.removeItem('raja_token_'+auth.key);
             }
             if (licenseHeartbeatInterval) clearInterval(licenseHeartbeatInterval); licenseHeartbeatInterval=null; if(historyRefreshInterval)clearInterval(historyRefreshInterval); historyRefreshInterval=null;
-            localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user'); isUserVerified=false; checkRoute();
+            localStorage.removeItem('raja_active_key'); localStorage.removeItem('raja_active_user');
+            isUserVerified=false;
+            setRajaAuthState(false);
+            checkRoute();
         }
 
 
@@ -7233,12 +7252,39 @@
             if (notice) notice.style.display = visible ? '' : 'none';
         }
 
+        function setRajaAuthState(verified) {
+            const body = document.body;
+            if (!body) return;
+            const ok = Boolean(verified);
+            body.classList.toggle('raja-authenticated', ok);
+            if (!ok) {
+                body.classList.remove('raja-mobile-ready', 'raja-mobile-scanning', 'raja-mobile-result', 'raja-mobile-nosignal', 'raja-config-open');
+                try {
+                    const panel = document.querySelector('#mainAppContent .config-panel');
+                    if (panel) panel.classList.remove('raja-mobile-sheet-open');
+                    const backdrop = document.getElementById('rajaMobileConfigBackdrop');
+                    if (backdrop) {
+                        backdrop.classList.remove('visible');
+                        backdrop.setAttribute('aria-hidden', 'true');
+                    }
+                } catch (_) {}
+            }
+        }
+
+
         async function checkRoute(options = {}) {
             const trustVerifiedSession = Boolean(options && options.trustVerifiedSession === true);
             const isAdminRoute = String(window.location.hash || '').trim().toLowerCase() === '#admin';
             const adminPanel=document.getElementById('adminPanel'), mainApp=document.getElementById('mainAppContent'), activation=document.getElementById('activationScreen');
             if (!adminPanel || !mainApp || !activation) return;
-            if (isAdminRoute) { setOuterHeaderVisible(true); adminPanel.style.display='block'; mainApp.style.display='none'; activation.style.display='none'; return; }
+            if (isAdminRoute) {
+                setRajaAuthState(false);
+                setOuterHeaderVisible(true);
+                adminPanel.style.display='block';
+                mainApp.style.display='none';
+                activation.style.display='none';
+                return;
+            }
 
             adminPanel.style.display='none';
             const auth=getAuthPayload();
@@ -7259,13 +7305,17 @@
             }
 
             if (isUserVerified) {
+                setRajaAuthState(true);
                 setOuterHeaderVisible(false); mainApp.style.display='block'; activation.style.display='none'; updateBrokerAssets(); startTimer(); restoreAutoRescanSchedule(); updateAutoRescanUI(); updateScanSessionChip(); startLicenseHeartbeat(); renderPrimaryView(); installHistoryMirror();
                 setScanMode(scanMode); hydrateUpgradeSettings();
                 // Do not hold the login transition on history/profile requests.
                 Promise.resolve(refreshTrackedHistory()).catch(()=>{});
                 Promise.resolve(loadUserProfile()).catch(()=>{});
                 initializeRajaAppFeatures();
-            } else { setOuterHeaderVisible(true); mainApp.style.display='none'; activation.style.display='block'; }
+            } else {
+                setRajaAuthState(false);
+                setOuterHeaderVisible(true); mainApp.style.display='none'; activation.style.display='block';
+            }
         }
 
 
@@ -10394,6 +10444,12 @@
         function syncRajaMobileState() {
             const body = document.body;
             if (!body) return;
+
+            const mainApp = document.getElementById('mainAppContent');
+            if (!isUserVerified || !body.classList.contains('raja-authenticated') || !mainApp || window.getComputedStyle(mainApp).display === 'none') {
+                body.classList.remove('raja-mobile-ready', 'raja-mobile-scanning', 'raja-mobile-result', 'raja-mobile-nosignal');
+                return;
+            }
 
             const scanView = document.getElementById('scanView');
             const signalView = document.getElementById('signalView');
