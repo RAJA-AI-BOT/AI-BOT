@@ -4894,6 +4894,23 @@
 }
 </style>
 
+
+<style id="raja-cleaner-dashboard-final-layout">
+/* Right-side visual rail removed: give the working dashboard the freed space. */
+#mainAppContent .app-shell{
+    grid-template-columns:clamp(150px,11vw,185px) minmax(0,1fr)!important;
+}
+#mainAppContent .main-column{
+    grid-column:2!important;
+    min-width:0!important;
+}
+/* On tablet/mobile, existing responsive rules still control the shell. */
+@media(max-width:900px){
+    #mainAppContent .app-shell{display:block!important;}
+    #mainAppContent .main-column{grid-column:auto!important;}
+}
+</style>
+
 </head>
 <body>
 
@@ -5354,9 +5371,7 @@
                                         <div id="candleTimer" class="signal-entry-timer">00:31</div>
                                         <div id="tradeAlert" class="signal-entry-alert">⏳ WAIT FOR CANDLE CLOSE</div>
                                     </div>
-<div id="signalMiniChart" class="mini-chart-host"></div><a class="mini-chart-credit" href="https://www.tradingview.com/" target="_blank" rel="noopener">Lightweight Charts™ by TradingView</a></div>
-
-                                    <section class="ai-explain-card" id="aiExplainCard">
+<section class="ai-explain-card" id="aiExplainCard">
                                         <div class="intel-title-row"><div class="intel-title">✦ AI EXPLANATION · WHY THIS SIGNAL</div><div class="intel-caption">Based on current closed-candle indicators</div></div>
                                         <div class="ai-explain-grid">
                                             <div class="ai-factor"><small>Trend</small><strong id="explainTrend">--</strong><span id="explainTrendSub">Higher-TF direction</span></div>
@@ -5623,13 +5638,7 @@
                     </div>
                     </section>
                 </main>
-
-                <aside class="right-rail">
-                    <section class="rail-card"><div class="rail-title">RECENT RESULTS</div><div id="dashboardRecentHistory" class="recent-list"><div class="inline-item"><span>No recent scans yet.</span><span class="win-tag">--</span></div></div></section>
-                    <section class="rail-card"><div class="rail-title">SOUND + SIGNAL ALERTS</div><div class="sound-alert-grid"><div class="sound-alert-tile buy"><strong>↑ UP (BUY)</strong><div class="sound-wave"></div><span>Ascending tone</span></div><div class="sound-alert-tile sell"><strong>↓ DOWN (SELL)</strong><div class="sound-wave"></div><span>Descending tone</span></div></div><div id="soundAlertStatusText" class="sound-alert-status">● Alerts active · flashing + movement enabled</div></section>
-                    
-                </aside>
-            </div>
+</div>
         </div>
 
         <div id="adminPanel" class="panel-box">
