@@ -1,11 +1,11 @@
-const CACHE_VERSION = 'raja-ai-pwa-v13-cross-browser-install';
+const CACHE_VERSION = 'raja-ai-pwa-v16-maskable-icon';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
 const STATIC_ASSETS = [
   '/manifest.json',
-  '/raja-ai-icon-192-v2.png',
-  '/raja-ai-icon-512-v2.png',
+  '/raja-ai-icon-192-v3.png',
+  '/raja-ai-icon-512-v3.png',
   '/raja-splash-logo.png'
 ];
 
@@ -114,13 +114,9 @@ async function networkFirstNavigation(request) {
       response.ok
     ) {
       /*
-        Normalize navigation URLs such as:
-        ?raja_install=1
-        build query tokens
-        other temporary query parameters
-
-        This prevents an old query URL from becoming
-        the permanent cached app shell.
+        Normalize all navigation variants
+        (?raja_install=1, build tokens, etc.)
+        to one stable shell key.
       */
       await cache.put(
         '/',
@@ -187,8 +183,8 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    HTML / app navigation
-    Always try latest network version first.
+    App page / HTML navigation.
+    Latest network version first.
   */
   if (
     request.mode === 'navigate'
@@ -201,7 +197,7 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    API requests must never use an old cached result.
+    API requests are never served from old cache.
   */
   if (
     isApiPath(url.pathname)
@@ -219,8 +215,7 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    Important PWA/update files always use
-    network-first loading.
+    Important PWA/update/icon files.
   */
   if (
     url.pathname === '/sw.js' ||
@@ -237,8 +232,8 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    Other same-origin assets:
-    network first, cache only as offline fallback.
+    Other same-origin files:
+    network first, cache fallback.
   */
   event.respondWith(
     networkFirstAsset(request)
