@@ -7,6 +7,7 @@ import secrets
 import hmac
 import hashlib
 import threading
+import queue
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from collections import Counter
@@ -445,6 +446,13 @@ def normalize_user_id(value):
 _license_store_ready = threading.Event()
 _license_store_init_lock = threading.Lock()
 
+# Small per-process PostgreSQL keep-alive pool. Reusing an already-authenticated
+# connection avoids a fresh TCP/TLS/Postgres handshake on every login/heartbeat.
+DB_CONNECT_TIMEOUT_SECONDS = max(3, min(10, int(os.environ.get("RAJA_DB_CONNECT_TIMEOUT", "5"))))
+DB_POOL_SIZE = max(1, min(6, int(os.environ.get("RAJA_DB_POOL_SIZE", "3"))))
+DB_POOL_IDLE_PING_SECONDS = max(20, min(300, int(os.environ.get("RAJA_DB_POOL_IDLE_PING", "60"))))
+_db_pool = queue.LifoQueue(maxsize=DB_POOL_SIZE)
+
 
 def _raw_db_connect():
     if not DATABASE_URL:
@@ -453,18 +461,101 @@ def _raw_db_connect():
         raise RuntimeError("psycopg is not installed; install requirements.txt")
     return psycopg.connect(
         DATABASE_URL,
-        connect_timeout=10,
+        connect_timeout=DB_CONNECT_TIMEOUT_SECONDS,
         application_name="raja_ai_premium",
     )
 
 
+def _discard_db_connection(conn):
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
+def _acquire_db_connection():
+    now = time.monotonic()
+    while True:
+        try:
+            conn, last_used = _db_pool.get_nowait()
+        except queue.Empty:
+            return _raw_db_connect()
+
+        if getattr(conn, "closed", False):
+            _discard_db_connection(conn)
+            continue
+
+        # Only ping connections that have been idle for a while. This keeps the
+        # normal login path to one real license query while safely replacing dead
+        # connections after provider/network idle timeouts.
+        if now - float(last_used or 0.0) >= DB_POOL_IDLE_PING_SECONDS:
+            try:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+                    cur.fetchone()
+                conn.rollback()
+            except Exception:
+                _discard_db_connection(conn)
+                continue
+        return conn
+
+
+def _release_db_connection(conn, broken=False):
+    if conn is None:
+        return
+    if broken or getattr(conn, "closed", False):
+        _discard_db_connection(conn)
+        return
+    try:
+        _db_pool.put_nowait((conn, time.monotonic()))
+    except queue.Full:
+        _discard_db_connection(conn)
+
+
+class _DbLease:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def __enter__(self):
+        return self.conn
+
+    def __exit__(self, exc_type, exc, tb):
+        broken = False
+        try:
+            if exc_type is None:
+                self.conn.commit()
+            else:
+                self.conn.rollback()
+        except Exception:
+            broken = True
+        _release_db_connection(self.conn, broken=broken)
+        return False
+
+
+def _prime_db_pool():
+    if not DATABASE_URL or _db_pool.qsize() > 0:
+        return
+    conn = None
+    try:
+        conn = _raw_db_connect()
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1")
+            cur.fetchone()
+        conn.rollback()
+        _release_db_connection(conn)
+        conn = None
+    finally:
+        if conn is not None:
+            _discard_db_connection(conn)
+
+
 def _db_connect():
     # Database schema initialization is warmed in a background thread at startup.
-    # If a DB-backed request arrives before warmup finishes, wait for/perform the
-    # same one-time initialization here instead of failing with a missing table.
+    # If a DB-backed request arrives before warmup finishes, perform the same
+    # one-time initialization safely, then borrow a warm pooled connection.
     if DATABASE_URL and not _license_store_ready.is_set():
         _ensure_license_store_initialized()
-    return _raw_db_connect()
+    return _DbLease(_acquire_db_connection())
 
 
 def initialize_license_store():
@@ -579,12 +670,22 @@ def _ensure_license_store_initialized():
 
 
 def _background_license_store_warmup():
-    try:
-        _ensure_license_store_initialized()
-    except Exception as exc:
-        # Do not prevent Flask/Gunicorn from serving /health and the cached web shell.
-        # The first DB-backed request will retry initialization synchronously.
-        print(f"RAJA license store background warmup warning: {exc}")
+    # Railway/remote PostgreSQL can become reachable a few seconds after the web
+    # process itself starts. Retry quietly in the background and keep one DB
+    # connection warm so the customer's first login does not pay the handshake cost.
+    last_error = None
+    for delay in (0, 2, 5):
+        if delay:
+            time.sleep(delay)
+        try:
+            _ensure_license_store_initialized()
+            _prime_db_pool()
+            return
+        except Exception as exc:
+            last_error = exc
+    # Do not prevent Flask/Gunicorn from serving /health and the cached web shell.
+    # The first DB-backed request will still retry initialization synchronously.
+    print(f"RAJA license store background warmup warning: {last_error}")
 
 
 def _start_license_store_warmup():
@@ -3142,9 +3243,40 @@ def verify_license():
     now = int(time.time())
 
     if DATABASE_URL:
-        # Fast PostgreSQL path: validate + update inside ONE DB connection/transaction.
-        # This avoids the previous load_license_record() connection followed by a
-        # second save_license_record() connection on every login/heartbeat.
+        # Heartbeats/saved-session checks use one atomic UPDATE ... RETURNING query.
+        # This removes the previous SELECT + UPDATE round trip and avoids an
+        # unnecessary FOR UPDATE lock for the common already-logged-in path.
+        if heartbeat:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        UPDATE raja_licenses
+                        SET last_verified_at=%s
+                        WHERE license_key=%s
+                          AND active=TRUE
+                          AND lower(COALESCE(user_id,''))=%s
+                          AND device_id=%s
+                          AND session_token=%s
+                          AND (expires_at IS NULL OR expires_at > %s)
+                        RETURNING device_label, session_token, COALESCE(plan,%s), expires_at
+                    """, (now, key, user, device, supplied_token, now, DEFAULT_LICENSE_PLAN))
+                    row = cur.fetchone()
+                    if not row:
+                        return jsonify({
+                            "status": "error",
+                            "message": "This session is invalid, expired, revoked or was replaced by a newer device login."
+                        }), 409
+                    device_label_db, session_token_db, plan_db, expires_at_db = row
+                    return jsonify({
+                        "status": "success", "message": "Session active.", "user": user,
+                        "device_bound": True, "device_label": device_label_db,
+                        "session_token": session_token_db,
+                        "plan": plan_db or DEFAULT_LICENSE_PLAN,
+                        "expires_at": expires_at_db,
+                    })
+
+        # Full login/takeover still uses a row lock so simultaneous device logins
+        # cannot issue competing session tokens. It remains one DB transaction.
         with _db_connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("""
@@ -3185,7 +3317,7 @@ def verify_license():
                     return jsonify({"status": "error", "message": "This key is assigned to another user/UID."}), 403
 
                 is_free_trial = str(record.get("plan") or "").strip().upper() == "FREE TRIAL"
-                if is_free_trial and not heartbeat:
+                if is_free_trial:
                     cur.execute(
                         "SELECT license_key FROM raja_trial_claims WHERE claim_type=%s AND claim_value=%s",
                         ("device", device),
@@ -3196,24 +3328,6 @@ def verify_license():
                             "status": "error",
                             "message": "This device has already used a free trial. Contact admin for VIP access."
                         }), 409
-
-                if heartbeat:
-                    if (str(record.get("device") or "") != device
-                            or not supplied_token
-                            or str(record.get("session_token") or "") != supplied_token):
-                        return jsonify({"status": "error", "message": "This session was replaced by a newer device login."}), 409
-
-                    cur.execute(
-                        "UPDATE raja_licenses SET last_verified_at=%s WHERE license_key=%s",
-                        (now, key),
-                    )
-                    return jsonify({
-                        "status": "success", "message": "Session active.", "user": user,
-                        "device_bound": True, "device_label": record.get("device_label"),
-                        "session_token": record.get("session_token"),
-                        "plan": record.get("plan") or DEFAULT_LICENSE_PLAN,
-                        "expires_at": record.get("expires_at"),
-                    })
 
                 previous_device = str(record.get("device") or "")
                 previous_label = str(record.get("device_label") or "")
