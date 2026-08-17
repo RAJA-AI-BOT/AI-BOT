@@ -7042,6 +7042,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                    window.navigator.standalone === true;
         }
 
+        const RAJA_PWA_INSTALLED_MARKER = 'raja_pwa_installed_seen_v23';
         let rajaInstalledPwaDetected = false;
         let rajaInstallRefreshBusy = false;
 
@@ -7049,8 +7050,24 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const ua = String(navigator.userAgent || '');
             const iPadOS = navigator.platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1;
             const ios = /iPhone|iPad|iPod/i.test(ua) || iPadOS;
-            const operaMini = /Opera Mini/i.test(ua);
-            return { ios, operaMini };
+            return { ios };
+        }
+
+        function rajaSetInstalledMarker(value) {
+            try {
+                if (value) localStorage.setItem(RAJA_PWA_INSTALLED_MARKER, '1');
+                else localStorage.removeItem(RAJA_PWA_INSTALLED_MARKER);
+            } catch (_) {}
+        }
+
+        function rajaHasInstalledMarker() {
+            try { return localStorage.getItem(RAJA_PWA_INSTALLED_MARKER) === '1'; }
+            catch (_) { return false; }
+        }
+
+        if (isRajaStandalone()) {
+            rajaInstalledPwaDetected = true;
+            rajaSetInstalledMarker(true);
         }
 
         function rajaAdoptNativePrompt() {
@@ -7061,31 +7078,48 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             return Boolean(deferredInstallPrompt);
         }
 
+        async function rajaInstalledRelatedAppsWithTimeout(timeoutMs = 1200) {
+            if (typeof navigator.getInstalledRelatedApps !== 'function') return null;
+            try {
+                const result = await Promise.race([
+                    navigator.getInstalledRelatedApps(),
+                    new Promise(resolve => setTimeout(() => resolve(null), timeoutMs))
+                ]);
+                return Array.isArray(result) ? result : null;
+            } catch (_) {
+                return null;
+            }
+        }
+
         async function detectRajaInstalledPWA() {
             if (isRajaStandalone()) {
                 rajaInstalledPwaDetected = true;
+                rajaSetInstalledMarker(true);
                 return true;
             }
 
-            // A live beforeinstallprompt means this browser profile sees the PWA as not installed.
+            // Chromium only exposes beforeinstallprompt when this profile sees
+            // the PWA as installable/not currently installed. Treat that as the
+            // strongest signal and clear any stale local marker immediately.
             if (rajaAdoptNativePrompt()) {
                 rajaInstalledPwaDetected = false;
+                rajaSetInstalledMarker(false);
                 return false;
             }
 
-            try {
-                if (typeof navigator.getInstalledRelatedApps === 'function') {
-                    const apps = await navigator.getInstalledRelatedApps();
-                    const found = Array.isArray(apps) && apps.some(app =>
-                        String(app?.platform || '').toLowerCase() === 'webapp'
-                    );
-                    rajaInstalledPwaDetected = Boolean(found);
-                    return rajaInstalledPwaDetected;
-                }
-            } catch (_) {}
+            const apps = await rajaInstalledRelatedAppsWithTimeout(1200);
+            if (Array.isArray(apps)) {
+                const found = apps.some(app => String(app?.platform || '').toLowerCase() === 'webapp');
+                rajaInstalledPwaDetected = Boolean(found);
+                if (found) rajaSetInstalledMarker(true);
+                return rajaInstalledPwaDetected;
+            }
 
-            rajaInstalledPwaDetected = false;
-            return false;
+            // If the browser does not support/reliably answer the Installed
+            // Related Apps API, use the marker written when the standalone PWA
+            // itself was opened. A future beforeinstallprompt clears it after uninstall.
+            rajaInstalledPwaDetected = rajaHasInstalledMarker();
+            return rajaInstalledPwaDetected;
         }
 
         function renderRajaInstallButton() {
@@ -7093,11 +7127,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (!btn) return;
             const env = rajaInstallEnvironment();
 
-            // Never hide this control in browser mode.
             btn.style.display = 'inline-flex';
             btn.style.opacity = '1';
-            btn.style.cursor = 'pointer';
             btn.disabled = false;
+            btn.style.cursor = 'pointer';
 
             if (isRajaStandalone() || rajaInstalledPwaDetected) {
                 btn.innerText = '✓ APP INSTALLED';
@@ -7123,24 +7156,27 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             try {
                 rajaAdoptNativePrompt();
                 await detectRajaInstalledPWA();
-                renderRajaInstallButton();
             } finally {
+                renderRajaInstallButton();
                 rajaInstallRefreshBusy = false;
             }
         }
 
         rajaAdoptNativePrompt();
+        renderRajaInstallButton();
         refreshRajaInstallState();
 
         window.addEventListener('raja-native-install-ready', () => {
             rajaAdoptNativePrompt();
             rajaInstalledPwaDetected = false;
+            rajaSetInstalledMarker(false);
             renderRajaInstallButton();
         });
 
         window.addEventListener('raja-native-app-installed', () => {
             deferredInstallPrompt = null;
             rajaInstalledPwaDetected = true;
+            rajaSetInstalledMarker(true);
             renderRajaInstallButton();
         });
 
@@ -7149,6 +7185,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             deferredInstallPrompt = event;
             window.__RAJA_NATIVE_INSTALL_PROMPT__ = event;
             rajaInstalledPwaDetected = false;
+            rajaSetInstalledMarker(false);
             renderRajaInstallButton();
         });
 
@@ -7156,6 +7193,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             deferredInstallPrompt = null;
             window.__RAJA_NATIVE_INSTALL_PROMPT__ = null;
             rajaInstalledPwaDetected = true;
+            rajaSetInstalledMarker(true);
             renderRajaInstallButton();
         });
 
@@ -7164,56 +7202,21 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (document.visibilityState === 'visible') refreshRajaInstallState();
         });
 
-        function waitForRajaNativePrompt(timeoutMs = 4500) {
-            rajaAdoptNativePrompt();
-            if (deferredInstallPrompt) return Promise.resolve(deferredInstallPrompt);
-
-            return new Promise(resolve => {
-                let finished = false;
-                const done = value => {
-                    if (finished) return;
-                    finished = true;
-                    window.removeEventListener('raja-native-install-ready', onReady);
-                    clearTimeout(timer);
-                    resolve(value || null);
-                };
-                const onReady = () => {
-                    rajaAdoptNativePrompt();
-                    done(deferredInstallPrompt);
-                };
-                window.addEventListener('raja-native-install-ready', onReady);
-                const timer = setTimeout(() => {
-                    rajaAdoptNativePrompt();
-                    done(deferredInstallPrompt);
-                }, timeoutMs);
-            });
-        }
-
         async function installPWA() {
             const btn = document.getElementById('installAppBtn');
             const env = rajaInstallEnvironment();
 
-            await detectRajaInstalledPWA();
-            if (isRajaStandalone() || rajaInstalledPwaDetected) {
+            // Never block the user's click on a slow installed-app detection call.
+            if (isRajaStandalone()) {
+                rajaInstalledPwaDetected = true;
+                rajaSetInstalledMarker(true);
                 renderRajaInstallButton();
                 return;
             }
 
             rajaAdoptNativePrompt();
 
-            // The first tap itself satisfies Chrome's user-interaction heuristic.
-            // If the browser emits beforeinstallprompt immediately after that tap,
-            // wait briefly and use the trusted native event directly.
-            if (!deferredInstallPrompt && !env.ios) {
-                if (btn) {
-                    btn.disabled = true;
-                    btn.innerText = '⏳ CHECKING INSTALL...';
-                }
-                await waitForRajaNativePrompt(4500);
-                if (btn) btn.disabled = false;
-            }
-
-            rajaAdoptNativePrompt();
+            // Best path: browser has already declared the PWA installable.
             if (deferredInstallPrompt) {
                 const promptEvent = deferredInstallPrompt;
                 deferredInstallPrompt = null;
@@ -7223,6 +7226,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     const choice = await promptEvent.userChoice;
                     if (choice?.outcome === 'accepted') {
                         rajaInstalledPwaDetected = true;
+                        rajaSetInstalledMarker(true);
                     }
                 } catch (error) {
                     console.warn('RAJA AI native install prompt error:', error);
@@ -7232,8 +7236,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
 
             if (env.ios) {
-                // iOS/iPadOS does not expose beforeinstallprompt. Use the system share sheet;
-                // Add to Home Screen is an Apple-controlled confirmation step.
+                // Apple does not expose beforeinstallprompt. Open the native share
+                // sheet where Safari provides Add to Home Screen.
                 if (navigator.share) {
                     try { await navigator.share({ title: 'RAJA AI PREMIUM', url: location.href }); }
                     catch (_) {}
@@ -7242,13 +7246,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 return;
             }
 
-            // Native install cannot be forced before Chromium exposes beforeinstallprompt.
-            // Keep the button visible and ready for the moment the event becomes available.
+            // No Chromium native event means JavaScript cannot legally force the
+            // install dialog. Do not hang or show a custom modal; keep the real
+            // INSTALL APP button visible and re-check in the background.
             if (btn) {
                 btn.innerText = '⬇ INSTALL APP';
                 btn.disabled = false;
             }
-            setTimeout(refreshRajaInstallState, 1200);
+            setTimeout(refreshRajaInstallState, 800);
         }
 
         // =========================================================
