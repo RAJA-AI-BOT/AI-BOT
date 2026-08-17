@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v19-install-clean';
+const CACHE_VERSION = 'raja-ai-pwa-v20-native-capture';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -25,6 +25,7 @@ const API_PREFIXES = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     self.skipWaiting();
+
     const cache = await caches.open(ASSET_CACHE);
 
     await Promise.allSettled(
@@ -119,10 +120,12 @@ async function networkFirstNavigation(request) {
       response.ok
     ) {
       /*
-        Normalize all navigation variants
-        (?raja_install=1, build tokens, etc.)
-        to one stable shell key so an old query URL
-        never becomes the app shell.
+        Normalize navigation variants like:
+        ?raja_install=1
+        build query tokens
+        temporary query parameters
+
+        into one stable cached app shell.
       */
       await cache.put(
         '/',
@@ -190,7 +193,7 @@ self.addEventListener('fetch', event => {
 
   /*
     HTML / app navigation:
-    always try latest network version first.
+    always latest network version first.
   */
   if (
     request.mode === 'navigate'
@@ -204,7 +207,7 @@ self.addEventListener('fetch', event => {
 
   /*
     API requests:
-    never serve old cached API data.
+    never use stale cached API data.
   */
   if (
     isApiPath(url.pathname)
@@ -222,7 +225,7 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    PWA / update / icon files:
+    Important PWA/update/icon files:
     always network-first.
   */
   if (
@@ -241,7 +244,7 @@ self.addEventListener('fetch', event => {
 
   /*
     Other same-origin assets:
-    network first, cache only as offline fallback.
+    network first, cached fallback.
   */
   event.respondWith(
     networkFirstAsset(request)
