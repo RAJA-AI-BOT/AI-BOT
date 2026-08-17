@@ -5097,6 +5097,123 @@
 }
 </style>
 
+
+<style id="raja-mobile-result-no-gap-v1">
+/* Mobile/tablet result screen:
+   put HOME / SETTINGS / SCAN AGAIN directly under the signal card
+   instead of pinning it to the bottom of a tall empty viewport. */
+@media (max-width:820px) {
+    body.raja-mobile-result {
+        padding-bottom:max(8px, env(safe-area-inset-bottom)) !important;
+    }
+
+    body.raja-mobile-result #mainAppContent {
+        display:flex !important;
+        flex-direction:column !important;
+        width:100% !important;
+        min-height:0 !important;
+    }
+
+    body.raja-mobile-result #mainAppContent .app-shell {
+        order:1 !important;
+        min-height:0 !important;
+        height:auto !important;
+        margin:0 !important;
+    }
+
+    body.raja-mobile-result .raja-mobile-command-bar {
+        order:2 !important;
+        position:static !important;
+        left:auto !important;
+        right:auto !important;
+        bottom:auto !important;
+        width:calc(100% - 12px) !important;
+        max-width:620px !important;
+        margin:7px auto max(7px, env(safe-area-inset-bottom)) !important;
+        transform:none !important;
+    }
+
+    body.raja-mobile-result .main-panel-card,
+    body.raja-mobile-result .ai-hud-box,
+    body.raja-mobile-result .signal-view,
+    body.raja-mobile-result .premium-signal-result {
+        margin-bottom:0 !important;
+    }
+
+    /* Compact result so signal + bottom actions sit together on one screen. */
+    body.raja-mobile-result #signalView .psr-hero {
+        height:clamp(300px,52dvh,420px) !important;
+        min-height:300px !important;
+    }
+
+    body.raja-mobile-result #signalView .psr-orb-stage {
+        min-height:285px !important;
+    }
+
+    body.raja-mobile-result #signalView .psr-energy-orb {
+        width:min(225px,60vw) !important;
+        height:min(225px,60vw) !important;
+    }
+
+    body.raja-mobile-result .raja-mobile-command-summary {
+        padding:0 3px 5px !important;
+    }
+
+    body.raja-mobile-result .raja-mobile-command-actions.triple {
+        grid-template-columns:86px 108px minmax(0,1fr) !important;
+        gap:6px !important;
+    }
+
+    body.raja-mobile-result .raja-mobile-command-actions button {
+        min-height:48px !important;
+    }
+}
+
+@media (max-width:390px) {
+    body.raja-mobile-result #signalView .psr-hero {
+        height:clamp(285px,49dvh,360px) !important;
+        min-height:285px !important;
+    }
+
+    body.raja-mobile-result #signalView .psr-energy-orb {
+        width:min(205px,61vw) !important;
+        height:min(205px,61vw) !important;
+    }
+
+    body.raja-mobile-result .raja-mobile-command-actions.triple {
+        grid-template-columns:74px 94px minmax(0,1fr) !important;
+        gap:5px !important;
+    }
+
+    body.raja-mobile-result .raja-mobile-command-actions button {
+        min-height:45px !important;
+        font-size:10px !important;
+    }
+}
+
+/* Laptop: keep the signal result vertically compact so it fits common screens
+   without changing the trading UI or data. */
+@media (min-width:821px) and (max-height:900px) {
+    #signalView .premium-signal-result {
+        margin-top:0 !important;
+    }
+
+    #signalView .psr-hero {
+        height:min(48vh,410px) !important;
+        min-height:315px !important;
+    }
+
+    #signalView .psr-orb-stage {
+        min-height:300px !important;
+    }
+
+    #signalView .psr-energy-orb {
+        width:min(230px,24vw) !important;
+        height:min(230px,24vw) !important;
+    }
+}
+</style>
+
 </head>
 <body>
 
