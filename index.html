@@ -7026,6 +7026,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         let rajaInstallIntent = false;
         let rajaInstallPrepareTimer = null;
+        let rajaInstalledPwaDetected = false;
+        let rajaInstalledPwaCheckDone = false;
 
         function rajaInstallEnvironment() {
             const ua = String(navigator.userAgent || '');
@@ -7102,6 +7104,34 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             modal.setAttribute('aria-hidden','false');
         }
 
+        async function detectRajaInstalledPWA() {
+            if (isRajaStandalone()) {
+                rajaInstalledPwaDetected = true;
+                rajaInstalledPwaCheckDone = true;
+                return true;
+            }
+            if (!('getInstalledRelatedApps' in navigator)) {
+                rajaInstalledPwaCheckDone = true;
+                return false;
+            }
+            try {
+                const apps = await navigator.getInstalledRelatedApps();
+                rajaInstalledPwaDetected = Array.isArray(apps) && apps.some(app => {
+                    const platform = String(app?.platform || '').toLowerCase();
+                    const url = String(app?.url || '');
+                    const id = String(app?.id || '');
+                    return platform === 'webapp' && (
+                        !url || url.includes('/manifest.json') ||
+                        id === '/' || id.includes('raja-ai-bot.up.railway.app')
+                    );
+                });
+            } catch (_) {
+                rajaInstalledPwaDetected = false;
+            }
+            rajaInstalledPwaCheckDone = true;
+            return rajaInstalledPwaDetected;
+        }
+
         function setInstallButtonVisible() {
             const btn = document.getElementById('installAppBtn');
             if (!btn) return;
@@ -7111,7 +7141,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             btn.style.opacity = '1';
             btn.style.cursor = 'pointer';
 
-            if (isRajaStandalone()) {
+            if (isRajaStandalone() || rajaInstalledPwaDetected) {
                 btn.innerText = '✓ APP INSTALLED';
                 btn.setAttribute('aria-label','RAJA AI is installed');
                 btn.dataset.installState = 'installed';
@@ -7155,16 +7185,19 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         rajaCleanLegacyInstallQuery();
-        // Chromium-family browsers should never advertise a clickable INSTALL button
-        // before the browser has actually exposed its trusted native install event.
-        // This avoids the misleading fallback popup seen on Android/Samsung/Chrome.
-        try {
-            const initialInstallEnv = rajaInstallEnvironment();
-            if (!isRajaStandalone() && initialInstallEnv.chromium && !deferredInstallPrompt) {
-                rajaInstallIntent = true;
-            }
-        } catch (_) {}
+        // First detect an already-installed WebAPK/PWA. Chrome intentionally does not
+        // fire beforeinstallprompt again for an app that is already installed.
+        // Without this check the browser page could show PREPARING INSTALL forever.
         setInstallButtonVisible();
+        detectRajaInstalledPWA().finally(() => {
+            try {
+                const initialInstallEnv = rajaInstallEnvironment();
+                if (!isRajaStandalone() && !rajaInstalledPwaDetected && initialInstallEnv.chromium && !deferredInstallPrompt) {
+                    rajaInstallIntent = true;
+                }
+            } catch (_) {}
+            setInstallButtonVisible();
+        });
 
         // Chromium browsers expose a trusted native install event only after the
         // browser's own installability/engagement checks pass. Save it and use it
@@ -7189,11 +7222,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         window.addEventListener('appinstalled', () => {
             deferredInstallPrompt = null;
             rajaInstallIntent = false;
+            rajaInstalledPwaDetected = true;
+            rajaInstalledPwaCheckDone = true;
             setInstallButtonVisible();
         });
 
         async function installPWA() {
-            if (isRajaStandalone()) {
+            if (isRajaStandalone() || rajaInstalledPwaDetected) {
                 setInstallButtonVisible();
                 return;
             }
@@ -7256,6 +7291,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 setInstallButtonVisible();
             }, 36000);
         }
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible') return;
+            detectRajaInstalledPWA().finally(setInstallButtonVisible);
+        });
+        window.addEventListener('focus', () => {
+            detectRajaInstalledPWA().finally(setInstallButtonVisible);
+        });
 
         // =========================================================
         // GLOBAL PWA AUTO-UPDATE
