@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v20-native-capture';
+const CACHE_VERSION = 'raja-ai-pwa-v21-native-ready-only';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
