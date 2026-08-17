@@ -4911,6 +4911,192 @@
 }
 </style>
 
+
+<style id="raja-live-signal-only-cleanup">
+#signalView #resModalMeta,
+#signalView .v31-signal-scorebar,
+#signalView .stability-strip,
+#signalView .v23-signal-tools,
+#signalView .v23-result-freshness,
+#signalView #signalEntryWindow,
+#signalView #aiExplainCard,
+#signalView #advancedFiltersInfo,
+#signalView #signalConfidenceRing,
+#signalView .psr-mtf-heading,
+#signalView #tfBreakdown,
+#signalView #tfSummaryLine,
+#signalView .signal-intel-bottom,
+#signalView .mini-chart-wrap,
+#signalView .mini-chart-label,
+#signalView .mini-chart-credit,
+#signalView .chart-legend,
+#signalView #signalMiniChart { display:none !important; }
+#signalView .psr-hero canvas,
+#signalView .psr-hero .tv-lightweight-charts,
+#signalView .psr-hero .tv-lightweight-charts table,
+#signalView .psr-hero .pane-views,
+#signalView .psr-hero [class*="chart"],
+#signalView .psr-hero [id*="chart"] { display:none !important; }
+#signalView .premium-signal-result { padding-bottom:18px !important; }
+#signalView .psr-hero { min-height:410px !important; padding-bottom:24px !important; }
+#signalView .psr-orb-stage { min-height:340px !important; }
+#signalView .psr-energy-orb { transform:scale(1.04); }
+#signalView .psr-live-chip.psr-live-left { display:none !important; }
+</style>
+
+
+<style id="raja-fit-screen-cleanup-v1">
+/* Requested removals: keep code hooks intact, remove these panels visually. */
+#setupBuildShell,
+#v23Top3Compare {
+    display:none !important;
+}
+
+/* Use the freed space so the important bot/signal area fits much better on laptop/tablet. */
+#mainAppContent .main-panel-card {
+    padding-top:7px !important;
+}
+
+#mainAppContent .scan-heading-row {
+    margin-bottom:5px !important;
+    padding-bottom:5px !important;
+}
+
+#mainAppContent .scan-heading {
+    font-size:16px !important;
+}
+
+#mainAppContent .scan-sub {
+    font-size:7px !important;
+    margin-top:1px !important;
+}
+
+/* Signal-only result: compact height but keep the rotating orb large and readable. */
+#signalView .premium-signal-result {
+    margin-top:0 !important;
+    padding:8px 10px 10px !important;
+}
+
+#signalView .psr-topline {
+    min-height:38px !important;
+    padding:4px 8px !important;
+}
+
+#signalView .psr-hero {
+    min-height:330px !important;
+    height:min(49vh,390px) !important;
+    padding:0 6px 8px !important;
+}
+
+#signalView .psr-orb-stage {
+    min-height:300px !important;
+    height:100% !important;
+}
+
+#signalView .psr-energy-orb {
+    width:min(250px,31vw) !important;
+    height:min(250px,31vw) !important;
+    max-width:250px !important;
+    max-height:250px !important;
+}
+
+#signalView .psr-orbit-1 { inset:-14px !important; }
+#signalView .psr-orbit-2 { inset:-29px !important; }
+#signalView .psr-orbit-3 { inset:-44px !important; }
+
+#signalView .psr-floor-1 { width:270px !important; }
+#signalView .psr-floor-2 { width:220px !important; }
+#signalView .psr-floor-3 { width:170px !important; }
+
+#signalView .psr-selected-expiry {
+    bottom:7px !important;
+    padding:5px 24px !important;
+}
+
+#signalView .psr-selected-expiry strong {
+    font-size:25px !important;
+}
+
+/* Remove extra decorative chips so the signal is the clear focus. */
+#signalView .psr-shared,
+#signalView .psr-live-chip {
+    display:none !important;
+}
+
+/* Common laptop fit. */
+@media (min-width:901px) and (max-height:900px) {
+    body {
+        padding:2px !important;
+    }
+
+    #mainAppContent .app-shell {
+        min-height:calc(100dvh - 8px) !important;
+    }
+
+    #mainAppContent .main-column {
+        gap:5px !important;
+    }
+
+    #signalView .psr-hero {
+        height:min(46vh,350px) !important;
+        min-height:295px !important;
+    }
+
+    #signalView .psr-orb-stage {
+        min-height:280px !important;
+    }
+
+    #signalView .psr-energy-orb {
+        width:min(225px,28vw) !important;
+        height:min(225px,28vw) !important;
+    }
+}
+
+/* Tablet / mobile: no horizontal overflow, centered signal. */
+@media (max-width:900px) {
+    #signalView .psr-hero {
+        height:auto !important;
+        min-height:325px !important;
+    }
+
+    #signalView .psr-orb-stage {
+        min-height:305px !important;
+    }
+
+    #signalView .psr-energy-orb {
+        width:min(220px,58vw) !important;
+        height:min(220px,58vw) !important;
+    }
+}
+
+@media (max-width:520px) {
+    #mainAppContent .scan-heading-row {
+        padding:3px 4px !important;
+    }
+
+    #signalView .psr-topline {
+        padding:3px 5px !important;
+    }
+
+    #signalView .psr-title small {
+        display:none !important;
+    }
+
+    #signalView .psr-hero {
+        min-height:295px !important;
+    }
+
+    #signalView .psr-orb-stage {
+        min-height:280px !important;
+    }
+
+    #signalView .psr-energy-orb {
+        width:min(205px,62vw) !important;
+        height:min(205px,62vw) !important;
+    }
+}
+</style>
+
 </head>
 <body>
 
