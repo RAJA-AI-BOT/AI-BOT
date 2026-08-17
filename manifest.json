@@ -28,7 +28,7 @@
     {
       "platform": "webapp",
       "url": "/manifest.json",
-      "id": "/"
+      "id": "https://raja-ai-bot.up.railway.app/"
     }
   ]
 }
