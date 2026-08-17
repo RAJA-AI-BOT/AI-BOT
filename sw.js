@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v16-maskable-icon';
+const CACHE_VERSION = 'raja-ai-pwa-v19-install-clean';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -29,10 +29,15 @@ self.addEventListener('install', event => {
 
     await Promise.allSettled(
       STATIC_ASSETS.map(async url => {
-        const response = await fetch(url, { cache: 'reload' });
+        const response = await fetch(url, {
+          cache: 'reload'
+        });
 
         if (response && response.ok) {
-          await cache.put(url, response.clone());
+          await cache.put(
+            url,
+            response.clone()
+          );
         }
       })
     );
@@ -116,7 +121,8 @@ async function networkFirstNavigation(request) {
       /*
         Normalize all navigation variants
         (?raja_install=1, build tokens, etc.)
-        to one stable shell key.
+        to one stable shell key so an old query URL
+        never becomes the app shell.
       */
       await cache.put(
         '/',
@@ -183,8 +189,8 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    App page / HTML navigation.
-    Latest network version first.
+    HTML / app navigation:
+    always try latest network version first.
   */
   if (
     request.mode === 'navigate'
@@ -197,7 +203,8 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    API requests are never served from old cache.
+    API requests:
+    never serve old cached API data.
   */
   if (
     isApiPath(url.pathname)
@@ -215,7 +222,8 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    Important PWA/update/icon files.
+    PWA / update / icon files:
+    always network-first.
   */
   if (
     url.pathname === '/sw.js' ||
@@ -232,8 +240,8 @@ self.addEventListener('fetch', event => {
   }
 
   /*
-    Other same-origin files:
-    network first, cache fallback.
+    Other same-origin assets:
+    network first, cache only as offline fallback.
   */
   event.respondWith(
     networkFirstAsset(request)
