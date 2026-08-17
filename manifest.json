@@ -27,8 +27,8 @@
   "related_applications": [
     {
       "platform": "webapp",
-      "url": "https://raja-ai-bot.up.railway.app/manifest.json",
-      "id": "https://raja-ai-bot.up.railway.app/"
+      "url": "/manifest.json",
+      "id": "/"
     }
   ]
 }
