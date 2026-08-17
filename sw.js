@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v22-install-visible';
+const CACHE_VERSION = 'raja-ai-pwa-v23-install-nohang';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
