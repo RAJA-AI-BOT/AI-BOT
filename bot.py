@@ -9,12 +9,13 @@ import hashlib
 import base64
 import threading
 import queue
+import math
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from collections import Counter, OrderedDict
 from datetime import datetime, timezone
 from urllib.request import Request as UrlRequest, urlopen
-from urllib.parse import urlencode
+from urllib.parse import urlencode, quote
 from urllib.error import HTTPError, URLError
 
 # Lazy-load yfinance only when a market scan actually starts.
@@ -45,6 +46,19 @@ def _get_pandas():
                 _pd_module = _pd
     return _pd_module
 
+
+# websocket-client is used only for Coinbase public real-time ticker updates.
+_ws_module = None
+_ws_import_lock = threading.Lock()
+
+def _get_websocket_client():
+    global _ws_module
+    if _ws_module is None:
+        with _ws_import_lock:
+            if _ws_module is None:
+                import websocket as _websocket
+                _ws_module = _websocket
+    return _ws_module
 
 try:
     import psycopg
@@ -243,6 +257,31 @@ POCKET_OPTION_FOREX_OTC_PAIRS = ['EUR/USD (OTC)', 'GBP/USD (OTC)', 'USD/JPY (OTC
 POCKET_OPTION_CRYPTO_OTC_PAIRS = ['BNB (OTC)', 'Polkadot (OTC)', 'Ethereum (OTC)', 'Toncoin (OTC)', 'Cardano (OTC)', 'Polygon (OTC)', 'TRON (OTC)', 'Avalanche (OTC)', 'Bitcoin (OTC)', 'Bitcoin ETF (OTC)', 'Solana (OTC)', 'Chainlink (OTC)', 'Litecoin (OTC)', 'Dogecoin (OTC)']
 POCKET_OPTION_STOCKS_OTC_PAIRS = ['Apple (OTC)', 'American Express (OTC)', 'Boeing Company (OTC)', 'Cisco (OTC)', 'Facebook Inc (OTC)', 'Intel (OTC)', 'Johnson & Johnson (OTC)', "McDonald's (OTC)", 'Microsoft (OTC)', 'Pfizer Inc (OTC)', 'Tesla (OTC)', 'ExxonMobil (OTC)', 'Advanced Micro Devices (OTC)']
 
+
+# Exact RAJA AI Quotex catalog used by the master bridge. Only these 38 assets are
+# accepted from the Quotex extension: 21 Forex OTC + 17 Crypto OTC.
+QUOTEX_RAJA_FOREX_OTC_PAIRS = [
+    'USD/BRL (OTC)', 'NZD/CHF (OTC)', 'NZD/JPY (OTC)', 'USD/COP (OTC)', 'USD/MXN (OTC)',
+    'AUD/NZD (OTC)', 'USD/BDT (OTC)', 'USD/DZD (OTC)', 'USD/NGN (OTC)', 'USD/PHP (OTC)',
+    'USD/PKR (OTC)', 'USD/ZAR (OTC)', 'USD/INR (OTC)', 'USD/EGP (OTC)', 'USD/IDR (OTC)',
+    'USD/ARS (OTC)', 'GBP/NZD (OTC)', 'EUR/NZD (OTC)', 'NZD/USD (OTC)', 'NZD/CAD (OTC)',
+    'CAD/CHF (OTC)'
+]
+QUOTEX_RAJA_CRYPTO_OTC_PAIRS = [
+    'Zcash (OTC)', 'Chainlink (OTC)', 'Bitcoin (OTC)', 'Binance Coin (OTC)', 'Ethereum (OTC)',
+    'Bitcoin Cash (OTC)', 'Cosmos (OTC)', 'Ethereum Classic (OTC)', 'Axie Infinity (OTC)',
+    'Trump (OTC)', 'Dash (OTC)', 'Solana (OTC)', 'Toncoin (OTC)', 'Litecoin (OTC)',
+    'Avalanche (OTC)', 'Polkadot (OTC)', 'Ripple (OTC)'
+]
+QUOTEX_RAJA_OTC_PAIRS = QUOTEX_RAJA_FOREX_OTC_PAIRS + QUOTEX_RAJA_CRYPTO_OTC_PAIRS
+QUOTEX_RAJA_OTC_PAIR_SET = set(QUOTEX_RAJA_OTC_PAIRS)
+
+CRYPTO_LIVE_PAIRS = {'BTC-USD','ETH-USD','SOL-USD','LTC-USD','XRP-USD','ADA-USD','DOGE-USD'}
+FOREX_LIVE_PAIRS = {
+    'EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','USD/CHF','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY',
+    'AUD/JPY','EUR/AUD','GBP/AUD','CAD/JPY','EUR/CAD','GBP/CAD','NZD/JPY','AUD/NZD','EUR/CHF','GBP/CHF','XAUUSD'
+}
+
 TIMEFRAMES = {
     "1m": 1,
     "2m": 2,
@@ -300,6 +339,65 @@ TWELVE_DATA_GLOBAL_RATE_LIMIT_COOLDOWN = max(30, int(os.environ.get("RAJA_TWELVE
 TWELVE_DATA_REQUEST_TIMEOUT_SECONDS = max(3.0, min(20.0, float(os.environ.get("RAJA_TWELVE_DATA_REQUEST_TIMEOUT", "9"))))
 TWELVE_DATA_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_TWELVE_DATA_CONCURRENCY", "2"))))
 TWELVE_DATA_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_TWELVE_DATA_MIN_GAP", "0.20")))
+
+
+# =========================================================
+# DIRECT LIVE MARKET PROVIDERS (v1.7 HYBRID OTC / NO-API)
+# =========================================================
+# TradingView is a charting surface, not used as a scraping dependency here.
+# RAJA AI talks directly to provider APIs instead:
+#   Quotex OTC  -> exact master browser bridge FIRST; if offline, clearly-labelled
+#                  underlying/reference candles keep OTC scanning available.
+#   Crypto Live -> Coinbase Exchange public market-data candles (no API key)
+#   Forex Live  -> verified provider only (OANDA/Twelve Data if configured)
+# Yahoo is enabled only as a clearly-labelled REFERENCE fallback for no-key OTC/FX.
+# Never label a fallback/reference candle as exact Quotex/Pocket Option OTC.
+REAL_ONLY_MODE = str(os.environ.get('RAJA_REAL_ONLY_MODE', '1')).strip().lower() not in {'0','false','no','off'}
+OANDA_API_TOKEN = (os.environ.get('OANDA_API_TOKEN') or os.environ.get('RAJA_OANDA_API_TOKEN') or '').strip()
+OANDA_ENVIRONMENT = (os.environ.get('OANDA_ENVIRONMENT') or os.environ.get('RAJA_OANDA_ENVIRONMENT') or 'practice').strip().lower()
+OANDA_BASE_URL = (
+    os.environ.get('RAJA_OANDA_BASE_URL')
+    or ('https://api-fxtrade.oanda.com' if OANDA_ENVIRONMENT == 'live' else 'https://api-fxpractice.oanda.com')
+).rstrip('/')
+OANDA_ENABLED = bool(OANDA_API_TOKEN)
+OANDA_OUTPUTSIZE = max(300, min(5000, int(os.environ.get('RAJA_OANDA_OUTPUTSIZE', '1800'))))
+OANDA_CACHE_SECONDS = max(10, int(os.environ.get('RAJA_OANDA_CACHE_SECONDS', '25')))
+OANDA_REQUEST_TIMEOUT_SECONDS = max(3.0, min(20.0, float(os.environ.get('RAJA_OANDA_REQUEST_TIMEOUT', '8'))))
+OANDA_FETCH_CONCURRENCY = max(1, min(4, int(os.environ.get('RAJA_OANDA_CONCURRENCY', '3'))))
+OANDA_FAILURE_COOLDOWN = max(20, int(os.environ.get('RAJA_OANDA_FAILURE_COOLDOWN', '90')))
+
+oanda_cache = {}
+oanda_cache_lock = threading.RLock()
+oanda_failed_until = {}
+oanda_failed_lock = threading.Lock()
+oanda_fetch_semaphore = threading.BoundedSemaphore(OANDA_FETCH_CONCURRENCY)
+
+COINBASE_EXCHANGE_BASE_URL = (os.environ.get('RAJA_COINBASE_EXCHANGE_BASE_URL') or 'https://api.exchange.coinbase.com').rstrip('/')
+COINBASE_OUTPUTSIZE = max(1900, min(2400, int(os.environ.get('RAJA_COINBASE_OUTPUTSIZE', '2100'))))
+COINBASE_PAGE_SIZE = 300
+COINBASE_PAGE_GAP_SECONDS = max(0.0, min(1.0, float(os.environ.get('RAJA_COINBASE_PAGE_GAP_SECONDS', '0.08'))))
+COINBASE_CACHE_SECONDS = max(10, int(os.environ.get('RAJA_COINBASE_CACHE_SECONDS', '25')))
+COINBASE_REQUEST_TIMEOUT_SECONDS = max(3.0, min(20.0, float(os.environ.get('RAJA_COINBASE_REQUEST_TIMEOUT', '8'))))
+COINBASE_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get('RAJA_COINBASE_CONCURRENCY', '2'))))
+COINBASE_FAILURE_COOLDOWN = max(20, int(os.environ.get('RAJA_COINBASE_FAILURE_COOLDOWN', '90')))
+COINBASE_WS_URL = (os.environ.get('RAJA_COINBASE_WS_URL') or 'wss://ws-feed.exchange.coinbase.com').strip()
+COINBASE_WS_STALE_SECONDS = max(5, min(60, int(os.environ.get('RAJA_COINBASE_WS_STALE_SECONDS', '15'))))
+coinbase_live_ticks = {}
+coinbase_live_tick_lock = threading.RLock()
+coinbase_ws_start_lock = threading.Lock()
+coinbase_ws_started = False
+coinbase_cache = {}
+coinbase_cache_lock = threading.RLock()
+coinbase_failed_until = {}
+coinbase_failed_lock = threading.Lock()
+coinbase_fetch_semaphore = threading.BoundedSemaphore(COINBASE_FETCH_CONCURRENCY)
+
+# Exact broker OTC is always preferred. When the master Quotex bridge is offline,
+# this allows clearly-labelled UNDERLYING/REFERENCE fallback data instead of pretending
+# that OANDA/Coinbase/Twelve Data are exact broker OTC quotes.
+QUOTEX_REFERENCE_FALLBACK_ENABLED = str(os.environ.get('RAJA_QUOTEX_REFERENCE_FALLBACK', '1')).strip().lower() not in {'0','false','no','off'}
+HYBRID_OTC_FALLBACK_ENABLED = str(os.environ.get('RAJA_HYBRID_OTC_FALLBACK', '1')).strip().lower() not in {'0','false','no','off'}
+ALLOW_YAHOO_LAST_RESORT = str(os.environ.get('RAJA_ALLOW_YAHOO_LAST_RESORT', '1')).strip().lower() in {'1','true','yes','on'}
 
 market_cache = {}
 cache_lock = threading.RLock()
@@ -399,6 +497,14 @@ ADMIN_PASSWORD = (os.environ.get("RAJA_ADMIN_PASSWORD") or "").strip()
 RAJA_QUOTEX_OTC_URL = (os.environ.get("RAJA_QUOTEX_OTC_URL") or "https://qxbroker.com/en/").strip()
 RAJA_QUOTEX_OTC_COMPANION_URL = (os.environ.get("RAJA_QUOTEX_OTC_COMPANION_URL") or "").strip()
 RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC", "1")).strip().lower() not in {"0", "false", "no", "off"}
+# Optional one-PC master feed. Set RAJA_QUOTEX_MASTER_USER to the RAJA AI user/UID
+# that owns the extension (for example 786). When configured, its exact broker feed is
+# shared server-side with every authenticated RAJA AI client; clients do not need the extension.
+RAJA_QUOTEX_MASTER_USER = str(os.environ.get('RAJA_QUOTEX_MASTER_USER') or '').strip().lstrip('@').casefold()
+RAJA_QUOTEX_EXTENSION_MASTER_ONLY = str(os.environ.get('RAJA_QUOTEX_EXTENSION_MASTER_ONLY', '1' if RAJA_QUOTEX_MASTER_USER else '0')).strip().lower() not in {'0','false','no','off'}
+RAJA_QUOTEX_SHARED_MASTER_FEED = str(os.environ.get('RAJA_QUOTEX_SHARED_MASTER_FEED', '1')).strip().lower() not in {'0','false','no','off'}
+QUOTEX_BRIDGE_SHARED_FRESH_SECONDS = max(5, min(60, int(os.environ.get('RAJA_QUOTEX_SHARED_FRESH_SECONDS', '20'))))
+QUOTEX_BRIDGE_PERSIST_SECONDS = max(10, min(300, int(os.environ.get('RAJA_QUOTEX_BRIDGE_PERSIST_SECONDS', '30'))))
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
 QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "2500"))))
@@ -415,6 +521,14 @@ quotex_bridge_pair_codes_lock = threading.RLock()
 quotex_bridge_candles = {}
 quotex_bridge_status = {}
 quotex_bridge_data_lock = threading.RLock()
+# Master/shared exact Quotex cache. User-specific cache is kept for backwards compatibility.
+quotex_shared_candles = {}
+quotex_shared_status = {}
+quotex_shared_pair_status = {}
+quotex_shared_loaded_pairs = set()
+quotex_shared_persisted_until = {}
+quotex_shared_persist_due = {}
+quotex_shared_persist_lock = threading.RLock()
 
 
 # =========================================================
@@ -476,42 +590,65 @@ def _normalize_bridge_epoch(value):
     return int(value)
 
 
-def _bridge_upsert_candle(user, pair, candle):
-    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
-        return False
+def _bridge_normalize_candle(candle):
     if not isinstance(candle, dict):
-        return False
-    epoch = _normalize_bridge_epoch(candle.get("t", candle.get("time", candle.get("timestamp"))))
+        return None
+    epoch = _normalize_bridge_epoch(candle.get('t', candle.get('time', candle.get('timestamp'))))
     try:
-        o = float(candle.get("o", candle.get("open")))
-        h = float(candle.get("h", candle.get("high")))
-        l = float(candle.get("l", candle.get("low")))
-        c = float(candle.get("c", candle.get("close")))
+        o = float(candle.get('o', candle.get('open')))
+        h = float(candle.get('h', candle.get('high')))
+        l = float(candle.get('l', candle.get('low')))
+        c = float(candle.get('c', candle.get('close')))
     except Exception:
-        return False
+        return None
     if epoch is None or min(o, h, l, c) <= 0 or h < max(o, c) or l > min(o, c):
+        return None
+    return int(epoch // 60 * 60), o, h, l, c
+
+
+def _bridge_merge_book(book, minute, o, h, l, c):
+    existing = book.get(minute)
+    if existing:
+        existing['Open'] = float(existing.get('Open', o))
+        existing['High'] = max(float(existing.get('High', h)), h)
+        existing['Low'] = min(float(existing.get('Low', l)), l)
+        existing['Close'] = c
+    else:
+        book[minute] = {'Open': o, 'High': h, 'Low': l, 'Close': c, 'Volume': 0.0}
+    book.move_to_end(minute)
+    while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
+        book.popitem(last=False)
+
+
+def _bridge_upsert_candle(user, pair, candle):
+    if pair not in QUOTEX_RAJA_OTC_PAIR_SET:
         return False
-    minute = int(epoch // 60 * 60)
+    row = _bridge_normalize_candle(candle)
+    if not row:
+        return False
+    minute, o, h, l, c = row
     key = _quotex_bridge_pair_key(user, pair)
     with quotex_bridge_data_lock:
         book = quotex_bridge_candles.setdefault(key, OrderedDict())
-        existing = book.get(minute)
-        if existing:
-            # Historical updates can refine the same minute; preserve the broadest H/L.
-            existing["Open"] = float(existing.get("Open", o))
-            existing["High"] = max(float(existing.get("High", h)), h)
-            existing["Low"] = min(float(existing.get("Low", l)), l)
-            existing["Close"] = c
-        else:
-            book[minute] = {"Open": o, "High": h, "Low": l, "Close": c, "Volume": 0.0}
-        book.move_to_end(minute)
-        while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
-            book.popitem(last=False)
+        _bridge_merge_book(book, minute, o, h, l, c)
+    return True
+
+
+def _bridge_upsert_shared_candle(pair, candle):
+    if pair not in QUOTEX_RAJA_OTC_PAIR_SET:
+        return False
+    row = _bridge_normalize_candle(candle)
+    if not row:
+        return False
+    minute, o, h, l, c = row
+    with quotex_bridge_data_lock:
+        book = quotex_shared_candles.setdefault(pair, OrderedDict())
+        _bridge_merge_book(book, minute, o, h, l, c)
     return True
 
 
 def _bridge_upsert_tick(user, pair, price, epoch=None):
-    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
+    if pair not in QUOTEX_RAJA_OTC_PAIR_SET:
         return False
     try:
         price = float(price)
@@ -526,11 +663,37 @@ def _bridge_upsert_tick(user, pair, price, epoch=None):
         book = quotex_bridge_candles.setdefault(key, OrderedDict())
         row = book.get(minute)
         if row:
-            row["High"] = max(float(row["High"]), price)
-            row["Low"] = min(float(row["Low"]), price)
-            row["Close"] = price
+            row['High'] = max(float(row['High']), price)
+            row['Low'] = min(float(row['Low']), price)
+            row['Close'] = price
         else:
-            book[minute] = {"Open": price, "High": price, "Low": price, "Close": price, "Volume": 0.0}
+            book[minute] = {'Open': price, 'High': price, 'Low': price, 'Close': price, 'Volume': 0.0}
+        book.move_to_end(minute)
+        while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
+            book.popitem(last=False)
+    return True
+
+
+def _bridge_upsert_shared_tick(pair, price, epoch=None):
+    if pair not in QUOTEX_RAJA_OTC_PAIR_SET:
+        return False
+    try:
+        price = float(price)
+    except Exception:
+        return False
+    if price <= 0:
+        return False
+    epoch = _normalize_bridge_epoch(epoch) or int(time.time())
+    minute = int(epoch // 60 * 60)
+    with quotex_bridge_data_lock:
+        book = quotex_shared_candles.setdefault(pair, OrderedDict())
+        row = book.get(minute)
+        if row:
+            row['High'] = max(float(row['High']), price)
+            row['Low'] = min(float(row['Low']), price)
+            row['Close'] = price
+        else:
+            book[minute] = {'Open': price, 'High': price, 'Low': price, 'Close': price, 'Volume': 0.0}
         book.move_to_end(minute)
         while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
             book.popitem(last=False)
@@ -541,19 +704,131 @@ def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=N
     user = normalize_user_id(user)
     with quotex_bridge_data_lock:
         current = dict(quotex_bridge_status.get(user) or {})
-        current.update({
-            "connected": True,
-            "last_seen": time.time(),
-            "device": str(device or "")[:160],
-        })
+        current.update({'connected': True, 'last_seen': time.time(), 'device': str(device or '')[:160]})
         if pair:
-            current["pair"] = str(pair)[:120]
+            current['pair'] = str(pair)[:120]
         if price is not None:
-            try: current["price"] = float(price)
+            try: current['price'] = float(price)
             except Exception: pass
         if source_page:
-            current["source_page"] = str(source_page)[:300]
+            current['source_page'] = str(source_page)[:300]
         quotex_bridge_status[user] = current
+
+
+def _set_quotex_shared_status(user, device, pair=None, price=None, source_page=None):
+    now = time.time()
+    master_user = normalize_user_id(user)
+    with quotex_bridge_data_lock:
+        quotex_shared_status.update({
+            'connected': True,
+            'last_seen': now,
+            'master_user': master_user,
+            'device': str(device or '')[:160],
+        })
+        if pair:
+            quotex_shared_status['pair'] = str(pair)[:120]
+        if price is not None:
+            try: quotex_shared_status['price'] = float(price)
+            except Exception: pass
+        if source_page:
+            quotex_shared_status['source_page'] = str(source_page)[:300]
+        if pair:
+            row = dict(quotex_shared_pair_status.get(pair) or {})
+            row.update({'last_seen': now, 'master_user': master_user, 'device': str(device or '')[:160]})
+            if price is not None:
+                try: row['price'] = float(price)
+                except Exception: pass
+            if source_page:
+                row['source_page'] = str(source_page)[:300]
+            quotex_shared_pair_status[pair] = row
+
+
+def _bridge_is_master_user(user):
+    user = normalize_user_id(user)
+    if not RAJA_QUOTEX_SHARED_MASTER_FEED:
+        return False
+    if RAJA_QUOTEX_MASTER_USER:
+        return user == RAJA_QUOTEX_MASTER_USER
+    # Backwards-compatible mode: when no explicit master is configured, do not
+    # promote arbitrary customer extensions into a shared feed.
+    return False
+
+
+def _load_persisted_shared_pair(pair):
+    if pair not in QUOTEX_RAJA_OTC_PAIR_SET or pair in quotex_shared_loaded_pairs:
+        return
+    with quotex_shared_persist_lock:
+        if pair in quotex_shared_loaded_pairs:
+            return
+        quotex_shared_loaded_pairs.add(pair)
+        if not DATABASE_URL:
+            return
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.execute('''
+                        SELECT candle_epoch, open_price, high_price, low_price, close_price
+                        FROM raja_quotex_bridge_candles
+                        WHERE pair=%s
+                        ORDER BY candle_epoch DESC
+                        LIMIT %s
+                    ''', (pair, QUOTEX_BRIDGE_MAX_CANDLES))
+                    rows = cur.fetchall()
+            rows = list(reversed(rows or []))
+            with quotex_bridge_data_lock:
+                book = quotex_shared_candles.setdefault(pair, OrderedDict())
+                for epoch, o, h, l, c in rows:
+                    _bridge_merge_book(book, int(epoch), float(o), float(h), float(l), float(c))
+            if rows:
+                quotex_shared_persisted_until[pair] = max(int(r[0]) for r in rows)
+        except Exception as exc:
+            print(f'Quotex persisted cache load warning for {pair}: {exc}')
+
+
+def _persist_shared_bridge_pair(pair, force=False):
+    if not DATABASE_URL or pair not in QUOTEX_RAJA_OTC_PAIR_SET:
+        return
+    now = time.time()
+    with quotex_shared_persist_lock:
+        if not force and now < float(quotex_shared_persist_due.get(pair, 0.0) or 0.0):
+            return
+        quotex_shared_persist_due[pair] = now + QUOTEX_BRIDGE_PERSIST_SECONDS
+        last_epoch = quotex_shared_persisted_until.get(pair)
+        if last_epoch is None:
+            try:
+                with _db_connect() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute('SELECT MAX(candle_epoch) FROM raja_quotex_bridge_candles WHERE pair=%s', (pair,))
+                        row = cur.fetchone()
+                last_epoch = int(row[0]) if row and row[0] is not None else 0
+            except Exception:
+                last_epoch = 0
+        closed_cutoff = int(time.time() // 60 * 60) - 60
+        with quotex_bridge_data_lock:
+            book = quotex_shared_candles.get(pair) or OrderedDict()
+            pending = [
+                (pair, int(epoch), float(row['Open']), float(row['High']), float(row['Low']), float(row['Close']), int(now))
+                for epoch, row in book.items()
+                if int(epoch) <= closed_cutoff and int(epoch) > int(last_epoch or 0)
+            ]
+        if not pending:
+            return
+        try:
+            with _db_connect() as conn:
+                with conn.cursor() as cur:
+                    cur.executemany('''
+                        INSERT INTO raja_quotex_bridge_candles
+                            (pair, candle_epoch, open_price, high_price, low_price, close_price, updated_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
+                        ON CONFLICT (pair, candle_epoch) DO UPDATE SET
+                            high_price=GREATEST(raja_quotex_bridge_candles.high_price, EXCLUDED.high_price),
+                            low_price=LEAST(raja_quotex_bridge_candles.low_price, EXCLUDED.low_price),
+                            close_price=EXCLUDED.close_price,
+                            updated_at=EXCLUDED.updated_at
+                    ''', pending)
+            quotex_shared_persisted_until[pair] = max(row[1] for row in pending)
+        except Exception as exc:
+            print(f'Quotex persistent cache write warning for {pair}: {exc}')
 
 
 def _get_quotex_bridge_status(user, pair=None):
@@ -563,18 +838,54 @@ def _get_quotex_bridge_status(user, pair=None):
         status = dict(quotex_bridge_status.get(user) or {})
         if pair:
             book = quotex_bridge_candles.get(_quotex_bridge_pair_key(user, pair))
-            status["candle_count"] = len(book) if book else 0
+            status['candle_count'] = len(book) if book else 0
         else:
-            status["pairs_with_data"] = sum(1 for (u, _p), book in quotex_bridge_candles.items() if u == user and book)
-    last_seen = float(status.get("last_seen") or 0.0)
+            status['pairs_with_data'] = sum(1 for (u, _p), book in quotex_bridge_candles.items() if u == user and book)
+        shared = dict(quotex_shared_status)
+        shared_pair = dict(quotex_shared_pair_status.get(pair) or {}) if pair else {}
+        if pair:
+            shared_book = quotex_shared_candles.get(pair)
+            shared_count = len(shared_book) if shared_book else 0
+        else:
+            shared_count = sum(1 for _p, book in quotex_shared_candles.items() if book)
+    last_seen = float(status.get('last_seen') or 0.0)
     age = max(0.0, now - last_seen) if last_seen else None
-    status["age_seconds"] = round(age, 2) if age is not None else None
-    status["connected"] = bool(last_seen and age <= 20.0)
+    status['age_seconds'] = round(age, 2) if age is not None else None
+    status['connected'] = bool(last_seen and age <= QUOTEX_BRIDGE_SHARED_FRESH_SECONDS)
+    shared_last = float(shared.get('last_seen') or 0.0)
+    shared_age = max(0.0, now - shared_last) if shared_last else None
+    pair_last = float(shared_pair.get('last_seen') or 0.0) if pair else shared_last
+    pair_age = max(0.0, now - pair_last) if pair_last else None
+    status['shared_master_configured'] = bool(RAJA_QUOTEX_MASTER_USER)
+    status['shared_master_user'] = RAJA_QUOTEX_MASTER_USER or None
+    status['shared_master_age_seconds'] = round(shared_age, 2) if shared_age is not None else None
+    status['shared_master_connected'] = bool(shared_last and shared_age <= QUOTEX_BRIDGE_SHARED_FRESH_SECONDS)
+    status['shared_master_pair'] = shared.get('pair')
+    status['shared_master_price'] = shared.get('price')
+    if pair:
+        status['shared_master_pair_age_seconds'] = round(pair_age, 2) if pair_age is not None else None
+        status['shared_master_pair_connected'] = bool(pair_last and pair_age <= QUOTEX_BRIDGE_SHARED_FRESH_SECONDS)
+        status['shared_master_candle_count'] = shared_count
+    else:
+        status['shared_master_pairs_with_data'] = shared_count
+    status['effective_exact_feed_connected'] = bool(status['connected'] or status['shared_master_connected'])
+    status['reference_fallback_enabled'] = bool(QUOTEX_REFERENCE_FALLBACK_ENABLED and HYBRID_OTC_FALLBACK_ENABLED)
+    status['reference_fallback_yahoo_enabled'] = bool(ALLOW_YAHOO_LAST_RESORT)
+    status['reference_fallback_label'] = 'UNDERLYING MARKET REFERENCE · NOT EXACT BROKER OTC' if status['reference_fallback_enabled'] else None
     return status
 
 
+def _bridge_rows_to_frame(rows):
+    if not rows:
+        return None
+    pd = _get_pandas()
+    index = pd.to_datetime([epoch for epoch, _row in rows], unit='s', utc=True)
+    frame = pd.DataFrame([row for _epoch, row in rows], index=index)
+    return frame.sort_index()
+
+
 def get_quotex_bridge_market_data(user, pair):
-    """Return the user's exact Quotex bridge 1m OHLC stream as a pandas DataFrame."""
+    '''Return the user's own exact Quotex bridge 1m OHLC stream.'''
     user = normalize_user_id(user)
     key = _quotex_bridge_pair_key(user, pair)
     with quotex_bridge_data_lock:
@@ -582,26 +893,43 @@ def get_quotex_bridge_market_data(user, pair):
         rows = list(book.items()) if book else []
         status = dict(quotex_bridge_status.get(user) or {})
     source_info = {
-        "source": "Quotex Bridge",
-        "source_mode": "broker_otc_exact",
-        "provider_symbol": pair,
-        "yahoo_symbol": YAHOO_SYMBOLS.get(pair),
-        "backup_used": False,
-        "exact_broker_feed": True,
+        'source': 'Quotex Bridge', 'source_mode': 'broker_otc_exact', 'provider_symbol': pair,
+        'yahoo_symbol': YAHOO_SYMBOLS.get(pair), 'backup_used': False, 'exact_broker_feed': True,
     }
     if not rows:
-        source_info["unavailable_reason"] = "Quotex Bridge is not streaming this OTC pair yet. Open the same pair in Quotex and keep the bridge connected."
+        source_info['unavailable_reason'] = 'Your Quotex Bridge is not streaming this OTC pair yet.'
         return None, None, pair, source_info
-    last_seen = float(status.get("last_seen") or 0.0)
-    age = max(0.0, time.time() - last_seen) if last_seen else float("inf")
-    if age > 20.0:
-        source_info["unavailable_reason"] = f"Quotex Bridge feed is disconnected/stale ({int(age)}s since last tick)."
+    last_seen = float(status.get('last_seen') or 0.0)
+    age = max(0.0, time.time() - last_seen) if last_seen else float('inf')
+    if age > QUOTEX_BRIDGE_SHARED_FRESH_SECONDS:
+        source_info['unavailable_reason'] = f'Your Quotex Bridge feed is stale ({int(age)}s since last tick).'
         return None, age, pair, source_info
-    pd = _get_pandas()
-    index = pd.to_datetime([epoch for epoch, _row in rows], unit="s", utc=True)
-    frame = pd.DataFrame([row for _epoch, row in rows], index=index)
-    frame = frame.sort_index()
-    return frame, age, pair, source_info
+    return _bridge_rows_to_frame(rows), age, pair, source_info
+
+
+def get_quotex_shared_market_data(pair):
+    '''Return exact Quotex OTC history from the configured master extension for any RAJA AI client.'''
+    if pair not in QUOTEX_RAJA_OTC_PAIR_SET:
+        return None, None, pair, {'source':'Quotex Master Bridge','source_mode':'broker_otc_exact_shared'}
+    _load_persisted_shared_pair(pair)
+    with quotex_bridge_data_lock:
+        book = quotex_shared_candles.get(pair)
+        rows = list(book.items()) if book else []
+        status = dict(quotex_shared_pair_status.get(pair) or {})
+    source_info = {
+        'source': 'Quotex Master Bridge', 'source_mode': 'broker_otc_exact_shared', 'provider_symbol': pair,
+        'yahoo_symbol': YAHOO_SYMBOLS.get(pair), 'backup_used': False, 'exact_broker_feed': True,
+        'shared_master_feed': True,
+    }
+    last_seen = float(status.get('last_seen') or 0.0)
+    age = max(0.0, time.time() - last_seen) if last_seen else float('inf')
+    if not rows:
+        source_info['unavailable_reason'] = 'Master Quotex Bridge has no cached candles for this pair yet.'
+        return None, age if last_seen else None, pair, source_info
+    if age > QUOTEX_BRIDGE_SHARED_FRESH_SECONDS:
+        source_info['unavailable_reason'] = f'Master Quotex Bridge is offline/stale ({int(age)}s since last tick).'
+        return None, age, pair, source_info
+    return _bridge_rows_to_frame(rows), age, pair, source_info
 
 # Permanent license storage:
 # - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
@@ -829,6 +1157,22 @@ def initialize_license_store():
                         created_at BIGINT NOT NULL,
                         PRIMARY KEY (claim_type, claim_value)
                     )
+                """)
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS raja_quotex_bridge_candles (
+                        pair TEXT NOT NULL,
+                        candle_epoch BIGINT NOT NULL,
+                        open_price DOUBLE PRECISION NOT NULL,
+                        high_price DOUBLE PRECISION NOT NULL,
+                        low_price DOUBLE PRECISION NOT NULL,
+                        close_price DOUBLE PRECISION NOT NULL,
+                        updated_at BIGINT NOT NULL,
+                        PRIMARY KEY (pair, candle_epoch)
+                    )
+                """)
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_raja_quotex_bridge_pair_epoch
+                    ON raja_quotex_bridge_candles(pair, candle_epoch DESC)
                 """)
 
                 # Preserve the existing one-time reset marker behavior; do not change the version
@@ -2049,98 +2393,494 @@ def get_twelve_data_market_data(pair, force=False):
         symbol_lock.release()
 
 
-def _market_source_info(pair, yahoo_symbol, source="Yahoo Finance", provider_symbol=None):
-    source = str(source or "Yahoo Finance")
-    is_backup = source == "Twelve Data"
-    if is_backup:
-        mode = "underlying_proxy_backup" if "(OTC)" in pair else "live_backup_reference"
+def _provider_cache_get(cache, lock, key, max_age):
+    with lock:
+        row = cache.get(key)
+        if not row:
+            return None
+        if time.time() - float(row.get('timestamp') or 0.0) > max_age:
+            return None
+        data = row.get('data')
+        return data.copy() if data is not None else None
+
+
+def _provider_cache_put(cache, lock, key, data):
+    with lock:
+        cache[key] = {'data': data.copy(), 'timestamp': time.time()}
+        if len(cache) > 120:
+            for old_key, _ in sorted(cache.items(), key=lambda kv: kv[1].get('timestamp', 0))[:20]:
+                cache.pop(old_key, None)
+
+
+def _oanda_instrument_for_pair(pair):
+    clean = str(pair or '').replace(' (OTC)', '').strip()
+    if clean == 'XAUUSD':
+        return 'XAU_USD'
+    if '/' in clean:
+        base, quote_ccy = clean.split('/', 1)
+        if base and quote_ccy:
+            return f'{base}_{quote_ccy}'
+    return None
+
+
+def fetch_oanda_1m(pair):
+    if not OANDA_ENABLED:
+        return None, None
+    instrument = _oanda_instrument_for_pair(pair)
+    if not instrument:
+        return None, None
+    now = time.time()
+    with oanda_failed_lock:
+        if float(oanda_failed_until.get(instrument, 0.0) or 0.0) > now:
+            return None, instrument
+    cached = _provider_cache_get(oanda_cache, oanda_cache_lock, instrument, OANDA_CACHE_SECONDS)
+    if cached is not None:
+        return cached, instrument
+    acquired = oanda_fetch_semaphore.acquire(timeout=OANDA_REQUEST_TIMEOUT_SECONDS + 1.0)
+    if not acquired:
+        return None, instrument
+    try:
+        cached = _provider_cache_get(oanda_cache, oanda_cache_lock, instrument, OANDA_CACHE_SECONDS)
+        if cached is not None:
+            return cached, instrument
+        url = (
+            f'{OANDA_BASE_URL}/v3/instruments/{quote(instrument, safe="_")}/candles?'
+            + urlencode({'granularity':'M1','price':'M','count':OANDA_OUTPUTSIZE,'smooth':'false'})
+        )
+        req = UrlRequest(url, headers={
+            'Authorization': f'Bearer {OANDA_API_TOKEN}',
+            'Accept': 'application/json',
+            'User-Agent': 'RAJA-AI-PREMIUM/1.5',
+        })
+        try:
+            with urlopen(req, timeout=OANDA_REQUEST_TIMEOUT_SECONDS) as response:
+                payload = json.loads(response.read().decode('utf-8', errors='replace'))
+        except Exception as exc:
+            with oanda_failed_lock:
+                oanda_failed_until[instrument] = time.time() + OANDA_FAILURE_COOLDOWN
+            print(f'OANDA fetch warning for {instrument}: {exc}')
+            return None, instrument
+        rows, epochs = [], []
+        for candle in payload.get('candles') or []:
+            if not isinstance(candle, dict):
+                continue
+            mid = candle.get('mid') or {}
+            try:
+                ts = datetime.fromisoformat(str(candle.get('time')).replace('Z', '+00:00')).timestamp()
+                o, h, l, c = map(float, [mid.get('o'), mid.get('h'), mid.get('l'), mid.get('c')])
+                vol = float(candle.get('volume') or 0.0)
+            except Exception:
+                continue
+            if min(o,h,l,c) <= 0 or h < max(o,c) or l > min(o,c):
+                continue
+            epochs.append(ts); rows.append({'Open':o,'High':h,'Low':l,'Close':c,'Volume':vol})
+        if len(rows) < 20:
+            return None, instrument
+        pd = _get_pandas()
+        frame = pd.DataFrame(rows, index=pd.to_datetime(epochs, unit='s', utc=True)).sort_index()
+        _provider_cache_put(oanda_cache, oanda_cache_lock, instrument, frame)
+        with oanda_failed_lock:
+            oanda_failed_until.pop(instrument, None)
+        return frame.copy(), instrument
+    finally:
+        oanda_fetch_semaphore.release()
+
+
+COINBASE_PRODUCT_MAP = {
+    'BTC-USD':'BTC-USD','ETH-USD':'ETH-USD','SOL-USD':'SOL-USD','LTC-USD':'LTC-USD','XRP-USD':'XRP-USD','ADA-USD':'ADA-USD','DOGE-USD':'DOGE-USD',
+    'Zcash (OTC)':'ZEC-USD','Chainlink (OTC)':'LINK-USD','Bitcoin (OTC)':'BTC-USD','Binance Coin (OTC)':'BNB-USD',
+    'Ethereum (OTC)':'ETH-USD','Bitcoin Cash (OTC)':'BCH-USD','Cosmos (OTC)':'ATOM-USD','Ethereum Classic (OTC)':'ETC-USD',
+    'Axie Infinity (OTC)':'AXS-USD','Trump (OTC)':'TRUMP-USD','Dash (OTC)':'DASH-USD','Solana (OTC)':'SOL-USD',
+    'Toncoin (OTC)':'TON-USD','Litecoin (OTC)':'LTC-USD','Avalanche (OTC)':'AVAX-USD','Polkadot (OTC)':'DOT-USD','Ripple (OTC)':'XRP-USD',
+    'BNB (OTC)':'BNB-USD','Cardano (OTC)':'ADA-USD','Polygon (OTC)':'POL-USD','TRON (OTC)':'TRX-USD','Dogecoin (OTC)':'DOGE-USD',
+}
+
+
+def _coinbase_ws_products():
+    return sorted({COINBASE_PRODUCT_MAP[p] for p in CRYPTO_LIVE_PAIRS if p in COINBASE_PRODUCT_MAP})
+
+
+def _coinbase_ws_loop():
+    websocket = _get_websocket_client()
+    products = _coinbase_ws_products()
+    while True:
+        def on_open(ws):
+            ws.send(json.dumps({'type':'subscribe','product_ids':products,'channels':['ticker']}))
+
+        def on_message(_ws, message):
+            try:
+                data = json.loads(message)
+                if data.get('type') != 'ticker':
+                    return
+                product = str(data.get('product_id') or '')
+                price = float(data.get('price'))
+                ts_text = str(data.get('time') or '')
+                try:
+                    epoch = datetime.fromisoformat(ts_text.replace('Z', '+00:00')).timestamp() if ts_text else time.time()
+                except Exception:
+                    epoch = time.time()
+                if product and price > 0:
+                    with coinbase_live_tick_lock:
+                        coinbase_live_ticks[product] = {'price': price, 'epoch': epoch, 'received_at': time.time()}
+            except Exception:
+                return
+
+        def on_error(_ws, error):
+            print(f'Coinbase WebSocket warning: {error}')
+
+        try:
+            app_ws = websocket.WebSocketApp(COINBASE_WS_URL, on_open=on_open, on_message=on_message, on_error=on_error)
+            app_ws.run_forever(ping_interval=20, ping_timeout=10)
+        except Exception as exc:
+            print(f'Coinbase WebSocket reconnect warning: {exc}')
+        time.sleep(3)
+
+
+def _ensure_coinbase_ws():
+    global coinbase_ws_started
+    if coinbase_ws_started:
+        return
+    with coinbase_ws_start_lock:
+        if coinbase_ws_started:
+            return
+        coinbase_ws_started = True
+        threading.Thread(target=_coinbase_ws_loop, name='raja-coinbase-public-ws', daemon=True).start()
+
+
+def _coinbase_apply_live_tick(frame, product):
+    if frame is None or frame.empty:
+        return frame
+    with coinbase_live_tick_lock:
+        tick = dict(coinbase_live_ticks.get(product) or {})
+    if not tick:
+        return frame
+    if time.time() - float(tick.get('received_at') or 0.0) > COINBASE_WS_STALE_SECONDS:
+        return frame
+    try:
+        price = float(tick['price']); epoch = float(tick['epoch'])
+    except Exception:
+        return frame
+    minute = int(epoch // 60 * 60)
+    pd = _get_pandas()
+    idx = pd.to_datetime(minute, unit='s', utc=True)
+    out = frame.copy()
+    if idx in out.index:
+        row = out.loc[idx]
+        out.loc[idx, 'High'] = max(float(row['High']), price)
+        out.loc[idx, 'Low'] = min(float(row['Low']), price)
+        out.loc[idx, 'Close'] = price
     else:
-        mode = "underlying_proxy" if "(OTC)" in pair else "live_reference"
+        out.loc[idx, ['Open','High','Low','Close','Volume']] = [price, price, price, price, 0.0]
+        out = out.sort_index().tail(COINBASE_OUTPUTSIZE)
+    return out
+
+
+def _coinbase_iso(epoch):
+    return datetime.fromtimestamp(float(epoch), tz=timezone.utc).isoformat().replace('+00:00', 'Z')
+
+
+def _coinbase_fetch_page(product, start_epoch, end_epoch):
+    params = urlencode({
+        'granularity': 60,
+        'start': _coinbase_iso(start_epoch),
+        'end': _coinbase_iso(end_epoch),
+    })
+    url = f'{COINBASE_EXCHANGE_BASE_URL}/products/{quote(product, safe="-")}/candles?{params}'
+    req = UrlRequest(url, headers={
+        'Accept': 'application/json',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'User-Agent': 'RAJA-AI-PREMIUM/1.6-REAL-ONLY',
+    })
+    with urlopen(req, timeout=COINBASE_REQUEST_TIMEOUT_SECONDS) as response:
+        payload = json.loads(response.read().decode('utf-8', errors='replace'))
+    return payload if isinstance(payload, list) else []
+
+
+def fetch_coinbase_1m(pair):
+    """Fetch actual Coinbase Exchange 1-minute market candles without an API key.
+
+    Coinbase caps a single candle request, so RAJA AI walks backwards in 300-minute
+    pages and merges/deduplicates timestamps until enough 1m history exists for all
+    six analysis timeframes, including 60 closed 30m candles.
+    """
+    product = COINBASE_PRODUCT_MAP.get(pair)
+    if not product:
+        return None, None
+    _ensure_coinbase_ws()
+    now = time.time()
+    with coinbase_failed_lock:
+        if float(coinbase_failed_until.get(product, 0.0) or 0.0) > now:
+            return None, product
+    cached = _provider_cache_get(coinbase_cache, coinbase_cache_lock, product, COINBASE_CACHE_SECONDS)
+    if cached is not None and len(cached) >= 1800:
+        return _coinbase_apply_live_tick(cached, product), product
+    acquired = coinbase_fetch_semaphore.acquire(timeout=COINBASE_REQUEST_TIMEOUT_SECONDS + 2.0)
+    if not acquired:
+        return cached, product
+    try:
+        cached = _provider_cache_get(coinbase_cache, coinbase_cache_lock, product, COINBASE_CACHE_SECONDS)
+        if cached is not None and len(cached) >= 1800:
+            return _coinbase_apply_live_tick(cached, product), product
+
+        # End at the next minute boundary so the latest forming/just-closed minute is included.
+        end_epoch = int(time.time() // 60 * 60) + 60
+        target = COINBASE_OUTPUTSIZE
+        pages = max(1, math.ceil(target / COINBASE_PAGE_SIZE))
+        candles = {}
+        last_error = None
+        for page_no in range(pages):
+            start_epoch = end_epoch - COINBASE_PAGE_SIZE * 60
+            try:
+                payload = _coinbase_fetch_page(product, start_epoch, end_epoch)
+            except Exception as exc:
+                last_error = exc
+                # A partial warm history is still useful if enough rows were already fetched.
+                if len(candles) >= 1800:
+                    break
+                with coinbase_failed_lock:
+                    coinbase_failed_until[product] = time.time() + COINBASE_FAILURE_COOLDOWN
+                print(f'Coinbase fetch warning for {product} page {page_no + 1}: {exc}')
+                return None, product
+            for row in payload:
+                if not isinstance(row, list) or len(row) < 6:
+                    continue
+                try:
+                    ts, low, high, open_, close, volume = row[:6]
+                    ts=float(ts); low=float(low); high=float(high); open_=float(open_); close=float(close); volume=float(volume)
+                except Exception:
+                    continue
+                if min(open_, high, low, close) <= 0 or high < max(open_, close) or low > min(open_, close):
+                    continue
+                minute = int(ts // 60 * 60)
+                candles[minute] = {'Open':open_, 'High':high, 'Low':low, 'Close':close, 'Volume':volume}
+            end_epoch = start_epoch
+            if page_no + 1 < pages and COINBASE_PAGE_GAP_SECONDS:
+                time.sleep(COINBASE_PAGE_GAP_SECONDS)
+
+        if len(candles) < 1800:
+            if last_error:
+                print(f'Coinbase warm-history incomplete for {product}: {last_error}')
+            return None, product
+        epochs = sorted(candles)[-target:]
+        pd = _get_pandas()
+        frame = pd.DataFrame([candles[e] for e in epochs], index=pd.to_datetime(epochs, unit='s', utc=True)).sort_index()
+        frame = _coinbase_apply_live_tick(frame, product)
+        _provider_cache_put(coinbase_cache, coinbase_cache_lock, product, frame)
+        with coinbase_failed_lock:
+            coinbase_failed_until.pop(product, None)
+        return frame.copy(), product
+    finally:
+        coinbase_fetch_semaphore.release()
+
+
+def _market_source_info(pair, yahoo_symbol=None, source='Unavailable', provider_symbol=None, source_mode=None, backup_used=False, exact_broker_feed=False):
+    source = str(source or 'Unavailable')
+    if source_mode is None:
+        if exact_broker_feed:
+            source_mode = 'broker_otc_exact'
+        elif '(OTC)' in str(pair):
+            source_mode = 'reference_fallback'
+        else:
+            source_mode = 'live_primary' if source in {'OANDA','Coinbase Exchange'} else 'live_backup_reference'
     return {
-        "source": source,
-        "source_mode": mode,
-        "provider_symbol": provider_symbol or yahoo_symbol,
-        "yahoo_symbol": yahoo_symbol,
-        "backup_used": bool(is_backup),
+        'source': source,
+        'source_mode': source_mode,
+        'provider_symbol': provider_symbol or yahoo_symbol,
+        'yahoo_symbol': yahoo_symbol,
+        'backup_used': bool(backup_used),
+        'exact_broker_feed': bool(exact_broker_feed),
     }
 
 
-def get_market_data(pair, bridge_user=None, broker=None):
-    """
-    Priority: Yahoo fresh -> Twelve Data fresh -> freshest stale reference.
-    Normal scanning still blocks stale data; OTC fallback may use the stale history.
-    """
+def _fresh_provider_result(data, pair, yahoo_symbol, source, provider_symbol, mode=None, backup=False):
+    if data is None or data.empty:
+        return None
+    age = _source_candle_age_seconds(data)
+    if age is not None and age > MAX_SOURCE_CANDLE_AGE_SECONDS:
+        return None
+    return data, age, yahoo_symbol, _market_source_info(
+        pair, yahoo_symbol, source, provider_symbol, source_mode=mode, backup_used=backup
+    )
+
+
+def _reference_provider_chain(pair):
+    # Underlying/reference feed chain used only when an exact broker OTC stream is unavailable.
+    # These are real underlying-market candles, NOT exact Quotex/Pocket Option OTC quotes.
     yahoo_symbol = YAHOO_SYMBOLS.get(pair)
-    if not yahoo_symbol:
-        return None, None, None, _market_source_info(pair, None)
+    if pair in QUOTEX_RAJA_CRYPTO_OTC_PAIRS or pair in POCKET_OPTION_CRYPTO_OTC_PAIRS:
+        cb, cb_symbol = fetch_coinbase_1m(pair)
+        hit = _fresh_provider_result(cb, pair, yahoo_symbol, 'Coinbase Exchange · OTC Reference', cb_symbol, mode='otc_reference_fallback')
+        if hit:
+            return hit
+    clean = str(pair).replace(' (OTC)','').strip()
+    if '/' in clean or clean == 'XAUUSD':
+        od, od_symbol = fetch_oanda_1m(pair)
+        hit = _fresh_provider_result(od, pair, yahoo_symbol, 'OANDA · OTC Reference', od_symbol, mode='otc_reference_fallback')
+        if hit:
+            return hit
+    if TWELVE_DATA_ENABLED and TWELVE_DATA_SYMBOLS.get(pair):
+        td, td_symbol = get_twelve_data_market_data(pair)
+        hit = _fresh_provider_result(td, pair, yahoo_symbol, 'Twelve Data · OTC Reference', td_symbol, mode='otc_reference_fallback', backup=True)
+        if hit:
+            return hit
+    legacy = _legacy_yahoo_result(pair, yahoo_symbol)
+    if legacy:
+        data, age, symbol, info = legacy
+        info = dict(info or {})
+        info.update({
+            'source': 'Yahoo Finance · OTC Reference',
+            'source_mode': 'otc_reference_fallback',
+            'exact_broker_feed': False,
+            'otc_reference_warning': 'UNDERLYING MARKET REFERENCE · NOT EXACT BROKER OTC',
+        })
+        return data, age, symbol, info
+    return None
 
-    broker_name = str(broker or "").strip().casefold()
-    if bridge_user and broker_name == "quotex" and "(OTC)" in str(pair):
-        bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
-        if bridge_df is not None and not bridge_df.empty:
-            return bridge_df, bridge_age, bridge_symbol, bridge_info
-        if RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC:
-            return None, bridge_age, bridge_symbol, bridge_info
 
+def _legacy_yahoo_result(pair, yahoo_symbol):
+    if not ALLOW_YAHOO_LAST_RESORT or not yahoo_symbol:
+        return None
     yahoo_data = None
-    yahoo_age = None
-    now = time.time()
     with cache_lock:
         cached = market_cache.get(yahoo_symbol)
-
-    if cached:
-        cache_age = now - float(cached.get("timestamp") or 0.0)
-        if cache_age <= CACHE_DURATION:
-            yahoo_data = cached["data"].copy()
-            yahoo_age = _source_candle_age_seconds(yahoo_data)
-
+    if cached and time.time() - float(cached.get('timestamp') or 0.0) <= CACHE_DURATION:
+        yahoo_data = cached['data'].copy()
     if yahoo_data is None:
-        refreshed = update_symbol_cache(yahoo_symbol)
+        update_symbol_cache(yahoo_symbol)
         with cache_lock:
             cached = market_cache.get(yahoo_symbol)
         if cached:
-            cache_age = time.time() - float(cached.get("timestamp") or 0.0)
-            if refreshed or cache_age <= STALE_CACHE_MAX_AGE:
-                yahoo_data = cached["data"].copy()
-                yahoo_age = _source_candle_age_seconds(yahoo_data)
+            yahoo_data = cached['data'].copy()
+    return _fresh_provider_result(yahoo_data, pair, yahoo_symbol, 'Yahoo Finance', yahoo_symbol, mode='legacy_reference', backup=True)
 
-    if yahoo_data is not None and not yahoo_data.empty:
-        if yahoo_age is None or yahoo_age <= MAX_SOURCE_CANDLE_AGE_SECONDS:
-            return yahoo_data, yahoo_age, yahoo_symbol, _market_source_info(
-                pair, yahoo_symbol, "Yahoo Finance", yahoo_symbol
-            )
 
-    td_data = None
-    td_age = None
-    td_symbol = TWELVE_DATA_SYMBOLS.get(pair)
-    if TWELVE_DATA_ENABLED and td_symbol:
-        td_data, td_symbol = get_twelve_data_market_data(pair)
-        if td_data is not None and not td_data.empty:
-            td_age = _source_candle_age_seconds(td_data)
-            if td_age is None or td_age <= MAX_SOURCE_CANDLE_AGE_SECONDS:
-                return td_data, td_age, yahoo_symbol, _market_source_info(
-                    pair, yahoo_symbol, "Twelve Data", td_symbol
-                )
+def get_market_data(pair, bridge_user=None, broker=None):
+    '''
+    v1.7 HYBRID OTC feed router.
+      Quotex OTC: personal exact bridge -> shared master exact bridge -> clearly-labelled underlying/reference fallback if offline.
+      Forex Live: verified OANDA/Twelve Data only when explicitly configured -> BLOCK otherwise.
+      Crypto Live: Coinbase Exchange public market data -> optional configured Twelve Data backup.
+      Pocket Option/other OTC: clearly-labelled underlying/reference fallback when exact broker feed is not connected.
+      Yahoo is never used in REAL-ONLY mode.
+    '''
+    yahoo_symbol = YAHOO_SYMBOLS.get(pair)
+    if not yahoo_symbol:
+        return None, None, None, _market_source_info(pair, None, 'Unconfigured', source_mode='live_unavailable')
 
-    candidates = []
-    if yahoo_data is not None and not yahoo_data.empty:
-        candidates.append((
-            float(yahoo_age) if yahoo_age is not None else float("inf"),
-            yahoo_data, yahoo_age,
-            _market_source_info(pair, yahoo_symbol, "Yahoo Finance", yahoo_symbol),
-        ))
-    if td_data is not None and not td_data.empty:
-        candidates.append((
-            float(td_age) if td_age is not None else float("inf"),
-            td_data, td_age,
-            _market_source_info(pair, yahoo_symbol, "Twelve Data", td_symbol),
-        ))
+    broker_name = str(broker or '').strip().casefold()
+    is_otc = '(OTC)' in str(pair)
 
-    if candidates:
-        _, data, age, source_info = min(candidates, key=lambda item: item[0])
-        return data.copy(), age, yahoo_symbol, source_info
+    if broker_name == 'quotex' and is_otc and pair in QUOTEX_RAJA_OTC_PAIR_SET:
+        if bridge_user:
+            bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
+            if bridge_df is not None and not bridge_df.empty:
+                return bridge_df, bridge_age, bridge_symbol, bridge_info
+        shared_df, shared_age, shared_symbol, shared_info = get_quotex_shared_market_data(pair)
+        if shared_df is not None and not shared_df.empty:
+            return shared_df, shared_age, shared_symbol, shared_info
+        fallback_allowed = bool(QUOTEX_REFERENCE_FALLBACK_ENABLED and HYBRID_OTC_FALLBACK_ENABLED)
+        if not fallback_allowed:
+            unavailable = dict(shared_info or {})
+            unavailable.update({
+                'source': 'Quotex Exact Feed Offline',
+                'source_mode': 'broker_otc_exact_unavailable',
+                'exact_broker_feed': False,
+                'unavailable_reason': (shared_info or {}).get('unavailable_reason') or 'Exact Quotex OTC master feed is offline and OTC reference fallback is disabled.'
+            })
+            return None, shared_age, shared_symbol, unavailable
+        ref = _reference_provider_chain(pair)
+        if ref:
+            data, age, symbol, info = ref
+            info = dict(info or {})
+            info.update({
+                'source_mode': 'otc_reference_fallback',
+                'exact_broker_feed': False,
+                'otc_reference_warning': 'REFERENCE FALLBACK · NOT EXACT QUOTEX OTC',
+                'exact_feed_offline': True,
+            })
+            return data, age, symbol, info
+        info = _market_source_info(pair, shared_symbol, 'OTC Reference Fallback Unavailable', source_mode='otc_reference_fallback')
+        info['unavailable_reason'] = 'Quotex exact feed is offline and no fresh reference candle source is available for this asset.'
+        return None, shared_age, shared_symbol, info
 
-    return None, None, yahoo_symbol, _market_source_info(pair, yahoo_symbol)
+    # No exact Pocket Option/other broker OTC bridge exists in this build.
+    # Hybrid OTC mode may still scan real UNDERLYING market candles as an explicit reference fallback.
+    if is_otc and broker_name != 'quotex':
+        if QUOTEX_REFERENCE_FALLBACK_ENABLED and HYBRID_OTC_FALLBACK_ENABLED:
+            ref = _reference_provider_chain(pair)
+            if ref:
+                data, age, symbol, info = ref
+                info = dict(info or {})
+                info.update({
+                    'source_mode': 'otc_reference_fallback',
+                    'exact_broker_feed': False,
+                    'otc_reference_warning': 'REFERENCE FALLBACK · NOT EXACT BROKER OTC',
+                })
+                return data, age, symbol, info
+        if REAL_ONLY_MODE:
+            info = _market_source_info(pair, yahoo_symbol, 'Exact OTC Feed Not Connected', source_mode='broker_otc_exact_unavailable')
+            info['unavailable_reason'] = 'Exact broker OTC feed is not connected and no fresh reference fallback is available.'
+            return None, None, yahoo_symbol, info
+
+    if pair in FOREX_LIVE_PAIRS:
+        # A truly verified server-side Forex feed needs a provider account/key. If neither
+        # provider is configured, fail closed instead of calling Yahoo "live".
+        if OANDA_ENABLED:
+            od, od_symbol = fetch_oanda_1m(pair)
+            hit = _fresh_provider_result(od, pair, yahoo_symbol, 'OANDA', od_symbol, mode='live_primary')
+            if hit: return hit
+        if TWELVE_DATA_ENABLED and TWELVE_DATA_SYMBOLS.get(pair):
+            td, td_symbol = get_twelve_data_market_data(pair)
+            hit = _fresh_provider_result(td, pair, yahoo_symbol, 'Twelve Data', td_symbol, mode='live_primary', backup=OANDA_ENABLED)
+            if hit: return hit
+        if not REAL_ONLY_MODE:
+            legacy = _legacy_yahoo_result(pair, yahoo_symbol)
+            if legacy: return legacy
+        info = _market_source_info(pair, yahoo_symbol, 'Verified Forex Live Feed Not Configured', source_mode='live_unavailable')
+        info['unavailable_reason'] = 'REAL-ONLY mode: no verified Forex Live provider is configured. Add OANDA_API_TOKEN or TWELVE_DATA_API_KEY to enable Forex Live; Yahoo reference candles are intentionally blocked.'
+        return None, None, yahoo_symbol, info
+
+    if pair in CRYPTO_LIVE_PAIRS:
+        cb, cb_symbol = fetch_coinbase_1m(pair)
+        hit = _fresh_provider_result(cb, pair, yahoo_symbol, 'Coinbase Exchange', cb_symbol, mode='live_primary')
+        if hit: return hit
+        if TWELVE_DATA_ENABLED and TWELVE_DATA_SYMBOLS.get(pair):
+            td, td_symbol = get_twelve_data_market_data(pair)
+            hit = _fresh_provider_result(td, pair, yahoo_symbol, 'Twelve Data', td_symbol, mode='live_backup_reference', backup=True)
+            if hit: return hit
+        if not REAL_ONLY_MODE:
+            legacy = _legacy_yahoo_result(pair, yahoo_symbol)
+            if legacy: return legacy
+        info = _market_source_info(pair, yahoo_symbol, 'Coinbase Live Feed Unavailable', source_mode='live_unavailable')
+        info['unavailable_reason'] = 'Coinbase public live market candles are temporarily unavailable; REAL-ONLY mode blocks legacy/reference substitution.'
+        return None, None, yahoo_symbol, info
+
+    if is_otc:
+        if QUOTEX_REFERENCE_FALLBACK_ENABLED and HYBRID_OTC_FALLBACK_ENABLED:
+            ref = _reference_provider_chain(pair)
+            if ref:
+                return ref
+        if REAL_ONLY_MODE:
+            info = _market_source_info(pair, yahoo_symbol, 'OTC Reference Feed Unavailable', source_mode='broker_otc_exact_unavailable')
+            info['unavailable_reason'] = 'No exact OTC feed and no fresh reference fallback are currently available.'
+            return None, None, yahoo_symbol, info
+        legacy = _legacy_yahoo_result(pair, yahoo_symbol)
+        if legacy:
+            return legacy
+        return None, None, yahoo_symbol, _market_source_info(pair, yahoo_symbol, 'Reference providers unavailable', source_mode='otc_reference_fallback')
+
+    # Residual non-OTC instruments are blocked in REAL-ONLY mode unless an explicit live provider exists.
+    if TWELVE_DATA_ENABLED and TWELVE_DATA_SYMBOLS.get(pair):
+        td, td_symbol = get_twelve_data_market_data(pair)
+        hit = _fresh_provider_result(td, pair, yahoo_symbol, 'Twelve Data', td_symbol, mode='live_primary')
+        if hit: return hit
+    if not REAL_ONLY_MODE:
+        legacy = _legacy_yahoo_result(pair, yahoo_symbol)
+        if legacy: return legacy
+    info = _market_source_info(pair, yahoo_symbol, 'Verified Live Feed Not Configured', source_mode='live_unavailable')
+    info['unavailable_reason'] = 'REAL-ONLY mode: no verified live provider is configured for this instrument.'
+    return None, None, yahoo_symbol, info
 
 
 def background_market_poller():
@@ -2149,14 +2889,14 @@ def background_market_poller():
 
 
 def build_timeframe(base_df, minutes):
-    """Create a CLOSED-candle timeframe from Yahoo 1m OHLCV."""
+    """Create a CLOSED-candle timeframe from the selected real 1m OHLCV source."""
     if base_df is None or base_df.empty:
         return None
 
     df = base_df.copy()
 
     if minutes == 1:
-        # Last Yahoo minute may still be forming; analyze only closed candles.
+        # Last 1-minute candle may still be forming; analyze only closed candles.
         if len(df) > 1:
             df = df.iloc[:-1]
         return df
@@ -2634,11 +3374,11 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, 
         "bullish_points": 0,
         "bearish_points": 0,
         "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": source_info.get("source") or "Yahoo Finance",
+        "source": source_info.get("source") or "Market Provider",
         "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
         "backup_used": bool(source_info.get("backup_used")),
         "provider_symbol": source_info.get("provider_symbol"),
-        "otc_proxy_warning": bool("(OTC)" in pair and source_info.get("source_mode") != "broker_otc_exact"),
+        "otc_proxy_warning": bool("(OTC)" in pair and not str(source_info.get("source_mode") or "").startswith("broker_otc_exact")),
         "yahoo_symbol": symbol,
         "timeframe_summary": timeframes or {},
         "timeframes_scanned": list(TIMEFRAMES.keys()),
@@ -2720,7 +3460,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
     """Scan synchronized timeframes using a SAFE/BALANCED/AGGRESSIVE/CUSTOM gate."""
     opts = normalize_scan_options(scan_options)
     if pair not in YAHOO_SYMBOLS:
-        result = no_signal_result(pair, "Pair is not configured in Yahoo mapping.")
+        result = no_signal_result(pair, "Pair is not configured in the RAJA market map.")
         result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
         return result
 
@@ -2728,7 +3468,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
     if base_df is None or base_df.empty:
         result = no_signal_result(
             pair,
-            source_info.get("unavailable_reason") or "Live reference data is temporarily unavailable. Scan safely paused; retry when the source responds.",
+            source_info.get("unavailable_reason") or "Verified market data is temporarily unavailable. Scan safely paused; retry when the real source responds.",
             symbol=symbol,
             data_age=data_age,
             source_info=source_info,
@@ -2753,8 +3493,8 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         provider_name = str(source_info.get("source") or "reference source")
         result = no_signal_result(
             pair,
-            f"BAD MARKET / STALE DATA — latest {provider_name} 1m reference candle is {age_label} old. "
-            "Yahoo primary and the configured live backup did not provide a fresh usable candle.",
+            f"BAD MARKET / STALE DATA — latest {provider_name} 1m candle is {age_label} old. "
+            "The configured real provider did not provide a fresh usable candle.",
             symbol=symbol,
             data_age=data_age,
             source_info=source_info,
@@ -2880,11 +3620,11 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
         "bearish_points": representative.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": source_info.get("source") or "Yahoo Finance",
+        "source": source_info.get("source") or "Market Provider",
         "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
         "backup_used": bool(source_info.get("backup_used")),
         "provider_symbol": source_info.get("provider_symbol"),
-        "otc_proxy_warning": bool("(OTC)" in pair and source_info.get("source_mode") != "broker_otc_exact"), "yahoo_symbol": symbol,
+        "otc_proxy_warning": bool("(OTC)" in pair and not str(source_info.get("source_mode") or "").startswith("broker_otc_exact")), "yahoo_symbol": symbol,
         "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
         "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
         "multi_tf_agreement": round(agreement_ratio * 100, 1), "selected_expiry": selected_expiry,
@@ -2899,7 +3639,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
 
 def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
     """
-    Build a REFERENCE-ONLY snapshot from the last Yahoo candles even when the
+    Build a REFERENCE-ONLY snapshot from the best available provider even when the
     normal live freshness gate is closed.
 
     Important:
@@ -2913,7 +3653,7 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
             "available": False,
             "live_fresh": False,
             "reason": "Pair is not part of the configured Forex OTC list.",
-            "source": "Yahoo Finance",
+            "source": "Reference Provider",
             "source_mode": "fallback_reference_only",
         }
 
@@ -2923,8 +3663,8 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
             "pair": pair,
             "available": False,
             "live_fresh": False,
-            "reason": "No Yahoo/Twelve Data reference history is currently available for this pair.",
-            "source": source_info.get("source") or "Yahoo Finance",
+            "reason": "No verified real-market history is currently available for this pair.",
+            "source": source_info.get("source") or "Market Provider",
             "source_mode": "fallback_reference_only",
             "backup_used": bool(source_info.get("backup_used")),
             "provider_symbol": source_info.get("provider_symbol"),
@@ -2962,7 +3702,7 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
         "live_fresh": bool(live_fresh),
         "normal_scan_required": bool(live_fresh),
         "reference_stale": not bool(live_fresh),
-        "source": source_info.get("source") or "Yahoo Finance",
+        "source": source_info.get("source") or "Market Provider",
         "source_mode": "fallback_reference_only",
         "backup_used": bool(source_info.get("backup_used")),
         "provider_symbol": source_info.get("provider_symbol"),
@@ -3265,7 +4005,7 @@ def otc_fallback_config():
 
     companion_url = RAJA_QUOTEX_OTC_COMPANION_URL
     bridge = _get_quotex_bridge_status(auth["user"])
-    direct_ready = bool(bridge.get("connected"))
+    direct_ready = bool(bridge.get("effective_exact_feed_connected"))
     return jsonify({
         "status": "success",
         "data": {
@@ -3278,9 +4018,9 @@ def otc_fallback_config():
             "bridge": bridge,
             "bridge_required_for_quotex_otc": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
             "message": (
-                "RAJA Quotex Bridge is connected and streaming broker OTC data."
+                "Exact Quotex OTC feed is online (personal or shared master bridge)."
                 if direct_ready
-                else "Quotex can be opened, but exact OTC scanning needs the RAJA Quotex Bridge extension."
+                else "Exact Quotex master feed is offline; RAJA AI will use a clearly labelled reference fallback when enabled."
             ),
         },
     })
@@ -3292,6 +4032,8 @@ def quotex_bridge_pair_code():
     auth, error = _auth_session(data)
     if error:
         return error
+    if RAJA_QUOTEX_EXTENSION_MASTER_ONLY and RAJA_QUOTEX_MASTER_USER and auth["user"] != RAJA_QUOTEX_MASTER_USER:
+        return jsonify({"status":"error","message":"This RAJA AI account uses the shared master Quotex feed. Extension pairing is restricted to the configured master account."}), 403
     now = time.time()
     with quotex_bridge_pair_codes_lock:
         for old_code, row in list(quotex_bridge_pair_codes.items()):
@@ -3363,21 +4105,30 @@ def quotex_bridge_tick():
     if not bridge_auth:
         return jsonify({"status": "error", "message": "Bridge token is invalid or expired. Pair the extension again."}), 401
     pair = str(data.get("pair") or "").strip()
-    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
-        return jsonify({"status": "error", "message": "Unsupported or non-OTC bridge pair."}), 400
+    if pair not in QUOTEX_RAJA_OTC_PAIR_SET:
+        return jsonify({"status": "error", "message": "Unsupported bridge pair. RAJA Quotex Bridge accepts only the fixed 38 Quotex OTC assets."}), 400
 
     accepted = 0
+    shared_accepted = 0
+    is_master = _bridge_is_master_user(bridge_auth["user"])
     candles = data.get("candles")
     if isinstance(candles, list):
-        for candle in candles[-500:]:
-            accepted += int(_bridge_upsert_candle(bridge_auth["user"], pair, candle))
+        for candle in candles[-1500:]:
+            ok = _bridge_upsert_candle(bridge_auth["user"], pair, candle)
+            accepted += int(ok)
+            if is_master:
+                shared_accepted += int(_bridge_upsert_shared_candle(pair, candle))
 
     price = data.get("price")
     epoch = data.get("timestamp")
     tick_ok = False
+    shared_tick_ok = False
     if price is not None:
         tick_ok = _bridge_upsert_tick(bridge_auth["user"], pair, price, epoch)
         accepted += int(tick_ok)
+        if is_master:
+            shared_tick_ok = _bridge_upsert_shared_tick(pair, price, epoch)
+            shared_accepted += int(shared_tick_ok)
 
     if not accepted:
         return jsonify({"status": "error", "message": "No valid Quotex price/candle data was supplied."}), 400
@@ -3386,8 +4137,14 @@ def quotex_bridge_tick():
         bridge_auth["user"], bridge_auth["device"], pair=pair,
         price=price if tick_ok else None, source_page=data.get("source_page")
     )
+    if is_master and shared_accepted:
+        _set_quotex_shared_status(
+            bridge_auth["user"], bridge_auth["device"], pair=pair,
+            price=price if shared_tick_ok else None, source_page=data.get("source_page")
+        )
+        _persist_shared_bridge_pair(pair)
     status = _get_quotex_bridge_status(bridge_auth["user"], pair)
-    return jsonify({"status": "success", "data": {"accepted": accepted, **status}})
+    return jsonify({"status": "success", "data": {"accepted": accepted, "shared_accepted": shared_accepted, "master_feed": bool(is_master), **status}})
 
 
 @app.route("/health", methods=["GET"])
@@ -3397,14 +4154,28 @@ def health():
 
     return jsonify({
         "status": "success",
-        "service": "RAJA AI multi-timeframe backend",
+        "service": "RAJA AI multi-timeframe backend · REAL-ONLY",
         "app_build": APP_BUILD_ID,
         "license_store_ready": bool(_license_store_ready.is_set()),
         "yahoo_pairs": len(YAHOO_SYMBOLS),
         "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
         "cached_symbols": cached_symbols,
         "quotex_bridge_enabled": True,
+        "real_only_mode": REAL_ONLY_MODE,
         "quotex_bridge_required_for_otc": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
+        "quotex_master_user_configured": bool(RAJA_QUOTEX_MASTER_USER),
+        "quotex_shared_master_feed": RAJA_QUOTEX_SHARED_MASTER_FEED,
+        "quotex_reference_fallback": QUOTEX_REFERENCE_FALLBACK_ENABLED,
+        "hybrid_otc_fallback": HYBRID_OTC_FALLBACK_ENABLED,
+        "otc_fallback_policy": "EXACT_BRIDGE_FIRST_THEN_UNDERLYING_REFERENCE",
+        "oanda_enabled": OANDA_ENABLED,
+        "coinbase_exchange_enabled": True,
+        "coinbase_warm_history_1m": COINBASE_OUTPUTSIZE,
+        "forex_live_verified_provider_configured": bool(OANDA_ENABLED or TWELVE_DATA_ENABLED),
+        "forex_live_without_provider": "BLOCKED_REAL_ONLY" if REAL_ONLY_MODE and not (OANDA_ENABLED or TWELVE_DATA_ENABLED) else "AVAILABLE",
+        "coinbase_public_websocket": True,
+        "twelve_data_enabled": TWELVE_DATA_ENABLED,
+        "yahoo_last_resort_enabled": ALLOW_YAHOO_LAST_RESORT,
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
@@ -3422,7 +4193,7 @@ def health():
         "twelve_data_cache_seconds": TWELVE_DATA_CACHE_SECONDS,
         "twelve_data_fetch_concurrency": TWELVE_DATA_FETCH_CONCURRENCY,
         "twelve_data_request_timeout_seconds": TWELVE_DATA_REQUEST_TIMEOUT_SECONDS,
-        "market_data_priority": ["Yahoo Finance", "Twelve Data", "stale reference fallback"],
+        "market_data_priority": ["Quotex Exact Master Bridge (OTC)", "Coinbase Exchange public live (Crypto)", "OANDA/Twelve Data only if configured (Forex)"],
         "max_source_candle_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
         "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
         "forex_otc_fallback_deadline_seconds": FOREX_OTC_FALLBACK_DEADLINE_SECONDS,
@@ -4185,7 +4956,7 @@ def forex_otc_fallback_data():
                 "available": False,
                 "live_fresh": False,
                 "reason": "Fallback reference analysis failed for this pair.",
-                "source": "Yahoo Finance",
+                "source": "Reference Provider",
                 "source_mode": "fallback_reference_only",
             }
 
@@ -4197,7 +4968,7 @@ def forex_otc_fallback_data():
             "available": False,
             "live_fresh": False,
             "reason": "Fallback reference analysis timed out for this pair.",
-            "source": "Yahoo Finance",
+            "source": "Reference Provider",
             "source_mode": "fallback_reference_only",
         }
 
@@ -4447,7 +5218,9 @@ def telegram_license_info(key, user_ref):
 
 
 def telegram_scan_pair(pair, selected_expiry):
-    return calculate_live_indicators(str(pair), str(selected_expiry))
+    pair = str(pair).strip()
+    broker = 'Quotex' if pair in QUOTEX_RAJA_OTC_PAIR_SET else None
+    return calculate_live_indicators(pair, str(selected_expiry), bridge_user=None, broker=broker)
 
 
 def telegram_scan_auto(pairs, selected_expiry):
@@ -4458,7 +5231,7 @@ def telegram_scan_auto(pairs, selected_expiry):
 
     workers = min(BATCH_SCAN_WORKERS, len(pairs))
     pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-tg-scan")
-    future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry): pair for pair in pairs}
+    future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry, None, None, ('Quotex' if pair in QUOTEX_RAJA_OTC_PAIR_SET else None)): pair for pair in pairs}
     done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
     results = []
     for future in done:
