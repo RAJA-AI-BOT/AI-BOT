@@ -347,7 +347,7 @@ TWELVE_DATA_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_TWELVE_DATA_MI
 
 
 # =========================================================
-# DIRECT LIVE MARKET PROVIDERS (v1.8 YAHOO LIVE + HYBRID OTC)
+# DIRECT LIVE MARKET PROVIDERS (v1.11.1 BALANCED PRECISION + HYBRID OTC)
 # =========================================================
 # TradingView is a charting surface, not used as a scraping dependency here.
 # RAJA AI talks directly to provider APIs instead:
@@ -2791,7 +2791,7 @@ def _yahoo_live_result(pair, yahoo_symbol):
 
 def get_market_data(pair, bridge_user=None, broker=None):
     '''
-    v1.7 HYBRID OTC feed router.
+    v1.11.1 HYBRID OTC feed router.
       Quotex OTC: personal exact bridge -> shared master exact bridge -> clearly-labelled underlying/reference fallback if offline.
       Forex Live: verified OANDA/Twelve Data only when explicitly configured -> BLOCK otherwise.
       Crypto Live: Coinbase Exchange public market data -> optional configured Twelve Data backup.
@@ -3625,7 +3625,7 @@ def normalize_scan_options(raw):
     raw = raw if isinstance(raw, dict) else {}
     mode = str(raw.get("mode") or "BALANCED").strip().upper()
     presets = {
-        # v1.9 selected-timeframe engine. min_tf is kept as 1 for API/UI backward compatibility.
+        # v1.11.1 selected-timeframe balanced-precision engine. min_tf stays 1 for API/UI compatibility.
         "SAFE": {"min_tf": 1, "min_agreement": 72.0, "min_score": 84.0, "vol_min": 0.003, "vol_max": 1.10},
         "BALANCED": {"min_tf": 1, "min_agreement": 62.0, "min_score": 74.0, "vol_min": 0.002, "vol_max": 1.80},
         "AGGRESSIVE": {"min_tf": 1, "min_agreement": 55.0, "min_score": 64.0, "vol_min": 0.0, "vol_max": 2.80},
@@ -3647,7 +3647,7 @@ def normalize_scan_options(raw):
 
 
 def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
-    """v1.9: deep-scan ONLY the timeframe selected as trade expiry."""
+    """v1.11.1: balanced-precision scan of the CLOSED timeframe selected as trade expiry."""
     opts = normalize_scan_options(scan_options)
     selected_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip()) or "1m"
     if pair not in YAHOO_SYMBOLS:
@@ -3717,7 +3717,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         return result
 
     if selected.get("signal") not in {"CALL", "PUT"}:
-        return rejected(selected.get("reason") or f"Selected {selected_tf} timeframe did not pass deep-scan quality gates.")
+        return rejected(selected.get("reason") or f"Selected {selected_tf} timeframe did not pass balanced-precision quality gates.")
 
     # Entry-timing integrity: do not carry a valid setup forward after its next-candle
     # entry window has already passed. This is especially important on 1m expiry.
@@ -3773,7 +3773,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "selected_timeframe": selected_tf, "selected_tf_only": True,
         "expected_entry_epoch": expected_entry_epoch or None, "entry_delay_seconds": entry_delay_seconds,
         "max_entry_delay_seconds": MAX_SIGNAL_ENTRY_DELAY_SECONDS,
-        "confirmation_mode": f"{opts['mode']} · {selected_tf.upper()} ONLY · SELECTED-TF DEEP SCAN",
+        "confirmation_mode": f"{opts['mode']} · {selected_tf.upper()} ONLY · SELECTED-TF BALANCED PRECISION",
         "analysis_engine": "selected_timeframe_balanced_precision_v111",
         "indicator_agreement_pct": round(indicator_quality, 1),
         "indicator_confirmations": selected.get("indicator_confirmations", []),
@@ -4286,18 +4286,36 @@ def quotex_bridge_tick():
     if not accepted:
         return jsonify({"status": "error", "message": "No valid Quotex price/candle data was supplied."}), 400
 
-    _set_quotex_bridge_status(
-        bridge_auth["user"], bridge_auth["device"], pair=pair,
-        price=price if tick_ok else None, source_page=data.get("source_page")
+    # A history/backfill upload must NOT make a stale pair look live.  Only a
+    # genuinely recent broker tick/candle timestamp refreshes the exact-feed heartbeat.
+    normalized_tick_epoch = _normalize_bridge_epoch(epoch) if tick_ok else None
+    fresh_tick_window = max(90, QUOTEX_BRIDGE_SHARED_FRESH_SECONDS * 3)
+    fresh_tick_ok = bool(
+        tick_ok and normalized_tick_epoch is not None
+        and 0 <= (time.time() - normalized_tick_epoch) <= fresh_tick_window
     )
-    if is_master and shared_accepted:
-        _set_quotex_shared_status(
+    fresh_shared_tick_ok = bool(shared_tick_ok and fresh_tick_ok)
+
+    if fresh_tick_ok:
+        _set_quotex_bridge_status(
             bridge_auth["user"], bridge_auth["device"], pair=pair,
-            price=price if shared_tick_ok else None, source_page=data.get("source_page")
+            price=price, source_page=data.get("source_page")
         )
+    if is_master and shared_accepted:
+        if fresh_shared_tick_ok:
+            _set_quotex_shared_status(
+                bridge_auth["user"], bridge_auth["device"], pair=pair,
+                price=price, source_page=data.get("source_page")
+            )
         _persist_shared_bridge_pair(pair)
     status = _get_quotex_bridge_status(bridge_auth["user"], pair)
-    return jsonify({"status": "success", "data": {"accepted": accepted, "shared_accepted": shared_accepted, "master_feed": bool(is_master), **status}})
+    return jsonify({
+        "status": "success",
+        "data": {
+            "accepted": accepted, "shared_accepted": shared_accepted,
+            "master_feed": bool(is_master), "fresh_tick": fresh_tick_ok, **status
+        }
+    })
 
 
 @app.route("/health", methods=["GET"])
@@ -4307,7 +4325,7 @@ def health():
 
     return jsonify({
         "status": "success",
-        "service": "RAJA AI backend · v1.10 PRECISION + EXACT OTC",
+        "service": "RAJA AI backend · v1.11.1 BALANCED PRECISION + EXACT OTC",
         "app_build": APP_BUILD_ID,
         "license_store_ready": bool(_license_store_ready.is_set()),
         "yahoo_pairs": len(YAHOO_SYMBOLS),
@@ -4320,7 +4338,7 @@ def health():
         "quotex_shared_master_feed": RAJA_QUOTEX_SHARED_MASTER_FEED,
         "quotex_reference_fallback": QUOTEX_REFERENCE_FALLBACK_ENABLED,
         "hybrid_otc_fallback": HYBRID_OTC_FALLBACK_ENABLED,
-        "otc_fallback_policy": "EXACT_BRIDGE_FIRST_THEN_UNDERLYING_REFERENCE",
+        "otc_fallback_policy": ("EXACT_BRIDGE_REQUIRED_FOR_SIGNALS_REFERENCE_INFO_ONLY" if RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC else "EXACT_BRIDGE_FIRST_THEN_UNDERLYING_REFERENCE"),
         "oanda_enabled": OANDA_ENABLED,
         "coinbase_exchange_enabled": True,
         "coinbase_warm_history_1m": COINBASE_OUTPUTSIZE,
@@ -4333,7 +4351,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "Selected-TF Balanced Precision v1.11 · exact OTC + entry timing",
+        "confirmation_mode": "Selected-TF Balanced Precision v1.11.1 · exact OTC + source-freshness + entry timing",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
