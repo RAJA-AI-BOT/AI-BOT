@@ -282,7 +282,7 @@ MAX_SOURCE_CANDLE_AGE_SECONDS = max(120, min(3600, int(os.environ.get("RAJA_MAX_
 # Browser batch timeout is 90s. Keep the backend deadline comfortably below that
 # so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
 # 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
-BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(75.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "72"))))
+BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(75.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "75"))))
 FOREX_OTC_FALLBACK_DEADLINE_SECONDS = max(BATCH_SCAN_DEADLINE_SECONDS, min(78.0, float(os.environ.get("RAJA_FOREX_OTC_FALLBACK_DEADLINE_SECONDS", "72"))))
 
 # Twelve Data live backup. The key stays server-side in Railway environment variables.
@@ -2871,6 +2871,54 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
             f"Technical confluence {multi_tf_score:.1f}% is below {opts['mode']} threshold {opts['min_score']:.1f}%."
         )
 
+    # Deep quality ranking (ranking only, NOT an extra rejection gate).
+    # This keeps BALANCED signal frequency while comparing every qualified pair more carefully.
+    selected_result = results.get(required_tf) if required_tf else None
+    if not selected_result or selected_result.get("signal") != signal:
+        selected_result = representative
+    selected_tf_score = float(selected_result.get("score") or multi_tf_score)
+
+    # Neighbouring timeframes add context quality but do not veto an otherwise valid setup.
+    context_map = {
+        "1m": ("1m", "2m", "5m"),
+        "2m": ("1m", "2m", "5m"),
+        "5m": ("2m", "5m", "10m"),
+        "10m": ("5m", "10m", "15m"),
+        "15m": ("10m", "15m", "30m"),
+        "30m": ("15m", "30m"),
+    }
+    context_tfs = context_map.get(required_tf or "", tuple(TIMEFRAMES.keys()))
+    context_rows = [results.get(tf) or {} for tf in context_tfs]
+    context_valid = [r for r in context_rows if r.get("signal") in {"CALL", "PUT"}]
+    context_same = sum(1 for r in context_valid if r.get("signal") == signal)
+    context_alignment_pct = (context_same / len(context_valid) * 100.0) if context_valid else agreement_ratio * 100.0
+
+    supporter_scores = [float(r.get("score") or 0.0) for r in supporters]
+    supporter_score_avg = (sum(supporter_scores) / len(supporter_scores)) if supporter_scores else multi_tf_score
+    supporter_score_spread = (max(supporter_scores) - min(supporter_scores)) if supporter_scores else 0.0
+    consistency_score = max(50.0, min(100.0, 100.0 - supporter_score_spread * 2.5))
+
+    supporter_adx = [float(r.get("adx") or 0.0) for r in supporters if r.get("adx") is not None]
+    avg_support_adx = (sum(supporter_adx) / len(supporter_adx)) if supporter_adx else float(representative.get("adx") or 0.0)
+    trend_quality = max(45.0, min(100.0, 45.0 + max(0.0, avg_support_adx - 15.0) * 2.2))
+
+    rep_bull = float(representative.get("bullish_points") or 0.0)
+    rep_bear = float(representative.get("bearish_points") or 0.0)
+    directional_edge = abs(rep_bull - rep_bear)
+    edge_quality = max(50.0, min(100.0, 50.0 + directional_edge * 8.0))
+
+    deep_quality_score = (
+        float(multi_tf_score) * 0.32
+        + float(agreement_ratio * 100.0) * 0.18
+        + float(stability_score) * 0.16
+        + float(selected_tf_score) * 0.12
+        + float(context_alignment_pct) * 0.09
+        + float(trend_quality) * 0.06
+        + float(consistency_score) * 0.04
+        + float(edge_quality) * 0.03
+    )
+    deep_quality_score = max(0.0, min(100.0, deep_quality_score))
+
     aligned_tfs = [r["timeframe"] for r in supporters]
     opposing_tfs = [r["timeframe"] for r in opponents]
     return {
@@ -2893,6 +2941,18 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
         "market_stability_score": stability_score, "market_risk_level": risk_level,
         "volatility_pct": volatility_pct, "chart_preview": chart_preview,
+        "deep_quality_score": round(deep_quality_score, 2),
+        "deep_quality_components": {
+            "technical": round(float(multi_tf_score), 2),
+            "agreement": round(float(agreement_ratio * 100.0), 1),
+            "stability": round(float(stability_score), 1),
+            "selected_tf": round(float(selected_tf_score), 2),
+            "context_alignment": round(float(context_alignment_pct), 1),
+            "avg_adx": round(float(avg_support_adx), 2),
+            "consistency": round(float(consistency_score), 1),
+            "directional_edge": round(float(directional_edge), 2),
+        },
+        "deep_scan_mode": "FULL_MARKET_QUALIFIED_RANKING",
         "no_trade": False, "quality_gate": "PASSED",
     }
 
