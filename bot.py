@@ -69,7 +69,7 @@ app = Flask(__name__, static_folder=".", template_folder=".")
 CORS(app)
 
 # =========================================================
-# RAJA AI SELECTED-TIMEFRAME DEEP-SCAN BACKEND
+# RAJA AI v1.13 · 15-SECOND PRE-SCAN + CLOSED-CANDLE FINAL DEEP-SCAN BACKEND
 # Yahoo Finance 1-minute OHLCV is the PRIMARY base/reference feed.
 # If Yahoo is unavailable/stale and TWELVE_DATA_API_KEY is configured,
 # Twelve Data 1-minute OHLCV becomes the LIVE BACKUP reference feed.
@@ -327,6 +327,11 @@ MAX_SIGNAL_ENTRY_DELAY_SECONDS = max(5, min(50, int(os.environ.get("RAJA_MAX_SIG
 # so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
 # 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
 BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(75.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "58"))))
+# 1m Auto Scan pre-alert is intentionally lightweight and time-bounded. It is candidate
+# ranking only; CALL/PUT is never finalized from a forming candle.
+PRE_SCAN_DEADLINE_SECONDS = max(3.0, min(12.0, float(os.environ.get("RAJA_PRE_SCAN_DEADLINE_SECONDS", "8"))))
+PRE_SCAN_WORKERS = max(1, min(6, int(os.environ.get("RAJA_PRE_SCAN_WORKERS", "4"))))
+PRE_SCAN_TOP_N = max(1, min(5, int(os.environ.get("RAJA_PRE_SCAN_TOP_N", "3"))))
 FOREX_OTC_FALLBACK_DEADLINE_SECONDS = max(BATCH_SCAN_DEADLINE_SECONDS, min(78.0, float(os.environ.get("RAJA_FOREX_OTC_FALLBACK_DEADLINE_SECONDS", "72"))))
 
 # Twelve Data live backup. The key stays server-side in Railway environment variables.
@@ -2930,17 +2935,44 @@ def background_market_poller():
     return
 
 
+def _index_epoch_seconds(index_value):
+    try:
+        return int(index_value.timestamp())
+    except Exception:
+        return 0
+
+
+def _strip_actually_forming_1m(df, now_epoch=None):
+    """Drop the last row only when its timestamp belongs to the CURRENT 1m bucket.
+
+    Older builds dropped the last row unconditionally. Around a new minute some providers
+    have not published the new forming row yet, so that behavior could accidentally discard
+    the candle that had just closed and analyze an older/flat candle instead.
+    """
+    if df is None or df.empty or len(df) <= 1:
+        return df
+    now_epoch = int(now_epoch or time.time())
+    current_1m_bucket = (now_epoch // 60) * 60
+    last_epoch = _index_epoch_seconds(df.index[-1])
+    if last_epoch and last_epoch >= current_1m_bucket:
+        return df.iloc[:-1]
+    return df
+
+
 def build_timeframe(base_df, minutes):
     """Create a CLOSED-candle timeframe from the selected real 1m OHLCV source."""
     if base_df is None or base_df.empty:
         return None
 
+    now_epoch = int(time.time())
     df = base_df.copy()
 
     if minutes == 1:
-        # Last 1-minute candle may still be forming; analyze only closed candles.
-        if len(df) > 1:
-            df = df.iloc[:-1]
+        return _strip_actually_forming_1m(df, now_epoch)
+
+    # Higher timeframes must never absorb the current forming 1m row.
+    df = _strip_actually_forming_1m(df, now_epoch)
+    if df is None or df.empty:
         return df
 
     rule = f"{minutes}min"
@@ -2963,7 +2995,6 @@ def build_timeframe(base_df, minutes):
             origin="start_day",
         ).agg(agg)
     except TypeError:
-        # Compatibility fallback for older pandas versions.
         tf = df.resample(
             rule,
             label="left",
@@ -2971,9 +3002,13 @@ def build_timeframe(base_df, minutes):
         ).agg(agg)
 
     tf = tf.dropna(subset=["Open", "High", "Low", "Close"])
+    if tf.empty:
+        return tf
 
-    # The last resampled bucket can still be forming.
-    if len(tf) > 1:
+    # Drop a resampled bucket only when that bucket is genuinely still open.
+    current_bucket = (now_epoch // (int(minutes) * 60)) * (int(minutes) * 60)
+    last_bucket_epoch = _index_epoch_seconds(tf.index[-1])
+    if len(tf) > 1 and last_bucket_epoch and last_bucket_epoch >= current_bucket:
         tf = tf.iloc[:-1]
 
     return tf
@@ -3789,6 +3824,131 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "market_stability_score": stability_score, "market_risk_level": risk_level, "volatility_pct": volatility_pct,
         "chart_preview": chart_preview, "no_trade": False, "quality_gate": "PASSED",
     }
+
+
+
+def calculate_pre_scan_candidate(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
+    """Rank a 1m candidate about 15 seconds before candle close.
+
+    This endpoint is PRE-ALERT ONLY. It may inspect the latest provider row (including a
+    still-forming 1m candle) to decide which pair is worth opening, but it never authorizes
+    a trade. The normal /scan or /scan-batch path re-runs the strict CLOSED-candle engine
+    after the minute closes before CALL/PUT can be emitted.
+    """
+    opts = normalize_scan_options(scan_options)
+    selected_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or '').strip()) or '1m'
+    base = {
+        'pair': pair, 'qualified': False, 'pre_alert_only': True,
+        'selected_timeframe': selected_tf, 'candidate_score': 0.0,
+        'directional_bias': 'NEUTRAL', 'reason': '',
+    }
+    if selected_tf != '1m':
+        base['reason'] = '15-second pre-scan is enabled for 1m expiry only.'
+        return base
+    if pair not in YAHOO_SYMBOLS:
+        base['reason'] = 'Pair is not configured.'
+        return base
+
+    base_df, data_age, symbol, source_info = get_market_data(pair, bridge_user=bridge_user, broker=broker)
+    base.update({
+        'source': source_info.get('source') or 'Market Provider',
+        'source_mode': source_info.get('source_mode') or '',
+        'provider_symbol': source_info.get('provider_symbol') or symbol,
+        'exact_broker_feed': bool(source_info.get('exact_broker_feed')),
+        'data_age': round(float(data_age), 2) if data_age is not None and math.isfinite(float(data_age)) else None,
+    })
+    if base_df is None or base_df.empty:
+        base['reason'] = source_info.get('unavailable_reason') or 'Market data unavailable.'
+        return base
+    if data_age is not None and (not math.isfinite(float(data_age)) or float(data_age) > MAX_SOURCE_CANDLE_AGE_SECONDS):
+        base['reason'] = 'Market data is stale for pre-scan.'
+        return base
+
+    required = {'Open', 'High', 'Low', 'Close'}
+    if not required.issubset(base_df.columns):
+        base['reason'] = 'Missing OHLC columns.'
+        return base
+
+    frame = base_df.copy().dropna(subset=list(required)).tail(260)
+    if len(frame) < 60:
+        base['reason'] = 'Insufficient 1m history for pre-scan.'
+        return base
+
+    now_epoch = int(time.time())
+    current_bucket = (now_epoch // 60) * 60
+    last_epoch = _index_epoch_seconds(frame.index[-1])
+    forming_present = bool(last_epoch and last_epoch >= current_bucket)
+    last = frame.iloc[-1]
+    last_high = safe_float(last.get('High'))
+    last_low = safe_float(last.get('Low'))
+    if last_high is None or last_low is None or last_high <= last_low:
+        base.update({
+            'forming_candle': forming_present,
+            'forming_candle_epoch': last_epoch or None,
+            'seconds_to_close': max(0, 60 - (now_epoch % 60)),
+            'reason': 'Latest pre-scan candle has no usable range yet.',
+        })
+        return base
+
+    # Use a permissive profile only to obtain a ranking. Final signal thresholds remain
+    # the user's selected SAFE/BALANCED/etc profile on the closed candle after T=0.
+    pre_opts = dict(opts)
+    pre_opts['mode'] = 'AGGRESSIVE'
+    analysis = analyze_timeframe(frame, '1m', pre_opts, selected_only=True)
+    bull = float(analysis.get('bullish_points') or 0.0)
+    bear = float(analysis.get('bearish_points') or 0.0)
+    edge = abs(bull - bear)
+    bias = 'CALL' if bull > bear else ('PUT' if bear > bull else 'NEUTRAL')
+    technical = float(analysis.get('technical_quality') or analysis.get('score') or 0.0)
+    agreement = float(analysis.get('indicator_agreement_pct') or 0.0)
+    stability, risk_level, volatility_pct = market_stability_metrics(
+        analysis.get('price'), analysis.get('atr'), analysis.get('adx'), data_age, agreement,
+    )
+    structural = bool(analysis.get('structural_trigger'))
+    continuation = bool(analysis.get('strong_trend_continuation'))
+    late_risk = bool(analysis.get('late_entry_risk'))
+
+    candidate_score = (
+        technical * 0.52
+        + agreement * 0.18
+        + min(16.0, edge * 2.6)
+        + float(stability or 0.0) * 0.10
+        + (5.0 if structural else 0.0)
+        + (2.0 if continuation else 0.0)
+        - (6.0 if late_risk else 0.0)
+    )
+    candidate_score = max(0.0, min(99.0, candidate_score))
+
+    qualified = bool(
+        bias in {'CALL', 'PUT'}
+        and edge >= 1.35
+        and technical >= 52.0
+        and agreement >= 45.0
+        and float(stability or 0.0) >= 45.0
+        and str(risk_level or '').upper() != 'HIGH'
+    )
+
+    base.update({
+        'qualified': qualified,
+        'candidate_score': round(candidate_score, 2),
+        'directional_bias': bias,
+        'technical_quality': round(technical, 2),
+        'indicator_agreement_pct': round(agreement, 1),
+        'edge': round(edge, 3),
+        'market_stability_score': round(float(stability or 0.0), 1),
+        'market_risk_level': risk_level,
+        'volatility_pct': round(float(volatility_pct or 0.0), 5),
+        'market_regime': analysis.get('market_regime'),
+        'structural_trigger': structural,
+        'late_entry_risk': late_risk,
+        'forming_candle': forming_present,
+        'forming_candle_epoch': last_epoch or None,
+        'seconds_to_close': max(0, 60 - (now_epoch % 60)),
+        'reason': 'Candidate ready for closed-candle confirmation.' if qualified else (
+            analysis.get('reason') or 'Pre-scan quality is below the candidate floor.'
+        ),
+    })
+    return base
 
 
 def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
@@ -5173,6 +5333,92 @@ def forex_otc_fallback_data():
         "live_restored": any(bool(row.get("live_fresh")) for row in rows),
         "max_fresh_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
     })
+
+
+@app.route("/pre-scan-batch", methods=["POST"])
+def pre_scan_batch():
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+
+    maintenance = scan_maintenance_state()
+    if maintenance:
+        return jsonify({
+            'status': 'error', 'maintenance': True,
+            'message': maintenance.get('maintenance_message') or 'RAJA AI scans are temporarily paused.',
+        }), 503
+
+    requested_pairs = data.get('pairs') or []
+    selected_expiry = str(data.get('expiry') or '1m').strip()
+    market = str(data.get('market') or 'Unknown')[:80]
+    broker = str(data.get('broker') or '').strip()[:80]
+    opts = normalize_scan_options(data.get('scan_options'))
+    if selected_expiry != '1m':
+        return jsonify({'status': 'success', 'data': [], 'shortlist': [], 'pre_alert_only': True,
+                        'message': '15-second pre-scan is active for 1m expiry only.'})
+    if not isinstance(requested_pairs, list):
+        return jsonify({'status': 'error', 'message': 'pairs must be an array.'}), 400
+
+    pairs, seen = [], set()
+    for raw in requested_pairs[:40]:
+        pair = str(raw).strip()
+        if pair in YAHOO_SYMBOLS and pair not in seen:
+            pairs.append(pair); seen.add(pair)
+    if not pairs:
+        return jsonify({'status': 'error', 'message': 'No supported pairs were supplied.'}), 400
+
+    news_lock = evaluate_news_safety_lock(pairs, market)
+    if news_lock:
+        rows = [{
+            'pair': p, 'qualified': False, 'candidate_score': 0.0,
+            'pre_alert_only': True, 'reason': 'High-impact news safety lock is active.'
+        } for p in pairs]
+        return jsonify({'status': 'success', 'data': rows, 'shortlist': [], 'pre_alert_only': True,
+                        'news_safety_lock': news_lock,
+                        'diagnostics': {'total_pairs': len(pairs), 'completed_pairs': len(pairs), 'qualified_pairs': 0}})
+
+    started = time.time()
+    workers = min(PRE_SCAN_WORKERS, len(pairs))
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix='raja-pre-scan')
+    future_map = {
+        pool.submit(calculate_pre_scan_candidate, p, selected_expiry, opts, auth['user'], broker): p
+        for p in pairs
+    }
+    done, pending = wait(future_map.keys(), timeout=PRE_SCAN_DEADLINE_SECONDS)
+    results_by_pair = {}
+    for future in done:
+        pair = future_map[future]
+        try:
+            results_by_pair[pair] = future.result()
+        except Exception as exc:
+            print(f'Pre-scan error for {pair}: {exc}')
+            results_by_pair[pair] = {'pair': pair, 'qualified': False, 'candidate_score': 0.0,
+                                     'pre_alert_only': True, 'reason': 'Pre-scan worker failed.'}
+    timed_out = []
+    for future in pending:
+        pair = future_map[future]
+        timed_out.append(pair)
+        future.cancel()
+        results_by_pair[pair] = {'pair': pair, 'qualified': False, 'candidate_score': 0.0,
+                                 'pre_alert_only': True, 'reason': 'Pre-scan timed out; retry next candle.'}
+    pool.shutdown(wait=False, cancel_futures=True)
+
+    rows = [results_by_pair[p] for p in pairs]
+    shortlist = sorted(
+        [r for r in rows if r.get('qualified')],
+        key=lambda r: float(r.get('candidate_score') or 0.0),
+        reverse=True,
+    )[:PRE_SCAN_TOP_N]
+    diagnostics = {
+        'total_pairs': len(pairs), 'completed_pairs': len(done), 'timed_out_pairs': timed_out,
+        'timed_out_pairs_count': len(timed_out), 'qualified_pairs': len(shortlist),
+        'elapsed_seconds': round(time.time() - started, 2),
+        'deadline_seconds': PRE_SCAN_DEADLINE_SECONDS, 'workers': workers,
+        'pre_alert_only': True,
+    }
+    return jsonify({'status': 'success', 'data': rows, 'shortlist': shortlist,
+                    'pre_alert_only': True, 'diagnostics': diagnostics})
 
 
 @app.route("/scan-batch", methods=["POST"])
