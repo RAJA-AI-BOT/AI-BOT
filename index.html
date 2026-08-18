@@ -6076,7 +6076,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     <div class="engine-mini">
                         <div>AI Engine Status <strong>LIVE</strong></div>
                         <div>Engine: Multi-TF 4-of-6</div>
-                        <div id="rajaEngineSourceText">Source: AUTO · Yahoo → Twelve Data</div>
+                        <div id="rajaEngineSourceText">Source: HYBRID OTC · EXACT FIRST / REFERENCE BACKUP</div>
                         <div>Re-scan interval: <strong>5 min</strong></div>
                     </div>
                     <button id="rajaFullscreenDesktopBtn" class="raja-fullscreen-inline raja-sidebar-fullscreen" type="button"
@@ -6635,7 +6635,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                     <div class="status-grid">
                         <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><div class="selected-pair-head"><span class="selected-pair-label">SELECTED TARGET PAIR</span><div class="selected-pair-badges"><span id="selectedBrokerBadge" class="target-context-badge broker-badge">⚡ QUOTEX</span><span id="selectedMarketBadge" class="target-context-badge market-badge">📈 CRYPTO LIVE</span></div></div><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
-                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="rajaBaseFeedLabel">Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="rajaBaseFeedLabel">HYBRID OTC</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
                     </div>
 
                     <section class="upgrade-card" id="dailyPerformancePanel">
@@ -6651,7 +6651,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     </section>
 
                     <section class="config-panel">
-                        <div class="config-title">TRADING CONFIGURATION</div>
+                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">HYBRID OTC MODE · Quotex OTC uses exact master bridge first. If bridge is offline, RAJA AI keeps scanning with clearly-labelled underlying/reference candles (NOT exact broker OTC). Crypto Live = Coinbase public market data. No reference candle is labelled as broker-live.</div>
                         <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
                             <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
@@ -8980,7 +8980,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Market Provider',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
         }
 
 
@@ -9487,7 +9487,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
                             const unavailableOnly = Math.max(0, dataBad - skippedSlow);
-                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
+                            descEl.innerText = `Live provider data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
                         }
                     } else {
                         titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
@@ -11645,18 +11645,28 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         if(n<60) return Math.max(0,Math.round(n))+'s';
         return (n/60).toFixed(1)+'m';
     }
-    function v23FeedLabel(source){
+    function v23FeedLabel(source, sourceMode){
         const s=String(source||'AUTO');
+        const m=String(sourceMode||'');
+        const isReference=/reference/i.test(m) || /OTC Reference/i.test(s);
+        if(/Quotex Master Bridge/i.test(s)) return 'QUOTEX OTC 1m · EXACT MASTER FEED';
         if(/Quotex Bridge/i.test(s)) return 'QUOTEX OTC 1m · EXACT BRIDGE';
-        if(/Twelve Data/i.test(s)) return 'TWELVE DATA 1m · BACKUP LIVE';
-        if(/Yahoo/i.test(s)) return 'YAHOO 1m · PRIMARY LIVE';
-        if(/MIXED/i.test(s)) return 'YAHOO + TWELVE · LIVE';
-        return 'AUTO 1m · YAHOO FIRST';
+        if(isReference && /Coinbase/i.test(s)) return 'COINBASE · OTC REFERENCE · NOT EXACT QUOTEX';
+        if(isReference && /OANDA/i.test(s)) return 'OANDA · OTC REFERENCE · NOT EXACT BROKER';
+        if(isReference && /Twelve Data/i.test(s)) return 'TWELVE DATA · OTC REFERENCE · NOT EXACT BROKER';
+        if(isReference && /Yahoo/i.test(s)) return 'YAHOO · OTC REFERENCE · NOT EXACT BROKER';
+        if(/OANDA/i.test(s)) return 'OANDA · VERIFIED FOREX LIVE';
+        if(/Coinbase/i.test(s)) return 'COINBASE · PUBLIC CRYPTO LIVE WS + M1';
+        if(/Twelve Data/i.test(s)) return 'TWELVE DATA · VERIFIED PROVIDER';
+        if(/Yahoo/i.test(s)) return 'YAHOO · REFERENCE ONLY';
+        if(/unavailable|not configured|offline/i.test(s)) return 'FEED UNAVAILABLE · SCAN PAUSED';
+        if(/MIXED/i.test(s)) return 'MULTI-SOURCE · CHECK SOURCE BADGES';
+        return 'HYBRID OTC · WAITING FOR FEED';
     }
     function v23PaintFreshness(){
         const f=v23LastFreshness;
         const set=(id,val)=>{const e=document.getElementById(id);if(e)e.textContent=val;};
-        const feedLabel=v23FeedLabel(f.source);
+        const feedLabel=v23FeedLabel(f.source,f.sourceMode);
         set('v23FreshFeed',feedLabel);
         set('v23FreshAge',v23FormatAge(f.age));
         set('v23FreshLatency',Number.isFinite(Number(f.elapsed))?Number(f.elapsed).toFixed(1)+'s':'--');
@@ -11670,8 +11680,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         rows=Array.isArray(rows)?rows:[];
         const ages=rows.map(x=>Number(x&&x.data_age)).filter(Number.isFinite);
         const sources=[...new Set(rows.map(x=>String(x&&x.source||'')).filter(Boolean))];
+        const modes=[...new Set(rows.map(x=>String(x&&x.source_mode||'')).filter(Boolean))];
         const source=sources.length>1?'MIXED':(sources[0]||'AUTO');
-        v23LastFreshness={age:ages.length?Math.min(...ages):null,elapsed:Number(diagnostics&&diagnostics.elapsed_seconds),cacheHit:Boolean(cacheHit),count:Number(diagnostics&&diagnostics.total_pairs)||rows.length,updatedAt:Date.now(),source};
+        const sourceMode=modes.length>1?'mixed':(modes[0]||'');
+        v23LastFreshness={age:ages.length?Math.min(...ages):null,elapsed:Number(diagnostics&&diagnostics.elapsed_seconds),cacheHit:Boolean(cacheHit),count:Number(diagnostics&&diagnostics.total_pairs)||rows.length,updatedAt:Date.now(),source,sourceMode};
         v23PaintFreshness(); v23RenderTop3();
     }
     function v23UpdateFreshnessFromSignal(signal){
@@ -12440,7 +12452,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function forexOtcFallbackWarning() {
-            return `REFERENCE-BASED FALLBACK · NOT LIVE ${forexOtcFallbackBrokerLabel()} OTC DATA`;
+            return `REFERENCE FALLBACK · REAL UNDERLYING MARKET CANDLES · NOT EXACT ${forexOtcFallbackBrokerLabel()} OTC DATA`;
         }
 
         function syncForexOtcFallbackBranding() {
@@ -12455,7 +12467,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             if (title) title.textContent = `${brokerLabel} FOREX OTC PAIRS · IN-APP PANEL`;
             if (count) count.textContent = `${pairCount} FOREX OTC PAIRS`;
-            if (mode) mode.textContent = `REFERENCE-BASED · NOT LIVE ${brokerLabel} OTC`;
+            if (mode) mode.textContent = `REFERENCE MARKET DATA · NOT EXACT ${brokerLabel} OTC`;
             if (autoBtn) autoBtn.textContent = `▶ RUN FALLBACK AUTO SCAN · ALL ${pairCount || forexOtcFallbackPairLimit()}`;
 
             return { brokerName, brokerLabel, pairCount };
@@ -12778,7 +12790,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 scanThresholds:{},
                 fallbackReference:true,
                 fallbackWarning:forexOtcFallbackWarning(),
-                source:String(rawRow?.source || 'Yahoo Finance'),
+                source:String(rawRow?.source || 'Market Provider'),
                 sourceMode:'fallback_reference_only',
                 providerSymbol:String(rawRow?.provider_symbol || rawRow?.yahoo_symbol || '')
             };
@@ -14213,22 +14225,44 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 
     function updateBridgeUi(status) {
-        bridgeConnected = Boolean(status && status.connected);
+        const personalConnected = Boolean(status && status.connected);
+        const sharedConnected = Boolean(status && status.shared_master_connected);
+        bridgeConnected = personalConnected || sharedConnected;
         const btn = document.getElementById('rajaQuotexBridgeBtn');
         if (btn) {
-            btn.textContent = bridgeConnected ? '🟢 QUOTEX BRIDGE CONNECTED' : '🔗 CONNECT QUOTEX BRIDGE';
-            btn.title = bridgeConnected
-                ? `Exact Quotex OTC feed active${status?.pair ? ' · ' + status.pair : ''}`
-                : 'Generate a one-time pairing code for the RAJA Quotex Bridge extension.';
+            if (personalConnected) {
+                btn.textContent = '🟢 QUOTEX BRIDGE CONNECTED';
+                btn.title = `Your exact Quotex OTC feed is active${status?.pair ? ' · ' + status.pair : ''}`;
+            } else if (sharedConnected) {
+                btn.textContent = '🟢 QUOTEX MASTER FEED ONLINE';
+                btn.title = `Shared exact Quotex OTC master feed is active${status?.shared_master_pair ? ' · ' + status.shared_master_pair : ''}. Clients do not need the extension.`;
+            } else {
+                const fallbackOn = Boolean(status?.reference_fallback_enabled);
+                if (fallbackOn) {
+                    btn.textContent = '🟠 OTC REFERENCE FALLBACK ACTIVE';
+                    btn.title = 'Exact Quotex feed is offline. OTC scans continue using fresh underlying/reference candles. This is NOT exact Quotex OTC data.';
+                } else {
+                    btn.textContent = status?.shared_master_configured ? '🔴 MASTER FEED OFFLINE' : '🔗 CONNECT QUOTEX BRIDGE';
+                    btn.title = status?.shared_master_configured
+                        ? 'Exact Quotex master feed is offline and OTC reference fallback is disabled.'
+                        : 'Generate a one-time pairing code for the RAJA Quotex Bridge master extension.';
+                }
+            }
         }
         const base = document.getElementById('rajaBaseFeedLabel');
         const broker = String(document.getElementById('brokerSelect')?.value || '');
         const market = String(document.getElementById('marketType')?.value || '');
         if (base) {
             if (broker === 'Quotex' && /OTC/i.test(market)) {
-                base.textContent = bridgeConnected ? 'Quotex Bridge 1m' : 'Bridge Required';
+                base.textContent = personalConnected ? 'Quotex Exact Bridge 1m' : (sharedConnected ? 'Quotex Exact Master 1m' : (status?.reference_fallback_enabled ? 'OTC Reference Auto · Not Exact' : 'EXACT OTC FEED OFFLINE'));
+            } else if (market === 'ForexLive') {
+                base.textContent = 'Verified Forex Feed Required';
+            } else if (market === 'CryptoLive') {
+                base.textContent = 'Coinbase Public Live WS + M1';
+            } else if (/OTC/i.test(market)) {
+                base.textContent = 'Exact Broker OTC Feed Required';
             } else {
-                base.textContent = 'Yahoo 1m';
+                base.textContent = 'HYBRID OTC';
             }
         }
     }
