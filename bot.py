@@ -3123,14 +3123,14 @@ def _selected_tf_gate_profile(timeframe, scan_options=None):
     mode = str(opts.get("mode") or "BALANCED").strip().upper()
     presets = {
         "SAFE": {
-            "min_edge": 4.35, "min_points": 6.75, "min_confirmations": 6,
-            "min_core": 3, "min_score": 86.0, "max_stretch_atr": 1.05,
-            "max_body_atr": 1.35, "require_regime_core": True,
+            "min_edge": 4.00, "min_points": 6.35, "min_confirmations": 6,
+            "min_core": 3, "min_score": 84.0, "max_stretch_atr": 1.20,
+            "max_body_atr": 1.45, "require_regime_core": True,
         },
         "BALANCED": {
-            "min_edge": 3.35, "min_points": 5.75, "min_confirmations": 5,
-            "min_core": 3, "min_score": 77.0, "max_stretch_atr": 1.30,
-            "max_body_atr": 1.55, "require_regime_core": True,
+            "min_edge": 3.00, "min_points": 5.20, "min_confirmations": 5,
+            "min_core": 2, "min_score": 74.0, "max_stretch_atr": 1.45,
+            "max_body_atr": 1.70, "require_regime_core": True,
         },
         "AGGRESSIVE": {
             "min_edge": 2.35, "min_points": 4.5, "min_confirmations": 4,
@@ -3147,12 +3147,14 @@ def _selected_tf_gate_profile(timeframe, scan_options=None):
     profile = dict(presets.get(mode, presets["BALANCED"]))
     # Short expiries are deliberately more selective.
     if timeframe == "1m":
-        profile["min_edge"] += 0.70
-        profile["min_points"] += 0.60
-        profile["min_confirmations"] += 1
-        profile["min_score"] += 2.0
-        profile["max_stretch_atr"] = min(profile["max_stretch_atr"], 0.90)
-        profile["max_body_atr"] = min(profile["max_body_atr"], 1.25)
+        profile["min_edge"] += 0.45
+        profile["min_points"] += 0.35
+        # Keep SAFE selective, but do not force an extra confirmation in every mode.
+        if mode == "SAFE":
+            profile["min_confirmations"] += 1
+        profile["min_score"] += 1.0
+        profile["max_stretch_atr"] = min(profile["max_stretch_atr"], 1.05 if mode == "SAFE" else 1.20)
+        profile["max_body_atr"] = min(profile["max_body_atr"], 1.35 if mode == "SAFE" else 1.50)
     elif timeframe == "2m":
         profile["min_edge"] += 0.30
         profile["min_points"] += 0.25
@@ -3371,7 +3373,7 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
     extreme_rsi = (signal == "CALL" and rsi >= 73) or (signal == "PUT" and rsi <= 27)
     profile = _selected_tf_gate_profile(timeframe, scan_options)
     # On 1m, opposing structure needs more room because one small wick can decide the expiry.
-    obstacle_buffer_atr = 0.75 if timeframe == "1m" else 0.45
+    obstacle_buffer_atr = 0.55 if timeframe == "1m" else 0.45
     obstacle = (
         signal == "CALL" and resistance is not None and -0.15 <= dist_resistance_atr <= obstacle_buffer_atr and not (bullish_breakout or bullish_retest)
     ) or (
@@ -3381,6 +3383,17 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
     structural_trigger = (
         (signal == "CALL" and (bullish_breakout or bullish_retest or (near_support and bullish_rejection) or bullish_trend_pullback))
         or (signal == "PUT" and (bearish_breakout or bearish_retest or (near_resistance and bearish_rejection) or bearish_trend_pullback))
+    )
+    # Balanced continuation path: allow a clean trend continuation even when price did not
+    # print a textbook breakout/retest on the latest 1m candle. This keeps precision guards
+    # while avoiding an excessively low signal rate.
+    strong_trend_continuation = bool(
+        regime == "TREND" and directional_candle_ok and body_ratio >= 0.28
+        and stretch_atr <= 1.10
+        and (
+            (signal == "CALL" and ema_bullish and adx_bullish and momentum_bullish and ema_slope_bullish)
+            or (signal == "PUT" and ema_bearish and adx_bearish and momentum_bearish and ema_slope_bearish)
+        )
     )
 
     # Score is a technical-quality score, not a promised win probability.
@@ -3405,12 +3418,14 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
         reject_reason = f"Selected {timeframe} has only {len(set(chosen_conf))} confirmations; {profile['min_confirmations']} required in {profile['mode']} mode."
     elif core_support < profile["min_core"]:
         reject_reason = f"Selected {timeframe} core trend/momentum confirmation is too weak ({core_support}/{profile['min_core']})."
-    elif timeframe == "1m" and core_opposition > 1:
+    elif timeframe == "1m" and profile["mode"] == "SAFE" and core_opposition > 1:
         reject_reason = f"Precision 1m blocked: too much core opposition ({core_opposition} opposing core confirmations)."
     elif timeframe == "1m" and not directional_candle_ok:
         reject_reason = "Precision 1m blocked: the latest closed candle did not confirm the proposed direction."
-    elif timeframe == "1m" and not structural_trigger:
-        reject_reason = "Precision 1m blocked: no fresh breakout/retest/SR rejection/trend-pullback trigger."
+    elif timeframe == "1m" and profile["mode"] == "SAFE" and not structural_trigger:
+        reject_reason = "Precision 1m SAFE blocked: no fresh breakout/retest/SR rejection/trend-pullback trigger."
+    elif timeframe == "1m" and profile["mode"] != "SAFE" and not (structural_trigger or strong_trend_continuation):
+        reject_reason = "Precision 1m blocked: no clean structure trigger or strong trend-continuation setup."
     elif profile["require_regime_core"] and regime == "TREND" and not ((signal == "CALL" and ema_bullish and adx_bullish) or (signal == "PUT" and ema_bearish and adx_bearish)):
         reject_reason = f"Selected {timeframe} trend regime lacks EMA + ADX/DI alignment."
     elif profile["require_regime_core"] and regime == "RANGE" and not (((signal == "CALL") and ((near_support and bullish_rejection) or bullish_breakout or bullish_retest)) or ((signal == "PUT") and ((near_resistance and bearish_rejection) or bearish_breakout or bearish_retest))):
@@ -3444,7 +3459,7 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
         "breakout": "CALL" if bullish_breakout else ("PUT" if bearish_breakout else ""),
         "retest": "CALL" if bullish_retest else ("PUT" if bearish_retest else ""),
         "trend_pullback": "CALL" if bullish_trend_pullback else ("PUT" if bearish_trend_pullback else ""),
-        "structural_trigger": bool(structural_trigger), "directional_candle_ok": bool(directional_candle_ok),
+        "structural_trigger": bool(structural_trigger), "strong_trend_continuation": bool(strong_trend_continuation), "directional_candle_ok": bool(directional_candle_ok),
         "roc3_pct": round(roc3, 5), "ema_slope_atr": round(ema_slope_atr, 4),
         "volume_ratio": round(volume_ratio, 3) if volume_ratio else 0.0,
         "stretch_atr": round(stretch_atr, 3), "body_atr": round(body_atr, 3),
@@ -3627,7 +3642,7 @@ def normalize_scan_options(raw):
         try: base["vol_max"] = max(base["vol_min"], min(10.0, float(raw.get("vol_max", base["vol_max"]))))
         except Exception: pass
     base["mode"] = mode if mode in presets else "BALANCED"
-    base["engine"] = "selected_timeframe_deep_scan_v19"
+    base["engine"] = "selected_timeframe_balanced_precision_v111"
     return base
 
 
@@ -3693,7 +3708,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary, source_info=source_info)
         result.update({
             "scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview,
-            "selected_timeframe": selected_tf, "selected_tf_only": True, "analysis_engine": "selected_timeframe_deep_scan_v19",
+            "selected_timeframe": selected_tf, "selected_tf_only": True, "analysis_engine": "selected_timeframe_balanced_precision_v111",
             "timeframes_scanned": [selected_tf], "timeframe_summary": summary,
             "indicator_breakdown": selected.get("indicator_breakdown", {}), "market_regime": selected.get("market_regime"),
             "support": selected.get("support"), "resistance": selected.get("resistance"),
@@ -3759,7 +3774,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "expected_entry_epoch": expected_entry_epoch or None, "entry_delay_seconds": entry_delay_seconds,
         "max_entry_delay_seconds": MAX_SIGNAL_ENTRY_DELAY_SECONDS,
         "confirmation_mode": f"{opts['mode']} · {selected_tf.upper()} ONLY · SELECTED-TF DEEP SCAN",
-        "analysis_engine": "selected_timeframe_deep_scan_v19",
+        "analysis_engine": "selected_timeframe_balanced_precision_v111",
         "indicator_agreement_pct": round(indicator_quality, 1),
         "indicator_confirmations": selected.get("indicator_confirmations", []),
         "indicator_opposition": selected.get("indicator_opposition", []),
@@ -3850,7 +3865,7 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
         "timeframes_scanned": [selected_tf],
         "selected_timeframe": selected_tf,
         "selected_tf_only": True,
-        "analysis_engine": "selected_timeframe_deep_scan_v19",
+        "analysis_engine": "selected_timeframe_balanced_precision_v111",
         "chart_preview": serialize_candles(base_df, 60),
     }
 
@@ -4318,7 +4333,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "Selected-TF Precision · structural trigger + exact OTC + entry timing",
+        "confirmation_mode": "Selected-TF Balanced Precision v1.11 · exact OTC + entry timing",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -4937,7 +4952,7 @@ def track_signal():
         "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
         "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
         "selected_timeframe": data.get("selected_timeframe") or expiry,
-        "analysis_engine": data.get("analysis_engine") or "selected_timeframe_deep_scan_v19",
+        "analysis_engine": data.get("analysis_engine") or "selected_timeframe_balanced_precision_v111",
         "indicator_confirmations": data.get("indicator_confirmations") or [],
         "indicator_breakdown": data.get("indicator_breakdown") or {},
         "market_regime": data.get("market_regime"), "support": data.get("support"), "resistance": data.get("resistance"),
