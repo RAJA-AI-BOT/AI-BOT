@@ -322,7 +322,7 @@ YAHOO_SEMAPHORE_WAIT_SECONDS = max(2.0, min(25.0, float(os.environ.get("RAJA_YAH
 MAX_SOURCE_CANDLE_AGE_SECONDS = max(120, min(3600, int(os.environ.get("RAJA_MAX_SOURCE_CANDLE_AGE", "300"))))
 # Precision gate: a signal derived from a just-closed candle must be acted on near the next candle open.
 # If analysis arrives too late, return NO SIGNAL instead of rolling the old setup into another candle.
-MAX_SIGNAL_ENTRY_DELAY_SECONDS = max(5, min(45, int(os.environ.get("RAJA_MAX_SIGNAL_ENTRY_DELAY_SECONDS", "25"))))
+MAX_SIGNAL_ENTRY_DELAY_SECONDS = max(5, min(50, int(os.environ.get("RAJA_MAX_SIGNAL_ENTRY_DELAY_SECONDS", "35"))))
 # Browser batch timeout is 90s. Keep the backend deadline comfortably below that
 # so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
 # 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
@@ -347,7 +347,7 @@ TWELVE_DATA_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_TWELVE_DATA_MI
 
 
 # =========================================================
-# DIRECT LIVE MARKET PROVIDERS (v1.11.1 BALANCED PRECISION + HYBRID OTC)
+# DIRECT LIVE MARKET PROVIDERS (v1.11.2 BALANCED PRECISION + HYBRID OTC)
 # =========================================================
 # TradingView is a charting surface, not used as a scraping dependency here.
 # RAJA AI talks directly to provider APIs instead:
@@ -2791,7 +2791,7 @@ def _yahoo_live_result(pair, yahoo_symbol):
 
 def get_market_data(pair, bridge_user=None, broker=None):
     '''
-    v1.11.1 HYBRID OTC feed router.
+    v1.11.2 HYBRID OTC feed router.
       Quotex OTC: personal exact bridge -> shared master exact bridge -> clearly-labelled underlying/reference fallback if offline.
       Forex Live: verified OANDA/Twelve Data only when explicitly configured -> BLOCK otherwise.
       Crypto Live: Coinbase Exchange public market data -> optional configured Twelve Data backup.
@@ -3128,9 +3128,9 @@ def _selected_tf_gate_profile(timeframe, scan_options=None):
             "max_body_atr": 1.45, "require_regime_core": True,
         },
         "BALANCED": {
-            "min_edge": 3.00, "min_points": 5.20, "min_confirmations": 5,
-            "min_core": 2, "min_score": 74.0, "max_stretch_atr": 1.45,
-            "max_body_atr": 1.70, "require_regime_core": True,
+            "min_edge": 2.75, "min_points": 4.90, "min_confirmations": 4,
+            "min_core": 2, "min_score": 72.0, "max_stretch_atr": 1.55,
+            "max_body_atr": 1.75, "require_regime_core": True,
         },
         "AGGRESSIVE": {
             "min_edge": 2.35, "min_points": 4.5, "min_confirmations": 4,
@@ -3147,14 +3147,14 @@ def _selected_tf_gate_profile(timeframe, scan_options=None):
     profile = dict(presets.get(mode, presets["BALANCED"]))
     # Short expiries are deliberately more selective.
     if timeframe == "1m":
-        profile["min_edge"] += 0.45
-        profile["min_points"] += 0.35
+        profile["min_edge"] += 0.30
+        profile["min_points"] += 0.25
         # Keep SAFE selective, but do not force an extra confirmation in every mode.
         if mode == "SAFE":
             profile["min_confirmations"] += 1
         profile["min_score"] += 1.0
-        profile["max_stretch_atr"] = min(profile["max_stretch_atr"], 1.05 if mode == "SAFE" else 1.20)
-        profile["max_body_atr"] = min(profile["max_body_atr"], 1.35 if mode == "SAFE" else 1.50)
+        profile["max_stretch_atr"] = min(profile["max_stretch_atr"], 1.05 if mode == "SAFE" else 1.25)
+        profile["max_body_atr"] = min(profile["max_body_atr"], 1.35 if mode == "SAFE" else 1.55)
     elif timeframe == "2m":
         profile["min_edge"] += 0.30
         profile["min_points"] += 0.25
@@ -3388,8 +3388,8 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
     # print a textbook breakout/retest on the latest 1m candle. This keeps precision guards
     # while avoiding an excessively low signal rate.
     strong_trend_continuation = bool(
-        regime == "TREND" and directional_candle_ok and body_ratio >= 0.28
-        and stretch_atr <= 1.10
+        regime == "TREND" and directional_candle_ok and body_ratio >= 0.25
+        and stretch_atr <= 1.15
         and (
             (signal == "CALL" and ema_bullish and adx_bullish and momentum_bullish and ema_slope_bullish)
             or (signal == "PUT" and ema_bearish and adx_bearish and momentum_bearish and ema_slope_bearish)
@@ -3625,9 +3625,9 @@ def normalize_scan_options(raw):
     raw = raw if isinstance(raw, dict) else {}
     mode = str(raw.get("mode") or "BALANCED").strip().upper()
     presets = {
-        # v1.11.1 selected-timeframe balanced-precision engine. min_tf stays 1 for API/UI compatibility.
+        # v1.11.2 selected-timeframe balanced-precision engine. min_tf stays 1 for API/UI compatibility.
         "SAFE": {"min_tf": 1, "min_agreement": 72.0, "min_score": 84.0, "vol_min": 0.003, "vol_max": 1.10},
-        "BALANCED": {"min_tf": 1, "min_agreement": 62.0, "min_score": 74.0, "vol_min": 0.002, "vol_max": 1.80},
+        "BALANCED": {"min_tf": 1, "min_agreement": 58.0, "min_score": 72.0, "vol_min": 0.001, "vol_max": 1.90},
         "AGGRESSIVE": {"min_tf": 1, "min_agreement": 55.0, "min_score": 64.0, "vol_min": 0.0, "vol_max": 2.80},
         "CUSTOM": {"min_tf": 1, "min_agreement": 60.0, "min_score": 72.0, "vol_min": 0.0, "vol_max": 2.50},
     }
@@ -3642,12 +3642,12 @@ def normalize_scan_options(raw):
         try: base["vol_max"] = max(base["vol_min"], min(10.0, float(raw.get("vol_max", base["vol_max"]))))
         except Exception: pass
     base["mode"] = mode if mode in presets else "BALANCED"
-    base["engine"] = "selected_timeframe_balanced_precision_v111"
+    base["engine"] = "selected_timeframe_balanced_signal_v112"
     return base
 
 
 def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
-    """v1.11.1: balanced-precision scan of the CLOSED timeframe selected as trade expiry."""
+    """v1.11.2: balanced-precision scan of the CLOSED timeframe selected as trade expiry."""
     opts = normalize_scan_options(scan_options)
     selected_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip()) or "1m"
     if pair not in YAHOO_SYMBOLS:
@@ -3708,7 +3708,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary, source_info=source_info)
         result.update({
             "scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview,
-            "selected_timeframe": selected_tf, "selected_tf_only": True, "analysis_engine": "selected_timeframe_balanced_precision_v111",
+            "selected_timeframe": selected_tf, "selected_tf_only": True, "analysis_engine": "selected_timeframe_balanced_signal_v112",
             "timeframes_scanned": [selected_tf], "timeframe_summary": summary,
             "indicator_breakdown": selected.get("indicator_breakdown", {}), "market_regime": selected.get("market_regime"),
             "support": selected.get("support"), "resistance": selected.get("resistance"),
@@ -3746,7 +3746,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
 
     if str(risk_level or "").upper() == "HIGH":
         return quality_rejected(f"Smart NO TRADE: selected {selected_tf} market risk is HIGH (stability {stability_score:.1f}/100).")
-    stability_floor = 70.0 if opts["mode"] == "SAFE" else (62.0 if opts["mode"] == "BALANCED" else 55.0)
+    stability_floor = 70.0 if opts["mode"] == "SAFE" else (60.0 if opts["mode"] == "BALANCED" else 55.0)
     if float(stability_score or 0) < stability_floor:
         return quality_rejected(f"Smart NO TRADE: selected {selected_tf} stability {stability_score:.1f}/100 is below {stability_floor:.0f}/100 {opts['mode']} floor.")
     if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
@@ -3774,7 +3774,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "expected_entry_epoch": expected_entry_epoch or None, "entry_delay_seconds": entry_delay_seconds,
         "max_entry_delay_seconds": MAX_SIGNAL_ENTRY_DELAY_SECONDS,
         "confirmation_mode": f"{opts['mode']} · {selected_tf.upper()} ONLY · SELECTED-TF BALANCED PRECISION",
-        "analysis_engine": "selected_timeframe_balanced_precision_v111",
+        "analysis_engine": "selected_timeframe_balanced_signal_v112",
         "indicator_agreement_pct": round(indicator_quality, 1),
         "indicator_confirmations": selected.get("indicator_confirmations", []),
         "indicator_opposition": selected.get("indicator_opposition", []),
@@ -3865,7 +3865,7 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
         "timeframes_scanned": [selected_tf],
         "selected_timeframe": selected_tf,
         "selected_tf_only": True,
-        "analysis_engine": "selected_timeframe_balanced_precision_v111",
+        "analysis_engine": "selected_timeframe_balanced_signal_v112",
         "chart_preview": serialize_candles(base_df, 60),
     }
 
@@ -4325,7 +4325,7 @@ def health():
 
     return jsonify({
         "status": "success",
-        "service": "RAJA AI backend · v1.11.1 BALANCED PRECISION + EXACT OTC",
+        "service": "RAJA AI backend · v1.11.2 BALANCED PRECISION + EXACT OTC",
         "app_build": APP_BUILD_ID,
         "license_store_ready": bool(_license_store_ready.is_set()),
         "yahoo_pairs": len(YAHOO_SYMBOLS),
@@ -4351,7 +4351,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "Selected-TF Balanced Precision v1.11.1 · exact OTC + source-freshness + entry timing",
+        "confirmation_mode": "Selected-TF Balanced Precision v1.11.2 · exact OTC + source-freshness + entry timing",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -4970,7 +4970,7 @@ def track_signal():
         "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
         "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
         "selected_timeframe": data.get("selected_timeframe") or expiry,
-        "analysis_engine": data.get("analysis_engine") or "selected_timeframe_balanced_precision_v111",
+        "analysis_engine": data.get("analysis_engine") or "selected_timeframe_balanced_signal_v112",
         "indicator_confirmations": data.get("indicator_confirmations") or [],
         "indicator_breakdown": data.get("indicator_breakdown") or {},
         "market_regime": data.get("market_regime"), "support": data.get("support"), "resistance": data.get("resistance"),
