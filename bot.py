@@ -289,10 +289,11 @@ TIMEFRAMES = {
     "10m": 10,
     "15m": 15,
     "30m": 30,
+    "1h": 60,
 }
 
-# Selected trade expiry must be confirmed by the matching analysis timeframe.
-# 15s/30s are intentionally excluded because the base Yahoo feed is 1-minute.
+# Selected trade expiry must be confirmed by the matching CLOSED analysis timeframe.
+# Sub-minute expiries are removed because the base feed is 1-minute.
 EXPIRY_CONFIRMATION_TIMEFRAME = {
     "1m": "1m",
     "2m": "2m",
@@ -300,6 +301,7 @@ EXPIRY_CONFIRMATION_TIMEFRAME = {
     "10m": "10m",
     "15m": "15m",
     "30m": "30m",
+    "1h": "1h",
 }
 
 # One Yahoo 1m download per unique symbol; all higher TFs are resampled.
@@ -342,16 +344,17 @@ TWELVE_DATA_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_TWELVE_DATA_MI
 
 
 # =========================================================
-# DIRECT LIVE MARKET PROVIDERS (v1.7 HYBRID OTC / NO-API)
+# DIRECT LIVE MARKET PROVIDERS (v1.8 YAHOO LIVE + HYBRID OTC)
 # =========================================================
 # TradingView is a charting surface, not used as a scraping dependency here.
 # RAJA AI talks directly to provider APIs instead:
 #   Quotex OTC  -> exact master browser bridge FIRST; if offline, clearly-labelled
 #                  underlying/reference candles keep OTC scanning available.
-#   Crypto Live -> Coinbase Exchange public market-data candles (no API key)
-#   Forex Live  -> verified provider only (OANDA/Twelve Data if configured)
-# Yahoo is enabled only as a clearly-labelled REFERENCE fallback for no-key OTC/FX.
-# Never label a fallback/reference candle as exact Quotex/Pocket Option OTC.
+#   Crypto Live -> Yahoo 1m market candles FIRST (no private API key), Coinbase public backup.
+#   Forex Live  -> Yahoo 1m market/reference candles FIRST (no private API key).
+#   Quotex OTC  -> exact master bridge FIRST; clearly-labelled reference fallback if offline.
+# Yahoo Live is a market/reference source and is NEVER labelled as exact Quotex/Pocket Option execution data.
+# 1m is the base feed; 2m/5m/10m/15m/30m/1h are built only from CLOSED 1m candles.
 REAL_ONLY_MODE = str(os.environ.get('RAJA_REAL_ONLY_MODE', '1')).strip().lower() not in {'0','false','no','off'}
 OANDA_API_TOKEN = (os.environ.get('OANDA_API_TOKEN') or os.environ.get('RAJA_OANDA_API_TOKEN') or '').strip()
 OANDA_ENVIRONMENT = (os.environ.get('OANDA_ENVIRONMENT') or os.environ.get('RAJA_OANDA_ENVIRONMENT') or 'practice').strip().lower()
@@ -397,6 +400,7 @@ coinbase_fetch_semaphore = threading.BoundedSemaphore(COINBASE_FETCH_CONCURRENCY
 # that OANDA/Coinbase/Twelve Data are exact broker OTC quotes.
 QUOTEX_REFERENCE_FALLBACK_ENABLED = str(os.environ.get('RAJA_QUOTEX_REFERENCE_FALLBACK', '1')).strip().lower() not in {'0','false','no','off'}
 HYBRID_OTC_FALLBACK_ENABLED = str(os.environ.get('RAJA_HYBRID_OTC_FALLBACK', '1')).strip().lower() not in {'0','false','no','off'}
+YAHOO_LIVE_ENABLED = str(os.environ.get('RAJA_YAHOO_LIVE_ENABLED', '1')).strip().lower() not in {'0','false','no','off'}
 ALLOW_YAHOO_LAST_RESORT = str(os.environ.get('RAJA_ALLOW_YAHOO_LAST_RESORT', '1')).strip().lower() in {'1','true','yes','on'}
 
 market_cache = {}
@@ -507,7 +511,7 @@ QUOTEX_BRIDGE_SHARED_FRESH_SECONDS = max(5, min(60, int(os.environ.get('RAJA_QUO
 QUOTEX_BRIDGE_PERSIST_SECONDS = max(10, min(300, int(os.environ.get('RAJA_QUOTEX_BRIDGE_PERSIST_SECONDS', '30'))))
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
-QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "2500"))))
+QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "5000"))))
 _QUOTEX_BRIDGE_SECRET_TEXT = (os.environ.get("RAJA_QUOTEX_BRIDGE_SECRET") or ADMIN_PASSWORD or "").strip()
 if _QUOTEX_BRIDGE_SECRET_TEXT:
     QUOTEX_BRIDGE_SECRET = hashlib.sha256(_QUOTEX_BRIDGE_SECRET_TEXT.encode("utf-8")).digest()
@@ -966,6 +970,7 @@ AUTO_TRACK_EXPIRIES = {
     "10m": 600,
     "15m": 900,
     "30m": 1800,
+    "1h": 3600,
 }
 
 
@@ -2755,6 +2760,32 @@ def _legacy_yahoo_result(pair, yahoo_symbol):
     return _fresh_provider_result(yahoo_data, pair, yahoo_symbol, 'Yahoo Finance', yahoo_symbol, mode='legacy_reference', backup=True)
 
 
+def _yahoo_live_result(pair, yahoo_symbol):
+    """Yahoo 1m market candles used as the no-private-key LIVE/reference source.
+
+    This is real market/reference OHLCV from Yahoo/yfinance, but it is not labelled
+    as exact Quotex/Pocket Option execution data.
+    """
+    if not YAHOO_LIVE_ENABLED or not yahoo_symbol:
+        return None
+    yahoo_data = None
+    with cache_lock:
+        cached = market_cache.get(yahoo_symbol)
+    if cached and time.time() - float(cached.get('timestamp') or 0.0) <= CACHE_DURATION:
+        yahoo_data = cached['data'].copy()
+    if yahoo_data is None:
+        update_symbol_cache(yahoo_symbol)
+        with cache_lock:
+            cached = market_cache.get(yahoo_symbol)
+        if cached:
+            yahoo_data = cached['data'].copy()
+    return _fresh_provider_result(
+        yahoo_data, pair, yahoo_symbol,
+        'Yahoo Finance · Live Market Reference', yahoo_symbol,
+        mode='live_primary_reference', backup=False,
+    )
+
+
 def get_market_data(pair, bridge_user=None, broker=None):
     '''
     v1.7 HYBRID OTC feed router.
@@ -2824,36 +2855,37 @@ def get_market_data(pair, bridge_user=None, broker=None):
             return None, None, yahoo_symbol, info
 
     if pair in FOREX_LIVE_PAIRS:
-        # A truly verified server-side Forex feed needs a provider account/key. If neither
-        # provider is configured, fail closed instead of calling Yahoo "live".
+        # User-selected no-private-API policy: Yahoo 1m market/reference candles first.
+        # The label stays explicit: real market/reference data, not exact broker execution candles.
+        yh = _yahoo_live_result(pair, yahoo_symbol)
+        if yh:
+            return yh
         if OANDA_ENABLED:
             od, od_symbol = fetch_oanda_1m(pair)
-            hit = _fresh_provider_result(od, pair, yahoo_symbol, 'OANDA', od_symbol, mode='live_primary')
+            hit = _fresh_provider_result(od, pair, yahoo_symbol, 'OANDA', od_symbol, mode='live_backup_reference', backup=True)
             if hit: return hit
         if TWELVE_DATA_ENABLED and TWELVE_DATA_SYMBOLS.get(pair):
             td, td_symbol = get_twelve_data_market_data(pair)
-            hit = _fresh_provider_result(td, pair, yahoo_symbol, 'Twelve Data', td_symbol, mode='live_primary', backup=OANDA_ENABLED)
+            hit = _fresh_provider_result(td, pair, yahoo_symbol, 'Twelve Data', td_symbol, mode='live_backup_reference', backup=True)
             if hit: return hit
-        if not REAL_ONLY_MODE:
-            legacy = _legacy_yahoo_result(pair, yahoo_symbol)
-            if legacy: return legacy
-        info = _market_source_info(pair, yahoo_symbol, 'Verified Forex Live Feed Not Configured', source_mode='live_unavailable')
-        info['unavailable_reason'] = 'REAL-ONLY mode: no verified Forex Live provider is configured. Add OANDA_API_TOKEN or TWELVE_DATA_API_KEY to enable Forex Live; Yahoo reference candles are intentionally blocked.'
+        info = _market_source_info(pair, yahoo_symbol, 'Yahoo Live Market Reference Unavailable', source_mode='live_unavailable')
+        info['unavailable_reason'] = 'Yahoo 1m market/reference candles are temporarily unavailable. Scan paused rather than inventing candles.'
         return None, None, yahoo_symbol, info
 
     if pair in CRYPTO_LIVE_PAIRS:
+        # Yahoo first as requested. Coinbase public exchange candles remain a real-data backup.
+        yh = _yahoo_live_result(pair, yahoo_symbol)
+        if yh:
+            return yh
         cb, cb_symbol = fetch_coinbase_1m(pair)
-        hit = _fresh_provider_result(cb, pair, yahoo_symbol, 'Coinbase Exchange', cb_symbol, mode='live_primary')
+        hit = _fresh_provider_result(cb, pair, yahoo_symbol, 'Coinbase Exchange', cb_symbol, mode='live_backup_reference', backup=True)
         if hit: return hit
         if TWELVE_DATA_ENABLED and TWELVE_DATA_SYMBOLS.get(pair):
             td, td_symbol = get_twelve_data_market_data(pair)
             hit = _fresh_provider_result(td, pair, yahoo_symbol, 'Twelve Data', td_symbol, mode='live_backup_reference', backup=True)
             if hit: return hit
-        if not REAL_ONLY_MODE:
-            legacy = _legacy_yahoo_result(pair, yahoo_symbol)
-            if legacy: return legacy
-        info = _market_source_info(pair, yahoo_symbol, 'Coinbase Live Feed Unavailable', source_mode='live_unavailable')
-        info['unavailable_reason'] = 'Coinbase public live market candles are temporarily unavailable; REAL-ONLY mode blocks legacy/reference substitution.'
+        info = _market_source_info(pair, yahoo_symbol, 'Yahoo/Coinbase Crypto Feed Unavailable', source_mode='live_unavailable')
+        info['unavailable_reason'] = 'Yahoo and Coinbase real crypto market candles are temporarily unavailable. Scan paused rather than inventing candles.'
         return None, None, yahoo_symbol, info
 
     if is_otc:
@@ -3435,14 +3467,15 @@ def normalize_scan_options(raw):
     raw = raw if isinstance(raw, dict) else {}
     mode = str(raw.get("mode") or "BALANCED").strip().upper()
     presets = {
-        "SAFE": {"min_tf": 5, "min_agreement": 80.0, "min_score": 80.0, "vol_min": 0.003, "vol_max": 1.20},
-        "BALANCED": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.002, "vol_max": 2.00},
-        "AGGRESSIVE": {"min_tf": 4, "min_agreement": 66.7, "min_score": 55.0, "vol_min": 0.0, "vol_max": 3.00},
-        "CUSTOM": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.0, "vol_max": 3.00},
+        # Accuracy-focus presets: fewer signals, stronger multi-TF agreement.
+        "SAFE": {"min_tf": 6, "min_agreement": 85.0, "min_score": 84.0, "vol_min": 0.003, "vol_max": 1.10},
+        "BALANCED": {"min_tf": 5, "min_agreement": 71.4, "min_score": 72.0, "vol_min": 0.002, "vol_max": 1.80},
+        "AGGRESSIVE": {"min_tf": 4, "min_agreement": 57.1, "min_score": 60.0, "vol_min": 0.0, "vol_max": 2.80},
+        "CUSTOM": {"min_tf": 5, "min_agreement": 71.4, "min_score": 72.0, "vol_min": 0.0, "vol_max": 2.50},
     }
     base = dict(presets.get(mode, presets["BALANCED"]))
     if mode == "CUSTOM":
-        try: base["min_tf"] = max(4, min(6, int(raw.get("min_tf", base["min_tf"]))))
+        try: base["min_tf"] = max(4, min(7, int(raw.get("min_tf", base["min_tf"]))))
         except Exception: pass
         try: base["min_agreement"] = max(60.0, min(100.0, float(raw.get("min_agreement", base["min_agreement"]))))
         except Exception: pass
@@ -3563,11 +3596,23 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
                 f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
             )
 
+    # Accuracy-focus higher-timeframe guard. SAFE requires the 1h bias to agree;
+    # BALANCED rejects a directly opposing 1h bias. This intentionally reduces signal count.
+    one_hour_signal = (results.get("1h") or {}).get("signal")
+    if opts["mode"] == "SAFE" and one_hour_signal != signal:
+        return rejected(
+            f"Accuracy Guard: SAFE requires 1h trend confirmation; 1h is {one_hour_signal or 'NO SIGNAL'} while final direction is {signal}."
+        )
+    if opts["mode"] == "BALANCED" and one_hour_signal in {"CALL", "PUT"} and one_hour_signal != signal:
+        return rejected(
+            f"Accuracy Guard: 1h trend opposes the {signal} setup in BALANCED mode."
+        )
+
     avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
     multi_tf_score = max(50, min(95, avg_support_score + ((agreement_ratio - 0.5) * 12)))
 
     representative = None
-    for preferred in ("5m", "2m", "1m", "10m", "15m", "30m"):
+    for preferred in ("1h", "30m", "15m", "10m", "5m", "2m", "1m"):
         r = results.get(preferred)
         if r and r.get("signal") == signal:
             representative = r
@@ -3597,9 +3642,10 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         return quality_rejected(
             f"Smart NO TRADE: market risk is HIGH (stability {stability_score:.1f}/100)."
         )
-    if float(stability_score or 0) < 55.0:
+    stability_floor = 68.0 if opts["mode"] == "SAFE" else (60.0 if opts["mode"] == "BALANCED" else 55.0)
+    if float(stability_score or 0) < stability_floor:
         return quality_rejected(
-            f"Smart NO TRADE: market stability {stability_score:.1f}/100 is below the 55/100 safety floor."
+            f"Smart NO TRADE: market stability {stability_score:.1f}/100 is below the {stability_floor:.0f}/100 {opts['mode']} safety floor."
         )
     if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
         return quality_rejected(
@@ -3629,7 +3675,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
         "multi_tf_agreement": round(agreement_ratio * 100, 1), "selected_expiry": selected_expiry,
         "required_expiry_timeframe": required_tf,
-        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-6 + {required_tf or 'TF'} Required",
+        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-7 + {required_tf or 'TF'} Required",
         "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
         "market_stability_score": stability_score, "market_risk_level": risk_level,
         "volatility_pct": volatility_pct, "chart_preview": chart_preview,
@@ -4113,7 +4159,7 @@ def quotex_bridge_tick():
     is_master = _bridge_is_master_user(bridge_auth["user"])
     candles = data.get("candles")
     if isinstance(candles, list):
-        for candle in candles[-1500:]:
+        for candle in candles[-QUOTEX_BRIDGE_MAX_CANDLES:]:
             ok = _bridge_upsert_candle(bridge_auth["user"], pair, candle)
             accepted += int(ok)
             if is_master:
@@ -4154,7 +4200,7 @@ def health():
 
     return jsonify({
         "status": "success",
-        "service": "RAJA AI multi-timeframe backend · REAL-ONLY",
+        "service": "RAJA AI multi-timeframe backend · v1.8 YAHOO LIVE + ACCURACY",
         "app_build": APP_BUILD_ID,
         "license_store_ready": bool(_license_store_ready.is_set()),
         "yahoo_pairs": len(YAHOO_SYMBOLS),
@@ -4171,15 +4217,16 @@ def health():
         "oanda_enabled": OANDA_ENABLED,
         "coinbase_exchange_enabled": True,
         "coinbase_warm_history_1m": COINBASE_OUTPUTSIZE,
-        "forex_live_verified_provider_configured": bool(OANDA_ENABLED or TWELVE_DATA_ENABLED),
-        "forex_live_without_provider": "BLOCKED_REAL_ONLY" if REAL_ONLY_MODE and not (OANDA_ENABLED or TWELVE_DATA_ENABLED) else "AVAILABLE",
+        "forex_live_verified_provider_configured": bool(YAHOO_LIVE_ENABLED or OANDA_ENABLED or TWELVE_DATA_ENABLED),
+        "forex_live_without_provider": "AVAILABLE_YAHOO_REFERENCE" if YAHOO_LIVE_ENABLED else ("AVAILABLE" if (OANDA_ENABLED or TWELVE_DATA_ENABLED) else "UNAVAILABLE"),
         "coinbase_public_websocket": True,
         "twelve_data_enabled": TWELVE_DATA_ENABLED,
+        "yahoo_live_enabled": YAHOO_LIVE_ENABLED,
         "yahoo_last_resort_enabled": ALLOW_YAHOO_LAST_RESORT,
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "4-of-6 Strong",
+        "confirmation_mode": "6-of-7 Accuracy Focus",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -4193,7 +4240,7 @@ def health():
         "twelve_data_cache_seconds": TWELVE_DATA_CACHE_SECONDS,
         "twelve_data_fetch_concurrency": TWELVE_DATA_FETCH_CONCURRENCY,
         "twelve_data_request_timeout_seconds": TWELVE_DATA_REQUEST_TIMEOUT_SECONDS,
-        "market_data_priority": ["Quotex Exact Master Bridge (OTC)", "Coinbase Exchange public live (Crypto)", "OANDA/Twelve Data only if configured (Forex)"],
+        "market_data_priority": ["Quotex Exact Master Bridge (OTC)", "Yahoo Finance 1m Live/Reference (Forex + Crypto)", "Coinbase public backup (Crypto)", "OANDA/Twelve Data optional backup"],
         "max_source_candle_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
         "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
         "forex_otc_fallback_deadline_seconds": FOREX_OTC_FALLBACK_DEADLINE_SECONDS,
