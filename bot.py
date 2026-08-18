@@ -69,11 +69,11 @@ app = Flask(__name__, static_folder=".", template_folder=".")
 CORS(app)
 
 # =========================================================
-# RAJA AI MULTI-TIMEFRAME BACKEND
+# RAJA AI SELECTED-TIMEFRAME DEEP-SCAN BACKEND
 # Yahoo Finance 1-minute OHLCV is the PRIMARY base/reference feed.
 # If Yahoo is unavailable/stale and TWELVE_DATA_API_KEY is configured,
 # Twelve Data 1-minute OHLCV becomes the LIVE BACKUP reference feed.
-# 2m, 5m, 10m, 15m and 30m are resampled from the chosen 1-minute feed.
+# The user-selected expiry timeframe (1m/2m/5m/10m/15m/30m/1h) is built from CLOSED 1m candles and scanned deeply.
 #
 # IMPORTANT: "(OTC)" assets are underlying-market/reference proxies.
 # They are NOT exact broker OTC quotes (Quotex/Pocket Option).
@@ -3107,220 +3107,324 @@ def safe_float(value, default=None):
         return default
 
 
-def analyze_timeframe(df, timeframe):
-    """Analyze one CLOSED timeframe. No random values are used."""
+def _selected_tf_gate_profile(timeframe, scan_options=None):
+    """Quality gates for selected-timeframe-only deep scan. 1m/2m are stricter because they are noisier."""
+    opts = scan_options if isinstance(scan_options, dict) else {}
+    mode = str(opts.get("mode") or "BALANCED").strip().upper()
+    presets = {
+        "SAFE": {
+            "min_edge": 4.0, "min_points": 6.4, "min_confirmations": 6,
+            "min_core": 3, "min_score": 84.0, "max_stretch_atr": 1.25,
+            "max_body_atr": 1.45, "require_regime_core": True,
+        },
+        "BALANCED": {
+            "min_edge": 3.1, "min_points": 5.4, "min_confirmations": 5,
+            "min_core": 2, "min_score": 74.0, "max_stretch_atr": 1.55,
+            "max_body_atr": 1.75, "require_regime_core": True,
+        },
+        "AGGRESSIVE": {
+            "min_edge": 2.35, "min_points": 4.5, "min_confirmations": 4,
+            "min_core": 2, "min_score": 64.0, "max_stretch_atr": 1.95,
+            "max_body_atr": 2.10, "require_regime_core": False,
+        },
+        "CUSTOM": {
+            "min_edge": 2.9, "min_points": 5.0, "min_confirmations": 5,
+            "min_core": 2, "min_score": float(opts.get("min_score", 72.0) or 72.0),
+            "max_stretch_atr": 1.65, "max_body_atr": 1.85,
+            "require_regime_core": True,
+        },
+    }
+    profile = dict(presets.get(mode, presets["BALANCED"]))
+    # Short expiries are deliberately more selective.
+    if timeframe == "1m":
+        profile["min_edge"] += 0.55
+        profile["min_points"] += 0.45
+        profile["min_confirmations"] += 1
+        profile["min_score"] += 2.0
+        profile["max_stretch_atr"] = min(profile["max_stretch_atr"], 1.20)
+    elif timeframe == "2m":
+        profile["min_edge"] += 0.30
+        profile["min_points"] += 0.25
+        profile["min_score"] += 1.0
+    elif timeframe in {"30m", "1h"}:
+        profile["min_edge"] = max(2.0, profile["min_edge"] - 0.15)
+    profile["mode"] = mode if mode in presets else "BALANCED"
+    return profile
+
+
+def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
+    """Analyze one CLOSED timeframe using regime-aware, support/resistance-aware deep scan."""
     if df is None or df.empty or len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient closed candles",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Insufficient closed candles"}
 
     required = {"Open", "High", "Low", "Close"}
     if not required.issubset(df.columns):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Missing OHLC columns",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Missing OHLC columns"}
 
     df = df.copy().dropna(subset=list(required))
     if len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient clean candles",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Insufficient clean candles"}
 
-    close = df["Close"]
-
-    rsi = safe_float(calculate_rsi(close, 14).iloc[-1])
-    ema9 = safe_float(calculate_ema(close, 9).iloc[-1])
-    ema21 = safe_float(calculate_ema(close, 21).iloc[-1])
-    ema50 = safe_float(calculate_ema(close, 50).iloc[-1])
-
+    close, high, low = df["Close"], df["High"], df["Low"]
+    rsi_series = calculate_rsi(close, 14)
+    ema9_series = calculate_ema(close, 9)
+    ema21_series = calculate_ema(close, 21)
+    ema50_series = calculate_ema(close, 50)
     macd, macd_signal = calculate_macd(close)
-    macd_now = safe_float(macd.iloc[-1])
-    macd_sig_now = safe_float(macd_signal.iloc[-1])
-
     bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
-    bb_mid = safe_float(bb_middle.iloc[-1])
-
-    atr = safe_float(calculate_atr(df, 14).iloc[-1])
-
+    atr_series = calculate_atr(df, 14)
     adx, plus_di, minus_di = calculate_adx_components(df, 14)
-    adx_now = safe_float(adx.iloc[-1])
-    plus_di_now = safe_float(plus_di.iloc[-1])
-    minus_di_now = safe_float(minus_di.iloc[-1])
 
-    price = safe_float(close.iloc[-1])
-    previous_close = safe_float(close.iloc[-2])
+    rsi = safe_float(rsi_series.iloc[-1])
+    ema9 = safe_float(ema9_series.iloc[-1]); ema21 = safe_float(ema21_series.iloc[-1]); ema50 = safe_float(ema50_series.iloc[-1])
+    ema21_prev = safe_float(ema21_series.iloc[-4]) if len(ema21_series) >= 4 else None
+    macd_now = safe_float(macd.iloc[-1]); macd_sig_now = safe_float(macd_signal.iloc[-1])
+    macd_hist = None if macd_now is None or macd_sig_now is None else macd_now - macd_sig_now
+    macd_hist_prev = safe_float((macd - macd_signal).iloc[-2])
+    bb_up = safe_float(bb_upper.iloc[-1]); bb_mid = safe_float(bb_middle.iloc[-1]); bb_low = safe_float(bb_lower.iloc[-1])
+    atr = safe_float(atr_series.iloc[-1])
+    adx_now = safe_float(adx.iloc[-1]); plus_di_now = safe_float(plus_di.iloc[-1]); minus_di_now = safe_float(minus_di.iloc[-1])
+    price = safe_float(close.iloc[-1]); previous_close = safe_float(close.iloc[-2]); close_4 = safe_float(close.iloc[-4])
 
-    values = [
-        rsi, ema9, ema21, ema50,
-        macd_now, macd_sig_now, bb_mid,
-        atr, adx_now, plus_di_now, minus_di_now,
-        price, previous_close,
-    ]
-
-    if any(v is None for v in values) or atr <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Indicators not ready",
-        }
-
-    ema_bullish = price > ema9 > ema21 > ema50
-    ema_bearish = price < ema9 < ema21 < ema50
-
-    macd_bullish = macd_now > macd_sig_now
-    macd_bearish = macd_now < macd_sig_now
-
-    bb_bullish = price > bb_mid
-    bb_bearish = price < bb_mid
-
-    adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
-    adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
-
-    momentum_bullish = price > previous_close
-    momentum_bearish = price < previous_close
+    values = [rsi, ema9, ema21, ema50, ema21_prev, macd_now, macd_sig_now, macd_hist_prev,
+              bb_up, bb_mid, bb_low, atr, adx_now, plus_di_now, minus_di_now, price, previous_close, close_4]
+    if any(v is None for v in values) or atr <= 0 or price <= 0:
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Indicators not ready"}
 
     last = df.iloc[-1]
-    candle_open = safe_float(last["Open"])
-    candle_high = safe_float(last["High"])
-    candle_low = safe_float(last["Low"])
-    candle_close = safe_float(last["Close"])
-
+    candle_open = safe_float(last["Open"]); candle_high = safe_float(last["High"])
+    candle_low = safe_float(last["Low"]); candle_close = safe_float(last["Close"])
     if None in (candle_open, candle_high, candle_low, candle_close):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Latest candle incomplete",
-        }
-
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Latest candle incomplete"}
     candle_range = candle_high - candle_low
     if candle_range <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Invalid candle range",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Invalid candle range"}
 
-    bullish_candle = candle_close > candle_open
-    bearish_candle = candle_close < candle_open
-
+    bullish_candle = candle_close > candle_open; bearish_candle = candle_close < candle_open
+    body = abs(candle_close - candle_open); body_ratio = body / candle_range
+    body_atr = body / atr if atr else 0.0
     upper_wick = candle_high - max(candle_open, candle_close)
     lower_wick = min(candle_open, candle_close) - candle_low
+    upper_wick_ratio = upper_wick / candle_range; lower_wick_ratio = lower_wick / candle_range
+    bullish_rejection = lower_wick_ratio >= 0.30 and bullish_candle and body_ratio >= 0.22
+    bearish_rejection = upper_wick_ratio >= 0.30 and bearish_candle and body_ratio >= 0.22
 
-    bullish_rejection = (
-        lower_wick / candle_range >= 0.25
-        and bullish_candle
-    )
-    bearish_rejection = (
-        upper_wick / candle_range >= 0.25
-        and bearish_candle
-    )
+    ema_bullish = price > ema9 > ema21 > ema50; ema_bearish = price < ema9 < ema21 < ema50
+    ema_slope_atr = (ema21 - ema21_prev) / atr
+    ema_slope_bullish = ema_slope_atr > 0.035; ema_slope_bearish = ema_slope_atr < -0.035
+    macd_bullish = macd_now > macd_sig_now; macd_bearish = macd_now < macd_sig_now
+    macd_accel_bullish = macd_hist > 0 and macd_hist > macd_hist_prev
+    macd_accel_bearish = macd_hist < 0 and macd_hist < macd_hist_prev
+    bb_bullish = price > bb_mid; bb_bearish = price < bb_mid
+    adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
+    adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
+    roc3 = ((price / close_4) - 1.0) * 100.0 if close_4 else 0.0
+    recent_up = int(close.iloc[-1] > close.iloc[-2]) + int(close.iloc[-2] > close.iloc[-3]) + int(close.iloc[-3] > close.iloc[-4])
+    recent_down = 3 - recent_up
+    momentum_bullish = roc3 > 0 and recent_up >= 2
+    momentum_bearish = roc3 < 0 and recent_down >= 2
 
-    volume_bullish = False
-    volume_bearish = False
+    # Support/resistance uses only PRIOR closed candles; the analyzed candle cannot define its own obstacle.
+    lookback = min(50, len(df) - 2)
+    prior = df.iloc[-(lookback + 1):-1]
+    support = safe_float(prior["Low"].min()); resistance = safe_float(prior["High"].max())
+    prior20 = df.iloc[-21:-1] if len(df) >= 21 else prior
+    support20 = safe_float(prior20["Low"].min()); resistance20 = safe_float(prior20["High"].max())
+    dist_support_atr = (price - support) / atr if support is not None else 99.0
+    dist_resistance_atr = (resistance - price) / atr if resistance is not None else 99.0
+    near_support = support is not None and -0.15 <= dist_support_atr <= 0.45
+    near_resistance = resistance is not None and -0.15 <= dist_resistance_atr <= 0.45
+    bullish_breakout = resistance20 is not None and price > resistance20 + 0.05 * atr and previous_close <= resistance20 + 0.02 * atr
+    bearish_breakout = support20 is not None and price < support20 - 0.05 * atr and previous_close >= support20 - 0.02 * atr
+
+    # Simple retest: a recent close broke an older range, then current candle retested and closed back outside it.
+    older = df.iloc[-28:-4] if len(df) >= 28 else df.iloc[:-4]
+    old_res = safe_float(older["High"].max()) if len(older) >= 10 else None
+    old_sup = safe_float(older["Low"].min()) if len(older) >= 10 else None
+    recent3 = df.iloc[-4:-1]
+    bullish_retest = bool(old_res is not None and len(recent3) and safe_float(recent3["Close"].max(), 0) > old_res and candle_low <= old_res + 0.25 * atr and price > old_res)
+    bearish_retest = bool(old_sup is not None and len(recent3) and safe_float(recent3["Close"].min(), price) < old_sup and candle_high >= old_sup - 0.25 * atr and price < old_sup)
+
+    bb_width_atr = (bb_up - bb_low) / atr if atr else 0.0
+    ema_spread_atr = abs(ema9 - ema50) / atr if atr else 0.0
+    regime = "TREND" if adx_now >= 22 and ema_spread_atr >= 0.35 else "RANGE"
+
+    volume_ratio = 0.0
+    volume_bullish = volume_bearish = False
     if "Volume" in df.columns:
         volume = df["Volume"].fillna(0)
         current_volume = safe_float(volume.iloc[-1], 0.0)
         avg_volume = safe_float(volume.rolling(20).mean().iloc[-1], 0.0)
         if current_volume > 0 and avg_volume > 0:
-            volume_bullish = bullish_candle and current_volume > avg_volume
-            volume_bearish = bearish_candle and current_volume > avg_volume
+            volume_ratio = current_volume / avg_volume
+            volume_bullish = bullish_candle and volume_ratio >= 1.12
+            volume_bearish = bearish_candle and volume_ratio >= 1.12
 
-    bullish_points = 0.0
-    bearish_points = 0.0
+    bull_points = bear_points = 0.0
+    bull_conf, bear_conf = [], []
+    core_bull, core_bear = set(), set()
+    breakdown = {}
 
-    if 52 <= rsi <= 70:
-        bullish_points += 1.0
-    elif 30 <= rsi <= 48:
-        bearish_points += 1.0
+    def add(side, points, name, core=False):
+        nonlocal bull_points, bear_points
+        if side == "CALL":
+            bull_points += points; bull_conf.append(name)
+            if core: core_bull.add(name)
+        elif side == "PUT":
+            bear_points += points; bear_conf.append(name)
+            if core: core_bear.add(name)
+        breakdown[name] = side
 
-    if ema_bullish:
-        bullish_points += 2.0
-    elif ema_bearish:
-        bearish_points += 2.0
+    # RSI momentum zone. Extreme RSI is treated as exhaustion, not an automatic reversal.
+    if 52 <= rsi <= 69: add("CALL", 1.0, "RSI")
+    elif 31 <= rsi <= 48: add("PUT", 1.0, "RSI")
+    else: breakdown["RSI"] = "NEUTRAL"
 
-    if macd_bullish:
-        bullish_points += 1.0
-    elif macd_bearish:
-        bearish_points += 1.0
+    if ema_bullish: add("CALL", 2.0, "EMA_ALIGNMENT", True)
+    elif ema_bearish: add("PUT", 2.0, "EMA_ALIGNMENT", True)
+    else: breakdown["EMA_ALIGNMENT"] = "NEUTRAL"
 
-    if bb_bullish:
-        bullish_points += 1.0
-    elif bb_bearish:
-        bearish_points += 1.0
+    if ema_slope_bullish: add("CALL", 0.75, "EMA_SLOPE", True)
+    elif ema_slope_bearish: add("PUT", 0.75, "EMA_SLOPE", True)
+    else: breakdown["EMA_SLOPE"] = "NEUTRAL"
 
-    if adx_bullish:
-        bullish_points += 1.5
-    elif adx_bearish:
-        bearish_points += 1.5
+    if macd_bullish: add("CALL", 0.85, "MACD", True)
+    elif macd_bearish: add("PUT", 0.85, "MACD", True)
+    else: breakdown["MACD"] = "NEUTRAL"
+    if macd_accel_bullish: add("CALL", 0.45, "MACD_HIST")
+    elif macd_accel_bearish: add("PUT", 0.45, "MACD_HIST")
+    else: breakdown["MACD_HIST"] = "NEUTRAL"
 
-    if momentum_bullish:
-        bullish_points += 1.0
-    elif momentum_bearish:
-        bearish_points += 1.0
+    if bb_bullish: add("CALL", 0.55, "BOLLINGER")
+    elif bb_bearish: add("PUT", 0.55, "BOLLINGER")
+    else: breakdown["BOLLINGER"] = "NEUTRAL"
 
-    if bullish_rejection:
-        bullish_points += 1.0
-    elif bearish_rejection:
-        bearish_points += 1.0
-    elif bullish_candle:
-        bullish_points += 0.5
-    elif bearish_candle:
-        bearish_points += 0.5
+    if adx_bullish: add("CALL", 1.45, "ADX_DI", True)
+    elif adx_bearish: add("PUT", 1.45, "ADX_DI", True)
+    else: breakdown["ADX_DI"] = "NEUTRAL"
 
-    if volume_bullish:
-        bullish_points += 1.0
-    elif volume_bearish:
-        bearish_points += 1.0
+    if momentum_bullish: add("CALL", 0.95, "MOMENTUM_ROC", True)
+    elif momentum_bearish: add("PUT", 0.95, "MOMENTUM_ROC", True)
+    else: breakdown["MOMENTUM_ROC"] = "NEUTRAL"
 
-    difference = abs(bullish_points - bearish_points)
-    winning_points = max(bullish_points, bearish_points)
+    if bullish_rejection: add("CALL", 0.90, "WICK_REJECTION")
+    elif bearish_rejection: add("PUT", 0.90, "WICK_REJECTION")
+    elif bullish_candle and body_ratio >= 0.45: add("CALL", 0.45, "CANDLE_BODY")
+    elif bearish_candle and body_ratio >= 0.45: add("PUT", 0.45, "CANDLE_BODY")
+    else: breakdown["CANDLE_BODY"] = "NEUTRAL"
 
-    # Slightly relaxed per-TF gate because final decision also requires
-    # multi-timeframe agreement.
-    if difference < 1.5 or winning_points < 3.5:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Weak/conflicting timeframe",
-            "rsi": round(rsi, 2),
-            "adx": round(adx_now, 2),
-            "bullish_points": round(bullish_points, 2),
-            "bearish_points": round(bearish_points, 2),
-        }
+    if bullish_breakout: add("CALL", 1.35, "SR_BREAKOUT", True)
+    elif bearish_breakout: add("PUT", 1.35, "SR_BREAKOUT", True)
+    elif bullish_retest: add("CALL", 1.25, "SR_RETEST", True)
+    elif bearish_retest: add("PUT", 1.25, "SR_RETEST", True)
+    elif near_support and bullish_rejection: add("CALL", 1.00, "SR_REJECTION", True)
+    elif near_resistance and bearish_rejection: add("PUT", 1.00, "SR_REJECTION", True)
+    else: breakdown["SUPPORT_RESISTANCE"] = "NEUTRAL"
 
-    signal = "CALL" if bullish_points > bearish_points else "PUT"
+    if volume_bullish: add("CALL", 0.60, "VOLUME")
+    elif volume_bearish: add("PUT", 0.60, "VOLUME")
+    else: breakdown["VOLUME"] = "NEUTRAL"
 
-    score = 50 + difference * 6
-    if adx_now >= 20:
-        score += min(adx_now - 20, 15) * 0.5
-    score = max(50, min(95, score))
+    # Regime-aware bonus: trends need EMA+DI direction; ranges need location/rejection logic.
+    if regime == "TREND":
+        if ema_bullish and adx_bullish: add("CALL", 0.85, "REGIME_TREND", True)
+        elif ema_bearish and adx_bearish: add("PUT", 0.85, "REGIME_TREND", True)
+        else: breakdown["REGIME_TREND"] = "NEUTRAL"
+    else:
+        if (near_support and bullish_rejection) or (price <= bb_low + 0.20 * atr and bullish_candle):
+            add("CALL", 0.80, "REGIME_RANGE", True)
+        elif (near_resistance and bearish_rejection) or (price >= bb_up - 0.20 * atr and bearish_candle):
+            add("PUT", 0.80, "REGIME_RANGE", True)
+        else: breakdown["REGIME_RANGE"] = "NEUTRAL"
 
-    return {
+    edge = abs(bull_points - bear_points)
+    winning_points = max(bull_points, bear_points)
+    signal = "CALL" if bull_points > bear_points else ("PUT" if bear_points > bull_points else "")
+    chosen_conf = bull_conf if signal == "CALL" else bear_conf
+    opposing_conf = bear_conf if signal == "CALL" else bull_conf
+    core_support = len(core_bull if signal == "CALL" else core_bear)
+    core_opposition = len(core_bear if signal == "CALL" else core_bull)
+    total_directional_checks = len(set(bull_conf + bear_conf))
+    indicator_agreement = (len(set(chosen_conf)) / max(1, total_directional_checks)) * 100.0
+
+    stretch_atr = abs(price - ema9) / atr if atr else 0.0
+    extreme_rsi = (signal == "CALL" and rsi >= 73) or (signal == "PUT" and rsi <= 27)
+    obstacle = (signal == "CALL" and near_resistance and not (bullish_breakout or bullish_retest)) or (signal == "PUT" and near_support and not (bearish_breakout or bearish_retest))
+    profile = _selected_tf_gate_profile(timeframe, scan_options)
+
+    # Score is a technical-quality score, not a promised win probability.
+    score = 54.0 + edge * 5.0 + len(set(chosen_conf)) * 1.55 + core_support * 1.4
+    if (signal == "CALL" and (bullish_breakout or bullish_retest)) or (signal == "PUT" and (bearish_breakout or bearish_retest)):
+        score += 3.0
+    if regime == "TREND" and ((signal == "CALL" and ema_bullish and adx_bullish) or (signal == "PUT" and ema_bearish and adx_bearish)):
+        score += 2.0
+    if obstacle: score -= 9.0
+    if extreme_rsi: score -= 6.0
+    if stretch_atr > profile["max_stretch_atr"]: score -= 7.0
+    if body_atr > profile["max_body_atr"]: score -= 5.0
+    if core_opposition >= core_support: score -= 5.0
+    score = max(0.0, min(95.0, score))
+
+    reject_reason = None
+    if not signal:
+        reject_reason = "Directional indicator score is tied."
+    elif edge < profile["min_edge"] or winning_points < profile["min_points"]:
+        reject_reason = f"Selected {timeframe} setup is weak/conflicting (edge {edge:.2f}, points {winning_points:.2f})."
+    elif len(set(chosen_conf)) < profile["min_confirmations"]:
+        reject_reason = f"Selected {timeframe} has only {len(set(chosen_conf))} confirmations; {profile['min_confirmations']} required in {profile['mode']} mode."
+    elif core_support < profile["min_core"]:
+        reject_reason = f"Selected {timeframe} core trend/momentum confirmation is too weak ({core_support}/{profile['min_core']})."
+    elif profile["require_regime_core"] and regime == "TREND" and not ((signal == "CALL" and ema_bullish and adx_bullish) or (signal == "PUT" and ema_bearish and adx_bearish)):
+        reject_reason = f"Selected {timeframe} trend regime lacks EMA + ADX/DI alignment."
+    elif profile["require_regime_core"] and regime == "RANGE" and not (((signal == "CALL") and ((near_support and bullish_rejection) or bullish_breakout or bullish_retest)) or ((signal == "PUT") and ((near_resistance and bearish_rejection) or bearish_breakout or bearish_retest))):
+        reject_reason = f"Selected {timeframe} is ranging without a strong support/resistance trigger."
+    elif obstacle:
+        reject_reason = f"Entry blocked: selected {timeframe} signal is too close to opposing support/resistance."
+    elif extreme_rsi:
+        reject_reason = f"Entry blocked: selected {timeframe} RSI is in an exhaustion zone."
+    elif stretch_atr > profile["max_stretch_atr"]:
+        reject_reason = f"Late-entry guard: price is {stretch_atr:.2f} ATR away from EMA9 on {timeframe}."
+    elif body_atr > profile["max_body_atr"]:
+        reject_reason = f"Late-entry guard: latest {timeframe} candle body is {body_atr:.2f} ATR (overextended)."
+    elif score < profile["min_score"]:
+        reject_reason = f"Selected {timeframe} technical quality {score:.1f}% is below {profile['mode']} floor {profile['min_score']:.1f}%."
+
+    common = {
         "timeframe": timeframe,
-        "signal": signal,
-        "score": round(score, 2),
-        "rsi": round(rsi, 2),
-        "adx": round(adx_now, 2),
-        "atr": round(atr, 8),
-        "price": round(price, 8),
-        "bullish_points": round(bullish_points, 2),
-        "bearish_points": round(bearish_points, 2),
+        "rsi": round(rsi, 2), "adx": round(adx_now, 2), "atr": round(atr, 8), "price": round(price, 8),
+        "bullish_points": round(bull_points, 2), "bearish_points": round(bear_points, 2),
+        "indicator_agreement_pct": round(indicator_agreement, 1),
+        "confirmation_count": len(set(chosen_conf)) if signal else 0,
+        "opposition_count": len(set(opposing_conf)) if signal else 0,
+        "core_support": core_support if signal else 0, "core_opposition": core_opposition if signal else 0,
+        "indicator_confirmations": sorted(set(chosen_conf)) if signal else [],
+        "indicator_opposition": sorted(set(opposing_conf)) if signal else [],
+        "indicator_breakdown": breakdown,
+        "market_regime": regime,
+        "support": round(support, 8) if support is not None else None,
+        "resistance": round(resistance, 8) if resistance is not None else None,
+        "distance_support_atr": round(dist_support_atr, 3), "distance_resistance_atr": round(dist_resistance_atr, 3),
+        "breakout": "CALL" if bullish_breakout else ("PUT" if bearish_breakout else ""),
+        "retest": "CALL" if bullish_retest else ("PUT" if bearish_retest else ""),
+        "roc3_pct": round(roc3, 5), "ema_slope_atr": round(ema_slope_atr, 4),
+        "volume_ratio": round(volume_ratio, 3) if volume_ratio else 0.0,
+        "stretch_atr": round(stretch_atr, 3), "body_atr": round(body_atr, 3),
+        "late_entry_risk": bool(stretch_atr > profile["max_stretch_atr"] or body_atr > profile["max_body_atr"]),
+        "selected_tf_only": bool(selected_only),
+        "gate_profile": profile,
         "closed_candle_epoch": int(df.index[-1].timestamp()) if len(df.index) else None,
     }
+    if reject_reason:
+        common.update({"signal": "NO SIGNAL", "score": 0, "technical_quality": round(score, 2), "reason": reject_reason})
+        return common
 
+    common.update({
+        "signal": signal,
+        "score": round(score, 2),
+        "technical_quality": round(score, 2),
+        "reason": f"{profile['mode']} · {timeframe} ONLY · {regime} regime · {len(set(chosen_conf))} confirmations · edge {edge:.2f}",
+    })
+    return common
 
 
 def should_suppress_duplicate(pair, signal, timeframe_summary):
@@ -3467,34 +3571,34 @@ def normalize_scan_options(raw):
     raw = raw if isinstance(raw, dict) else {}
     mode = str(raw.get("mode") or "BALANCED").strip().upper()
     presets = {
-        # Accuracy-focus presets: fewer signals, stronger multi-TF agreement.
-        "SAFE": {"min_tf": 6, "min_agreement": 85.0, "min_score": 84.0, "vol_min": 0.003, "vol_max": 1.10},
-        "BALANCED": {"min_tf": 5, "min_agreement": 71.4, "min_score": 72.0, "vol_min": 0.002, "vol_max": 1.80},
-        "AGGRESSIVE": {"min_tf": 4, "min_agreement": 57.1, "min_score": 60.0, "vol_min": 0.0, "vol_max": 2.80},
-        "CUSTOM": {"min_tf": 5, "min_agreement": 71.4, "min_score": 72.0, "vol_min": 0.0, "vol_max": 2.50},
+        # v1.9 selected-timeframe engine. min_tf is kept as 1 for API/UI backward compatibility.
+        "SAFE": {"min_tf": 1, "min_agreement": 72.0, "min_score": 84.0, "vol_min": 0.003, "vol_max": 1.10},
+        "BALANCED": {"min_tf": 1, "min_agreement": 62.0, "min_score": 74.0, "vol_min": 0.002, "vol_max": 1.80},
+        "AGGRESSIVE": {"min_tf": 1, "min_agreement": 55.0, "min_score": 64.0, "vol_min": 0.0, "vol_max": 2.80},
+        "CUSTOM": {"min_tf": 1, "min_agreement": 60.0, "min_score": 72.0, "vol_min": 0.0, "vol_max": 2.50},
     }
     base = dict(presets.get(mode, presets["BALANCED"]))
     if mode == "CUSTOM":
-        try: base["min_tf"] = max(4, min(7, int(raw.get("min_tf", base["min_tf"]))))
+        try: base["min_agreement"] = max(50.0, min(100.0, float(raw.get("min_agreement", base["min_agreement"]))))
         except Exception: pass
-        try: base["min_agreement"] = max(60.0, min(100.0, float(raw.get("min_agreement", base["min_agreement"]))))
-        except Exception: pass
-        try: base["min_score"] = max(50.0, min(95.0, float(raw.get("min_score", base["min_score"]))))
+        try: base["min_score"] = max(55.0, min(95.0, float(raw.get("min_score", base["min_score"]))))
         except Exception: pass
         try: base["vol_min"] = max(0.0, min(5.0, float(raw.get("vol_min", base["vol_min"]))))
         except Exception: pass
         try: base["vol_max"] = max(base["vol_min"], min(10.0, float(raw.get("vol_max", base["vol_max"]))))
         except Exception: pass
     base["mode"] = mode if mode in presets else "BALANCED"
+    base["engine"] = "selected_timeframe_deep_scan_v19"
     return base
 
 
 def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
-    """Scan synchronized timeframes using a SAFE/BALANCED/AGGRESSIVE/CUSTOM gate."""
+    """v1.9: deep-scan ONLY the timeframe selected as trade expiry."""
     opts = normalize_scan_options(scan_options)
+    selected_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip()) or "1m"
     if pair not in YAHOO_SYMBOLS:
         result = no_signal_result(pair, "Pair is not configured in the RAJA market map.")
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
+        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "selected_timeframe": selected_tf})
         return result
 
     base_df, data_age, symbol, source_info = get_market_data(pair, bridge_user=bridge_user, broker=broker)
@@ -3502,184 +3606,122 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         result = no_signal_result(
             pair,
             source_info.get("unavailable_reason") or "Verified market data is temporarily unavailable. Scan safely paused; retry when the real source responds.",
-            symbol=symbol,
-            data_age=data_age,
-            source_info=source_info,
+            symbol=symbol, data_age=data_age, source_info=source_info,
         )
         result.update({
-            "scan_mode": opts["mode"],
-            "scan_thresholds": opts,
-            "data_delayed": True,
-            "scan_paused": True,
-            "market_status": "UNAVAILABLE",
-            "data_status": "UNAVAILABLE",
+            "scan_mode": opts["mode"], "scan_thresholds": opts, "selected_timeframe": selected_tf,
+            "data_delayed": True, "scan_paused": True, "market_status": "UNAVAILABLE", "data_status": "UNAVAILABLE",
             "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
             "data_age_label": format_market_data_age(data_age) if data_age is not None else "--",
-            "exclude_from_history": True,
-            "exclude_from_performance": True,
-            "scan_skip_reason": "market_data_unavailable",
+            "exclude_from_history": True, "exclude_from_performance": True, "scan_skip_reason": "market_data_unavailable",
         })
         return result
 
     if data_age is not None and data_age > MAX_SOURCE_CANDLE_AGE_SECONDS:
-        age_label = format_market_data_age(data_age)
-        provider_name = str(source_info.get("source") or "reference source")
+        age_label = format_market_data_age(data_age); provider_name = str(source_info.get("source") or "reference source")
         result = no_signal_result(
             pair,
-            f"BAD MARKET / STALE DATA — latest {provider_name} 1m candle is {age_label} old. "
-            "The configured real provider did not provide a fresh usable candle.",
-            symbol=symbol,
-            data_age=data_age,
-            source_info=source_info,
+            f"BAD MARKET / STALE DATA — latest {provider_name} 1m candle is {age_label} old. The configured provider did not provide a fresh usable candle.",
+            symbol=symbol, data_age=data_age, source_info=source_info,
         )
         result.update({
-            "scan_mode": opts["mode"],
-            "scan_thresholds": opts,
-            "data_delayed": True,
-            "source_stale": True,
-            "bad_market": True,
-            "scan_paused": True,
-            "market_status": "BAD",
-            "data_status": "STALE",
-            "data_age_seconds": round(float(data_age), 2),
-            "data_age_label": age_label,
-            "exclude_from_history": True,
-            "exclude_from_performance": True,
+            "scan_mode": opts["mode"], "scan_thresholds": opts, "selected_timeframe": selected_tf,
+            "data_delayed": True, "source_stale": True, "bad_market": True, "scan_paused": True,
+            "market_status": "BAD", "data_status": "STALE", "data_age_seconds": round(float(data_age), 2),
+            "data_age_label": age_label, "exclude_from_history": True, "exclude_from_performance": True,
             "scan_skip_reason": "stale_market_data",
         })
         return result
 
-    chart_preview = serialize_candles(base_df, 28)
-    results = {}
-    for tf_name, minutes in TIMEFRAMES.items():
-        tf_df = build_timeframe(base_df, minutes)
-        results[tf_name] = analyze_timeframe(tf_df, tf_name)
-
-    call_results = [r for r in results.values() if r.get("signal") == "CALL"]
-    put_results = [r for r in results.values() if r.get("signal") == "PUT"]
-    valid_count = len(call_results) + len(put_results)
+    chart_preview = serialize_candles(base_df, 60)
+    minutes = TIMEFRAMES.get(selected_tf, 1)
+    tf_df = build_timeframe(base_df, minutes)
+    selected = analyze_timeframe(tf_df, selected_tf, opts, selected_only=True)
     summary = {
-        tf: {"signal": r.get("signal"), "score": r.get("score", 0), "rsi": r.get("rsi"),
-             "adx": r.get("adx"), "closed_candle_epoch": r.get("closed_candle_epoch")}
-        for tf, r in results.items()
+        selected_tf: {
+            "signal": selected.get("signal"), "score": selected.get("score", 0), "technical_quality": selected.get("technical_quality", 0),
+            "rsi": selected.get("rsi"), "adx": selected.get("adx"), "atr": selected.get("atr"), "price": selected.get("price"),
+            "bullish_points": selected.get("bullish_points", 0), "bearish_points": selected.get("bearish_points", 0),
+            "indicator_agreement_pct": selected.get("indicator_agreement_pct", 0), "confirmation_count": selected.get("confirmation_count", 0),
+            "market_regime": selected.get("market_regime"), "support": selected.get("support"), "resistance": selected.get("resistance"),
+            "breakout": selected.get("breakout"), "retest": selected.get("retest"), "late_entry_risk": selected.get("late_entry_risk", False),
+            "indicator_confirmations": selected.get("indicator_confirmations", []), "indicator_breakdown": selected.get("indicator_breakdown", {}),
+            "closed_candle_epoch": selected.get("closed_candle_epoch"), "reason": selected.get("reason"),
+        }
     }
 
     def rejected(reason):
         result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary, source_info=source_info)
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview})
+        result.update({
+            "scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview,
+            "selected_timeframe": selected_tf, "selected_tf_only": True, "analysis_engine": "selected_timeframe_deep_scan_v19",
+            "timeframes_scanned": [selected_tf], "timeframe_summary": summary,
+            "indicator_breakdown": selected.get("indicator_breakdown", {}), "market_regime": selected.get("market_regime"),
+            "support": selected.get("support"), "resistance": selected.get("resistance"),
+            "technical_quality": selected.get("technical_quality", 0),
+        })
         return result
 
-    if valid_count < opts["min_tf"]:
-        return rejected(f"Fewer than {opts['min_tf']} timeframes reached valid confluence for {opts['mode']} mode.")
+    if selected.get("signal") not in {"CALL", "PUT"}:
+        return rejected(selected.get("reason") or f"Selected {selected_tf} timeframe did not pass deep-scan quality gates.")
 
-    if len(call_results) > len(put_results):
-        signal, supporters, opponents = "CALL", call_results, put_results
-    elif len(put_results) > len(call_results):
-        signal, supporters, opponents = "PUT", put_results, call_results
-    else:
-        return rejected("Multi-timeframe direction is tied.")
-
-    if len(supporters) < opts["min_tf"]:
-        return rejected(f"Fewer than {opts['min_tf']} timeframes agree with the final direction.")
-
-    agreement_ratio = len(supporters) / valid_count
-    if agreement_ratio * 100.0 < opts["min_agreement"]:
-        return rejected(f"Multi-timeframe agreement below {opts['min_agreement']:.1f}% for {opts['mode']} mode.")
-
-    required_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip())
-    if required_tf:
-        required_result = results.get(required_tf) or {}
-        required_signal = required_result.get("signal")
-        if required_signal != signal:
-            return rejected(
-                f"Selected expiry {selected_expiry} requires {required_tf} confirmation; "
-                f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
-            )
-
-    # Accuracy-focus higher-timeframe guard. SAFE requires the 1h bias to agree;
-    # BALANCED rejects a directly opposing 1h bias. This intentionally reduces signal count.
-    one_hour_signal = (results.get("1h") or {}).get("signal")
-    if opts["mode"] == "SAFE" and one_hour_signal != signal:
-        return rejected(
-            f"Accuracy Guard: SAFE requires 1h trend confirmation; 1h is {one_hour_signal or 'NO SIGNAL'} while final direction is {signal}."
-        )
-    if opts["mode"] == "BALANCED" and one_hour_signal in {"CALL", "PUT"} and one_hour_signal != signal:
-        return rejected(
-            f"Accuracy Guard: 1h trend opposes the {signal} setup in BALANCED mode."
-        )
-
-    avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
-    multi_tf_score = max(50, min(95, avg_support_score + ((agreement_ratio - 0.5) * 12)))
-
-    representative = None
-    for preferred in ("1h", "30m", "15m", "10m", "5m", "2m", "1m"):
-        r = results.get(preferred)
-        if r and r.get("signal") == signal:
-            representative = r
-            break
-    if representative is None:
-        representative = max(supporters, key=lambda x: x.get("score", 0))
-
+    signal = selected["signal"]
+    indicator_quality = float(selected.get("indicator_agreement_pct") or 0.0)
+    technical_score = float(selected.get("score") or 0.0)
     stability_score, risk_level, volatility_pct = market_stability_metrics(
-        representative.get("price"), representative.get("atr"), representative.get("adx"),
-        data_age, agreement_ratio * 100.0,
+        selected.get("price"), selected.get("atr"), selected.get("adx"), data_age, indicator_quality,
     )
 
     def quality_rejected(reason):
         blocked = rejected(reason)
         blocked.update({
-            "market_stability_score": stability_score,
-            "market_risk_level": risk_level,
-            "volatility_pct": volatility_pct,
-            "no_trade": True,
-            "no_trade_reason": reason,
-            "quality_gate": "BLOCKED",
+            "market_stability_score": stability_score, "market_risk_level": risk_level, "volatility_pct": volatility_pct,
+            "no_trade": True, "no_trade_reason": reason, "quality_gate": "BLOCKED",
         })
         return blocked
 
-    # Smart NO TRADE gate: do not force a signal through a weak or high-risk regime.
     if str(risk_level or "").upper() == "HIGH":
-        return quality_rejected(
-            f"Smart NO TRADE: market risk is HIGH (stability {stability_score:.1f}/100)."
-        )
-    stability_floor = 68.0 if opts["mode"] == "SAFE" else (60.0 if opts["mode"] == "BALANCED" else 55.0)
+        return quality_rejected(f"Smart NO TRADE: selected {selected_tf} market risk is HIGH (stability {stability_score:.1f}/100).")
+    stability_floor = 70.0 if opts["mode"] == "SAFE" else (62.0 if opts["mode"] == "BALANCED" else 55.0)
     if float(stability_score or 0) < stability_floor:
-        return quality_rejected(
-            f"Smart NO TRADE: market stability {stability_score:.1f}/100 is below the {stability_floor:.0f}/100 {opts['mode']} safety floor."
-        )
+        return quality_rejected(f"Smart NO TRADE: selected {selected_tf} stability {stability_score:.1f}/100 is below {stability_floor:.0f}/100 {opts['mode']} floor.")
     if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
-        return quality_rejected(
-            f"Volatility {volatility_pct:.4f}% is outside {opts['mode']} range "
-            f"({opts['vol_min']:.4f}%–{opts['vol_max']:.2f}%)."
-        )
-    if multi_tf_score < opts["min_score"]:
-        return quality_rejected(
-            f"Technical confluence {multi_tf_score:.1f}% is below {opts['mode']} threshold {opts['min_score']:.1f}%."
-        )
+        return quality_rejected(f"Selected {selected_tf} volatility {volatility_pct:.4f}% is outside {opts['mode']} range ({opts['vol_min']:.4f}%–{opts['vol_max']:.2f}%).")
+    if technical_score < opts["min_score"]:
+        return quality_rejected(f"Selected {selected_tf} technical quality {technical_score:.1f}% is below {opts['mode']} threshold {opts['min_score']:.1f}%.")
+    if indicator_quality < opts["min_agreement"]:
+        return quality_rejected(f"Selected {selected_tf} indicator agreement {indicator_quality:.1f}% is below {opts['mode']} floor {opts['min_agreement']:.1f}%.")
 
-    aligned_tfs = [r["timeframe"] for r in supporters]
-    opposing_tfs = [r["timeframe"] for r in opponents]
     return {
-        "pair": pair, "score": round(multi_tf_score, 2), "signal": signal,
-        "reason": f"{opts['mode']} · Multi-TF agreement: {len(supporters)}/{valid_count} valid timeframes -> {signal}",
-        "rsi": representative.get("rsi"), "adx": representative.get("adx"), "atr": representative.get("atr"),
-        "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
-        "bearish_points": representative.get("bearish_points", 0),
+        "pair": pair, "score": round(technical_score, 2), "signal": signal,
+        "reason": selected.get("reason") or f"{opts['mode']} · {selected_tf} ONLY deep scan -> {signal}",
+        "rsi": selected.get("rsi"), "adx": selected.get("adx"), "atr": selected.get("atr"), "price": selected.get("price"),
+        "bullish_points": selected.get("bullish_points", 0), "bearish_points": selected.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
         "source": source_info.get("source") or "Market Provider",
         "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
-        "backup_used": bool(source_info.get("backup_used")),
-        "provider_symbol": source_info.get("provider_symbol"),
-        "otc_proxy_warning": bool("(OTC)" in pair and not str(source_info.get("source_mode") or "").startswith("broker_otc_exact")), "yahoo_symbol": symbol,
-        "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
-        "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
-        "multi_tf_agreement": round(agreement_ratio * 100, 1), "selected_expiry": selected_expiry,
-        "required_expiry_timeframe": required_tf,
-        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-7 + {required_tf or 'TF'} Required",
+        "backup_used": bool(source_info.get("backup_used")), "provider_symbol": source_info.get("provider_symbol"),
+        "otc_proxy_warning": bool("(OTC)" in pair and not str(source_info.get("source_mode") or "").startswith("broker_otc_exact")),
+        "yahoo_symbol": symbol,
+        "timeframes_scanned": [selected_tf], "aligned_timeframes": [selected_tf], "opposing_timeframes": [],
+        "timeframe_summary": summary, "multi_tf_agreement": round(indicator_quality, 1),
+        "selected_expiry": selected_expiry, "required_expiry_timeframe": selected_tf,
+        "selected_timeframe": selected_tf, "selected_tf_only": True,
+        "confirmation_mode": f"{opts['mode']} · {selected_tf.upper()} ONLY · SELECTED-TF DEEP SCAN",
+        "analysis_engine": "selected_timeframe_deep_scan_v19",
+        "indicator_agreement_pct": round(indicator_quality, 1),
+        "indicator_confirmations": selected.get("indicator_confirmations", []),
+        "indicator_opposition": selected.get("indicator_opposition", []),
+        "indicator_breakdown": selected.get("indicator_breakdown", {}),
+        "confirmation_count": selected.get("confirmation_count", 0), "core_support": selected.get("core_support", 0),
+        "market_regime": selected.get("market_regime"), "support": selected.get("support"), "resistance": selected.get("resistance"),
+        "breakout": selected.get("breakout"), "retest": selected.get("retest"), "roc3_pct": selected.get("roc3_pct"),
+        "ema_slope_atr": selected.get("ema_slope_atr"), "volume_ratio": selected.get("volume_ratio"),
+        "stretch_atr": selected.get("stretch_atr"), "body_atr": selected.get("body_atr"), "late_entry_risk": selected.get("late_entry_risk", False),
+        "technical_quality": round(technical_score, 2),
         "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
-        "market_stability_score": stability_score, "market_risk_level": risk_level,
-        "volatility_pct": volatility_pct, "chart_preview": chart_preview,
-        "no_trade": False, "quality_gate": "PASSED",
+        "market_stability_score": stability_score, "market_risk_level": risk_level, "volatility_pct": volatility_pct,
+        "chart_preview": chart_preview, "no_trade": False, "quality_gate": "PASSED",
     }
 
 
@@ -3722,24 +3764,20 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
     age_value = float(data_age or 0.0)
     live_fresh = age_value <= float(MAX_SOURCE_CANDLE_AGE_SECONDS)
 
-    results = {}
-    for tf_name, minutes in TIMEFRAMES.items():
-        tf_df = build_timeframe(base_df, minutes)
-        results[tf_name] = analyze_timeframe(tf_df, tf_name)
-
+    selected_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip()) or "1m"
+    tf_df = build_timeframe(base_df, TIMEFRAMES.get(selected_tf, 1))
+    row = analyze_timeframe(tf_df, selected_tf, normalize_scan_options({"mode": "BALANCED"}), selected_only=True)
     summary = {
-        tf: {
-            "signal": row.get("signal"),
-            "score": row.get("score", 0),
-            "rsi": row.get("rsi"),
-            "adx": row.get("adx"),
-            "atr": row.get("atr"),
-            "price": row.get("price"),
-            "bullish_points": row.get("bullish_points", 0),
-            "bearish_points": row.get("bearish_points", 0),
-            "closed_candle_epoch": row.get("closed_candle_epoch"),
+        selected_tf: {
+            "signal": row.get("signal"), "score": row.get("score", 0), "technical_quality": row.get("technical_quality", 0),
+            "rsi": row.get("rsi"), "adx": row.get("adx"), "atr": row.get("atr"), "price": row.get("price"),
+            "bullish_points": row.get("bullish_points", 0), "bearish_points": row.get("bearish_points", 0),
+            "indicator_agreement_pct": row.get("indicator_agreement_pct", 0), "confirmation_count": row.get("confirmation_count", 0),
+            "market_regime": row.get("market_regime"), "support": row.get("support"), "resistance": row.get("resistance"),
+            "breakout": row.get("breakout"), "retest": row.get("retest"), "late_entry_risk": row.get("late_entry_risk", False),
+            "indicator_confirmations": row.get("indicator_confirmations", []), "indicator_breakdown": row.get("indicator_breakdown", {}),
+            "closed_candle_epoch": row.get("closed_candle_epoch"), "reason": row.get("reason"),
         }
-        for tf, row in results.items()
     }
 
     return {
@@ -3758,7 +3796,10 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
         "data_age_label": format_market_data_age(age_value),
         "selected_expiry": str(selected_expiry or ""),
         "timeframe_summary": summary,
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
+        "timeframes_scanned": [selected_tf],
+        "selected_timeframe": selected_tf,
+        "selected_tf_only": True,
+        "analysis_engine": "selected_timeframe_deep_scan_v19",
         "chart_preview": serialize_candles(base_df, 60),
     }
 
@@ -4815,7 +4856,7 @@ def track_signal():
         return jsonify({"status": "error", "message": "Signal must be CALL or PUT."}), 400
     if expiry not in AUTO_TRACK_EXPIRIES:
         return jsonify({"status": "success", "auto_tracking": False,
-                        "message": "15s/30s outcome tracking is disabled because the Yahoo base feed is 1-minute."})
+                        "message": "This expiry is not supported by the closed-candle outcome tracker."})
     now = int(time.time()); duration = AUTO_TRACK_EXPIRIES[expiry]
     entry_epoch = ((now // duration) + 1) * duration; expiry_epoch = entry_epoch + duration
     signal_id = "sig_" + secrets.token_hex(8)
@@ -4831,6 +4872,11 @@ def track_signal():
         "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
         "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
         "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
+        "selected_timeframe": data.get("selected_timeframe") or expiry,
+        "analysis_engine": data.get("analysis_engine") or "selected_timeframe_deep_scan_v19",
+        "indicator_confirmations": data.get("indicator_confirmations") or [],
+        "indicator_breakdown": data.get("indicator_breakdown") or {},
+        "market_regime": data.get("market_regime"), "support": data.get("support"), "resistance": data.get("resistance"),
     }
     with signals_lock:
         items = load_signals(); items.insert(0, item); save_signals(items[:2000])
