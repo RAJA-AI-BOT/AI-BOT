@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="raja-app-build" content="__RAJA_APP_BUILD__">
     <title>RAJA AI PREMIUM</title>
-    <!-- v1.13: 15-second candidate pre-scan + closed-candle final confirmation -->
+    <!-- v1.13.1: T-25 all-pairs pre-scan + T-15/T-10 pair alert + closed-candle final -->
     <meta name="theme-color" content="#050b16">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -6652,7 +6652,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     </section>
 
                     <section class="config-panel">
-                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.13 · 15s PRE-SCAN + CLOSED-CANDLE FINAL · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
+                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.13.1 · ALL-PAIRS T-25 PRE-SCAN + T-15 PAIR ALERT + CLOSED-CANDLE FINAL · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
                         <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
                             <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
@@ -7489,15 +7489,25 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
 
         // =========================================================
-        // v1.13 · 15-SECOND 1m AUTO PRE-SCAN
-        // T-15: rank all eligible pairs (candidate only; NO trade authorization)
-        // T-10: remind user which pair to open
-        // T-5..1: audible countdown
-        // T=0+: strict CLOSED-candle final scan on top shortlist
+        // v1.13.1 · ALL-PAIRS 1m AUTO PRE-SCAN
+        // T-25: silently scan EVERY pair in the selected market (no rotation cooldown)
+        // T-15: announce the best completed candidate so the user can open the pair
+        // T-10: lock/re-confirm the pair after retrying slow pairs
+        // T-5..1: audible countdown only when a pair is safely locked
+        // T=0+: strict CLOSED-candle final scan on the ONE locked pair
+        // Forming-candle PRE-SCAN never authorizes CALL/PUT.
         // =========================================================
-        const RAJA_PRE_SCAN_LEAD_MS = 15000;
+        const RAJA_PRE_SCAN_START_LEAD_MS = 25000;
+        const RAJA_PRE_SCAN_ANNOUNCE_LEAD_MS = 15000;
+        const RAJA_PRE_SCAN_LOCK_LEAD_MS = 10000;
+        const RAJA_PRE_SCAN_COUNTDOWN_LEAD_MS = 5000;
         const RAJA_FINAL_SCAN_SETTLE_MS = 650;
-        let rajaPreScanState = { targetOpenMs:0, candidate:null, shortlist:[], cycleKey:'', noTradeAnnounced:false };
+        const RAJA_PRE_SCAN_MIN_COVERAGE_PCT = 85;
+        let rajaPreScanState = {
+            targetOpenMs:0, candidate:null, shortlist:[], rowsByPair:{}, cycleKey:'',
+            noTradeAnnounced:false, announcedPair:'', lockedPair:'', lockedShortlist:[],
+            totalPairs:0, completedPairs:0, timedOutPairs:[], coveragePct:0, retrying:false
+        };
         let rajaPreScanVoiceTimers = [];
         let rajaPreScanController = null;
 
@@ -7521,8 +7531,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function rajaScheduleAt(epochMs, fn) {
             const delay = Number(epochMs || 0) - Date.now();
-            // If a checkpoint (for example T-10) already passed while the network was
-            // returning the shortlist, skip it rather than speaking an incorrect number.
             if (delay <= 0) return null;
             const id = setTimeout(fn, delay);
             rajaPreScanVoiceTimers.push(id);
@@ -7536,19 +7544,23 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             } catch (_) {}
         }
 
+        function rajaPairSpeech(pair) {
+            return String(pair || '').replace(/\(OTC\)/gi,' O T C ').replace(/[\/-]/g,' ');
+        }
+
         function rajaPreScanPairsForCurrentMarket() {
             const broker = String(document.getElementById('brokerSelect')?.value || 'Quotex');
             const market = String(document.getElementById('marketType')?.value || '');
-            const rows = (brokerData?.[broker]?.[market] || []).slice(1);
-            cleanAutoPairCooldowns();
-            return rows.filter(pair => !isAutoPairCoolingDown(pair));
+            // IMPORTANT: pre-scan does NOT apply the old 5-minute rotation cooldown.
+            // Every pair is reconsidered on every fresh 1m candle.
+            return (brokerData?.[broker]?.[market] || []).slice(1).map(x => String(x || '').trim()).filter(Boolean);
         }
 
-        async function rajaFetchPreScan(pairs) {
-            if (!Array.isArray(pairs) || !pairs.length) return {shortlist:[], diagnostics:null};
+        async function rajaFetchPreScan(pairs, clientTimeoutMs = 11000, backendDeadlineSeconds = null) {
+            if (!Array.isArray(pairs) || !pairs.length) return {data:[], shortlist:[], diagnostics:null};
             const controller = new AbortController();
             rajaPreScanController = controller;
-            const timeoutId = setTimeout(() => controller.abort(), 11000);
+            const timeoutId = setTimeout(() => controller.abort(), Math.max(2500, Number(clientTimeoutMs || 11000)));
             try {
                 const response = await fetch('/pre-scan-batch', {
                     method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
@@ -7556,6 +7568,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         pairs, expiry:'1m', client_id:deviceSessionId,
                         market:document.getElementById('marketType')?.value || '',
                         broker:document.getElementById('brokerSelect')?.value || 'Quotex',
+                        deadline_seconds: backendDeadlineSeconds,
                         scan_options:getScanOptions(), ...getAuthPayload()
                     }),
                     signal:controller.signal
@@ -7564,61 +7577,154 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 if (!response.ok || !payload || payload.status !== 'success') {
                     throw new Error(payload?.message || `Pre-scan failed: ${response.status}`);
                 }
-                return {shortlist:Array.isArray(payload.shortlist) ? payload.shortlist : [], diagnostics:payload.diagnostics || null};
+                return {
+                    data:Array.isArray(payload.data) ? payload.data : [],
+                    shortlist:Array.isArray(payload.shortlist) ? payload.shortlist : [],
+                    diagnostics:payload.diagnostics || null
+                };
             } finally {
                 clearTimeout(timeoutId);
                 if (rajaPreScanController === controller) rajaPreScanController = null;
             }
         }
 
-        function rajaPreScanDisplayCandidate(candidate, targetOpenMs) {
-            if (!candidate) return;
-            const target = document.getElementById('targetPairDisplay');
-            if (target) {
-                target.innerText = `PRE-SCAN · ${candidate.pair}`;
-                target.style.color = '#facc15';
+        function rajaApplyPreScanResult(result, isRetry = false) {
+            const rows = Array.isArray(result?.data) ? result.data : [];
+            rows.forEach(row => {
+                const pair = String(row?.pair || '').trim();
+                if (pair) rajaPreScanState.rowsByPair[pair] = row;
+            });
+
+            const diagnostics = result?.diagnostics || {};
+            if (!isRetry) {
+                rajaPreScanState.totalPairs = Number(diagnostics.total_pairs || rajaPreScanState.totalPairs || rows.length || 0);
             }
+            const timed = Array.isArray(diagnostics.timed_out_pairs) ? diagnostics.timed_out_pairs.map(x => String(x || '').trim()).filter(Boolean) : [];
+            rajaPreScanState.timedOutPairs = timed;
+            const total = Math.max(0, Number(rajaPreScanState.totalPairs || 0));
+            rajaPreScanState.completedPairs = Math.max(0, total - timed.length);
+            rajaPreScanState.coveragePct = total > 0 ? ((rajaPreScanState.completedPairs / total) * 100) : 0;
+
+            const mergedRows = Object.values(rajaPreScanState.rowsByPair || {});
+            rajaPreScanState.shortlist = mergedRows
+                .filter(row => row && row.qualified)
+                .sort((a,b) => Number(b.candidate_score || 0) - Number(a.candidate_score || 0))
+                .slice(0,5);
+            rajaPreScanState.candidate = rajaPreScanState.shortlist[0] || null;
+
             const step = document.getElementById('scanStepText');
-            if (step) step.innerText = `T-15 PRE-SCAN candidate: ${candidate.pair} · final CALL/PUT waits for candle close.`;
-            const remain = Math.max(1, Math.ceil((targetOpenMs - Date.now()) / 1000));
-            rajaSpeakPreScan(`RAJA AI. ${String(candidate.pair || '').replace(/\(OTC\)/gi,' O T C ').replace(/[\/-]/g,' ')}. Open pair. ${remain} seconds to next candle.`);
+            if (step) {
+                const slow = timed.length ? ` · ${timed.length} slow retry` : '';
+                step.innerText = `ALL-PAIRS PRE-SCAN · ${rajaPreScanState.completedPairs}/${total || '?'} checked${slow}`;
+            }
+            const active = document.getElementById('scanActiveAssetsValue');
+            if (active && total) active.innerText = String(total);
         }
 
-        function rajaArmCandidateCountdown(targetOpenMs) {
+        function rajaCanLockPreScanCandidate() {
+            return Boolean(
+                rajaPreScanState.candidate &&
+                Number(rajaPreScanState.coveragePct || 0) >= RAJA_PRE_SCAN_MIN_COVERAGE_PCT
+            );
+        }
+
+        function rajaAnnounceT15Candidate(targetOpenMs) {
             const candidate = rajaPreScanState.candidate;
             if (!candidate) return;
-            const pairSpeech = String(candidate.pair || '').replace(/\(OTC\)/gi,' O T C ').replace(/[\/-]/g,' ');
-            rajaScheduleAt(targetOpenMs - 10000, () => {
-                if (rajaPreScanState.candidate) rajaSpeakPreScan(`${pairSpeech}. 10 seconds.`);
-            });
-            [5,4,3,2,1].forEach(n => {
-                rajaScheduleAt(targetOpenMs - n * 1000, () => {
-                    if (rajaPreScanState.candidate) rajaSpeakPreScan(String(n));
-                });
-            });
+            const pair = String(candidate.pair || '');
+            rajaPreScanState.announcedPair = pair;
+            const target = document.getElementById('targetPairDisplay');
+            if (target) {
+                target.innerText = `PRE-SCAN · ${pair}`;
+                target.style.color = '#facc15';
+            }
+            const remain = Math.max(1, Math.ceil((targetOpenMs - Date.now()) / 1000));
+            rajaSpeakPreScan(`RAJA AI. ${rajaPairSpeech(pair)}. Open pair. ${remain} seconds to next candle.`);
+        }
+
+        function rajaLockT10Candidate(targetOpenMs) {
+            // Do not introduce a new/switch pair too late for the user to open it.
+            // Small browser/network jitter is tolerated, but after ~T-8.5 we skip this candle.
+            const remainingMs = Number(targetOpenMs || 0) - Date.now();
+            if (remainingMs < 8500) return;
+            if (!rajaCanLockPreScanCandidate()) return;
+            const pair = String(rajaPreScanState.candidate?.pair || '');
+            if (!pair) return;
+            rajaPreScanState.lockedPair = pair;
+            rajaPreScanState.lockedShortlist = [pair];
+            const target = document.getElementById('targetPairDisplay');
+            if (target) {
+                target.innerText = `LOCKED · ${pair}`;
+                target.style.color = '#00ff87';
+            }
+            if (rajaPreScanState.announcedPair && rajaPreScanState.announcedPair !== pair) {
+                rajaSpeakPreScan(`RAJA AI. Switch to ${rajaPairSpeech(pair)}. 10 seconds.`);
+            } else {
+                rajaSpeakPreScan(`${rajaPairSpeech(pair)}. 10 seconds.`);
+            }
+            rajaPreScanState.announcedPair = pair;
+        }
+
+        function rajaPreScanNoTradeReason() {
+            const total = Number(rajaPreScanState.totalPairs || 0);
+            const completed = Number(rajaPreScanState.completedPairs || 0);
+            const slow = Array.isArray(rajaPreScanState.timedOutPairs) ? rajaPreScanState.timedOutPairs.length : 0;
+            if (Number(rajaPreScanState.coveragePct || 0) < RAJA_PRE_SCAN_MIN_COVERAGE_PCT) {
+                return `NO TRADE THIS CANDLE. Market scan incomplete. ${completed} of ${total || 'all'} pairs checked.`;
+            }
+            if (!rajaPreScanState.candidate) {
+                return slow > 0
+                    ? `NO TRADE THIS CANDLE. No strong setup in ${completed} checked pairs.`
+                    : 'NO TRADE THIS CANDLE. All pairs checked. No strong setup.';
+            }
+            return 'NO TRADE THIS CANDLE. Candidate was not locked in time.';
+        }
+
+        function rajaLockOrRejectAtT5() {
+            if (rajaPreScanState.lockedPair) {
+                rajaSpeakPreScan('5');
+                return true;
+            }
+            if (!rajaPreScanState.noTradeAnnounced) {
+                rajaPreScanState.noTradeAnnounced = true;
+                rajaSpeakPreScan(rajaPreScanNoTradeReason());
+            }
+            armRajaCandlePreScanCycle();
+            return false;
         }
 
         async function rajaRunFinalClosedCandleScan(targetOpenMs) {
             if (!rajaUseOneMinutePreScan()) return;
-            const shortlist = (rajaPreScanState.shortlist || []).map(x => String(x?.pair || '')).filter(Boolean).slice(0,3);
-            if (!shortlist.length) {
-                if (!rajaPreScanState.noTradeAnnounced) {
-                    rajaPreScanState.noTradeAnnounced = true;
-                    rajaSpeakPreScan('NO TRADE THIS CANDLE. No strong candidate.');
-                }
-                scheduleAutoRescan();
-                return;
-            }
-            // Let the provider publish the just-closed row, then run the existing strict engine.
+            const lockedPair = String(rajaPreScanState.lockedPair || '');
+            if (!lockedPair) return;
             const wait = Math.max(0, Number(targetOpenMs || 0) + RAJA_FINAL_SCAN_SETTLE_MS - Date.now());
             if (wait) await new Promise(resolve => setTimeout(resolve, wait));
             try {
-                await startDeepScan(true, shortlist, {fromPreScan:true, targetOpenMs:Number(targetOpenMs || 0)});
+                // Final authorization stays on the same pair the user had time to open.
+                await startDeepScan(true, [lockedPair], {fromPreScan:true, targetOpenMs:Number(targetOpenMs || 0), lockedPair});
             } catch (error) {
                 console.error('Final closed-candle pre-scan confirmation failed:', error);
                 rajaSpeakPreScan('NO TRADE. Final confirmation failed.');
-                scheduleAutoRescan();
+                armRajaCandlePreScanCycle();
             }
+        }
+
+        function rajaArmPreScanCheckpoints(targetOpenMs) {
+            rajaScheduleAt(targetOpenMs - RAJA_PRE_SCAN_ANNOUNCE_LEAD_MS, () => {
+                if (!rajaPreScanState.announcedPair) rajaAnnounceT15Candidate(targetOpenMs);
+            });
+            rajaScheduleAt(targetOpenMs - RAJA_PRE_SCAN_LOCK_LEAD_MS, () => {
+                rajaLockT10Candidate(targetOpenMs);
+            });
+            rajaScheduleAt(targetOpenMs - RAJA_PRE_SCAN_COUNTDOWN_LEAD_MS, () => {
+                rajaLockOrRejectAtT5();
+            });
+            [4,3,2,1].forEach(n => {
+                rajaScheduleAt(targetOpenMs - n * 1000, () => {
+                    if (rajaPreScanState.lockedPair) rajaSpeakPreScan(String(n));
+                });
+            });
+            rajaScheduleAt(targetOpenMs, () => rajaRunFinalClosedCandleScan(targetOpenMs));
         }
 
         async function rajaRunPreScanCycle(targetOpenMs) {
@@ -7627,29 +7733,59 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             rajaClearPreScanTimers(true);
             const pairs = rajaPreScanPairsForCurrentMarket();
-            rajaPreScanState = {targetOpenMs:Number(targetOpenMs||0), candidate:null, shortlist:[], cycleKey:String(targetOpenMs||''), noTradeAnnounced:false};
-            if (!pairs.length) { rajaSpeakPreScan('NO TRADE THIS CANDLE. No eligible pairs.'); armRajaCandlePreScanCycle(); return; }
+            rajaPreScanState = {
+                targetOpenMs:Number(targetOpenMs||0), candidate:null, shortlist:[], rowsByPair:{},
+                cycleKey:String(targetOpenMs||''), noTradeAnnounced:false, announcedPair:'',
+                lockedPair:'', lockedShortlist:[], totalPairs:pairs.length, completedPairs:0,
+                timedOutPairs:[], coveragePct:0, retrying:false
+            };
+            if (!pairs.length) {
+                rajaSpeakPreScan('NO TRADE THIS CANDLE. No eligible pairs.');
+                armRajaCandlePreScanCycle();
+                return;
+            }
+
+            const step = document.getElementById('scanStepText');
+            if (step) step.innerText = `T-25 ALL-PAIRS PRE-SCAN · checking 0/${pairs.length}...`;
+            rajaArmPreScanCheckpoints(targetOpenMs);
 
             try {
-                const result = await rajaFetchPreScan(pairs);
-                const shortlist = Array.isArray(result.shortlist) ? result.shortlist.slice(0,3) : [];
-                rajaPreScanState.shortlist = shortlist;
-                rajaPreScanState.candidate = shortlist[0] || null;
-                const remaining = Number(targetOpenMs || 0) - Date.now();
-                if (!rajaPreScanState.candidate || remaining <= 4500) {
-                    rajaPreScanState.noTradeAnnounced = true;
-                    rajaSpeakPreScan('NO TRADE THIS CANDLE. No strong setup before the lock window.');
-                    armRajaCandlePreScanCycle();
-                    return;
+                const first = await rajaFetchPreScan(pairs, 11000, 9.5);
+                rajaApplyPreScanResult(first, false);
+
+                // If the first pass returned before T-15, keep quiet until T-15; if T-15
+                // already passed, announce immediately so the user still gets maximum time.
+                if (Date.now() >= Number(targetOpenMs || 0) - RAJA_PRE_SCAN_ANNOUNCE_LEAD_MS && !rajaPreScanState.announcedPair) {
+                    rajaAnnounceT15Candidate(targetOpenMs);
                 }
-                rajaPreScanDisplayCandidate(rajaPreScanState.candidate, targetOpenMs);
-                rajaArmCandidateCountdown(targetOpenMs);
-                rajaScheduleAt(targetOpenMs, () => rajaRunFinalClosedCandleScan(targetOpenMs));
+
+                const retryPairs = [...(rajaPreScanState.timedOutPairs || [])];
+                const msToLock = Number(targetOpenMs || 0) - RAJA_PRE_SCAN_LOCK_LEAD_MS - Date.now();
+                if (retryPairs.length && msToLock > 2500) {
+                    rajaPreScanState.retrying = true;
+                    try {
+                        const retryBudgetMs = Math.max(2500, Math.min(5200, msToLock - 250));
+                        const retryDeadline = Math.max(2.0, Math.min(4.5, retryBudgetMs / 1000 - 0.35));
+                        const retry = await rajaFetchPreScan(retryPairs, retryBudgetMs, retryDeadline);
+                        rajaApplyPreScanResult(retry, true);
+                    } catch (retryError) {
+                        console.warn('Slow-pair pre-scan retry did not finish before lock:', retryError);
+                    } finally {
+                        rajaPreScanState.retrying = false;
+                    }
+                }
+
+                // If retry changed the leader before T-10, T-10 lock will use the new best pair.
+                if (Date.now() >= Number(targetOpenMs || 0) - RAJA_PRE_SCAN_LOCK_LEAD_MS && !rajaPreScanState.lockedPair) {
+                    rajaLockT10Candidate(targetOpenMs);
+                }
             } catch (error) {
-                console.error('15-second pre-scan failed:', error);
-                rajaPreScanState.noTradeAnnounced = true;
-                rajaSpeakPreScan('NO TRADE THIS CANDLE. Pre-scan data was not ready.');
-                armRajaCandlePreScanCycle();
+                console.error('25-second all-pairs pre-scan failed:', error);
+                if (!rajaPreScanState.noTradeAnnounced && Date.now() >= Number(targetOpenMs || 0) - RAJA_PRE_SCAN_COUNTDOWN_LEAD_MS) {
+                    rajaPreScanState.noTradeAnnounced = true;
+                    rajaSpeakPreScan('NO TRADE THIS CANDLE. All-pairs pre-scan data was not ready.');
+                    armRajaCandlePreScanCycle();
+                }
             }
         }
 
@@ -7657,9 +7793,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             clearAutoRescanSchedule(false, true);
             if (!rajaUseOneMinutePreScan()) return;
             let targetOpenMs = (Math.floor(Date.now() / 60000) + 1) * 60000;
-            let preAt = targetOpenMs - RAJA_PRE_SCAN_LEAD_MS;
+            let preAt = targetOpenMs - RAJA_PRE_SCAN_START_LEAD_MS;
             const minimum = Date.now() + Math.max(1000, Number(extraDelayMs || 0));
-            while (preAt < minimum) { targetOpenMs += 60000; preAt = targetOpenMs - RAJA_PRE_SCAN_LEAD_MS; }
+            while (preAt < minimum) { targetOpenMs += 60000; preAt = targetOpenMs - RAJA_PRE_SCAN_START_LEAD_MS; }
             nextAutoRescanAt = preAt;
             localStorage.setItem('raja_next_auto_rescan_at', String(nextAutoRescanAt));
             updateAutoRescanUI();
@@ -9549,8 +9685,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 const overrideList = Array.isArray(overridePairs)
                     ? overridePairs.map(x => String(x || '').trim()).filter(x => allAutoPairs.includes(x))
                     : [];
-                eligiblePairs = (overrideList.length ? overrideList : allAutoPairs)
-                    .filter(pair => !isAutoPairCoolingDown(pair));
+                const isLockedPreFinal = Boolean(preScanContext && preScanContext.fromPreScan);
+                const baseEligiblePairs = overrideList.length ? overrideList : allAutoPairs;
+                // The T-25 all-pairs engine re-evaluates every pair each candle. The old
+                // five-minute rotation cooldown is kept only for ordinary/manual Auto Scan,
+                // never for the locked pre-scan final confirmation.
+                eligiblePairs = isLockedPreFinal
+                    ? baseEligiblePairs
+                    : baseEligiblePairs.filter(pair => !isAutoPairCoolingDown(pair));
 
                 if (eligiblePairs.length === 0) {
                     completeScanSession('nosignal');
@@ -9603,9 +9745,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     // caches this market snapshot so many users reuse the same scan.
                     const isPreFinal = Boolean(preScanContext && preScanContext.fromPreScan);
                     scanConsole.innerHTML = isPreFinal
-                        ? `<div class="live-scan-row scanning">⏱ CLOSED-CANDLE FINAL CONFIRMATION · ${eligiblePairs.length} SHORTLISTED PAIR(S)...</div>`
+                        ? `<div class="live-scan-row scanning">⏱ CLOSED-CANDLE FINAL CONFIRMATION · ${eligiblePairs.length} LOCKED PAIR...</div>`
                         : `<div class="live-scan-row scanning">🤖 SHARED SELECTED-TF SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
-                    scanStep.innerText = isPreFinal ? 'Final closed-candle validation after 15-second pre-scan...' : 'Fetching shared market snapshot...';
+                    scanStep.innerText = isPreFinal ? 'Final closed-candle validation on the T-10 locked pair...' : 'Fetching shared market snapshot...';
                     setScanProgress(25);
 
                     const batch = await scanPairsBatchFromBackend(eligiblePairs);
