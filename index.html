@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="raja-app-build" content="__RAJA_APP_BUILD__">
     <title>RAJA AI PREMIUM</title>
+    <!-- v1.13: 15-second candidate pre-scan + closed-candle final confirmation -->
     <meta name="theme-color" content="#050b16">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -6099,7 +6100,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 </button>
                             </div>
                             <button id="installAppBtn" class="top-btn install-btn" style="display:inline-flex" onclick="installPWA()">⬇ INSTALL APP</button>
-                            <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND: ON</button>
+                            <button id="soundToggleBtn" class="top-btn" onclick="toggleSound()">🔊 SOUND + VOICE: ON</button>
                             <button class="top-btn logout" onclick="logoutSession()">🚪 LOGOUT</button>
                         </div>
                     </div>
@@ -6651,7 +6652,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     </section>
 
                     <section class="config-panel">
-                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.11.2 BALANCED SIGNAL MODE · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
+                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.13 · 15s PRE-SCAN + CLOSED-CANDLE FINAL · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
                         <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
                             <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
@@ -6664,7 +6665,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn active" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Balanced: selected closed timeframe with structure/regime confirmation and moderate quality floors.</div></div>
+                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay(); if(autoRescanEnabled&&isUserVerified) scheduleAutoRescan();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn active" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Balanced: selected closed timeframe with structure/regime confirmation and moderate quality floors.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button><button class="expiry-btn" data-time="1h" onclick="playClickSound(); setExpiry(this,'1h')">1h</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
@@ -6777,7 +6778,16 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
         } catch (_) {}
         let scanMode = ['SAFE','BALANCED','AGGRESSIVE','CUSTOM'].includes(rajaSavedScanMode) ? rajaSavedScanMode : 'BALANCED';
-        const rajaVoiceStored = localStorage.getItem('raja_voice_alert');
+        let rajaVoiceStored = localStorage.getItem('raja_voice_alert');
+        try {
+            // v1.13 unifies the visible SOUND control with voice alerts once so an old
+            // stored VOICE OFF value cannot leave the UI saying SOUND ON while silent.
+            if (localStorage.getItem('raja_sound_voice_migrated_v113') !== '1') {
+                rajaVoiceStored = 'true';
+                localStorage.setItem('raja_voice_alert', 'true');
+                localStorage.setItem('raja_sound_voice_migrated_v113', '1');
+            }
+        } catch (_) {}
         let voiceAlertEnabled = rajaVoiceStored == null ? true : rajaVoiceStored === 'true';
         let rajaVoiceGender = localStorage.getItem('raja_voice_gender') === 'male' ? 'male' : 'female';
         let rajaVoiceSpeed = ['slow','normal','fast'].includes(localStorage.getItem('raja_voice_speed')) ? localStorage.getItem('raja_voice_speed') : 'normal';
@@ -7019,7 +7029,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 .trim();
             const direction = isBuy ? 'CALL. UP signal.' : 'PUT. DOWN signal.';
             const expiry = rajaSpokenExpiry(selectedExpiry);
-            speakRajaText(`RAJA AI. ${pair}. ${direction} ${expiry} expiry.`);
+            const expectedMs = Number(signalData?.expectedEntryEpoch || 0) * 1000;
+            const isEntryNow = expectedMs > 0 && Date.now() >= expectedMs && Date.now() - expectedMs <= 6000;
+            speakRajaText(`RAJA AI. ${pair}. ${direction} ${expiry} expiry.${isEntryNow ? ' ENTER NOW.' : ''}`);
         }
 
         if ('speechSynthesis' in window) {
@@ -7476,6 +7488,190 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
 
+        // =========================================================
+        // v1.13 · 15-SECOND 1m AUTO PRE-SCAN
+        // T-15: rank all eligible pairs (candidate only; NO trade authorization)
+        // T-10: remind user which pair to open
+        // T-5..1: audible countdown
+        // T=0+: strict CLOSED-candle final scan on top shortlist
+        // =========================================================
+        const RAJA_PRE_SCAN_LEAD_MS = 15000;
+        const RAJA_FINAL_SCAN_SETTLE_MS = 650;
+        let rajaPreScanState = { targetOpenMs:0, candidate:null, shortlist:[], cycleKey:'', noTradeAnnounced:false };
+        let rajaPreScanVoiceTimers = [];
+        let rajaPreScanController = null;
+
+        function rajaAutoPairSelected() {
+            const value = String(document.getElementById('pairSelect')?.value || '');
+            return !value || /Auto Scan/i.test(value);
+        }
+
+        function rajaUseOneMinutePreScan() {
+            return Boolean(autoRescanEnabled && isUserVerified && selectedExpiry === '1m' && rajaAutoPairSelected());
+        }
+
+        function rajaClearPreScanTimers(abortFetch = true) {
+            rajaPreScanVoiceTimers.forEach(id => { try { clearTimeout(id); } catch (_) {} });
+            rajaPreScanVoiceTimers = [];
+            if (abortFetch && rajaPreScanController) {
+                try { rajaPreScanController.abort(); } catch (_) {}
+            }
+            rajaPreScanController = null;
+        }
+
+        function rajaScheduleAt(epochMs, fn) {
+            const delay = Number(epochMs || 0) - Date.now();
+            // If a checkpoint (for example T-10) already passed while the network was
+            // returning the shortlist, skip it rather than speaking an incorrect number.
+            if (delay <= 0) return null;
+            const id = setTimeout(fn, delay);
+            rajaPreScanVoiceTimers.push(id);
+            return id;
+        }
+
+        function rajaSpeakPreScan(text) {
+            try {
+                unlockRajaAudioAndVoice();
+                if (typeof speakRajaText === 'function') speakRajaText(String(text || ''), {cancel:true});
+            } catch (_) {}
+        }
+
+        function rajaPreScanPairsForCurrentMarket() {
+            const broker = String(document.getElementById('brokerSelect')?.value || 'Quotex');
+            const market = String(document.getElementById('marketType')?.value || '');
+            const rows = (brokerData?.[broker]?.[market] || []).slice(1);
+            cleanAutoPairCooldowns();
+            return rows.filter(pair => !isAutoPairCoolingDown(pair));
+        }
+
+        async function rajaFetchPreScan(pairs) {
+            if (!Array.isArray(pairs) || !pairs.length) return {shortlist:[], diagnostics:null};
+            const controller = new AbortController();
+            rajaPreScanController = controller;
+            const timeoutId = setTimeout(() => controller.abort(), 11000);
+            try {
+                const response = await fetch('/pre-scan-batch', {
+                    method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
+                    body:JSON.stringify({
+                        pairs, expiry:'1m', client_id:deviceSessionId,
+                        market:document.getElementById('marketType')?.value || '',
+                        broker:document.getElementById('brokerSelect')?.value || 'Quotex',
+                        scan_options:getScanOptions(), ...getAuthPayload()
+                    }),
+                    signal:controller.signal
+                });
+                const payload = await response.json().catch(() => null);
+                if (!response.ok || !payload || payload.status !== 'success') {
+                    throw new Error(payload?.message || `Pre-scan failed: ${response.status}`);
+                }
+                return {shortlist:Array.isArray(payload.shortlist) ? payload.shortlist : [], diagnostics:payload.diagnostics || null};
+            } finally {
+                clearTimeout(timeoutId);
+                if (rajaPreScanController === controller) rajaPreScanController = null;
+            }
+        }
+
+        function rajaPreScanDisplayCandidate(candidate, targetOpenMs) {
+            if (!candidate) return;
+            const target = document.getElementById('targetPairDisplay');
+            if (target) {
+                target.innerText = `PRE-SCAN · ${candidate.pair}`;
+                target.style.color = '#facc15';
+            }
+            const step = document.getElementById('scanStepText');
+            if (step) step.innerText = `T-15 PRE-SCAN candidate: ${candidate.pair} · final CALL/PUT waits for candle close.`;
+            const remain = Math.max(1, Math.ceil((targetOpenMs - Date.now()) / 1000));
+            rajaSpeakPreScan(`RAJA AI. ${String(candidate.pair || '').replace(/\(OTC\)/gi,' O T C ').replace(/[\/-]/g,' ')}. Open pair. ${remain} seconds to next candle.`);
+        }
+
+        function rajaArmCandidateCountdown(targetOpenMs) {
+            const candidate = rajaPreScanState.candidate;
+            if (!candidate) return;
+            const pairSpeech = String(candidate.pair || '').replace(/\(OTC\)/gi,' O T C ').replace(/[\/-]/g,' ');
+            rajaScheduleAt(targetOpenMs - 10000, () => {
+                if (rajaPreScanState.candidate) rajaSpeakPreScan(`${pairSpeech}. 10 seconds.`);
+            });
+            [5,4,3,2,1].forEach(n => {
+                rajaScheduleAt(targetOpenMs - n * 1000, () => {
+                    if (rajaPreScanState.candidate) rajaSpeakPreScan(String(n));
+                });
+            });
+        }
+
+        async function rajaRunFinalClosedCandleScan(targetOpenMs) {
+            if (!rajaUseOneMinutePreScan()) return;
+            const shortlist = (rajaPreScanState.shortlist || []).map(x => String(x?.pair || '')).filter(Boolean).slice(0,3);
+            if (!shortlist.length) {
+                if (!rajaPreScanState.noTradeAnnounced) {
+                    rajaPreScanState.noTradeAnnounced = true;
+                    rajaSpeakPreScan('NO TRADE THIS CANDLE. No strong candidate.');
+                }
+                scheduleAutoRescan();
+                return;
+            }
+            // Let the provider publish the just-closed row, then run the existing strict engine.
+            const wait = Math.max(0, Number(targetOpenMs || 0) + RAJA_FINAL_SCAN_SETTLE_MS - Date.now());
+            if (wait) await new Promise(resolve => setTimeout(resolve, wait));
+            try {
+                await startDeepScan(true, shortlist, {fromPreScan:true, targetOpenMs:Number(targetOpenMs || 0)});
+            } catch (error) {
+                console.error('Final closed-candle pre-scan confirmation failed:', error);
+                rajaSpeakPreScan('NO TRADE. Final confirmation failed.');
+                scheduleAutoRescan();
+            }
+        }
+
+        async function rajaRunPreScanCycle(targetOpenMs) {
+            if (!rajaUseOneMinutePreScan()) { scheduleAutoRescan(); return; }
+            if (scanSessionState.running || rajaScanStartPending) { armRajaCandlePreScanCycle(); return; }
+
+            rajaClearPreScanTimers(true);
+            const pairs = rajaPreScanPairsForCurrentMarket();
+            rajaPreScanState = {targetOpenMs:Number(targetOpenMs||0), candidate:null, shortlist:[], cycleKey:String(targetOpenMs||''), noTradeAnnounced:false};
+            if (!pairs.length) { rajaSpeakPreScan('NO TRADE THIS CANDLE. No eligible pairs.'); armRajaCandlePreScanCycle(); return; }
+
+            try {
+                const result = await rajaFetchPreScan(pairs);
+                const shortlist = Array.isArray(result.shortlist) ? result.shortlist.slice(0,3) : [];
+                rajaPreScanState.shortlist = shortlist;
+                rajaPreScanState.candidate = shortlist[0] || null;
+                const remaining = Number(targetOpenMs || 0) - Date.now();
+                if (!rajaPreScanState.candidate || remaining <= 4500) {
+                    rajaPreScanState.noTradeAnnounced = true;
+                    rajaSpeakPreScan('NO TRADE THIS CANDLE. No strong setup before the lock window.');
+                    armRajaCandlePreScanCycle();
+                    return;
+                }
+                rajaPreScanDisplayCandidate(rajaPreScanState.candidate, targetOpenMs);
+                rajaArmCandidateCountdown(targetOpenMs);
+                rajaScheduleAt(targetOpenMs, () => rajaRunFinalClosedCandleScan(targetOpenMs));
+            } catch (error) {
+                console.error('15-second pre-scan failed:', error);
+                rajaPreScanState.noTradeAnnounced = true;
+                rajaSpeakPreScan('NO TRADE THIS CANDLE. Pre-scan data was not ready.');
+                armRajaCandlePreScanCycle();
+            }
+        }
+
+        function armRajaCandlePreScanCycle(extraDelayMs = 0) {
+            clearAutoRescanSchedule(false, true);
+            if (!rajaUseOneMinutePreScan()) return;
+            let targetOpenMs = (Math.floor(Date.now() / 60000) + 1) * 60000;
+            let preAt = targetOpenMs - RAJA_PRE_SCAN_LEAD_MS;
+            const minimum = Date.now() + Math.max(1000, Number(extraDelayMs || 0));
+            while (preAt < minimum) { targetOpenMs += 60000; preAt = targetOpenMs - RAJA_PRE_SCAN_LEAD_MS; }
+            nextAutoRescanAt = preAt;
+            localStorage.setItem('raja_next_auto_rescan_at', String(nextAutoRescanAt));
+            updateAutoRescanUI();
+            autoRescanTicker = setInterval(updateAutoRescanUI, 1000);
+            autoRescanTimeout = setTimeout(() => {
+                autoRescanTimeout = null;
+                if (autoRescanTicker) clearInterval(autoRescanTicker);
+                autoRescanTicker = null;
+                rajaRunPreScanCycle(targetOpenMs);
+            }, Math.max(0, preAt - Date.now()));
+        }
+
         const AUTO_RESCAN_INTERVAL_MS = 5 * 60 * 1000;
         let autoRescanEnabled = localStorage.getItem('raja_auto_rescan_enabled') !== 'false';
         let autoRescanTimeout = null;
@@ -7507,17 +7703,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             state.style.color = '#00ff87';
             card.style.borderColor = 'rgba(0,255,135,.28)';
             if (nextAutoRescanAt > Date.now()) {
-                countdown.innerText = 'Next Re-Scan in ' + formatCountdown(nextAutoRescanAt - Date.now());
+                countdown.innerText = (rajaUseOneMinutePreScan() ? 'Next 15s Pre-Scan in ' : 'Next Re-Scan in ') + formatCountdown(nextAutoRescanAt - Date.now());
             } else {
-                countdown.innerText = 'Next Re-Scan: READY';
+                countdown.innerText = rajaUseOneMinutePreScan() ? 'Next 15s Pre-Scan: READY' : 'Next Re-Scan: READY';
             }
         }
 
-        function clearAutoRescanSchedule(clearSaved = false) {
+        function clearAutoRescanSchedule(clearSaved = false, preservePreScan = false) {
             if (autoRescanTimeout) clearTimeout(autoRescanTimeout);
             if (autoRescanTicker) clearInterval(autoRescanTicker);
             autoRescanTimeout = null;
             autoRescanTicker = null;
+            if (!preservePreScan) rajaClearPreScanTimers(true);
             if (clearSaved) {
                 nextAutoRescanAt = 0;
                 localStorage.removeItem('raja_next_auto_rescan_at');
@@ -7547,6 +7744,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function scheduleAutoRescan() {
             if (!autoRescanEnabled || !isUserVerified) return;
+            if (rajaUseOneMinutePreScan()) { armRajaCandlePreScanCycle(); return; }
             armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
         }
 
@@ -7555,6 +7753,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 updateAutoRescanUI();
                 return;
             }
+            if (rajaUseOneMinutePreScan()) { armRajaCandlePreScanCycle(); return; }
             const saved = Number(localStorage.getItem('raja_next_auto_rescan_at') || 0);
             if (saved > Date.now()) {
                 armAutoRescan(saved - Date.now());
@@ -7569,7 +7768,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             autoRescanEnabled = !autoRescanEnabled;
             localStorage.setItem('raja_auto_rescan_enabled', autoRescanEnabled ? 'true' : 'false');
             if (!autoRescanEnabled) clearAutoRescanSchedule(true);
-            else updateAutoRescanUI();
+            else { updateAutoRescanUI(); scheduleAutoRescan(); }
             playClickSound();
         }
 
@@ -7868,22 +8067,41 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
 
+        function unlockRajaAudioAndVoice() {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+            } catch (_) {}
+            try {
+                if ('speechSynthesis' in window) {
+                    window.speechSynthesis.resume();
+                    if (typeof rajaRefreshSpeechVoices === 'function') rajaRefreshSpeechVoices();
+                }
+            } catch (_) {}
+        }
+
         function toggleSound() {
             soundEnabled = !soundEnabled;
             let btn = document.getElementById('soundToggleBtn');
             if (soundEnabled) {
-                btn.innerText = "🔊 SOUND: ON";
+                voiceAlertEnabled = true;
+                try { localStorage.setItem('raja_voice_alert', 'true'); } catch (_) {}
+                const ve = document.getElementById('voiceAlertEnabled'); if (ve) ve.checked = true;
+                unlockRajaAudioAndVoice();
+                btn.innerText = "🔊 SOUND + VOICE: ON";
                 btn.style.color = "#00ff87";
                 btn.style.borderColor = "rgba(0, 242, 254, 0.4)";
                 playClickSound();
+                setTimeout(() => { try { speakRajaText('RAJA AI voice alerts on.', {force:true, cancel:true}); } catch (_) {} }, 80);
             } else {
-                btn.innerText = "🔇 SOUND: OFF";
+                voiceAlertEnabled = false;
+                try { localStorage.setItem('raja_voice_alert', 'false'); } catch (_) {}
+                const ve = document.getElementById('voiceAlertEnabled'); if (ve) ve.checked = false;
+                btn.innerText = "🔇 SOUND + VOICE: OFF";
                 btn.style.color = "#ff3366";
                 btn.style.borderColor = "rgba(255, 51, 102, 0.4)";
             }
-            const alertStatus = document.getElementById('soundAlertStatusText');
-            if (alertStatus) alertStatus.innerText = soundEnabled ? '● Alerts active · flashing + movement enabled' : '○ Sound off · visual flashing + movement remain active';
-            syncSelectedExpiryUI();
+            if (typeof updateRajaVoiceStatus === 'function') updateRajaVoiceStatus();
         }
 
         async function logoutSession() {
@@ -7903,6 +8121,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
 
         function playClickSound() {
+            try { if (typeof unlockRajaAudioAndVoice === 'function') unlockRajaAudioAndVoice(); } catch (_) {}
             if (!soundEnabled) return;
             try {
                 if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -8915,6 +9134,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             syncSelectedExpiryUI();
             const buildExpiry=document.getElementById('buildExpiryText'); if(buildExpiry) buildExpiry.innerText=selectedExpiry;
             startTimer();
+            if (autoRescanEnabled && isUserVerified) scheduleAutoRescan();
         }
 
         function syncSelectedExpiryUI() {
@@ -9002,7 +9222,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),confirmationMode:data.confirmation_mode||`${String(data.selected_timeframe||selectedExpiry).toUpperCase()} ONLY Deep Scan`,duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Market Provider',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used),selectedTimeframe:data.selected_timeframe||selectedExpiry,selectedTfOnly:Boolean(data.selected_tf_only),analysisEngine:data.analysis_engine||'selected_timeframe_balanced_signal_v112',indicatorAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),indicatorConfirmations:Array.isArray(data.indicator_confirmations)?data.indicator_confirmations:[],indicatorOpposition:Array.isArray(data.indicator_opposition)?data.indicator_opposition:[],indicatorBreakdown:data.indicator_breakdown||{},confirmationCount:Number(data.confirmation_count||0),marketRegime:data.market_regime||'',support:data.support,resistance:data.resistance,breakout:data.breakout||'',retest:data.retest||'',technicalQuality:Number(data.technical_quality??data.score??0),lateEntryRisk:Boolean(data.late_entry_risk)};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),confirmationMode:data.confirmation_mode||`${String(data.selected_timeframe||selectedExpiry).toUpperCase()} ONLY Deep Scan`,duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Market Provider',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used),selectedTimeframe:data.selected_timeframe||selectedExpiry,selectedTfOnly:Boolean(data.selected_tf_only),analysisEngine:data.analysis_engine||'selected_timeframe_balanced_signal_v112',indicatorAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),indicatorConfirmations:Array.isArray(data.indicator_confirmations)?data.indicator_confirmations:[],indicatorOpposition:Array.isArray(data.indicator_opposition)?data.indicator_opposition:[],indicatorBreakdown:data.indicator_breakdown||{},confirmationCount:Number(data.confirmation_count||0),marketRegime:data.market_regime||'',support:data.support,resistance:data.resistance,breakout:data.breakout||'',retest:data.retest||'',technicalQuality:Number(data.technical_quality??data.score??0),lateEntryRisk:Boolean(data.late_entry_risk),expectedEntryEpoch:Number(data.expected_entry_epoch||0),entryDelaySeconds:Number(data.entry_delay_seconds||0)};
         }
 
 
@@ -9204,7 +9424,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             finalizeRajaStoppedScan();
         }
 
-        async function startDeepScan(autoTriggered = false) {
+        async function startDeepScan(autoTriggered = false, overridePairs = null, preScanContext = null) {
             rajaLatestNoTradeReason = '';
             rajaLatestNewsLock = null;
             rajaLatestMarketState = null;
@@ -9326,7 +9546,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (isAutoScan) {
                 allAutoPairs = brokerData[broker][market].slice(1);
                 cleanAutoPairCooldowns();
-                eligiblePairs = allAutoPairs.filter(pair => !isAutoPairCoolingDown(pair));
+                const overrideList = Array.isArray(overridePairs)
+                    ? overridePairs.map(x => String(x || '').trim()).filter(x => allAutoPairs.includes(x))
+                    : [];
+                eligiblePairs = (overrideList.length ? overrideList : allAutoPairs)
+                    .filter(pair => !isAutoPairCoolingDown(pair));
 
                 if (eligiblePairs.length === 0) {
                     completeScanSession('nosignal');
@@ -9377,8 +9601,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 if (isAutoScan) {
                     // One shared batch request replaces 21 browser requests. The backend
                     // caches this market snapshot so many users reuse the same scan.
-                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SHARED SELECTED-TF SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
-                    scanStep.innerText = 'Fetching shared market snapshot...';
+                    const isPreFinal = Boolean(preScanContext && preScanContext.fromPreScan);
+                    scanConsole.innerHTML = isPreFinal
+                        ? `<div class="live-scan-row scanning">⏱ CLOSED-CANDLE FINAL CONFIRMATION · ${eligiblePairs.length} SHORTLISTED PAIR(S)...</div>`
+                        : `<div class="live-scan-row scanning">🤖 SHARED SELECTED-TF SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
+                    scanStep.innerText = isPreFinal ? 'Final closed-candle validation after 15-second pre-scan...' : 'Fetching shared market snapshot...';
                     setScanProgress(25);
 
                     const batch = await scanPairsBatchFromBackend(eligiblePairs);
@@ -9492,6 +9719,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             reasonBox.innerText = rajaLatestNoTradeReason || 'A relevant high-impact economic event is inside the safety window.';
                         }
                     } else if (rajaLatestNoTradeReason) {
+                        if (preScanContext && preScanContext.fromPreScan) { try { rajaSpeakPreScan('NO TRADE. Final closed candle did not confirm the setup.'); } catch (_) {} }
                         titleEl.innerText = '⛔ NO TRADE — LOW QUALITY SETUP';
                         descEl.innerText = 'RAJA AI rejected the current setup instead of forcing a signal.';
                         if (reasonBox) {
@@ -9524,7 +9752,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         async function registerSignalForTracking(signalData) {
             const direction = signalData.dir.includes('CALL') ? 'CALL' : 'PUT';
             const selectedTfMs = getExpirySeconds(selectedExpiry) * 1000;
-            activeSignalEntryEpochMs = (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
+            const backendExpectedEntryMs = Number(signalData?.expectedEntryEpoch || 0) * 1000;
+            activeSignalEntryEpochMs = backendExpectedEntryMs > 0
+                ? backendExpectedEntryMs
+                : (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
 
             if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
             if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('WAITING ENTRY','pending');
