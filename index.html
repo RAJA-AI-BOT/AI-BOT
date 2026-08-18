@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="raja-app-build" content="__RAJA_APP_BUILD__">
     <title>RAJA AI PREMIUM</title>
-    <!-- v1.13.1: T-25 all-pairs pre-scan + T-15/T-10 pair alert + closed-candle final -->
+    <!-- v1.13.2: 5-minute all-pairs pre-scan cadence + system voice picker + safe entry timing -->
     <meta name="theme-color" content="#050b16">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -6505,15 +6505,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 <div class="settings-section"><h4>Custom Scan Thresholds</h4><div class="custom-controls visible"><div><label>Selected TF Engine</label><input id="customMinTf" type="number" min="1" max="1" value="1" disabled oninput="saveCustomScanSettings()"></div><div><label>Min Agreement %</label><input id="customMinAgreement" type="number" min="55" max="100" value="71.4" step="0.1" oninput="saveCustomScanSettings()"></div><div><label>Min Score %</label><input id="customMinScore" type="number" min="50" max="95" value="72" step="0.5" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Min</label><input id="customVolMin" type="number" min="0" max="5" value="0" step="0.001" oninput="saveCustomScanSettings()"></div><div><label>Volatility ATR% Max</label><input id="customVolMax" type="number" min="0.01" max="10" value="3" step="0.01" oninput="saveCustomScanSettings()"></div></div><div class="pwa-tip">These thresholds only apply when CUSTOM mode is selected.</div></div>
                                 <div class="settings-section"><h4>Daily Stop Guard</h4><div class="guard-grid"><div><label class="label-text">Max Trades / Day</label><input id="guardMaxTrades" type="number" min="1" max="100" value="20" oninput="saveGuardSettings()"></div><div><label class="label-text">Max Losses / Day</label><input id="guardMaxLosses" type="number" min="1" max="50" value="5" oninput="saveGuardSettings()"></div><div class="switch-row"><span>Guard Enabled</span><input id="guardEnabled" type="checkbox" checked onchange="saveGuardSettings()"></div></div><div id="guardWarningSettings" class="guard-warning">Trading session limit reached</div></div>
                                 <div class="settings-section" id="rajaVoiceSettingsSection">
-                                    <h4>🔊 Voice Alerts · Male / Female</h4>
+                                    <h4>🔊 Voice Alerts · Choose Your System Voice</h4>
                                     <div class="switch-row"><span>Speak signal + entry countdown aloud</span><input id="voiceAlertEnabled" type="checkbox" onchange="toggleVoiceAlert(this.checked)"></div>
                                     <div class="raja-voice-controls">
                                         <div class="raja-voice-grid">
                                             <div class="raja-voice-field">
-                                                <label for="rajaVoiceGender">Voice Type</label>
-                                                <select id="rajaVoiceGender" onchange="setRajaVoiceGender(this.value)">
-                                                    <option value="female">👩 Female</option>
-                                                    <option value="male">👨 Male</option>
+                                                <label for="rajaVoiceName">System / Browser Voice</label>
+                                                <select id="rajaVoiceName" onchange="setRajaVoiceName(this.value)">
+                                                    <option value="__AUTO__">✨ Auto Best English Voice</option>
                                                 </select>
                                             </div>
                                             <div class="raja-voice-field">
@@ -6526,8 +6525,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                             </div>
                                         </div>
                                         <div class="raja-voice-test-row">
-                                            <button type="button" class="raja-voice-test-btn" onclick="testRajaVoice('female')">👩 TEST FEMALE</button>
-                                            <button type="button" class="raja-voice-test-btn" onclick="testRajaVoice('male')">👨 TEST MALE</button>
+                                            <button type="button" class="raja-voice-test-btn" onclick="testSelectedRajaVoice()">🔊 TEST SELECTED VOICE</button>
+                                            <button type="button" class="raja-voice-test-btn" onclick="refreshRajaVoicePicker(true)">↻ REFRESH VOICES</button>
                                         </div>
                                         <div id="rajaVoiceStatus" class="raja-voice-status">Loading the clearest English system voice available on this device…</div>
                                     </div>
@@ -6652,7 +6651,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     </section>
 
                     <section class="config-panel">
-                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.13.1 · ALL-PAIRS T-25 PRE-SCAN + T-15 PAIR ALERT + CLOSED-CANDLE FINAL · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
+                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.13.2 · 5-MIN ALL-PAIRS T-25 PRE-SCAN + VOICE PICKER + SAFE ENTRY TIMING · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
                         <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
                             <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
@@ -6791,6 +6790,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         let voiceAlertEnabled = rajaVoiceStored == null ? true : rajaVoiceStored === 'true';
         let rajaVoiceGender = localStorage.getItem('raja_voice_gender') === 'male' ? 'male' : 'female';
         let rajaVoiceSpeed = ['slow','normal','fast'].includes(localStorage.getItem('raja_voice_speed')) ? localStorage.getItem('raja_voice_speed') : 'normal';
+        let rajaVoiceName = localStorage.getItem('raja_voice_name') || '__AUTO__';
         let rajaSpeechVoices = [];
         let rajaSpeechActiveUtterance = null;
         let rajaLastSpeechText = '';
@@ -6896,6 +6896,47 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             updateRajaVoiceStatus();
         }
 
+        function rajaVoiceKey(voice) {
+            if (!voice) return '';
+            return [String(voice.voiceURI || ''), String(voice.name || ''), String(voice.lang || '')].join('|||');
+        }
+
+        function setRajaVoiceName(value) {
+            rajaVoiceName = String(value || '__AUTO__');
+            localStorage.setItem('raja_voice_name', rajaVoiceName);
+            updateRajaVoiceStatus();
+        }
+
+        function refreshRajaVoicePicker(testAfter = false) {
+            rajaRefreshSpeechVoices();
+            const picker = document.getElementById('rajaVoiceName');
+            if (!picker) return;
+            const previous = rajaVoiceName || '__AUTO__';
+            picker.innerHTML = '<option value="__AUTO__">✨ Auto Best English Voice</option>';
+            const voices = (rajaSpeechVoices || []).slice().sort((a,b) => {
+                const ae = String(a?.lang || '').toLowerCase().startsWith('en') ? 0 : 1;
+                const be = String(b?.lang || '').toLowerCase().startsWith('en') ? 0 : 1;
+                return ae - be || String(a?.name || '').localeCompare(String(b?.name || ''));
+            });
+            voices.forEach((voice, i) => {
+                const opt = document.createElement('option');
+                opt.value = rajaVoiceKey(voice);
+                const tags = [voice?.lang || 'unknown'];
+                if (voice?.default) tags.push('default');
+                if (voice?.localService) tags.push('local');
+                opt.textContent = `${voice?.name || ('Voice ' + (i+1))} · ${tags.join(' · ')}`;
+                picker.appendChild(opt);
+            });
+            const exists = previous === '__AUTO__' || voices.some(v => rajaVoiceKey(v) === previous);
+            if (!exists) {
+                rajaVoiceName = '__AUTO__';
+                localStorage.setItem('raja_voice_name', rajaVoiceName);
+            }
+            picker.value = rajaVoiceName;
+            updateRajaVoiceStatus();
+            if (testAfter) testSelectedRajaVoice();
+        }
+
         function rajaRefreshSpeechVoices() {
             if (!('speechSynthesis' in window)) {
                 rajaSpeechVoices = [];
@@ -6941,6 +6982,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 } catch (_) {}
             }
             if (!voices.length) return null;
+            if (rajaVoiceName && rajaVoiceName !== '__AUTO__') {
+                const exact = voices.find(v => rajaVoiceKey(v) === rajaVoiceName);
+                if (exact) return exact;
+            }
             const english = voices.filter(v => String(v?.lang || '').toLowerCase().startsWith('en'));
             const pool = english.length ? english : voices;
             return pool.slice().sort((a,b) => rajaVoiceScore(b, gender) - rajaVoiceScore(a, gender))[0] || null;
@@ -7001,24 +7046,22 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 return;
             }
             const chosen = getRajaPreferredVoice(rajaVoiceGender);
-            const label = rajaVoiceGender === 'male' ? 'Male' : 'Female';
+            const modeLabel = rajaVoiceName === '__AUTO__' ? 'Auto Best' : 'Selected';
             const speedLabel = rajaVoiceSpeed === 'slow' ? 'Slow / Extra Clear' : (rajaVoiceSpeed === 'fast' ? 'Fast' : 'Normal / Clear');
             const voiceName = chosen ? String(chosen.name || 'System English') : 'System English';
             const lang = chosen ? String(chosen.lang || 'en-US') : 'en-US';
-            status.innerHTML = `<strong>${label}</strong> · ${speedLabel} · ${voiceName} (${lang})${voiceAlertEnabled ? ' · Alerts ON' : ' · Alerts OFF'}`;
+            status.innerHTML = `<strong>${modeLabel}</strong> · ${speedLabel} · ${voiceName} (${lang})${voiceAlertEnabled ? ' · Alerts ON' : ' · Alerts OFF'}`;
         }
 
         function testRajaVoice(gender) {
             const selected = gender === 'male' ? 'male' : 'female';
-            speakRajaText(
-                selected === 'male'
-                    ? 'RAJA AI. Male voice test. Market intelligence is ready.'
-                    : 'RAJA AI. Female voice test. Market intelligence is ready.',
-                { gender:selected, force:true }
-            );
-            const status = document.getElementById('rajaVoiceStatus');
-            const voice = getRajaPreferredVoice(selected);
-            if (status) status.innerHTML = `<strong>${selected === 'male' ? 'Male' : 'Female'} test</strong> · ${voice ? String(voice.name || 'System English') : 'System English'} · ${rajaVoiceSpeed === 'slow' ? 'Slow / Extra Clear' : (rajaVoiceSpeed === 'fast' ? 'Fast' : 'Normal / Clear')}`;
+            speakRajaText('RAJA AI. Voice test. 10 seconds. 5. 4. 3. 2. 1. Enter now.', { gender:selected, force:true });
+        }
+
+        function testSelectedRajaVoice() {
+            try { unlockRajaAudioAndVoice(); } catch (_) {}
+            speakRajaText('RAJA AI. Selected voice test. 10 seconds. 5. 4. 3. 2. 1. Enter now.', { force:true });
+            updateRajaVoiceStatus();
         }
 
         function speakSignal(signalData, isBuy) {
@@ -7030,15 +7073,19 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const direction = isBuy ? 'CALL. UP signal.' : 'PUT. DOWN signal.';
             const expiry = rajaSpokenExpiry(selectedExpiry);
             const expectedMs = Number(signalData?.expectedEntryEpoch || 0) * 1000;
-            const isEntryNow = expectedMs > 0 && Date.now() >= expectedMs && Date.now() - expectedMs <= 6000;
-            speakRajaText(`RAJA AI. ${pair}. ${direction} ${expiry} expiry.${isEntryNow ? ' ENTER NOW.' : ''}`);
+            const nowMs = Date.now();
+            const lateByMs = expectedMs > 0 ? (nowMs - expectedMs) : null;
+            const isEntryNow = lateByMs !== null && lateByMs >= -1200 && lateByMs <= 5000;
+            const isTooLate = lateByMs !== null && lateByMs > 5000;
+            const timingText = isEntryNow ? ' ENTER NOW.' : (isTooLate ? ' TOO LATE. WAIT FOR NEXT SIGNAL.' : '');
+            speakRajaText(`RAJA AI. ${pair}. ${direction} ${expiry} expiry.${timingText}`);
         }
 
         if ('speechSynthesis' in window) {
             try {
-                window.speechSynthesis.addEventListener('voiceschanged', rajaRefreshSpeechVoices);
-                setTimeout(rajaRefreshSpeechVoices, 80);
-                setTimeout(rajaRefreshSpeechVoices, 700);
+                window.speechSynthesis.addEventListener('voiceschanged', () => refreshRajaVoicePicker(false));
+                setTimeout(() => refreshRajaVoicePicker(false), 80);
+                setTimeout(() => refreshRajaVoicePicker(false), 700);
             } catch (_) {}
         }
 
@@ -7489,7 +7536,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
 
         // =========================================================
-        // v1.13.1 · ALL-PAIRS 1m AUTO PRE-SCAN
+        // v1.13.2 · 5-MINUTE-CADENCE ALL-PAIRS 1m AUTO PRE-SCAN
         // T-25: silently scan EVERY pair in the selected market (no rotation cooldown)
         // T-15: announce the best completed candidate so the user can open the pair
         // T-10: lock/re-confirm the pair after retrying slow pairs
@@ -7498,6 +7545,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // Forming-candle PRE-SCAN never authorizes CALL/PUT.
         // =========================================================
         const RAJA_PRE_SCAN_START_LEAD_MS = 25000;
+        const RAJA_PRE_SCAN_CADENCE_MS = 5 * 60 * 1000;
         const RAJA_PRE_SCAN_ANNOUNCE_LEAD_MS = 15000;
         const RAJA_PRE_SCAN_LOCK_LEAD_MS = 10000;
         const RAJA_PRE_SCAN_COUNTDOWN_LEAD_MS = 5000;
@@ -7792,10 +7840,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         function armRajaCandlePreScanCycle(extraDelayMs = 0) {
             clearAutoRescanSchedule(false, true);
             if (!rajaUseOneMinutePreScan()) return;
-            let targetOpenMs = (Math.floor(Date.now() / 60000) + 1) * 60000;
-            let preAt = targetOpenMs - RAJA_PRE_SCAN_START_LEAD_MS;
+            // Keep Auto Scan on a true 5-minute cadence. We align the target candle
+            // to the next 5-minute boundary, then start the all-pairs pre-scan T-25s.
+            // This preserves the user's 5-minute Auto Re-Scan preference while still
+            // giving the T-15 / T-10 / T-5..1 voice workflow before final confirmation.
             const minimum = Date.now() + Math.max(1000, Number(extraDelayMs || 0));
-            while (preAt < minimum) { targetOpenMs += 60000; preAt = targetOpenMs - RAJA_PRE_SCAN_START_LEAD_MS; }
+            let targetOpenMs = Math.ceil((minimum + RAJA_PRE_SCAN_START_LEAD_MS) / RAJA_PRE_SCAN_CADENCE_MS) * RAJA_PRE_SCAN_CADENCE_MS;
+            let preAt = targetOpenMs - RAJA_PRE_SCAN_START_LEAD_MS;
+            while (preAt < minimum) { targetOpenMs += RAJA_PRE_SCAN_CADENCE_MS; preAt = targetOpenMs - RAJA_PRE_SCAN_START_LEAD_MS; }
             nextAutoRescanAt = preAt;
             localStorage.setItem('raja_next_auto_rescan_at', String(nextAutoRescanAt));
             updateAutoRescanUI();
@@ -7839,9 +7891,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             state.style.color = '#00ff87';
             card.style.borderColor = 'rgba(0,255,135,.28)';
             if (nextAutoRescanAt > Date.now()) {
-                countdown.innerText = (rajaUseOneMinutePreScan() ? 'Next 15s Pre-Scan in ' : 'Next Re-Scan in ') + formatCountdown(nextAutoRescanAt - Date.now());
+                countdown.innerText = (rajaUseOneMinutePreScan() ? 'Next 5m Pre-Scan in ' : 'Next Re-Scan in ') + formatCountdown(nextAutoRescanAt - Date.now());
             } else {
-                countdown.innerText = rajaUseOneMinutePreScan() ? 'Next 15s Pre-Scan: READY' : 'Next Re-Scan: READY';
+                countdown.innerText = rajaUseOneMinutePreScan() ? 'Next 5m Pre-Scan: READY' : 'Next Re-Scan: READY';
             }
         }
 
@@ -10096,7 +10148,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         function hydrateUpgradeSettings() {
             setScanMode(scanMode);
             const map={customMinTf:customScanSettings.min_tf,customMinAgreement:customScanSettings.min_agreement,customMinScore:customScanSettings.min_score,customVolMin:customScanSettings.vol_min,customVolMax:customScanSettings.vol_max,guardMaxTrades:guardSettings.maxTrades,guardMaxLosses:guardSettings.maxLosses};
-            Object.entries(map).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;}); const ge=document.getElementById('guardEnabled');if(ge)ge.checked=guardSettings.enabled!==false;const ve=document.getElementById('voiceAlertEnabled');if(ve)ve.checked=voiceAlertEnabled;const vg=document.getElementById('rajaVoiceGender');if(vg)vg.value=rajaVoiceGender;const vs=document.getElementById('rajaVoiceSpeed');if(vs)vs.value=rajaVoiceSpeed;rajaRefreshSpeechVoices();updateRajaVoiceStatus();updateDailyPerformance();
+            Object.entries(map).forEach(([id,v])=>{const el=document.getElementById(id);if(el)el.value=v;}); const ge=document.getElementById('guardEnabled');if(ge)ge.checked=guardSettings.enabled!==false;const ve=document.getElementById('voiceAlertEnabled');if(ve)ve.checked=voiceAlertEnabled;const vs=document.getElementById('rajaVoiceSpeed');if(vs)vs.value=rajaVoiceSpeed;rajaRefreshSpeechVoices();refreshRajaVoicePicker(false);updateRajaVoiceStatus();updateDailyPerformance();
         }
 
         function updateStabilityUI(signalData) {
@@ -14359,8 +14411,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         if (remainingMs <= 0 && !rajaCountdownDone.has(0)) {
             rajaCountdownDone.add(0);
-            rajaEnterNowAlert();
-            rajaSpeak('ENTER NOW');
+            const lateByMs = Math.abs(remainingMs);
+            if (lateByMs <= 5000) {
+                rajaEnterNowAlert();
+                rajaSpeak('ENTER NOW');
+            } else {
+                rajaSpeak('TOO LATE. WAIT FOR NEXT SIGNAL.');
+            }
         }
     }
 
