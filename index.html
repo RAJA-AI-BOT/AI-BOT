@@ -6112,7 +6112,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div class="v31-system-strip" aria-label="RAJA AI command status">
                                 <div class="v31-system-chip"><span>SYSTEM</span><b id="v31SystemState">LIVE</b></div>
                                 <div class="v31-system-chip"><span>MARKET</span><b id="v31MarketState">CRYPTO LIVE</b></div>
-                                <div class="v31-system-chip"><span>MODE</span><b id="v31ModeState">SAFE</b></div>
+                                <div class="v31-system-chip"><span>MODE</span><b id="v31ModeState">BALANCED</b></div>
                                 <div class="v31-system-chip"><span>EXPIRY</span><b id="v31ExpiryState">1m</b></div>
                                 <button class="v31-system-chip v31-alert-chip" id="v31AlertState" type="button" onclick="openSettingsInline()"><span>ALERTS</span><b>ON</b></button>
                             </div>
@@ -6126,17 +6126,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         <div class="v23-command-deck">
                             <div class="v23-command-label">QUICK SCAN PRESETS</div>
                             <div class="v23-presets">
-                                <button type="button" onclick="applyRajaModePreset('SAFE',this)" class="active">🛡 SAFE</button>
-                                <button type="button" onclick="applyRajaPreset('BALANCED','1m',this)">⚖ BALANCED <b>1m</b></button>
+                                <button type="button" onclick="applyRajaModePreset('SAFE',this)">🛡 SAFE</button>
+                                <button type="button" onclick="applyRajaPreset('BALANCED','1m',this)" class="active">⚖ BALANCED <b>1m</b></button>
                                 <button type="button" onclick="applyRajaPreset('BALANCED','5m',this)">🎯 TREND <b>5m</b></button>
                             </div>
                             <div class="v23-view-toggle" role="group" aria-label="Dashboard density">
                                 <button id="v23CompactBtn" type="button" onclick="setRajaViewMode('compact')">COMPACT</button>
                                 <button id="v23ProBtn" type="button" onclick="setRajaViewMode('pro')" class="active">PRO VIEW</button>
                             </div>
-                            <div class="v23-ready-line"><span></span><b id="v23HeroStatus">SAFE MODE READY</b></div>
+                            <div class="v23-ready-line"><span></span><b id="v23HeroStatus">BALANCED MODE READY</b></div>
                             <button id="v31HeroScanBtn" class="v31-hero-scan" type="button" onclick="playClickSound(); startDeepScan(false)">
-                                <span>▶ START DEEP SCAN</span><small>SAFE ENGINE · LIVE DATA</small>
+                                <span>▶ START DEEP SCAN</span><small>BALANCED ENGINE · LIVE DATA</small>
                             </button>
                         </div>
                     </section>
@@ -6651,7 +6651,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     </section>
 
                     <section class="config-panel">
-                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.11.1 PRECISION DATA MODE · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
+                        <div class="config-title">TRADING CONFIGURATION</div><div class="market-notice" style="margin-top:6px">v1.11.2 BALANCED SIGNAL MODE · Quotex OTC CALL/PUT requires a fresh exact personal/shared bridge feed; reference fallback is information-only when exact Quotex data is offline. Forex Live + Crypto Live use configured live/reference providers. Direction is generated from the selected CLOSED expiry timeframe with S/R, regime, stability and late-entry protection. No reference candle is labelled exact broker execution data.</div>
                         <div class="mobile-hub-grid" aria-label="Quick navigation while scanning">
                             <button type="button" class="mobile-hub-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             <button type="button" class="mobile-hub-btn" onclick="openHistoryInline()">📊 History</button>
@@ -6664,7 +6664,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: strongest selected-timeframe precision gates, S/R + regime + late-entry protection.</div></div>
+                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn active" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Balanced: selected closed timeframe with structure/regime confirmation and moderate quality floors.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button><button class="expiry-btn" data-time="1h" onclick="playClickSound(); setExpiry(this,'1h')">1h</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
@@ -6766,8 +6766,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         let activeSignalEntryEpochMs = null;
         let activeTrackedSignalId = null;
         let backendTrackedHistory = [];
-        let scanMode = 'SAFE';
-        try { localStorage.setItem('raja_scan_mode', 'SAFE'); } catch (_) {}
+        let rajaSavedScanMode = String(localStorage.getItem('raja_scan_mode') || '').toUpperCase();
+        try {
+            // v1.11.1 forced SAFE on every page load. Migrate that legacy forced default once,
+            // then preserve whatever mode the user explicitly chooses from now on.
+            if (localStorage.getItem('raja_mode_migrated_v112') !== '1') {
+                rajaSavedScanMode = 'BALANCED';
+                localStorage.setItem('raja_scan_mode', rajaSavedScanMode);
+                localStorage.setItem('raja_mode_migrated_v112', '1');
+            }
+        } catch (_) {}
+        let scanMode = ['SAFE','BALANCED','AGGRESSIVE','CUSTOM'].includes(rajaSavedScanMode) ? rajaSavedScanMode : 'BALANCED';
         const rajaVoiceStored = localStorage.getItem('raja_voice_alert');
         let voiceAlertEnabled = rajaVoiceStored == null ? true : rajaVoiceStored === 'true';
         let rajaVoiceGender = localStorage.getItem('raja_voice_gender') === 'male' ? 'male' : 'female';
@@ -6833,7 +6842,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function setScanMode(mode) {
-            scanMode = ['SAFE','BALANCED','AGGRESSIVE','CUSTOM'].includes(String(mode).toUpperCase()) ? String(mode).toUpperCase() : 'SAFE';
+            scanMode = ['SAFE','BALANCED','AGGRESSIVE','CUSTOM'].includes(String(mode).toUpperCase()) ? String(mode).toUpperCase() : 'BALANCED';
             localStorage.setItem('raja_scan_mode', scanMode);
             document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.mode === scanMode));
             const copy = {
@@ -8993,7 +9002,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),confirmationMode:data.confirmation_mode||`${String(data.selected_timeframe||selectedExpiry).toUpperCase()} ONLY Deep Scan`,duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Market Provider',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used),selectedTimeframe:data.selected_timeframe||selectedExpiry,selectedTfOnly:Boolean(data.selected_tf_only),analysisEngine:data.analysis_engine||'selected_timeframe_balanced_precision_v111',indicatorAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),indicatorConfirmations:Array.isArray(data.indicator_confirmations)?data.indicator_confirmations:[],indicatorOpposition:Array.isArray(data.indicator_opposition)?data.indicator_opposition:[],indicatorBreakdown:data.indicator_breakdown||{},confirmationCount:Number(data.confirmation_count||0),marketRegime:data.market_regime||'',support:data.support,resistance:data.resistance,breakout:data.breakout||'',retest:data.retest||'',technicalQuality:Number(data.technical_quality??data.score??0),lateEntryRisk:Boolean(data.late_entry_risk)};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),confirmationMode:data.confirmation_mode||`${String(data.selected_timeframe||selectedExpiry).toUpperCase()} ONLY Deep Scan`,duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Market Provider',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used),selectedTimeframe:data.selected_timeframe||selectedExpiry,selectedTfOnly:Boolean(data.selected_tf_only),analysisEngine:data.analysis_engine||'selected_timeframe_balanced_signal_v112',indicatorAgreement:Number(data.indicator_agreement_pct??data.multi_tf_agreement??0),indicatorConfirmations:Array.isArray(data.indicator_confirmations)?data.indicator_confirmations:[],indicatorOpposition:Array.isArray(data.indicator_opposition)?data.indicator_opposition:[],indicatorBreakdown:data.indicator_breakdown||{},confirmationCount:Number(data.confirmation_count||0),marketRegime:data.market_regime||'',support:data.support,resistance:data.resistance,breakout:data.breakout||'',retest:data.retest||'',technicalQuality:Number(data.technical_quality??data.score??0),lateEntryRisk:Boolean(data.late_entry_risk)};
         }
 
 
@@ -9553,7 +9562,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             late_entry_risk: signalData.lateEntryRisk
                         },
                         selected_timeframe: signalData.selectedTimeframe || selectedExpiry,
-                        analysis_engine: signalData.analysisEngine || 'selected_timeframe_balanced_precision_v111',
+                        analysis_engine: signalData.analysisEngine || 'selected_timeframe_balanced_signal_v112',
                         indicator_confirmations: signalData.indicatorConfirmations || [],
                         indicator_breakdown: signalData.indicatorBreakdown || {},
                         market_regime: signalData.marketRegime, support: signalData.support, resistance: signalData.resistance,
@@ -11975,9 +11984,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (market) market.textContent = v31MarketLabel();
 
             try {
-                if (mode) mode.textContent = String(scanMode || 'SAFE').toUpperCase();
+                if (mode) mode.textContent = String(scanMode || 'BALANCED').toUpperCase();
             } catch (_) {
-                if (mode) mode.textContent = 'SAFE';
+                if (mode) mode.textContent = 'BALANCED';
             }
 
             try {
@@ -12644,7 +12653,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 opposingTimeframes:Array.isArray(item?.opposingTimeframes) ? item.opposingTimeframes : [],
                 multiTfAgreement:Number(item?.agreement || 0),
                 confirmationMode:`FALLBACK REFERENCE · ${String(item?.requiredTf||selectedExpiry).toUpperCase()} ONLY`,
-                selectedTimeframe:String(item?.requiredTf||selectedExpiry||'1m'), selectedTfOnly:true, analysisEngine:'selected_timeframe_balanced_precision_v111',
+                selectedTimeframe:String(item?.requiredTf||selectedExpiry||'1m'), selectedTfOnly:true, analysisEngine:'selected_timeframe_balanced_signal_v112',
                 indicatorAgreement:Number(item?.agreement||0), confirmationCount:Number(item?.confirmedCount||0), marketRegime:String(representative?.market_regime||''),
                 technicalQuality:confidence, indicatorConfirmations:Array.isArray(representative?.indicator_confirmations)?representative.indicator_confirmations:[], indicatorBreakdown:representative?.indicator_breakdown||{},
                 duplicateProtection:false,
