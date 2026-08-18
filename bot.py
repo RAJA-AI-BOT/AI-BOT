@@ -320,6 +320,9 @@ YAHOO_SEMAPHORE_WAIT_SECONDS = max(2.0, min(25.0, float(os.environ.get("RAJA_YAH
 # Reject market candles that are too old for a live 1-minute trading decision.
 # This prevents a freshly-downloaded but old weekend/closed-market candle from being labelled "fresh".
 MAX_SOURCE_CANDLE_AGE_SECONDS = max(120, min(3600, int(os.environ.get("RAJA_MAX_SOURCE_CANDLE_AGE", "300"))))
+# Precision gate: a signal derived from a just-closed candle must be acted on near the next candle open.
+# If analysis arrives too late, return NO SIGNAL instead of rolling the old setup into another candle.
+MAX_SIGNAL_ENTRY_DELAY_SECONDS = max(5, min(45, int(os.environ.get("RAJA_MAX_SIGNAL_ENTRY_DELAY_SECONDS", "25"))))
 # Browser batch timeout is 90s. Keep the backend deadline comfortably below that
 # so slow Yahoo symbols become a safe PARTIAL response instead of a browser failure.
 # 58s also leaves headroom for auth, news-safety checks, DB work and network latency.
@@ -2811,13 +2814,20 @@ def get_market_data(pair, bridge_user=None, broker=None):
         if shared_df is not None and not shared_df.empty:
             return shared_df, shared_age, shared_symbol, shared_info
         fallback_allowed = bool(QUOTEX_REFERENCE_FALLBACK_ENABLED and HYBRID_OTC_FALLBACK_ENABLED)
-        if not fallback_allowed:
+        # Accuracy-first policy: when exact Quotex OTC is required, NEVER emit a trade
+        # from an underlying/reference proxy. The proxy can still be exposed by the
+        # dedicated fallback snapshot endpoint for information only.
+        if RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC or not fallback_allowed:
             unavailable = dict(shared_info or {})
             unavailable.update({
                 'source': 'Quotex Exact Feed Offline',
                 'source_mode': 'broker_otc_exact_unavailable',
                 'exact_broker_feed': False,
-                'unavailable_reason': (shared_info or {}).get('unavailable_reason') or 'Exact Quotex OTC master feed is offline and OTC reference fallback is disabled.'
+                'unavailable_reason': (shared_info or {}).get('unavailable_reason') or (
+                    'Exact Quotex OTC feed is required for precision mode. Reference/underlying data is not allowed to create CALL/PUT signals.'
+                    if RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC
+                    else 'Exact Quotex OTC master feed is offline and OTC reference fallback is disabled.'
+                )
             })
             return None, shared_age, shared_symbol, unavailable
         ref = _reference_provider_chain(pair)
@@ -3113,14 +3123,14 @@ def _selected_tf_gate_profile(timeframe, scan_options=None):
     mode = str(opts.get("mode") or "BALANCED").strip().upper()
     presets = {
         "SAFE": {
-            "min_edge": 4.0, "min_points": 6.4, "min_confirmations": 6,
-            "min_core": 3, "min_score": 84.0, "max_stretch_atr": 1.25,
-            "max_body_atr": 1.45, "require_regime_core": True,
+            "min_edge": 4.35, "min_points": 6.75, "min_confirmations": 6,
+            "min_core": 3, "min_score": 86.0, "max_stretch_atr": 1.05,
+            "max_body_atr": 1.35, "require_regime_core": True,
         },
         "BALANCED": {
-            "min_edge": 3.1, "min_points": 5.4, "min_confirmations": 5,
-            "min_core": 2, "min_score": 74.0, "max_stretch_atr": 1.55,
-            "max_body_atr": 1.75, "require_regime_core": True,
+            "min_edge": 3.35, "min_points": 5.75, "min_confirmations": 5,
+            "min_core": 3, "min_score": 77.0, "max_stretch_atr": 1.30,
+            "max_body_atr": 1.55, "require_regime_core": True,
         },
         "AGGRESSIVE": {
             "min_edge": 2.35, "min_points": 4.5, "min_confirmations": 4,
@@ -3137,11 +3147,12 @@ def _selected_tf_gate_profile(timeframe, scan_options=None):
     profile = dict(presets.get(mode, presets["BALANCED"]))
     # Short expiries are deliberately more selective.
     if timeframe == "1m":
-        profile["min_edge"] += 0.55
-        profile["min_points"] += 0.45
+        profile["min_edge"] += 0.70
+        profile["min_points"] += 0.60
         profile["min_confirmations"] += 1
         profile["min_score"] += 2.0
-        profile["max_stretch_atr"] = min(profile["max_stretch_atr"], 1.20)
+        profile["max_stretch_atr"] = min(profile["max_stretch_atr"], 0.90)
+        profile["max_body_atr"] = min(profile["max_body_atr"], 1.25)
     elif timeframe == "2m":
         profile["min_edge"] += 0.30
         profile["min_points"] += 0.25
@@ -3245,6 +3256,11 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
     bullish_retest = bool(old_res is not None and len(recent3) and safe_float(recent3["Close"].max(), 0) > old_res and candle_low <= old_res + 0.25 * atr and price > old_res)
     bearish_retest = bool(old_sup is not None and len(recent3) and safe_float(recent3["Close"].min(), price) < old_sup and candle_high >= old_sup - 0.25 * atr and price < old_sup)
 
+    # Precision continuation trigger: trend must show a controlled pullback/reclaim,
+    # not just stacked lagging indicators after price has already run.
+    bullish_trend_pullback = bool(ema_bullish and candle_low <= ema9 + 0.18 * atr and price > ema9 and bullish_candle and body_atr <= 1.10)
+    bearish_trend_pullback = bool(ema_bearish and candle_high >= ema9 - 0.18 * atr and price < ema9 and bearish_candle and body_atr <= 1.10)
+
     bb_width_atr = (bb_up - bb_low) / atr if atr else 0.0
     ema_spread_atr = abs(ema9 - ema50) / atr if atr else 0.0
     regime = "TREND" if adx_now >= 22 and ema_spread_atr >= 0.35 else "RANGE"
@@ -3321,6 +3337,10 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
     elif near_resistance and bearish_rejection: add("PUT", 1.00, "SR_REJECTION", True)
     else: breakdown["SUPPORT_RESISTANCE"] = "NEUTRAL"
 
+    if bullish_trend_pullback: add("CALL", 1.10, "TREND_PULLBACK", True)
+    elif bearish_trend_pullback: add("PUT", 1.10, "TREND_PULLBACK", True)
+    else: breakdown["TREND_PULLBACK"] = "NEUTRAL"
+
     if volume_bullish: add("CALL", 0.60, "VOLUME")
     elif volume_bearish: add("PUT", 0.60, "VOLUME")
     else: breakdown["VOLUME"] = "NEUTRAL"
@@ -3349,8 +3369,19 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
 
     stretch_atr = abs(price - ema9) / atr if atr else 0.0
     extreme_rsi = (signal == "CALL" and rsi >= 73) or (signal == "PUT" and rsi <= 27)
-    obstacle = (signal == "CALL" and near_resistance and not (bullish_breakout or bullish_retest)) or (signal == "PUT" and near_support and not (bearish_breakout or bearish_retest))
     profile = _selected_tf_gate_profile(timeframe, scan_options)
+    # On 1m, opposing structure needs more room because one small wick can decide the expiry.
+    obstacle_buffer_atr = 0.75 if timeframe == "1m" else 0.45
+    obstacle = (
+        signal == "CALL" and resistance is not None and -0.15 <= dist_resistance_atr <= obstacle_buffer_atr and not (bullish_breakout or bullish_retest)
+    ) or (
+        signal == "PUT" and support is not None and -0.15 <= dist_support_atr <= obstacle_buffer_atr and not (bearish_breakout or bearish_retest)
+    )
+    directional_candle_ok = (signal == "CALL" and bullish_candle) or (signal == "PUT" and bearish_candle)
+    structural_trigger = (
+        (signal == "CALL" and (bullish_breakout or bullish_retest or (near_support and bullish_rejection) or bullish_trend_pullback))
+        or (signal == "PUT" and (bearish_breakout or bearish_retest or (near_resistance and bearish_rejection) or bearish_trend_pullback))
+    )
 
     # Score is a technical-quality score, not a promised win probability.
     score = 54.0 + edge * 5.0 + len(set(chosen_conf)) * 1.55 + core_support * 1.4
@@ -3374,6 +3405,12 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
         reject_reason = f"Selected {timeframe} has only {len(set(chosen_conf))} confirmations; {profile['min_confirmations']} required in {profile['mode']} mode."
     elif core_support < profile["min_core"]:
         reject_reason = f"Selected {timeframe} core trend/momentum confirmation is too weak ({core_support}/{profile['min_core']})."
+    elif timeframe == "1m" and core_opposition > 1:
+        reject_reason = f"Precision 1m blocked: too much core opposition ({core_opposition} opposing core confirmations)."
+    elif timeframe == "1m" and not directional_candle_ok:
+        reject_reason = "Precision 1m blocked: the latest closed candle did not confirm the proposed direction."
+    elif timeframe == "1m" and not structural_trigger:
+        reject_reason = "Precision 1m blocked: no fresh breakout/retest/SR rejection/trend-pullback trigger."
     elif profile["require_regime_core"] and regime == "TREND" and not ((signal == "CALL" and ema_bullish and adx_bullish) or (signal == "PUT" and ema_bearish and adx_bearish)):
         reject_reason = f"Selected {timeframe} trend regime lacks EMA + ADX/DI alignment."
     elif profile["require_regime_core"] and regime == "RANGE" and not (((signal == "CALL") and ((near_support and bullish_rejection) or bullish_breakout or bullish_retest)) or ((signal == "PUT") and ((near_resistance and bearish_rejection) or bearish_breakout or bearish_retest))):
@@ -3406,6 +3443,8 @@ def analyze_timeframe(df, timeframe, scan_options=None, selected_only=False):
         "distance_support_atr": round(dist_support_atr, 3), "distance_resistance_atr": round(dist_resistance_atr, 3),
         "breakout": "CALL" if bullish_breakout else ("PUT" if bearish_breakout else ""),
         "retest": "CALL" if bullish_retest else ("PUT" if bearish_retest else ""),
+        "trend_pullback": "CALL" if bullish_trend_pullback else ("PUT" if bearish_trend_pullback else ""),
+        "structural_trigger": bool(structural_trigger), "directional_candle_ok": bool(directional_candle_ok),
         "roc3_pct": round(roc3, 5), "ema_slope_atr": round(ema_slope_atr, 4),
         "volume_ratio": round(volume_ratio, 3) if volume_ratio else 0.0,
         "stretch_atr": round(stretch_atr, 3), "body_atr": round(body_atr, 3),
@@ -3665,6 +3704,16 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
     if selected.get("signal") not in {"CALL", "PUT"}:
         return rejected(selected.get("reason") or f"Selected {selected_tf} timeframe did not pass deep-scan quality gates.")
 
+    # Entry-timing integrity: do not carry a valid setup forward after its next-candle
+    # entry window has already passed. This is especially important on 1m expiry.
+    closed_epoch = int(selected.get("closed_candle_epoch") or 0)
+    expected_entry_epoch = closed_epoch + int(minutes * 60) if closed_epoch else 0
+    entry_delay_seconds = max(0, int(time.time()) - expected_entry_epoch) if expected_entry_epoch else 0
+    if expected_entry_epoch and entry_delay_seconds > MAX_SIGNAL_ENTRY_DELAY_SECONDS:
+        return rejected(
+            f"Precision timing block: selected {selected_tf} setup is {entry_delay_seconds}s late for the next-candle entry window."
+        )
+
     signal = selected["signal"]
     indicator_quality = float(selected.get("indicator_agreement_pct") or 0.0)
     technical_score = float(selected.get("score") or 0.0)
@@ -3707,6 +3756,8 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "timeframe_summary": summary, "multi_tf_agreement": round(indicator_quality, 1),
         "selected_expiry": selected_expiry, "required_expiry_timeframe": selected_tf,
         "selected_timeframe": selected_tf, "selected_tf_only": True,
+        "expected_entry_epoch": expected_entry_epoch or None, "entry_delay_seconds": entry_delay_seconds,
+        "max_entry_delay_seconds": MAX_SIGNAL_ENTRY_DELAY_SECONDS,
         "confirmation_mode": f"{opts['mode']} · {selected_tf.upper()} ONLY · SELECTED-TF DEEP SCAN",
         "analysis_engine": "selected_timeframe_deep_scan_v19",
         "indicator_agreement_pct": round(indicator_quality, 1),
@@ -4241,7 +4292,7 @@ def health():
 
     return jsonify({
         "status": "success",
-        "service": "RAJA AI multi-timeframe backend · v1.8 YAHOO LIVE + ACCURACY",
+        "service": "RAJA AI backend · v1.10 PRECISION + EXACT OTC",
         "app_build": APP_BUILD_ID,
         "license_store_ready": bool(_license_store_ready.is_set()),
         "yahoo_pairs": len(YAHOO_SYMBOLS),
@@ -4267,7 +4318,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "6-of-7 Accuracy Focus",
+        "confirmation_mode": "Selected-TF Precision · structural trigger + exact OTC + entry timing",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -4858,7 +4909,20 @@ def track_signal():
         return jsonify({"status": "success", "auto_tracking": False,
                         "message": "This expiry is not supported by the closed-candle outcome tracker."})
     now = int(time.time()); duration = AUTO_TRACK_EXPIRIES[expiry]
-    entry_epoch = ((now // duration) + 1) * duration; expiry_epoch = entry_epoch + duration
+    selected_tf = str(data.get("selected_timeframe") or expiry)
+    tf_row = timeframe_summary.get(selected_tf) if isinstance(timeframe_summary, dict) else None
+    closed_epoch = int((tf_row or {}).get("closed_candle_epoch") or 0)
+    # Anchor tracking to the candle that actually generated the signal. Never roll an
+    # old setup into a later candle simply because /track-signal was called late.
+    entry_epoch = closed_epoch + duration if closed_epoch else ((now // duration) + 1) * duration
+    late_by = max(0, now - entry_epoch)
+    if late_by > MAX_SIGNAL_ENTRY_DELAY_SECONDS:
+        return jsonify({
+            "status": "success", "auto_tracking": False, "late_signal": True,
+            "entry_epoch": entry_epoch, "late_by_seconds": late_by,
+            "message": "Signal entry window already passed. Wait for a fresh closed-candle setup."
+        })
+    expiry_epoch = entry_epoch + duration
     signal_id = "sig_" + secrets.token_hex(8)
     item = {
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
@@ -5125,7 +5189,11 @@ def scan_batch():
 
     options_key = (opts["mode"], opts["min_tf"], opts["min_agreement"], opts["min_score"], opts["vol_min"], opts["vol_max"])
     bridge_cache_user = auth["user"] if broker.casefold() == "quotex" and any("(OTC)" in p for p in pairs) else ""
-    key = (broker, bridge_cache_user, selected_expiry, tuple(pairs), options_key); now = time.time()
+    now = time.time()
+    selected_duration = int(AUTO_TRACK_EXPIRIES.get(selected_expiry, 60) or 60)
+    analysis_bucket = int(now // selected_duration)
+    # A cached 1m/2m result must never leak into the next analysis candle.
+    key = (broker, bridge_cache_user, selected_expiry, analysis_bucket, tuple(pairs), options_key)
     with batch_cache_lock:
         cached = batch_cache.get(key)
         if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
