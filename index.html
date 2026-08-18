@@ -13955,7 +13955,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         });
     }
 
-    /* Entry countdown: 10, 5, 3, 2, 1, ENTER NOW. */
+    /* Entry countdown: 10 seconds, then 5, 4, 3, 2, 1, ENTER NOW.
+       IMPORTANT: this follows the real server/local entry epoch. We never invent a
+       delayed entry just to force a countdown; if the confirmed signal arrives at
+       the candle open, ENTER NOW is the correct timing instruction. */
     function rajaCountdownWatcher() {
         const entryMs = (typeof activeSignalEntryEpochMs !== 'undefined')
             ? Number(activeSignalEntryEpochMs || 0) : 0;
@@ -13970,17 +13973,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             rajaCountdownDone.clear();
         }
 
-        const sec = Math.ceil((entryMs - Date.now()) / 1000);
+        const remainingMs = entryMs - Date.now();
+        const sec = Math.ceil(remainingMs / 1000);
 
-        [10, 5, 3, 2, 1].forEach(n => {
+        [10, 5, 4, 3, 2, 1].forEach(n => {
             if (sec === n && !rajaCountdownDone.has(n)) {
                 rajaCountdownDone.add(n);
                 rajaCountdownAlert(n);
-                rajaSpeak(String(n));
+                rajaSpeak(n === 10 ? '10 seconds' : String(n));
             }
         });
 
-        if (sec <= 0 && !rajaCountdownDone.has(0)) {
+        if (remainingMs <= 0 && !rajaCountdownDone.has(0)) {
             rajaCountdownDone.add(0);
             rajaEnterNowAlert();
             rajaSpeak('ENTER NOW');
@@ -14019,7 +14023,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         rajaOutcomeWatcher();
         rajaCountdownWatcher();
         rajaExpiryWatcher();
-    }, 500);
+    }, 200);
 })();
 </script>
 
