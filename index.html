@@ -6395,7 +6395,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                                     
 
-                                    <div id="advancedFiltersInfo" class="advanced-filters"><span>RSI:✔</span> | <span>EMA:✔</span> | <span>BB:✔</span> | <span>MACD:✔</span> | <span>Pattern:✔</span> | <span>Multi-TF:✔</span> | <span>Wicks:✔</span> | <span>Circuit:SAFE</span></div>
+                                    <div id="advancedFiltersInfo" class="advanced-filters"><span>S/R:✔</span> | <span>EMA:✔</span> | <span>MACD:✔</span> | <span>RSI+DIV:✔</span> | <span>STOCH RSI:✔</span> | <span>FULL BB:✔</span> | <span>ATR:✔</span> | <span>ADX/DI:✔</span> | <span>Multi-TF:✔</span> | <span>Wick@S/R:✔</span></div>
                                     <div id="signalConfidenceRing" class="signal3d-confidence"><div><strong>--</strong><span>CONFIDENCE</span></div></div>
                                     <div class="mtf-heading psr-mtf-heading">SAME PAIR · MULTI-TIMEFRAME DIRECTION</div>
                                     <div id="tfBreakdown" class="tf-breakdown"></div>
@@ -6731,7 +6731,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     </div>
 
     <script>
-        const KEY_VERSION = "v15-premium-intelligence";
+        const KEY_VERSION = "v15-raja-hybrid-97";
 
         // Never clear the full browser storage on a frontend update. Clearing it used to
         // regenerate the device UID and could make a valid device-bound license look like
@@ -7719,8 +7719,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const messages = [
                 'Synchronizing closed 1m candles...',
                 'Building 2m / 5m / 10m / 15m / 30m structures...',
-                'Checking RSI, EMA, MACD and Bollinger alignment...',
-                'Evaluating trend, momentum and volatility filters...',
+                'Checking S/R, EMA, MACD, RSI divergence and StochRSI timing...',
+                'Evaluating full Bollinger, ATR, ADX/DI and wick-at-level context...',
                 'Scanning eligible assets for multi-TF convergence...',
                 'Ranking high-quality setups and entry conditions...'
             ];
@@ -8996,7 +8996,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),deepQualityScore:Number(data.deep_quality_score||0),deepQualityComponents:data.deep_quality_components||{},deepScanMode:data.deep_scan_mode||'',chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,stochRsiK:data.stoch_rsi_k,stochRsiD:data.stoch_rsi_d,rsiDivergence:data.rsi_divergence||'NONE',bbContext:data.bb_context||'--',support:data.support,resistance:data.resistance,srContext:data.sr_context||'--',hybridEngine:data.hybrid_engine||'',bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),deepQualityScore:Number(data.deep_quality_score||0),deepQualityComponents:data.deep_quality_components||{},deepScanMode:data.deep_scan_mode||'',chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
         }
 
 
@@ -10008,8 +10008,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if(!signalData)return; updateSetupBuildMeterSignal(signalData);
             const isBuy=String(signalData.dir||'').includes('CALL'), conf=Number(signalData.confluence||0), agreement=Number(signalData.multiTfAgreement||0), aligned=(signalData.alignedTimeframes||[]).length, risk=String(signalData.marketRiskLevel||'--').toUpperCase(), vol=Number(signalData.volatilityPct||0);
             const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;};
-            set('explainTrend',isBuy?'Bullish':'Bearish'); set('explainTrendSub',isBuy?'Higher-TF bias points upward':'Higher-TF bias points downward'); set('explainMomentum',conf>=85?'Very Strong':(conf>=70?'Strong':'Moderate')); set('explainMomentumSub',`Technical confluence ${conf.toFixed(1)}%`); set('explainAgreement',`${aligned||'--'}/6 · ${agreement.toFixed(0)}%`); set('explainAgreementSub','Aligned valid timeframes'); set('explainExpiry',`${selectedExpiry} Confirmed`); set('explainExpirySub','Selected expiry timeframe aligned'); set('explainVolatility',risk==='LOW'?'Normal / Stable':(risk==='MEDIUM'?'Moderate':'Elevated')); set('explainVolatilitySub',`ATR ${vol.toFixed(4)}% · Risk ${risk}`);
-            set('aiExplanationSummary',`${isBuy?'BUY':'SELL'} setup confirmed because the dominant trend, momentum, multi-timeframe agreement and selected ${selectedExpiry} expiry are aligned. This is a technical model assessment, not a guaranteed outcome.`);
+            set('explainTrend',isBuy?'Bullish':'Bearish'); set('explainTrendSub',`${signalData?.srContext||'S/R context'} · EMA/MACD trend`); set('explainMomentum',conf>=85?'Very Strong':(conf>=70?'Strong':'Moderate')); set('explainMomentumSub',`RSI ${Number(signalData?.rsi||0).toFixed(1)} · Stoch ${Number(signalData?.stochRsiK||0).toFixed(0)}/${Number(signalData?.stochRsiD||0).toFixed(0)} · Div ${signalData?.rsiDivergence||'NONE'}`); set('explainAgreement',`${aligned||'--'}/6 · ${agreement.toFixed(0)}%`); set('explainAgreementSub','Aligned valid timeframes'); set('explainExpiry',`${selectedExpiry} Confirmed`); set('explainExpirySub',`${signalData?.bbContext||'Full Bollinger context'} · selected TF aligned`); set('explainVolatility',risk==='LOW'?'Normal / Stable':(risk==='MEDIUM'?'Moderate':'Elevated')); set('explainVolatilitySub',`ATR ${vol.toFixed(4)}% · ADX/DI safety · Risk ${risk}`);
+            set('aiExplanationSummary',`${isBuy?'BUY':'SELL'} setup passed weighted RAJA Hybrid checks: S/R location, EMA/MACD trend, RSI + StochRSI timing, full Bollinger context, ATR/ADX safety and multi-timeframe agreement. This is a technical model assessment, not a guaranteed outcome.`);
             renderOpportunityQueue();
         }
 
