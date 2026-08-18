@@ -2250,6 +2250,182 @@ def calculate_bollinger_bands(series, period=20, std_dev=2):
     return upper, middle, lower
 
 
+
+def calculate_stochastic_rsi(rsi_series, period=14, smooth_k=3, smooth_d=3):
+    """Stochastic RSI for entry timing. Returns smoothed %K and %D series (0..100)."""
+    rsi_low = rsi_series.rolling(period).min()
+    rsi_high = rsi_series.rolling(period).max()
+    spread = (rsi_high - rsi_low).replace(0, 1e-12)
+    raw = ((rsi_series - rsi_low) / spread * 100.0).clip(lower=0.0, upper=100.0)
+    k = raw.rolling(smooth_k).mean()
+    d = k.rolling(smooth_d).mean()
+    return k, d
+
+
+def detect_rsi_divergence(close, rsi_series, lookback=34, pivot_span=2, min_rsi_delta=2.0):
+    """Detect simple closed-candle regular RSI divergence from the latest two swing pivots."""
+    n = min(len(close), len(rsi_series), int(lookback))
+    if n < 12:
+        return "NONE"
+    prices = close.iloc[-n:]
+    rsis = rsi_series.reindex(prices.index)
+    p = [safe_float(v) for v in prices.tolist()]
+    r = [safe_float(v) for v in rsis.tolist()]
+    lows, highs = [], []
+    span = max(1, int(pivot_span))
+    for i in range(span, n - span):
+        if p[i] is None or r[i] is None:
+            continue
+        local_p = [x for x in p[i-span:i+span+1] if x is not None]
+        if len(local_p) < (span * 2 + 1):
+            continue
+        if p[i] <= min(local_p):
+            lows.append(i)
+        if p[i] >= max(local_p):
+            highs.append(i)
+
+    bullish = False
+    bearish = False
+    bull_end = -1
+    bear_end = -1
+    if len(lows) >= 2:
+        a, b = lows[-2], lows[-1]
+        if r[a] is not None and r[b] is not None:
+            bullish = p[b] < p[a] and r[b] >= r[a] + float(min_rsi_delta)
+            if bullish:
+                bull_end = b
+    if len(highs) >= 2:
+        a, b = highs[-2], highs[-1]
+        if r[a] is not None and r[b] is not None:
+            bearish = p[b] > p[a] and r[b] <= r[a] - float(min_rsi_delta)
+            if bearish:
+                bear_end = b
+
+    if bullish and bearish:
+        return "BULLISH" if bull_end >= bear_end else "BEARISH"
+    if bullish:
+        return "BULLISH"
+    if bearish:
+        return "BEARISH"
+    return "NONE"
+
+
+def calculate_support_resistance(df, lookback=42, pivot_span=2):
+    """Nearest recent closed-candle pivot support/resistance, excluding the current candle."""
+    if df is None or len(df) < 12:
+        return None, None
+    history = df.iloc[:-1].tail(max(12, int(lookback)))
+    if history.empty:
+        return None, None
+    current_price = safe_float(df["Close"].iloc[-1])
+    highs = [safe_float(v) for v in history["High"].tolist()]
+    lows = [safe_float(v) for v in history["Low"].tolist()]
+    span = max(1, int(pivot_span))
+    pivot_highs, pivot_lows = [], []
+    for i in range(span, len(history) - span):
+        if highs[i] is None or lows[i] is None:
+            continue
+        hwin = [x for x in highs[i-span:i+span+1] if x is not None]
+        lwin = [x for x in lows[i-span:i+span+1] if x is not None]
+        if len(hwin) == span * 2 + 1 and highs[i] >= max(hwin):
+            pivot_highs.append(highs[i])
+        if len(lwin) == span * 2 + 1 and lows[i] <= min(lwin):
+            pivot_lows.append(lows[i])
+
+    valid_highs = [x for x in pivot_highs if x is not None]
+    valid_lows = [x for x in pivot_lows if x is not None]
+    fallback_high = max([x for x in highs if x is not None], default=None)
+    fallback_low = min([x for x in lows if x is not None], default=None)
+
+    if current_price is None:
+        return fallback_low, fallback_high
+
+    lower_levels = [x for x in valid_lows if x <= current_price]
+    upper_levels = [x for x in valid_highs if x >= current_price]
+    support = max(lower_levels) if lower_levels else (min(valid_lows) if valid_lows else fallback_low)
+    resistance = min(upper_levels) if upper_levels else (max(valid_highs) if valid_highs else fallback_high)
+    return support, resistance
+
+
+def bollinger_signal_context(df, bb_upper, bb_middle, bb_lower, atr):
+    """Full Bollinger context: rejection, squeeze, breakout and band expansion."""
+    close = df["Close"]
+    last = df.iloc[-1]
+    price = safe_float(close.iloc[-1])
+    prev_close = safe_float(close.iloc[-2])
+    upper_now = safe_float(bb_upper.iloc[-1])
+    lower_now = safe_float(bb_lower.iloc[-1])
+    mid_now = safe_float(bb_middle.iloc[-1])
+    upper_prev = safe_float(bb_upper.iloc[-2])
+    lower_prev = safe_float(bb_lower.iloc[-2])
+    mid_prev = safe_float(bb_middle.iloc[-2])
+    if None in (price, prev_close, upper_now, lower_now, mid_now, upper_prev, lower_prev, mid_prev):
+        return {
+            "bull_points": 0.0, "bear_points": 0.0, "context": "UNAVAILABLE",
+            "squeeze": False, "expanding": False,
+        }
+
+    width = (bb_upper - bb_lower) / bb_middle.abs().replace(0, 1e-12)
+    width_now = safe_float(width.iloc[-1], 0.0)
+    width_prev = safe_float(width.iloc[-2], width_now)
+    width_avg = safe_float(width.rolling(20).mean().iloc[-1], width_now)
+    squeeze = bool(width_avg > 0 and width_now <= width_avg * 0.80)
+    expanding = bool(width_now > max(width_prev * 1.03, width_avg * 0.92))
+
+    candle_open = safe_float(last["Open"])
+    candle_high = safe_float(last["High"])
+    candle_low = safe_float(last["Low"])
+    candle_close = safe_float(last["Close"])
+    bull_candle = candle_close is not None and candle_open is not None and candle_close > candle_open
+    bear_candle = candle_close is not None and candle_open is not None and candle_close < candle_open
+
+    breakout_up = bool(price > upper_now and prev_close <= upper_prev and expanding)
+    breakout_down = bool(price < lower_now and prev_close >= lower_prev and expanding)
+    lower_rejection = bool(candle_low is not None and candle_low <= lower_now and price > lower_now and bull_candle)
+    upper_rejection = bool(candle_high is not None and candle_high >= upper_now and price < upper_now and bear_candle)
+    mid_up = bool(price > mid_now and mid_now >= mid_prev)
+    mid_down = bool(price < mid_now and mid_now <= mid_prev)
+
+    bull_points = 0.0
+    bear_points = 0.0
+    context = "NEUTRAL"
+    if breakout_up:
+        bull_points += 1.20
+        context = "BULL BREAKOUT + EXPANSION"
+    elif breakout_down:
+        bear_points += 1.20
+        context = "BEAR BREAKOUT + EXPANSION"
+    elif lower_rejection:
+        bull_points += 1.00
+        context = "LOWER BAND REJECTION"
+    elif upper_rejection:
+        bear_points += 1.00
+        context = "UPPER BAND REJECTION"
+    elif expanding and mid_up:
+        bull_points += 0.65
+        context = "BULL BAND EXPANSION"
+    elif expanding and mid_down:
+        bear_points += 0.65
+        context = "BEAR BAND EXPANSION"
+    elif not squeeze and mid_up:
+        bull_points += 0.35
+        context = "ABOVE RISING MID"
+    elif not squeeze and mid_down:
+        bear_points += 0.35
+        context = "BELOW FALLING MID"
+    elif squeeze:
+        context = "SQUEEZE / WAIT BREAKOUT"
+
+    return {
+        "bull_points": bull_points,
+        "bear_points": bear_points,
+        "context": context,
+        "squeeze": squeeze,
+        "expanding": expanding,
+        "bandwidth": width_now,
+    }
+
+
 def calculate_true_range(df):
     previous_close = df["Close"].shift(1)
     high_low = df["High"] - df["Low"]
@@ -2336,36 +2512,21 @@ def safe_float(value, default=None):
 
 
 def analyze_timeframe(df, timeframe):
-    """Analyze one CLOSED timeframe. No random values are used."""
+    """Analyze one CLOSED timeframe with RAJA HYBRID weighted confluence. No random values."""
     if df is None or df.empty or len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient closed candles",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Insufficient closed candles"}
 
     required = {"Open", "High", "Low", "Close"}
     if not required.issubset(df.columns):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Missing OHLC columns",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Missing OHLC columns"}
 
     df = df.copy().dropna(subset=list(required))
     if len(df) < 60:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Insufficient clean candles",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Insufficient clean candles"}
 
     close = df["Close"]
-
-    rsi = safe_float(calculate_rsi(close, 14).iloc[-1])
+    rsi_series = calculate_rsi(close, 14)
+    rsi = safe_float(rsi_series.iloc[-1])
     ema9 = safe_float(calculate_ema(close, 9).iloc[-1])
     ema21 = safe_float(calculate_ema(close, 21).iloc[-1])
     ema50 = safe_float(calculate_ema(close, 50).iloc[-1])
@@ -2376,84 +2537,96 @@ def analyze_timeframe(df, timeframe):
 
     bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
     bb_mid = safe_float(bb_middle.iloc[-1])
+    bb_upper_now = safe_float(bb_upper.iloc[-1])
+    bb_lower_now = safe_float(bb_lower.iloc[-1])
 
     atr = safe_float(calculate_atr(df, 14).iloc[-1])
-
     adx, plus_di, minus_di = calculate_adx_components(df, 14)
     adx_now = safe_float(adx.iloc[-1])
     plus_di_now = safe_float(plus_di.iloc[-1])
     minus_di_now = safe_float(minus_di.iloc[-1])
 
+    stoch_k_series, stoch_d_series = calculate_stochastic_rsi(rsi_series, 14, 3, 3)
+    stoch_k = safe_float(stoch_k_series.iloc[-1])
+    stoch_d = safe_float(stoch_d_series.iloc[-1])
+    stoch_k_prev = safe_float(stoch_k_series.iloc[-2])
+    stoch_d_prev = safe_float(stoch_d_series.iloc[-2])
+
     price = safe_float(close.iloc[-1])
     previous_close = safe_float(close.iloc[-2])
 
     values = [
-        rsi, ema9, ema21, ema50,
-        macd_now, macd_sig_now, bb_mid,
-        atr, adx_now, plus_di_now, minus_di_now,
-        price, previous_close,
+        rsi, ema9, ema21, ema50, macd_now, macd_sig_now,
+        bb_mid, bb_upper_now, bb_lower_now, atr, adx_now,
+        plus_di_now, minus_di_now, stoch_k, stoch_d,
+        stoch_k_prev, stoch_d_prev, price, previous_close,
     ]
-
     if any(v is None for v in values) or atr <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Indicators not ready",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Indicators not ready"}
 
     ema_bullish = price > ema9 > ema21 > ema50
     ema_bearish = price < ema9 < ema21 < ema50
-
     macd_bullish = macd_now > macd_sig_now
     macd_bearish = macd_now < macd_sig_now
-
-    bb_bullish = price > bb_mid
-    bb_bearish = price < bb_mid
-
     adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
     adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
-
-    momentum_bullish = price > previous_close
-    momentum_bearish = price < previous_close
 
     last = df.iloc[-1]
     candle_open = safe_float(last["Open"])
     candle_high = safe_float(last["High"])
     candle_low = safe_float(last["Low"])
     candle_close = safe_float(last["Close"])
-
     if None in (candle_open, candle_high, candle_low, candle_close):
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Latest candle incomplete",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Latest candle incomplete"}
 
     candle_range = candle_high - candle_low
     if candle_range <= 0:
-        return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Invalid candle range",
-        }
+        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Invalid candle range"}
 
     bullish_candle = candle_close > candle_open
     bearish_candle = candle_close < candle_open
-
     upper_wick = candle_high - max(candle_open, candle_close)
     lower_wick = min(candle_open, candle_close) - candle_low
+    bullish_rejection = lower_wick / candle_range >= 0.25 and bullish_candle
+    bearish_rejection = upper_wick / candle_range >= 0.25 and bearish_candle
 
-    bullish_rejection = (
-        lower_wick / candle_range >= 0.25
-        and bullish_candle
-    )
-    bearish_rejection = (
-        upper_wick / candle_range >= 0.25
-        and bearish_candle
-    )
+    # UPGRADE 1: Full Bollinger logic replaces the old middle-band-only vote.
+    bb_ctx = bollinger_signal_context(df, bb_upper, bb_middle, bb_lower, atr)
+
+    # UPGRADE 2: RSI keeps its normal momentum role and adds regular divergence context.
+    rsi_divergence = detect_rsi_divergence(close, rsi_series)
+
+    # UPGRADE 3: Stochastic RSI becomes the fast timing layer; one-candle momentum is only a small bonus.
+    stoch_bullish_cross = stoch_k_prev <= stoch_d_prev and stoch_k > stoch_d and stoch_k <= 65
+    stoch_bearish_cross = stoch_k_prev >= stoch_d_prev and stoch_k < stoch_d and stoch_k >= 35
+    stoch_bullish_timing = stoch_k > stoch_d and stoch_k <= 35
+    stoch_bearish_timing = stoch_k < stoch_d and stoch_k >= 65
+    momentum_bullish = price > previous_close
+    momentum_bearish = price < previous_close
+
+    # UPGRADE 4: Wick rejection is strongest only at an important recent S/R level.
+    support, resistance = calculate_support_resistance(df, 42, 2)
+    level_tolerance = max(float(atr) * 0.40, abs(float(price)) * 0.00020)
+    near_support = support is not None and candle_low <= float(support) + level_tolerance and candle_close >= float(support) - level_tolerance * 0.20
+    near_resistance = resistance is not None and candle_high >= float(resistance) - level_tolerance and candle_close <= float(resistance) + level_tolerance * 0.20
+    support_rejection = bool(bullish_rejection and near_support)
+    resistance_rejection = bool(bearish_rejection and near_resistance)
+    resistance_breakout = bool(resistance is not None and candle_close > float(resistance) + atr * 0.12 and previous_close <= float(resistance) + atr * 0.05)
+    support_breakdown = bool(support is not None and candle_close < float(support) - atr * 0.12 and previous_close >= float(support) - atr * 0.05)
+    if support_rejection:
+        sr_context = "SUPPORT REJECTION"
+    elif resistance_rejection:
+        sr_context = "RESISTANCE REJECTION"
+    elif resistance_breakout:
+        sr_context = "RESISTANCE BREAKOUT"
+    elif support_breakdown:
+        sr_context = "SUPPORT BREAKDOWN"
+    elif near_support:
+        sr_context = "NEAR SUPPORT"
+    elif near_resistance:
+        sr_context = "NEAR RESISTANCE"
+    else:
+        sr_context = "MID-RANGE"
 
     volume_bullish = False
     volume_bearish = False
@@ -2468,11 +2641,17 @@ def analyze_timeframe(df, timeframe):
     bullish_points = 0.0
     bearish_points = 0.0
 
+    # RSI normal momentum, less dominant than trend/SR.
     if 52 <= rsi <= 70:
-        bullish_points += 1.0
+        bullish_points += 0.75
     elif 30 <= rsi <= 48:
-        bearish_points += 1.0
+        bearish_points += 0.75
+    if rsi_divergence == "BULLISH":
+        bullish_points += 0.65
+    elif rsi_divergence == "BEARISH":
+        bearish_points += 0.65
 
+    # Trend core retained.
     if ema_bullish:
         bullish_points += 2.0
     elif ema_bearish:
@@ -2483,54 +2662,88 @@ def analyze_timeframe(df, timeframe):
     elif macd_bearish:
         bearish_points += 1.0
 
-    if bb_bullish:
-        bullish_points += 1.0
-    elif bb_bearish:
-        bearish_points += 1.0
+    # Full Bollinger weighted context.
+    bullish_points += float(bb_ctx.get("bull_points") or 0.0)
+    bearish_points += float(bb_ctx.get("bear_points") or 0.0)
 
     if adx_bullish:
         bullish_points += 1.5
     elif adx_bearish:
         bearish_points += 1.5
 
-    if momentum_bullish:
+    # StochRSI timing replaces the old 1.0-point single-candle momentum vote.
+    if stoch_bullish_cross:
         bullish_points += 1.0
-    elif momentum_bearish:
+    elif stoch_bearish_cross:
         bearish_points += 1.0
+    elif stoch_bullish_timing:
+        bullish_points += 0.70
+    elif stoch_bearish_timing:
+        bearish_points += 0.70
 
-    if bullish_rejection:
-        bullish_points += 1.0
+    # Raw momentum stays only as a tiny tie-breaker.
+    if momentum_bullish:
+        bullish_points += 0.25
+    elif momentum_bearish:
+        bearish_points += 0.25
+
+    # S/R + wick carries the strongest price-action weight.
+    if support_rejection:
+        bullish_points += 1.25
+    elif resistance_rejection:
+        bearish_points += 1.25
+    elif resistance_breakout:
+        bullish_points += 1.00
+    elif support_breakdown:
+        bearish_points += 1.00
+    elif bullish_rejection:
+        bullish_points += 0.20
     elif bearish_rejection:
-        bearish_points += 1.0
+        bearish_points += 0.20
     elif bullish_candle:
-        bullish_points += 0.5
+        bullish_points += 0.15
     elif bearish_candle:
-        bearish_points += 0.5
+        bearish_points += 0.15
+
+    # Being close to a level is useful context, but not a hard veto.
+    if near_support and not support_breakdown:
+        bullish_points += 0.20
+    if near_resistance and not resistance_breakout:
+        bearish_points += 0.20
 
     if volume_bullish:
-        bullish_points += 1.0
+        bullish_points += 0.75
     elif volume_bearish:
-        bearish_points += 1.0
+        bearish_points += 0.75
 
     difference = abs(bullish_points - bearish_points)
     winning_points = max(bullish_points, bearish_points)
 
-    # Slightly relaxed per-TF gate because final decision also requires
-    # multi-timeframe agreement.
+    # Keep the existing balanced per-TF gate; upgrades improve vote quality rather than making it stricter.
+    diagnostics = {
+        "rsi": round(rsi, 2),
+        "adx": round(adx_now, 2),
+        "atr": round(atr, 8),
+        "stoch_rsi_k": round(stoch_k, 2),
+        "stoch_rsi_d": round(stoch_d, 2),
+        "rsi_divergence": rsi_divergence,
+        "bb_context": str(bb_ctx.get("context") or "NEUTRAL"),
+        "bb_squeeze": bool(bb_ctx.get("squeeze")),
+        "bb_expanding": bool(bb_ctx.get("expanding")),
+        "support": round(float(support), 8) if support is not None else None,
+        "resistance": round(float(resistance), 8) if resistance is not None else None,
+        "sr_context": sr_context,
+        "bullish_points": round(bullish_points, 2),
+        "bearish_points": round(bearish_points, 2),
+    }
     if difference < 1.5 or winning_points < 3.5:
         return {
-            "timeframe": timeframe,
-            "signal": "NO SIGNAL",
-            "score": 0,
-            "reason": "Weak/conflicting timeframe",
-            "rsi": round(rsi, 2),
-            "adx": round(adx_now, 2),
-            "bullish_points": round(bullish_points, 2),
-            "bearish_points": round(bearish_points, 2),
+            "timeframe": timeframe, "signal": "NO SIGNAL", "score": 0,
+            "reason": "Weak/conflicting hybrid timeframe", **diagnostics,
+            "closed_candle_epoch": int(df.index[-1].timestamp()) if len(df.index) else None,
         }
 
     signal = "CALL" if bullish_points > bearish_points else "PUT"
-
     score = 50 + difference * 6
     if adx_now >= 20:
         score += min(adx_now - 20, 15) * 0.5
@@ -2540,12 +2753,8 @@ def analyze_timeframe(df, timeframe):
         "timeframe": timeframe,
         "signal": signal,
         "score": round(score, 2),
-        "rsi": round(rsi, 2),
-        "adx": round(adx_now, 2),
-        "atr": round(atr, 8),
         "price": round(price, 8),
-        "bullish_points": round(bullish_points, 2),
-        "bearish_points": round(bearish_points, 2),
+        **diagnostics,
         "closed_candle_epoch": int(df.index[-1].timestamp()) if len(df.index) else None,
     }
 
@@ -2786,8 +2995,16 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
     put_results = [r for r in results.values() if r.get("signal") == "PUT"]
     valid_count = len(call_results) + len(put_results)
     summary = {
-        tf: {"signal": r.get("signal"), "score": r.get("score", 0), "rsi": r.get("rsi"),
-             "adx": r.get("adx"), "closed_candle_epoch": r.get("closed_candle_epoch")}
+        tf: {
+            "signal": r.get("signal"), "score": r.get("score", 0), "rsi": r.get("rsi"),
+            "adx": r.get("adx"), "atr": r.get("atr"),
+            "stoch_rsi_k": r.get("stoch_rsi_k"), "stoch_rsi_d": r.get("stoch_rsi_d"),
+            "rsi_divergence": r.get("rsi_divergence"), "bb_context": r.get("bb_context"),
+            "support": r.get("support"), "resistance": r.get("resistance"),
+            "sr_context": r.get("sr_context"),
+            "bullish_points": r.get("bullish_points", 0), "bearish_points": r.get("bearish_points", 0),
+            "closed_candle_epoch": r.get("closed_candle_epoch")
+        }
         for tf, r in results.items()
     }
 
@@ -2925,6 +3142,11 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "pair": pair, "score": round(multi_tf_score, 2), "signal": signal,
         "reason": f"{opts['mode']} · Multi-TF agreement: {len(supporters)}/{valid_count} valid timeframes -> {signal}",
         "rsi": representative.get("rsi"), "adx": representative.get("adx"), "atr": representative.get("atr"),
+        "stoch_rsi_k": representative.get("stoch_rsi_k"), "stoch_rsi_d": representative.get("stoch_rsi_d"),
+        "rsi_divergence": representative.get("rsi_divergence"), "bb_context": representative.get("bb_context"),
+        "support": representative.get("support"), "resistance": representative.get("resistance"),
+        "sr_context": representative.get("sr_context"),
+        "hybrid_engine": "RAJA_HYBRID_97_WEIGHTED",
         "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
         "bearish_points": representative.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
@@ -3009,6 +3231,13 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
             "adx": row.get("adx"),
             "atr": row.get("atr"),
             "price": row.get("price"),
+            "stoch_rsi_k": row.get("stoch_rsi_k"),
+            "stoch_rsi_d": row.get("stoch_rsi_d"),
+            "rsi_divergence": row.get("rsi_divergence"),
+            "bb_context": row.get("bb_context"),
+            "support": row.get("support"),
+            "resistance": row.get("resistance"),
+            "sr_context": row.get("sr_context"),
             "bullish_points": row.get("bullish_points", 0),
             "bearish_points": row.get("bearish_points", 0),
             "closed_candle_epoch": row.get("closed_candle_epoch"),
