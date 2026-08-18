@@ -69,7 +69,7 @@ app = Flask(__name__, static_folder=".", template_folder=".")
 CORS(app)
 
 # =========================================================
-# RAJA AI v1.13 · 15-SECOND PRE-SCAN + CLOSED-CANDLE FINAL DEEP-SCAN BACKEND
+# RAJA AI v1.13.1 · ALL-PAIRS 25s PRE-SCAN + 15s PAIR ALERT + CLOSED-CANDLE FINAL
 # Yahoo Finance 1-minute OHLCV is the PRIMARY base/reference feed.
 # If Yahoo is unavailable/stale and TWELVE_DATA_API_KEY is configured,
 # Twelve Data 1-minute OHLCV becomes the LIVE BACKUP reference feed.
@@ -329,9 +329,9 @@ MAX_SIGNAL_ENTRY_DELAY_SECONDS = max(5, min(50, int(os.environ.get("RAJA_MAX_SIG
 BATCH_SCAN_DEADLINE_SECONDS = max(25.0, min(75.0, float(os.environ.get("RAJA_BATCH_DEADLINE_SECONDS", "58"))))
 # 1m Auto Scan pre-alert is intentionally lightweight and time-bounded. It is candidate
 # ranking only; CALL/PUT is never finalized from a forming candle.
-PRE_SCAN_DEADLINE_SECONDS = max(3.0, min(12.0, float(os.environ.get("RAJA_PRE_SCAN_DEADLINE_SECONDS", "8"))))
-PRE_SCAN_WORKERS = max(1, min(6, int(os.environ.get("RAJA_PRE_SCAN_WORKERS", "4"))))
-PRE_SCAN_TOP_N = max(1, min(5, int(os.environ.get("RAJA_PRE_SCAN_TOP_N", "3"))))
+PRE_SCAN_DEADLINE_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_PRE_SCAN_DEADLINE_SECONDS", "9.5"))))
+PRE_SCAN_WORKERS = max(1, min(8, int(os.environ.get("RAJA_PRE_SCAN_WORKERS", "6"))))
+PRE_SCAN_TOP_N = max(1, min(5, int(os.environ.get("RAJA_PRE_SCAN_TOP_N", "5"))))
 FOREX_OTC_FALLBACK_DEADLINE_SECONDS = max(BATCH_SCAN_DEADLINE_SECONDS, min(78.0, float(os.environ.get("RAJA_FOREX_OTC_FALLBACK_DEADLINE_SECONDS", "72"))))
 
 # Twelve Data live backup. The key stays server-side in Railway environment variables.
@@ -5354,9 +5354,17 @@ def pre_scan_batch():
     market = str(data.get('market') or 'Unknown')[:80]
     broker = str(data.get('broker') or '').strip()[:80]
     opts = normalize_scan_options(data.get('scan_options'))
+    # The T-25 first pass gets the normal pre-scan budget. A small retry request can
+    # ask for a shorter deadline so it never steals the T-10 pair-lock window.
+    request_deadline = data.get('deadline_seconds')
+    try:
+        request_deadline = float(request_deadline) if request_deadline is not None else PRE_SCAN_DEADLINE_SECONDS
+    except Exception:
+        request_deadline = PRE_SCAN_DEADLINE_SECONDS
+    pre_scan_deadline = max(2.0, min(float(PRE_SCAN_DEADLINE_SECONDS), float(request_deadline)))
     if selected_expiry != '1m':
         return jsonify({'status': 'success', 'data': [], 'shortlist': [], 'pre_alert_only': True,
-                        'message': '15-second pre-scan is active for 1m expiry only.'})
+                        'message': 'T-25 all-pairs pre-scan is active for 1m expiry only.'})
     if not isinstance(requested_pairs, list):
         return jsonify({'status': 'error', 'message': 'pairs must be an array.'}), 400
 
@@ -5385,7 +5393,7 @@ def pre_scan_batch():
         pool.submit(calculate_pre_scan_candidate, p, selected_expiry, opts, auth['user'], broker): p
         for p in pairs
     }
-    done, pending = wait(future_map.keys(), timeout=PRE_SCAN_DEADLINE_SECONDS)
+    done, pending = wait(future_map.keys(), timeout=pre_scan_deadline)
     results_by_pair = {}
     for future in done:
         pair = future_map[future]
@@ -5414,7 +5422,8 @@ def pre_scan_batch():
         'total_pairs': len(pairs), 'completed_pairs': len(done), 'timed_out_pairs': timed_out,
         'timed_out_pairs_count': len(timed_out), 'qualified_pairs': len(shortlist),
         'elapsed_seconds': round(time.time() - started, 2),
-        'deadline_seconds': PRE_SCAN_DEADLINE_SECONDS, 'workers': workers,
+        'deadline_seconds': round(pre_scan_deadline, 2), 'workers': workers,
+        'coverage_pct': round(((len(pairs) - len(timed_out)) / max(1, len(pairs))) * 100.0, 1),
         'pre_alert_only': True,
     }
     return jsonify({'status': 'success', 'data': rows, 'shortlist': shortlist,
