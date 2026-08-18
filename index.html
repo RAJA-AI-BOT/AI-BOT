@@ -7425,9 +7425,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         let marketNewsLoadedAt = 0;
 
         // Auto Scan pair rotation: avoid feeding the same pair repeatedly.
-        // A displayed Auto-Scan signal blocks that pair for 5 minutes, then it becomes eligible again.
-        // Manual pair selection remains unrestricted.
-        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 5 * 60 * 1000;
+        // Any displayed signal blocks that pair from becoming a new signal winner for 10 minutes.
+        // The pair is still scanned for market coverage; it is only excluded from signal selection.
+        const AUTO_PAIR_ROTATION_COOLDOWN_MS = 10 * 60 * 1000;
         let autoPairCooldowns = safeJsonParse(localStorage.getItem('raja_auto_pair_cooldowns'), {});
 
         function cleanAutoPairCooldowns() {
@@ -7452,6 +7452,22 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (!pair) return;
             autoPairCooldowns[pair] = Date.now();
             localStorage.setItem('raja_auto_pair_cooldowns', JSON.stringify(autoPairCooldowns));
+        }
+
+        function autoPairCooldownRemaining(pair) {
+            cleanAutoPairCooldowns();
+            const usedAt = Number(autoPairCooldowns[pair] || 0);
+            if (!usedAt) return 0;
+            return Math.max(0, AUTO_PAIR_ROTATION_COOLDOWN_MS - (Date.now() - usedAt));
+        }
+
+        function autoPairCooldownLabel(pair) {
+            const ms = autoPairCooldownRemaining(pair);
+            if (ms <= 0) return '';
+            const sec = Math.ceil(ms / 1000);
+            const min = Math.floor(sec / 60);
+            const rem = sec % 60;
+            return `${min}:${String(rem).padStart(2,'0')}`;
         }
 
 
@@ -8980,7 +8996,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
+            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),deepQualityScore:Number(data.deep_quality_score||0),deepQualityComponents:data.deep_quality_components||{},deepScanMode:data.deep_scan_mode||'',chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
         }
 
 
@@ -9305,7 +9321,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 // FULL MARKET MODE: every Auto Scan evaluates every configured pair
                 // in the currently selected broker + market. No old rotation cooldown
                 // is allowed to hide a pair from the quality ranking.
-                allAutoPairs = brokerData[broker][market].slice(1);
+                allAutoPairs = brokerData[broker][market].slice(1).slice().sort((a,b) => String(a).localeCompare(String(b)));
                 eligiblePairs = allAutoPairs.slice();
 
                 if (eligiblePairs.length === 0) {
@@ -9357,8 +9373,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 if (isAutoScan) {
                     // One shared batch request replaces 21 browser requests. The backend
                     // caches this market snapshot so many users reuse the same scan.
-                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🤖 SHARED MULTI-USER SCAN: ${allAutoPairs.length} ASSETS · ${eligiblePairs.length} ELIGIBLE...</div>`;
-                    scanStep.innerText = 'Fetching shared market snapshot...';
+                    scanConsole.innerHTML = `<div class="live-scan-row scanning">🧠 DEEP FULL-MARKET SCAN: ${allAutoPairs.length}/${allAutoPairs.length} PAIRS · A→Z...</div>`;
+                    scanStep.innerText = 'Deep scanning every pair in the selected market...';
                     setScanProgress(25);
 
                     const batch = await scanPairsBatchFromBackend(eligiblePairs);
@@ -9381,21 +9397,31 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         const normalized = normalizeBackendSignal(raw, pair);
 
                         if (normalized) {
-                            // Rank only already-qualified backend signals. Confluence remains
-                            // dominant; agreement + market stability break close calls.
-                            const agreement = Number(normalized.multiTfAgreement || 0);
-                            const stability = Number(normalized.marketStabilityScore || 0);
-                            const qualityRank = Number(normalized.confluence || 0) * 0.60
-                                + agreement * 0.25
-                                + stability * 0.15;
-                            if (qualityRank > highestQualityRank) {
-                                highestQualityRank = qualityRank;
-                                bestSignalFound = normalized;
+                            const cooling = isAutoPairCoolingDown(pair);
+                            if (!cooling) {
+                                // Deep ranking happens only AFTER the backend has qualified the setup.
+                                // It is a comparison score, not another strict signal gate.
+                                const agreement = Number(normalized.multiTfAgreement || 0);
+                                const stability = Number(normalized.marketStabilityScore || 0);
+                                const fallbackRank = Number(normalized.confluence || 0) * 0.60
+                                    + agreement * 0.25
+                                    + stability * 0.15;
+                                const qualityRank = Number(normalized.deepQualityScore || 0) > 0
+                                    ? Number(normalized.deepQualityScore)
+                                    : fallbackRank;
+                                if (qualityRank > highestQualityRank) {
+                                    highestQualityRank = qualityRank;
+                                    bestSignalFound = normalized;
+                                }
                             }
                         }
 
                         if (normalized) {
-                            scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${pair}</span> <span>${normalized.confluence}%</span></div>`;
+                            if (isAutoPairCoolingDown(pair)) {
+                                scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${pair}</span> <span>10m signal cooldown · ${autoPairCooldownLabel(pair)} left</span></div>`;
+                            } else {
+                                scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${pair}</span> <span>Deep ${Number(normalized.deepQualityScore||normalized.confluence||0).toFixed(1)} · Tech ${Number(normalized.confluence||0).toFixed(1)}</span></div>`;
+                            }
                         } else {
                             scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${pair}</span> <span>No valid confluence/data</span></div>`;
                         }
@@ -9420,9 +9446,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         updatePremiumMarketSnapshotFromNormalized(indicatorResult);
                         if (typeof v23UpdateFreshnessFromSignal === 'function') v23UpdateFreshnessFromSignal(indicatorResult);
                         if (typeof v23RenderTop3 === 'function') v23RenderTop3();
-                        bestSignalFound = indicatorResult;
-                        highestQualityRank = Number(indicatorResult.confluence || 0);
-                        scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${selectedPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
+                        if (isAutoPairCoolingDown(selectedPair)) {
+                            bestSignalFound = null;
+                            scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${selectedPair}</span> <span>10m signal cooldown · ${autoPairCooldownLabel(selectedPair)} left</span></div>`;
+                        } else {
+                            bestSignalFound = indicatorResult;
+                            highestQualityRank = Number(indicatorResult.confluence || 0);
+                            scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${selectedPair}</span> <span>${indicatorResult.confluence}%</span></div>`;
+                        }
                     } else {
                         scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${selectedPair}</span> <span>No valid confluence/data</span></div>`;
                     }
@@ -9614,6 +9645,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function displaySignalResult(signalData) {
             cacheRajaLastSignal(signalData);
+            // 10-minute per-pair signal cooldown: scan it, but do not surface it again until unlocked.
+            try { rememberAutoPair(signalData?.pair); } catch (_) {}
             completeScanSession('signal');
             let signalView = document.getElementById('signalView');
 
