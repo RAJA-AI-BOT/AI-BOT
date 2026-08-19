@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v23-install-nohang';
+const CACHE_VERSION = 'raja-ai-pwa-v24-accuracy-gates';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -15,7 +15,9 @@ const API_PREFIXES = [
   '/logout-license',
   '/user/',
   '/signals/',
+  '/track-signal',
   '/scan',
+  '/scan-batch',
   '/batch-scan',
   '/market-news',
   '/otc-fallback-config',
@@ -119,11 +121,6 @@ async function networkFirstNavigation(request) {
       response &&
       response.ok
     ) {
-      /*
-        Normalize all navigation variants
-        (?raja_install=1, build tokens, etc.)
-        to one stable shell key.
-      */
       await cache.put(
         '/',
         response.clone()
