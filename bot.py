@@ -2585,10 +2585,28 @@ def analyze_timeframe(df, timeframe):
 
     bullish_candle = candle_close > candle_open
     bearish_candle = candle_close < candle_open
+    candle_body = abs(candle_close - candle_open)
     upper_wick = candle_high - max(candle_open, candle_close)
     lower_wick = min(candle_open, candle_close) - candle_low
-    bullish_rejection = lower_wick / candle_range >= 0.25 and bullish_candle
-    bearish_rejection = upper_wick / candle_range >= 0.25 and bearish_candle
+
+    # UPGRADE 5: Precision Wick Rejection.
+    # A valid rejection wick must be meaningful relative to BOTH the candle body
+    # and the full candle range. This removes many weak 25%-wick false positives.
+    wick_body_reference = max(candle_body, candle_range * 0.05)
+    lower_wick_ratio = lower_wick / candle_range
+    upper_wick_ratio = upper_wick / candle_range
+    lower_wick_body_multiple = lower_wick / max(wick_body_reference, 1e-12)
+    upper_wick_body_multiple = upper_wick / max(wick_body_reference, 1e-12)
+    bullish_rejection = bool(
+        bullish_candle
+        and lower_wick_ratio >= 0.35
+        and lower_wick_body_multiple >= 1.50
+    )
+    bearish_rejection = bool(
+        bearish_candle
+        and upper_wick_ratio >= 0.35
+        and upper_wick_body_multiple >= 1.50
+    )
 
     # UPGRADE 1: Full Bollinger logic replaces the old middle-band-only vote.
     bb_ctx = bollinger_signal_context(df, bb_upper, bb_middle, bb_lower, atr)
@@ -2611,6 +2629,53 @@ def analyze_timeframe(df, timeframe):
     near_resistance = resistance is not None and candle_high >= float(resistance) - level_tolerance and candle_close <= float(resistance) + level_tolerance * 0.20
     support_rejection = bool(bullish_rejection and near_support)
     resistance_rejection = bool(bearish_rejection and near_resistance)
+
+    # Precision confluence: Wick + S/R is mandatory. Bollinger rejection and
+    # EMA50 alignment upgrade the setup instead of allowing a random wick to dominate.
+    bb_lower_wick_rejection = bool(
+        bullish_rejection and candle_low <= bb_lower_now and candle_close > bb_lower_now
+    )
+    bb_upper_wick_rejection = bool(
+        bearish_rejection and candle_high >= bb_upper_now and candle_close < bb_upper_now
+    )
+    ema50_call_filter = bool(candle_close >= ema50)
+    ema50_put_filter = bool(candle_close <= ema50)
+
+    wick_call_confirmations = int(bool(near_support)) + int(bb_lower_wick_rejection) + int(ema50_call_filter)
+    wick_put_confirmations = int(bool(near_resistance)) + int(bb_upper_wick_rejection) + int(ema50_put_filter)
+
+    precision_wick_call = bool(
+        support_rejection and (bb_lower_wick_rejection or ema50_call_filter)
+    )
+    precision_wick_put = bool(
+        resistance_rejection and (bb_upper_wick_rejection or ema50_put_filter)
+    )
+    premium_wick_call = bool(
+        support_rejection and bb_lower_wick_rejection and ema50_call_filter
+    )
+    premium_wick_put = bool(
+        resistance_rejection and bb_upper_wick_rejection and ema50_put_filter
+    )
+
+    if premium_wick_call:
+        wick_context = "PREMIUM CALL · WICK + SUPPORT + LOWER BB + EMA50"
+    elif premium_wick_put:
+        wick_context = "PREMIUM PUT · WICK + RESISTANCE + UPPER BB + EMA50"
+    elif precision_wick_call:
+        wick_context = "PRECISION CALL · WICK + SUPPORT + CONFIRMATION"
+    elif precision_wick_put:
+        wick_context = "PRECISION PUT · WICK + RESISTANCE + CONFIRMATION"
+    elif support_rejection:
+        wick_context = "SUPPORT WICK REJECTION"
+    elif resistance_rejection:
+        wick_context = "RESISTANCE WICK REJECTION"
+    elif bullish_rejection:
+        wick_context = "RAW BULLISH WICK"
+    elif bearish_rejection:
+        wick_context = "RAW BEARISH WICK"
+    else:
+        wick_context = "NONE"
+
     resistance_breakout = bool(resistance is not None and candle_close > float(resistance) + atr * 0.12 and previous_close <= float(resistance) + atr * 0.05)
     support_breakdown = bool(support is not None and candle_close < float(support) - atr * 0.12 and previous_close >= float(support) - atr * 0.05)
     if support_rejection:
@@ -2687,19 +2752,28 @@ def analyze_timeframe(df, timeframe):
     elif momentum_bearish:
         bearish_points += 0.25
 
-    # S/R + wick carries the strongest price-action weight.
-    if support_rejection:
-        bullish_points += 1.25
+    # Precision wick weighting. The strongest score is reserved for a rejection
+    # confirmed by S/R + Bollinger Band + EMA50; a naked wick gets very little weight.
+    if premium_wick_call:
+        bullish_points += 1.75
+    elif premium_wick_put:
+        bearish_points += 1.75
+    elif precision_wick_call:
+        bullish_points += 1.45
+    elif precision_wick_put:
+        bearish_points += 1.45
+    elif support_rejection:
+        bullish_points += 1.10
     elif resistance_rejection:
-        bearish_points += 1.25
+        bearish_points += 1.10
     elif resistance_breakout:
         bullish_points += 1.00
     elif support_breakdown:
         bearish_points += 1.00
     elif bullish_rejection:
-        bullish_points += 0.20
+        bullish_points += 0.10
     elif bearish_rejection:
-        bearish_points += 0.20
+        bearish_points += 0.10
     elif bullish_candle:
         bullish_points += 0.15
     elif bearish_candle:
@@ -2733,6 +2807,23 @@ def analyze_timeframe(df, timeframe):
         "support": round(float(support), 8) if support is not None else None,
         "resistance": round(float(resistance), 8) if resistance is not None else None,
         "sr_context": sr_context,
+        "wick_context": wick_context,
+        "bullish_rejection": bullish_rejection,
+        "bearish_rejection": bearish_rejection,
+        "lower_wick_ratio": round(lower_wick_ratio, 3),
+        "upper_wick_ratio": round(upper_wick_ratio, 3),
+        "lower_wick_body_multiple": round(lower_wick_body_multiple, 2),
+        "upper_wick_body_multiple": round(upper_wick_body_multiple, 2),
+        "bb_lower_wick_rejection": bb_lower_wick_rejection,
+        "bb_upper_wick_rejection": bb_upper_wick_rejection,
+        "ema50_call_filter": ema50_call_filter,
+        "ema50_put_filter": ema50_put_filter,
+        "wick_call_confirmations": wick_call_confirmations,
+        "wick_put_confirmations": wick_put_confirmations,
+        "precision_wick_call": precision_wick_call,
+        "precision_wick_put": precision_wick_put,
+        "premium_wick_call": premium_wick_call,
+        "premium_wick_put": premium_wick_put,
         "bullish_points": round(bullish_points, 2),
         "bearish_points": round(bearish_points, 2),
     }
@@ -3001,7 +3092,14 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
             "stoch_rsi_k": r.get("stoch_rsi_k"), "stoch_rsi_d": r.get("stoch_rsi_d"),
             "rsi_divergence": r.get("rsi_divergence"), "bb_context": r.get("bb_context"),
             "support": r.get("support"), "resistance": r.get("resistance"),
-            "sr_context": r.get("sr_context"),
+            "sr_context": r.get("sr_context"), "wick_context": r.get("wick_context"),
+            "lower_wick_ratio": r.get("lower_wick_ratio"), "upper_wick_ratio": r.get("upper_wick_ratio"),
+            "wick_call_confirmations": r.get("wick_call_confirmations", 0),
+            "wick_put_confirmations": r.get("wick_put_confirmations", 0),
+            "precision_wick_call": bool(r.get("precision_wick_call")),
+            "precision_wick_put": bool(r.get("precision_wick_put")),
+            "premium_wick_call": bool(r.get("premium_wick_call")),
+            "premium_wick_put": bool(r.get("premium_wick_put")),
             "bullish_points": r.get("bullish_points", 0), "bearish_points": r.get("bearish_points", 0),
             "closed_candle_epoch": r.get("closed_candle_epoch")
         }
@@ -3146,7 +3244,14 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "rsi_divergence": representative.get("rsi_divergence"), "bb_context": representative.get("bb_context"),
         "support": representative.get("support"), "resistance": representative.get("resistance"),
         "sr_context": representative.get("sr_context"),
-        "hybrid_engine": "RAJA_HYBRID_97_WEIGHTED",
+        "wick_context": representative.get("wick_context"),
+        "wick_call_confirmations": representative.get("wick_call_confirmations", 0),
+        "wick_put_confirmations": representative.get("wick_put_confirmations", 0),
+        "precision_wick_call": bool(representative.get("precision_wick_call")),
+        "precision_wick_put": bool(representative.get("precision_wick_put")),
+        "premium_wick_call": bool(representative.get("premium_wick_call")),
+        "premium_wick_put": bool(representative.get("premium_wick_put")),
+        "hybrid_engine": "RAJA_HYBRID_97_WEIGHTED_WICK_V2",
         "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
         "bearish_points": representative.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
@@ -3238,6 +3343,15 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
             "support": row.get("support"),
             "resistance": row.get("resistance"),
             "sr_context": row.get("sr_context"),
+            "wick_context": row.get("wick_context"),
+            "lower_wick_ratio": row.get("lower_wick_ratio"),
+            "upper_wick_ratio": row.get("upper_wick_ratio"),
+            "wick_call_confirmations": row.get("wick_call_confirmations", 0),
+            "wick_put_confirmations": row.get("wick_put_confirmations", 0),
+            "precision_wick_call": bool(row.get("precision_wick_call")),
+            "precision_wick_put": bool(row.get("precision_wick_put")),
+            "premium_wick_call": bool(row.get("premium_wick_call")),
+            "premium_wick_put": bool(row.get("premium_wick_put")),
             "bullish_points": row.get("bullish_points", 0),
             "bearish_points": row.get("bearish_points", 0),
             "closed_candle_epoch": row.get("closed_candle_epoch"),
