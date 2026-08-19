@@ -1706,6 +1706,148 @@ def signal_stats(items):
 
 
 # =========================================================
+# ACCURACY V24: HISTORICAL PERFORMANCE + CALIBRATION
+# =========================================================
+# Historical outcomes are used conservatively. Small samples stay in LEARNING
+# mode and never hard-block an otherwise valid technical setup.
+PERFORMANCE_HISTORY_CACHE_SECONDS = max(5, int(os.environ.get("RAJA_PERFORMANCE_CACHE_SECONDS", "20")))
+performance_history_cache = {}
+performance_history_cache_lock = threading.RLock()
+
+
+def _completed_performance_history(user):
+    """Return recent decided WIN/LOSS rows for one user, cached briefly for batch scans."""
+    user = normalize_user_id(user)
+    if not user:
+        return []
+    now = time.time()
+    with performance_history_cache_lock:
+        cached = performance_history_cache.get(user)
+        if cached and now - float(cached.get("timestamp") or 0.0) <= PERFORMANCE_HISTORY_CACHE_SECONDS:
+            return list(cached.get("rows") or [])
+
+    rows = []
+    try:
+        for item in load_signals():
+            if normalize_user_id(item.get("user", "")) != user:
+                continue
+            if str(item.get("status") or "").upper() != "COMPLETED":
+                continue
+            if str(item.get("result") or "").upper() not in {"WIN", "LOSS"}:
+                continue
+            if item.get("exclude_from_performance"):
+                continue
+            rows.append(item)
+            if len(rows) >= 1000:
+                break
+    except Exception as exc:
+        print(f"Performance history warning: {exc}")
+        rows = []
+
+    with performance_history_cache_lock:
+        performance_history_cache[user] = {"timestamp": time.time(), "rows": list(rows)}
+    return rows
+
+
+def pair_timeframe_performance(user, pair, expiry):
+    """Conservative pair+expiry quality profile. Hard gates require a meaningful sample."""
+    expiry = str(expiry or "").strip()
+    rows = [
+        x for x in _completed_performance_history(user)
+        if str(x.get("pair") or "") == str(pair or "")
+        and (not expiry or str(x.get("expiry") or "") == expiry)
+    ][:240]
+    wins = sum(1 for x in rows if str(x.get("result") or "").upper() == "WIN")
+    losses = sum(1 for x in rows if str(x.get("result") or "").upper() == "LOSS")
+    n = wins + losses
+    raw_rate = (wins / n * 100.0) if n else None
+    # Beta(2,2) smoothing prevents small streaks from producing extreme estimates.
+    smoothed = ((wins + 2.0) / (n + 4.0) * 100.0) if n else 50.0
+
+    if n < 12:
+        status = "LEARNING"
+        threshold_raise = 0.0
+        score_adjustment = 0.0
+    elif smoothed >= 65.0:
+        status = "STRONG"
+        threshold_raise = 0.0
+        score_adjustment = 1.5
+    elif smoothed >= 52.0:
+        status = "NORMAL"
+        threshold_raise = 0.0
+        score_adjustment = 0.0
+    elif smoothed >= 45.0:
+        status = "CAUTION"
+        threshold_raise = 2.0
+        score_adjustment = -1.5
+    else:
+        status = "WEAK"
+        threshold_raise = 4.0
+        score_adjustment = -3.0
+
+    # Never let a short bad streak shut a pair down. Require 25+ decided trades.
+    hard_block = bool(n >= 25 and smoothed < 43.0)
+    return {
+        "sample_size": n,
+        "wins": wins,
+        "losses": losses,
+        "raw_win_rate": round(raw_rate, 2) if raw_rate is not None else None,
+        "smoothed_win_rate": round(smoothed, 2),
+        "status": status,
+        "threshold_raise": threshold_raise,
+        "score_adjustment": score_adjustment,
+        "hard_block": hard_block,
+        "minimum_gate_sample": 12,
+        "hard_block_sample": 25,
+    }
+
+
+def calibrate_confidence(user, expiry, technical_quality):
+    """Calibrate displayed confidence from similar historical score buckets; never gates trades."""
+    technical_quality = max(0.0, min(100.0, float(technical_quality or 0.0)))
+    expiry = str(expiry or "").strip()
+    rows = []
+    for item in _completed_performance_history(user):
+        if expiry and str(item.get("expiry") or "") != expiry:
+            continue
+        try:
+            historical_score = float(item.get("deep_quality_score") or item.get("score") or 0.0)
+        except Exception:
+            historical_score = 0.0
+        if abs(historical_score - technical_quality) <= 8.0:
+            rows.append(item)
+        if len(rows) >= 300:
+            break
+
+    wins = sum(1 for x in rows if str(x.get("result") or "").upper() == "WIN")
+    losses = sum(1 for x in rows if str(x.get("result") or "").upper() == "LOSS")
+    n = wins + losses
+    if n < 20:
+        return {
+            "status": "LEARNING",
+            "calibrated_confidence": round(technical_quality, 2),
+            "sample_size": n,
+            "observed_win_rate": None,
+            "note": "Calibration is collecting outcomes; technical quality is shown until n>=20.",
+        }
+
+    observed = wins / n * 100.0
+    smoothed = (wins + 2.0) / (n + 4.0) * 100.0
+    # Blend observed reliability with current technical quality so one historical regime
+    # cannot completely override the live setup. This value is still not a guarantee.
+    calibrated = smoothed * 0.72 + technical_quality * 0.28
+    calibrated = max(35.0, min(95.0, calibrated))
+    return {
+        "status": "CALIBRATED",
+        "calibrated_confidence": round(calibrated, 2),
+        "sample_size": n,
+        "observed_win_rate": round(observed, 2),
+        "smoothed_win_rate": round(smoothed, 2),
+        "note": "Historical calibration is active; confidence remains a model estimate, not a guaranteed win rate.",
+    }
+
+
+# =========================================================
 # YAHOO MARKET DATA
 # =========================================================
 
@@ -2991,6 +3133,92 @@ def market_stability_metrics(price, atr, adx, data_age, agreement_pct):
     return round(score, 1), risk, round(vol_pct, 5)
 
 
+
+def market_regime_router(representative, signal, stability_score):
+    """Route qualified setups through TREND/RANGE/BREAKOUT/TRANSITION/CHOP context."""
+    representative = representative or {}
+    adx = float(representative.get("adx") or 0.0)
+    bb_context = str(representative.get("bb_context") or "NEUTRAL").upper()
+    sr_context = str(representative.get("sr_context") or "MID-RANGE").upper()
+    squeeze = bool(representative.get("bb_squeeze"))
+    expanding = bool(representative.get("bb_expanding"))
+    signal = str(signal or "").upper()
+
+    bull_breakout = signal == "CALL" and ("BULL BREAKOUT" in bb_context or "RESISTANCE BREAKOUT" in sr_context)
+    bear_breakout = signal == "PUT" and ("BEAR BREAKOUT" in bb_context or "SUPPORT BREAKDOWN" in sr_context)
+    level_fit = (
+        (signal == "CALL" and ("SUPPORT" in sr_context or "LOWER BAND REJECTION" in bb_context))
+        or (signal == "PUT" and ("RESISTANCE" in sr_context or "UPPER BAND REJECTION" in bb_context))
+    )
+
+    if float(stability_score or 0.0) < 55.0:
+        return {"regime": "BAD", "quality": 25.0, "blocked": True,
+                "reason": "Market stability is below the safety floor."}
+
+    if expanding and (bull_breakout or bear_breakout):
+        quality = min(96.0, 78.0 + max(0.0, adx - 18.0) * 1.2)
+        return {"regime": "BREAKOUT", "quality": round(quality, 1), "blocked": False,
+                "reason": "Band expansion and directional level break agree."}
+
+    if adx >= 23.0 and not squeeze:
+        quality = min(95.0, 76.0 + (adx - 23.0) * 1.1)
+        return {"regime": "TREND", "quality": round(quality, 1), "blocked": False,
+                "reason": "ADX supports a directional trend regime."}
+
+    if adx <= 20.0 and (squeeze or level_fit or "REJECTION" in bb_context):
+        if squeeze and not level_fit and "REJECTION" not in bb_context:
+            return {"regime": "COMPRESSION", "quality": 48.0, "blocked": True,
+                    "reason": "Bollinger squeeze is still compressed without a confirmed level rejection/breakout."}
+        quality = 82.0 if level_fit else 68.0
+        return {"regime": "RANGE", "quality": quality, "blocked": False,
+                "reason": "Low-trend market is trading from a meaningful S/R or Bollinger rejection zone."}
+
+    if adx < 17.0 and sr_context == "MID-RANGE" and bb_context in {"NEUTRAL", "ABOVE RISING MID", "BELOW FALLING MID"}:
+        return {"regime": "CHOP", "quality": 38.0, "blocked": True,
+                "reason": "Low ADX + mid-range price action indicates chop; skip the setup."}
+
+    return {"regime": "TRANSITION", "quality": 64.0, "blocked": False,
+            "reason": "Market is between clean trend/range/breakout regimes; normal safety gates still apply."}
+
+
+def late_entry_guard(base_df, signal_price, atr, signal, mode="BALANCED"):
+    """Block chasing a setup after price has already stretched too far from the analyzed closed candle."""
+    try:
+        current_price = float(base_df["Close"].iloc[-1])
+        signal_price = float(signal_price)
+        atr = abs(float(atr))
+    except Exception:
+        return {"blocked": False, "status": "UNAVAILABLE", "current_price": None,
+                "extension_atr": 0.0, "adverse_atr": 0.0, "limit_atr": None}
+    if atr <= 0:
+        return {"blocked": False, "status": "UNAVAILABLE", "current_price": current_price,
+                "extension_atr": 0.0, "adverse_atr": 0.0, "limit_atr": None}
+
+    signal = str(signal or "").upper()
+    directional_move = (current_price - signal_price) if signal == "CALL" else (signal_price - current_price)
+    extension_atr = max(0.0, directional_move / atr)
+    adverse_atr = max(0.0, -directional_move / atr)
+    mode = str(mode or "BALANCED").upper()
+    chase_limits = {"SAFE": 0.38, "BALANCED": 0.52, "AGGRESSIVE": 0.70, "CUSTOM": 0.52}
+    adverse_limits = {"SAFE": 0.48, "BALANCED": 0.62, "AGGRESSIVE": 0.82, "CUSTOM": 0.62}
+    chase_limit = chase_limits.get(mode, 0.52)
+    adverse_limit = adverse_limits.get(mode, 0.62)
+
+    if extension_atr > chase_limit:
+        return {"blocked": True, "status": "OVEREXTENDED", "current_price": round(current_price, 8),
+                "extension_atr": round(extension_atr, 3), "adverse_atr": round(adverse_atr, 3),
+                "limit_atr": chase_limit,
+                "reason": f"Late Entry Block: price already moved {extension_atr:.2f} ATR in the signal direction (limit {chase_limit:.2f})."}
+    if adverse_atr > adverse_limit:
+        return {"blocked": True, "status": "SETUP_DRIFT", "current_price": round(current_price, 8),
+                "extension_atr": round(extension_atr, 3), "adverse_atr": round(adverse_atr, 3),
+                "limit_atr": adverse_limit,
+                "reason": f"Entry Drift Block: price moved {adverse_atr:.2f} ATR against the analyzed setup before entry."}
+    return {"blocked": False, "status": "ON_TIME", "current_price": round(current_price, 8),
+            "extension_atr": round(extension_atr, 3), "adverse_atr": round(adverse_atr, 3),
+            "limit_atr": chase_limit, "reason": "Entry timing remains inside the ATR extension guard."}
+
+
 def normalize_scan_options(raw):
     raw = raw if isinstance(raw, dict) else {}
     mode = str(raw.get("mode") or "BALANCED").strip().upper()
@@ -3091,6 +3319,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
             "adx": r.get("adx"), "atr": r.get("atr"),
             "stoch_rsi_k": r.get("stoch_rsi_k"), "stoch_rsi_d": r.get("stoch_rsi_d"),
             "rsi_divergence": r.get("rsi_divergence"), "bb_context": r.get("bb_context"),
+            "bb_squeeze": bool(r.get("bb_squeeze")), "bb_expanding": bool(r.get("bb_expanding")),
             "support": r.get("support"), "resistance": r.get("resistance"),
             "sr_context": r.get("sr_context"), "wick_context": r.get("wick_context"),
             "lower_wick_ratio": r.get("lower_wick_ratio"), "upper_wick_ratio": r.get("upper_wick_ratio"),
@@ -3155,12 +3384,25 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         data_age, agreement_ratio * 100.0,
     )
 
+    regime_profile = market_regime_router(representative, signal, stability_score)
+    performance_profile = pair_timeframe_performance(bridge_user, pair, selected_expiry)
+    late_entry = late_entry_guard(
+        base_df, representative.get("price"), representative.get("atr"), signal, opts["mode"]
+    )
+    effective_min_score = min(95.0, float(opts["min_score"]) + float(performance_profile.get("threshold_raise") or 0.0))
+
     def quality_rejected(reason):
         blocked = rejected(reason)
         blocked.update({
             "market_stability_score": stability_score,
             "market_risk_level": risk_level,
             "volatility_pct": volatility_pct,
+            "market_regime": regime_profile.get("regime"),
+            "market_regime_quality": regime_profile.get("quality"),
+            "market_regime_reason": regime_profile.get("reason"),
+            "pair_timeframe_performance": performance_profile,
+            "effective_min_score": round(effective_min_score, 2),
+            "late_entry": late_entry,
             "no_trade": True,
             "no_trade_reason": reason,
             "quality_gate": "BLOCKED",
@@ -3176,14 +3418,29 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         return quality_rejected(
             f"Smart NO TRADE: market stability {stability_score:.1f}/100 is below the 55/100 safety floor."
         )
+    if bool(regime_profile.get("blocked")):
+        return quality_rejected(
+            f"Market Regime Router: {regime_profile.get('regime')} blocked — {regime_profile.get('reason')}"
+        )
+    if bool(performance_profile.get("hard_block")):
+        return quality_rejected(
+            f"Pair/Timeframe Performance Gate: {pair} {selected_expiry or ''} has only "
+            f"{performance_profile.get('smoothed_win_rate'):.1f}% smoothed wins across "
+            f"{performance_profile.get('sample_size')} decided trades."
+        )
+    if bool(late_entry.get("blocked")):
+        return quality_rejected(str(late_entry.get("reason") or "Late Entry Block rejected the setup."))
     if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
         return quality_rejected(
             f"Volatility {volatility_pct:.4f}% is outside {opts['mode']} range "
             f"({opts['vol_min']:.4f}%–{opts['vol_max']:.2f}%)."
         )
-    if multi_tf_score < opts["min_score"]:
+    if multi_tf_score < effective_min_score:
+        history_note = ""
+        if performance_profile.get("status") in {"CAUTION", "WEAK"}:
+            history_note = f" Historical {performance_profile.get('status')} profile raised the threshold."
         return quality_rejected(
-            f"Technical confluence {multi_tf_score:.1f}% is below {opts['mode']} threshold {opts['min_score']:.1f}%."
+            f"Technical confluence {multi_tf_score:.1f}% is below effective threshold {effective_min_score:.1f}%." + history_note
         )
 
     # Deep quality ranking (ranking only, NOT an extra rejection gate).
@@ -3222,17 +3479,26 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
     directional_edge = abs(rep_bull - rep_bear)
     edge_quality = max(50.0, min(100.0, 50.0 + directional_edge * 8.0))
 
-    deep_quality_score = (
-        float(multi_tf_score) * 0.32
-        + float(agreement_ratio * 100.0) * 0.18
-        + float(stability_score) * 0.16
-        + float(selected_tf_score) * 0.12
-        + float(context_alignment_pct) * 0.09
-        + float(trend_quality) * 0.06
-        + float(consistency_score) * 0.04
-        + float(edge_quality) * 0.03
+    regime_quality = float(regime_profile.get("quality") or 60.0)
+    performance_quality = (
+        float(performance_profile.get("smoothed_win_rate") or 50.0)
+        if int(performance_profile.get("sample_size") or 0) >= 12 else 60.0
     )
+    deep_quality_score = (
+        float(multi_tf_score) * 0.29
+        + float(agreement_ratio * 100.0) * 0.17
+        + float(stability_score) * 0.14
+        + float(selected_tf_score) * 0.11
+        + float(context_alignment_pct) * 0.08
+        + float(trend_quality) * 0.05
+        + float(consistency_score) * 0.03
+        + float(edge_quality) * 0.03
+        + float(regime_quality) * 0.06
+        + float(performance_quality) * 0.04
+    )
+    deep_quality_score += float(performance_profile.get("score_adjustment") or 0.0)
     deep_quality_score = max(0.0, min(100.0, deep_quality_score))
+    confidence_calibration = calibrate_confidence(bridge_user, selected_expiry, deep_quality_score)
 
     aligned_tfs = [r["timeframe"] for r in supporters]
     opposing_tfs = [r["timeframe"] for r in opponents]
@@ -3251,7 +3517,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "precision_wick_put": bool(representative.get("precision_wick_put")),
         "premium_wick_call": bool(representative.get("premium_wick_call")),
         "premium_wick_put": bool(representative.get("premium_wick_put")),
-        "hybrid_engine": "RAJA_HYBRID_97_WEIGHTED_WICK_V2",
+        "hybrid_engine": "RAJA_HYBRID_98_REGIME_PERFORMANCE_V24",
         "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
         "bearish_points": representative.get("bearish_points", 0),
         "data_age": round(data_age, 2) if data_age is not None else None,
@@ -3267,8 +3533,20 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-6 + {required_tf or 'TF'} Required",
         "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
         "market_stability_score": stability_score, "market_risk_level": risk_level,
-        "volatility_pct": volatility_pct, "chart_preview": chart_preview,
+        "volatility_pct": volatility_pct,
+        "market_regime": regime_profile.get("regime"),
+        "market_regime_quality": regime_profile.get("quality"),
+        "market_regime_reason": regime_profile.get("reason"),
+        "pair_timeframe_performance": performance_profile,
+        "effective_min_score": round(effective_min_score, 2),
+        "late_entry": late_entry,
+        "chart_preview": chart_preview,
         "deep_quality_score": round(deep_quality_score, 2),
+        "calibrated_confidence": confidence_calibration.get("calibrated_confidence"),
+        "calibration_status": confidence_calibration.get("status"),
+        "calibration_sample_size": confidence_calibration.get("sample_size"),
+        "calibration_observed_win_rate": confidence_calibration.get("observed_win_rate"),
+        "calibration_note": confidence_calibration.get("note"),
         "deep_quality_components": {
             "technical": round(float(multi_tf_score), 2),
             "agreement": round(float(agreement_ratio * 100.0), 1),
@@ -3278,6 +3556,8 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
             "avg_adx": round(float(avg_support_adx), 2),
             "consistency": round(float(consistency_score), 1),
             "directional_edge": round(float(directional_edge), 2),
+            "regime_quality": round(float(regime_quality), 1),
+            "historical_quality": round(float(performance_quality), 1),
         },
         "deep_scan_mode": "FULL_MARKET_QUALIFIED_RANKING",
         "no_trade": False, "quality_gate": "PASSED",
@@ -3340,6 +3620,8 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
             "stoch_rsi_d": row.get("stoch_rsi_d"),
             "rsi_divergence": row.get("rsi_divergence"),
             "bb_context": row.get("bb_context"),
+            "bb_squeeze": bool(row.get("bb_squeeze")),
+            "bb_expanding": bool(row.get("bb_expanding")),
             "support": row.get("support"),
             "resistance": row.get("resistance"),
             "sr_context": row.get("sr_context"),
@@ -3811,7 +4093,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "4-of-6 Strong",
+        "confirmation_mode": "4-of-6 Strong + Regime + History + Entry Guard",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -4415,6 +4697,13 @@ def track_signal():
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
         "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
         "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
+        "deep_quality_score": data.get("deep_quality_score"),
+        "calibrated_confidence": data.get("calibrated_confidence"),
+        "calibration_status": data.get("calibration_status"),
+        "market_regime": data.get("market_regime"),
+        "market_regime_quality": data.get("market_regime_quality"),
+        "pair_timeframe_performance": data.get("pair_timeframe_performance") or {},
+        "late_entry": data.get("late_entry") or {},
         "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
     }
     with signals_lock:
@@ -4663,8 +4952,10 @@ def scan_batch():
         })
 
     options_key = (opts["mode"], opts["min_tf"], opts["min_agreement"], opts["min_score"], opts["vol_min"], opts["vol_max"])
-    bridge_cache_user = auth["user"] if broker.casefold() == "quotex" and any("(OTC)" in p for p in pairs) else ""
-    key = (broker, bridge_cache_user, selected_expiry, tuple(pairs), options_key); now = time.time()
+    # Accuracy V24 includes user-specific pair/expiry history, so cached qualified
+    # results must never cross user boundaries. Quotex bridge data is user-specific too.
+    performance_cache_user = auth["user"]
+    key = (broker, performance_cache_user, selected_expiry, tuple(pairs), options_key); now = time.time()
     with batch_cache_lock:
         cached = batch_cache.get(key)
         if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
