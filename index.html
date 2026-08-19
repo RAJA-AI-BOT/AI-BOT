@@ -8996,7 +8996,33 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
-            return {pair:data.pair||fallbackPair,confluence:Number(data.score||0),dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',reason:data.reason||'',rsi:data.rsi,stochRsiK:data.stoch_rsi_k,stochRsiD:data.stoch_rsi_d,rsiDivergence:data.rsi_divergence||'NONE',bbContext:data.bb_context||'--',support:data.support,resistance:data.resistance,srContext:data.sr_context||'--',hybridEngine:data.hybrid_engine||'',bullishPoints:data.bullish_points,bearishPoints:data.bearish_points,dataAge:data.data_age,timeframeSummary:data.timeframe_summary||{},alignedTimeframes:data.aligned_timeframes||[],opposingTimeframes:data.opposing_timeframes||[],multiTfAgreement:data.multi_tf_agreement,confirmationMode:data.confirmation_mode||'4-of-6 Strong',duplicateProtection:Boolean(data.duplicate_protection),marketStabilityScore:Number(data.market_stability_score||0),marketRiskLevel:data.market_risk_level||'--',volatilityPct:Number(data.volatility_pct||0),deepQualityScore:Number(data.deep_quality_score||0),deepQualityComponents:data.deep_quality_components||{},deepScanMode:data.deep_scan_mode||'',chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[],scanMode:data.scan_mode||scanMode,scanThresholds:data.scan_thresholds||{},source:data.source||'Yahoo Finance',sourceMode:data.source_mode||'',providerSymbol:data.provider_symbol||data.yahoo_symbol||'',backupUsed:Boolean(data.backup_used)};
+            return {
+                pair:data.pair||fallbackPair,
+                confluence:Number(data.score||0),
+                technicalScore:Number(data.score||0),
+                calibratedConfidence:Number(data.calibrated_confidence||0),
+                calibrationStatus:data.calibration_status||'LEARNING',
+                calibrationSampleSize:Number(data.calibration_sample_size||0),
+                calibrationObservedWinRate:data.calibration_observed_win_rate,
+                calibrationNote:data.calibration_note||'',
+                dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)', reason:data.reason||'',
+                rsi:data.rsi, stochRsiK:data.stoch_rsi_k, stochRsiD:data.stoch_rsi_d,
+                rsiDivergence:data.rsi_divergence||'NONE', bbContext:data.bb_context||'--',
+                support:data.support, resistance:data.resistance, srContext:data.sr_context||'--',
+                hybridEngine:data.hybrid_engine||'', bullishPoints:data.bullish_points, bearishPoints:data.bearish_points,
+                dataAge:data.data_age, timeframeSummary:data.timeframe_summary||{}, alignedTimeframes:data.aligned_timeframes||[],
+                opposingTimeframes:data.opposing_timeframes||[], multiTfAgreement:data.multi_tf_agreement,
+                confirmationMode:data.confirmation_mode||'4-of-6 Strong', duplicateProtection:Boolean(data.duplicate_protection),
+                marketStabilityScore:Number(data.market_stability_score||0), marketRiskLevel:data.market_risk_level||'--',
+                volatilityPct:Number(data.volatility_pct||0), deepQualityScore:Number(data.deep_quality_score||0),
+                deepQualityComponents:data.deep_quality_components||{}, deepScanMode:data.deep_scan_mode||'',
+                marketRegime:data.market_regime||'--', marketRegimeQuality:Number(data.market_regime_quality||0),
+                marketRegimeReason:data.market_regime_reason||'', pairTimeframePerformance:data.pair_timeframe_performance||{},
+                effectiveMinScore:Number(data.effective_min_score||0), lateEntry:data.late_entry||{},
+                chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[], scanMode:data.scan_mode||scanMode,
+                scanThresholds:data.scan_thresholds||{}, source:data.source||'Yahoo Finance', sourceMode:data.source_mode||'',
+                providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used)
+            };
         }
 
 
@@ -9420,7 +9446,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             if (isAutoPairCoolingDown(pair)) {
                                 scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${pair}</span> <span>10m signal cooldown · ${autoPairCooldownLabel(pair)} left</span></div>`;
                             } else {
-                                scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${pair}</span> <span>Deep ${Number(normalized.deepQualityScore||normalized.confluence||0).toFixed(1)} · Tech ${Number(normalized.confluence||0).toFixed(1)}</span></div>`;
+                                const cal=normalized.calibrationStatus==='CALIBRATED'?` · Cal ${Number(normalized.calibratedConfidence||0).toFixed(1)}`:''; scanConsole.innerHTML += `<div class="live-scan-row passed"><span>${pair}</span> <span>Deep ${Number(normalized.deepQualityScore||normalized.confluence||0).toFixed(1)} · ${escapeHtml(normalized.marketRegime||'--')}${cal}</span></div>`;
                             }
                         } else {
                             scanConsole.innerHTML += `<div class="live-scan-row rejected"><span>${pair}</span> <span>No valid confluence/data</span></div>`;
@@ -9565,12 +9591,22 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         market_risk_level: signalData.marketRiskLevel,
                         volatility_pct: signalData.volatilityPct,
                         scan_mode: signalData.scanMode,
+                        deep_quality_score: signalData.deepQualityScore,
+                        calibrated_confidence: signalData.calibratedConfidence,
+                        calibration_status: signalData.calibrationStatus,
+                        market_regime: signalData.marketRegime,
+                        market_regime_quality: signalData.marketRegimeQuality,
+                        pair_timeframe_performance: signalData.pairTimeframePerformance || {},
+                        late_entry: signalData.lateEntry || {},
                         market: document.getElementById('marketType')?.value || '',
                         snapshot: {
                             rsi: signalData.rsi,
                             reason: signalData.reason,
                             multi_tf_agreement: signalData.multiTfAgreement,
-                            confirmation_mode: signalData.confirmationMode
+                            confirmation_mode: signalData.confirmationMode,
+                            market_regime: signalData.marketRegime,
+                            calibrated_confidence: signalData.calibratedConfidence,
+                            calibration_status: signalData.calibrationStatus
                         },
                         ...getAuthPayload()
                     })
@@ -9639,7 +9675,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }).join('');
             const agreement = Number(signalData.multiTfAgreement);
             const agreementText = Number.isFinite(agreement) ? agreement.toFixed(1) + '%' : '--';
-            line.innerText = `Same pair multi-TF agreement: ${agreementText} · Mode: ${signalData.confirmationMode || '4-of-6 Strong'} · Selected Expiry: ${selectedExpiry}`;
+            const hist=signalData.pairTimeframePerformance||{}; const histText=Number(hist.sample_size||0)>=12?`${hist.status} ${Number(hist.smoothed_win_rate||0).toFixed(0)}% n=${hist.sample_size}`:'LEARNING'; line.innerText = `Multi-TF: ${agreementText} · Regime: ${signalData.marketRegime||'--'} · History: ${histText} · Expiry: ${selectedExpiry}`;
             syncSelectedExpiryUI();
         }
 
@@ -9690,8 +9726,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 setTimeout(() => containerEl.classList.remove(cls), 1700);
             }
             syncSelectedExpiryUI();
-            let confluenceNumber = Math.max(0, Math.min(100, Number(signalData.confluence || 0)));
+            const calibrationActive = signalData.calibrationStatus === 'CALIBRATED' && Number(signalData.calibratedConfidence||0) > 0;
+            let confluenceNumber = Math.max(0, Math.min(100, Number(calibrationActive ? signalData.calibratedConfidence : signalData.confluence || 0)));
             let confluenceString = confluenceNumber.toFixed(1) + "%";
+            const confidenceLabel = document.querySelector('#signalView .psr-confidence-label');
+            if (confidenceLabel) confidenceLabel.innerText = calibrationActive ? 'CALIBRATED CONF.' : 'TECH SCORE';
             if (signalConfidenceRing) signalConfidenceRing.style.setProperty('--conf', confluenceNumber);
             if (signalConfidenceValue) signalConfidenceValue.innerText = confluenceString;
             if (signal3dShell) signal3dShell.className = isBuy ? 'premium-signal-result signal-live-buy' : 'premium-signal-result signal-live-sell';
@@ -9711,14 +9750,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 targetPairDisplay.style.color = "#00ff87";
                 resDir.className = "signal-direction dir-up";
                 resDir.innerHTML = `⬆ UP (BUY) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
-                resMeta.innerHTML = `CALL 🔺 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+                resMeta.innerHTML = `CALL 🔺 | ${calibrationActive?'Calibrated':'Technical'}: ${confluenceString} | Regime: ${escapeHtml(signalData.marketRegime||'--')} | ${selectedExpiry}`;
             } else {
                 hudBox.className = "ai-hud-box glow-sell";
                 targetPairBox.className = "selected-pair-box pair-glow-sell";
                 targetPairDisplay.style.color = "#ff3366";
                 resDir.className = "signal-direction dir-down";
                 resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
-                resMeta.innerHTML = `PUT 🔻 | Technical Confluence: ${confluenceString} | Selected Expiry: ${selectedExpiry}`;
+                resMeta.innerHTML = `PUT 🔻 | ${calibrationActive?'Calibrated':'Technical'}: ${confluenceString} | Regime: ${escapeHtml(signalData.marketRegime||'--')} | ${selectedExpiry}`;
             }
             notifyRajaSignal(signalData, isBuy, confluenceString);
             updateStabilityUI(signalData);
@@ -10009,7 +10048,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const isBuy=String(signalData.dir||'').includes('CALL'), conf=Number(signalData.confluence||0), agreement=Number(signalData.multiTfAgreement||0), aligned=(signalData.alignedTimeframes||[]).length, risk=String(signalData.marketRiskLevel||'--').toUpperCase(), vol=Number(signalData.volatilityPct||0);
             const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;};
             set('explainTrend',isBuy?'Bullish':'Bearish'); set('explainTrendSub',`${signalData?.srContext||'S/R context'} · EMA/MACD trend`); set('explainMomentum',conf>=85?'Very Strong':(conf>=70?'Strong':'Moderate')); set('explainMomentumSub',`RSI ${Number(signalData?.rsi||0).toFixed(1)} · Stoch ${Number(signalData?.stochRsiK||0).toFixed(0)}/${Number(signalData?.stochRsiD||0).toFixed(0)} · Div ${signalData?.rsiDivergence||'NONE'}`); set('explainAgreement',`${aligned||'--'}/6 · ${agreement.toFixed(0)}%`); set('explainAgreementSub','Aligned valid timeframes'); set('explainExpiry',`${selectedExpiry} Confirmed`); set('explainExpirySub',`${signalData?.bbContext||'Full Bollinger context'} · selected TF aligned`); set('explainVolatility',risk==='LOW'?'Normal / Stable':(risk==='MEDIUM'?'Moderate':'Elevated')); set('explainVolatilitySub',`ATR ${vol.toFixed(4)}% · ADX/DI safety · Risk ${risk}`);
-            set('aiExplanationSummary',`${isBuy?'BUY':'SELL'} setup passed weighted RAJA Hybrid checks: S/R location, EMA/MACD trend, RSI + StochRSI timing, full Bollinger context, ATR/ADX safety and multi-timeframe agreement. This is a technical model assessment, not a guaranteed outcome.`);
+            const hist=signalData.pairTimeframePerformance||{}; const historyText=Number(hist.sample_size||0)>=12?`${hist.status} history ${Number(hist.smoothed_win_rate||0).toFixed(0)}% (n=${hist.sample_size})`:'history still learning'; set('aiExplanationSummary',`${isBuy?'BUY':'SELL'} setup passed RAJA Hybrid checks plus ${signalData.marketRegime||'market'} regime routing, late-entry ATR guard and ${historyText}. ${signalData.calibrationStatus==='CALIBRATED'?'Displayed confidence is historically calibrated.':'Calibration is still collecting outcomes.'} No score guarantees a trade outcome.`);
             renderOpportunityQueue();
         }
 
