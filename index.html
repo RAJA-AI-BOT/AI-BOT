@@ -5860,57 +5860,72 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
 
 
-    <style id="raja-side-auto-signals-v1">
+    <style id="raja-side-auto-signals-v2">
         /* =========================================================
-           LEFT-ONLY BACKGROUND AUTO SIGNAL FEED
-           - Never renders 1M/5M background signals in the main HUD.
-           - Desktop/tablet-left rail only; hidden on compact/mobile layouts.
+           LEFT-ONLY / MOBILE DEDICATED AUTO SIGNAL FEED
+           Desktop: directly under FULL SCREEN in the left rail.
+           Tablet/phone: moved to its own full-width block above the HUD.
+           The background feed never writes its signal into the main HUD.
            ========================================================= */
         .raja-side-auto-signals {
             margin-top:8px;
-            border:1px solid rgba(34,211,238,.28);
+            border:1px solid rgba(34,211,238,.34);
             border-radius:12px;
-            background:linear-gradient(180deg,rgba(3,15,28,.96),rgba(2,9,18,.98));
-            box-shadow:inset 0 0 24px rgba(34,211,238,.035),0 0 16px rgba(0,0,0,.18);
-            padding:8px;
+            background:linear-gradient(180deg,rgba(3,15,28,.98),rgba(2,9,18,.99));
+            box-shadow:inset 0 0 24px rgba(34,211,238,.045),0 0 18px rgba(0,0,0,.22);
+            padding:9px;
             flex:0 0 auto;
             min-width:0;
+            width:100%;
         }
-        .raja-side-auto-head { display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:7px; }
-        .raja-side-auto-head strong { display:block;color:#60efff;font-size:8.2px;font-weight:950;letter-spacing:.45px;white-space:nowrap; }
-        .raja-side-auto-head small { display:block;color:#7f96aa;font-size:6.3px;font-weight:800;margin-top:1px; }
-        .raja-side-auto-live { color:#00ff87;border:1px solid rgba(0,255,135,.36);background:rgba(0,255,135,.08);border-radius:999px;padding:2px 5px;font-size:6px;font-weight:950; }
-        .raja-side-auto-status { display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px;border:1px solid rgba(0,255,135,.15);background:rgba(0,255,135,.035);border-radius:8px;margin-bottom:7px; }
-        .raja-side-auto-status span { color:#9fffd5;font-size:6.6px;font-weight:900;white-space:nowrap; }
-        .raja-side-auto-status span i { display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;background:#00ff87;box-shadow:0 0 8px rgba(0,255,135,.8);vertical-align:-1px; }
-        .raja-side-auto-status b { color:#8edcff;font-size:6.2px;font-weight:900;text-align:right; }
-        .raja-side-auto-signals.is-off .raja-side-auto-status { border-color:rgba(255,93,125,.2);background:rgba(255,93,125,.035); }
-        .raja-side-auto-signals.is-off .raja-side-auto-status span { color:#ff8099; }
+        #rajaSideAutoMobileMount { display:none; }
+        .raja-side-auto-head { display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:8px; }
+        .raja-side-auto-head strong { display:block;color:#dffaff;font-size:9px;font-weight:950;letter-spacing:.45px;white-space:nowrap; }
+        .raja-side-auto-head small { display:block;color:#7f96aa;font-size:6.8px;font-weight:850;margin-top:2px; }
+        .raja-side-auto-live { color:#00ff87;border:1px solid rgba(0,255,135,.40);background:rgba(0,255,135,.09);border-radius:999px;padding:3px 6px;font-size:6.5px;font-weight:950; }
+        .raja-side-auto-status { display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px;border:1px solid rgba(0,255,135,.18);background:rgba(0,255,135,.045);border-radius:8px;margin-bottom:8px; }
+        .raja-side-auto-status span { color:#b8ffe1;font-size:7px;font-weight:950;white-space:nowrap; }
+        .raja-side-auto-status span i { display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;background:#00ff87;box-shadow:0 0 9px rgba(0,255,135,.9);vertical-align:-1px; }
+        .raja-side-auto-status b { color:#a9e7ff;font-size:6.7px;font-weight:950;text-align:right; }
+        .raja-side-auto-signals.is-off .raja-side-auto-status { border-color:rgba(255,93,125,.22);background:rgba(255,93,125,.04); }
+        .raja-side-auto-signals.is-off .raja-side-auto-status span { color:#ff9ab0; }
         .raja-side-auto-signals.is-off .raja-side-auto-status span i { background:#ff5d7d;box-shadow:0 0 8px rgba(255,93,125,.7); }
-        .raja-side-auto-tabs { display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:7px; }
-        .raja-side-auto-tabs button { min-width:0;border:1px solid rgba(96,239,255,.16);background:#071522;color:#8aa4ba;border-radius:7px;padding:6px 2px;font-size:6.5px;font-weight:950;cursor:pointer; }
-        .raja-side-auto-tabs button.active { color:#03110f;background:linear-gradient(135deg,#00ff87,#60efff);border-color:transparent;box-shadow:0 0 12px rgba(0,255,135,.16); }
-        .raja-side-signal-list { display:grid;gap:6px;max-height:282px;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:rgba(96,239,255,.34) transparent; }
-        .raja-side-signal-card { border:1px solid rgba(96,239,255,.14);background:rgba(5,15,27,.92);border-radius:9px;padding:7px;min-width:0; }
-        .raja-side-signal-card.buy { border-color:rgba(0,255,135,.30);background:linear-gradient(180deg,rgba(0,255,135,.065),rgba(4,14,24,.96)); }
-        .raja-side-signal-card.sell { border-color:rgba(255,93,125,.31);background:linear-gradient(180deg,rgba(255,51,102,.065),rgba(4,14,24,.96)); }
-        .raja-side-signal-top { display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px; }
-        .raja-side-signal-time { color:#70889e;font-size:5.8px;font-weight:800; }
-        .raja-side-signal-tf { color:#dff7ff;border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:1px 4px;font-size:5.7px;font-weight:950; }
-        .raja-side-signal-pair { color:#f5fbff;font-size:8px;font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px; }
-        .raja-side-signal-main { display:flex;align-items:flex-end;justify-content:space-between;gap:4px; }
-        .raja-side-signal-dir { font-size:9px;font-weight:950;line-height:1; }
-        .raja-side-signal-card.buy .raja-side-signal-dir { color:#00ff87; }
-        .raja-side-signal-card.sell .raja-side-signal-dir { color:#ff5d7d; }
-        .raja-side-signal-trade { font-size:7px;font-weight:950;text-align:right; }
-        .raja-side-signal-card.buy .raja-side-signal-trade { color:#71ffc1; }
-        .raja-side-signal-card.sell .raja-side-signal-trade { color:#ff829b; }
-        .raja-side-signal-meta { display:flex;justify-content:space-between;gap:5px;margin-top:5px;color:#91a8bc;font-size:5.8px;font-weight:800; }
-        .raja-side-signal-strength { height:3px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden;margin-top:4px; }
+        .raja-side-auto-tabs { display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px; }
+        .raja-side-auto-tabs button { min-width:0;border:1px solid rgba(96,239,255,.20);background:#071522;color:#9bb2c6;border-radius:7px;padding:7px 3px;font-size:7px;font-weight:950;cursor:pointer; }
+        .raja-side-auto-tabs button.active { color:#03110f;background:linear-gradient(135deg,#00ff87,#60efff);border-color:transparent;box-shadow:0 0 14px rgba(0,255,135,.18); }
+        .raja-side-signal-list { display:grid;gap:7px;max-height:320px;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:rgba(96,239,255,.38) transparent; }
+        .raja-side-signal-card { position:relative;border:1px solid rgba(96,239,255,.16);background:rgba(5,15,27,.96);border-radius:10px;padding:8px;min-width:0;overflow:hidden; }
+        .raja-side-signal-card.buy { border-color:rgba(0,255,135,.34);background:linear-gradient(180deg,rgba(0,255,135,.075),rgba(4,14,24,.98)); }
+        .raja-side-signal-card.sell { border-color:rgba(255,93,125,.35);background:linear-gradient(180deg,rgba(255,51,102,.075),rgba(4,14,24,.98)); }
+        .raja-side-signal-card.status-enter { box-shadow:0 0 16px rgba(0,255,135,.12),inset 0 0 18px rgba(0,255,135,.035); }
+        .raja-side-signal-card.status-wait { opacity:.88; }
+        .raja-side-signal-top { display:flex;align-items:center;justify-content:space-between;gap:5px;margin-bottom:5px; }
+        .raja-side-signal-time { color:#8da3b7;font-size:6.2px;font-weight:850; }
+        .raja-side-signal-tf { color:#e8f9ff;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:2px 5px;font-size:6.2px;font-weight:950; }
+        .raja-side-signal-pair { color:#ffffff;font-size:9.2px;font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;letter-spacing:.15px; }
+        .raja-side-signal-main { display:flex;align-items:center;justify-content:space-between;gap:6px; }
+        .raja-side-signal-dir { font-size:11px;font-weight:950;line-height:1;letter-spacing:.15px; }
+        .raja-side-signal-card.buy .raja-side-signal-dir { color:#00ff87;text-shadow:0 0 9px rgba(0,255,135,.22); }
+        .raja-side-signal-card.sell .raja-side-signal-dir { color:#ff5d7d;text-shadow:0 0 9px rgba(255,93,125,.22); }
+        .raja-side-signal-trade { font-size:8px;font-weight:950;text-align:right; }
+        .raja-side-signal-card.buy .raja-side-signal-trade { color:#8dffd0; }
+        .raja-side-signal-card.sell .raja-side-signal-trade { color:#ff9db0; }
+        .raja-side-entry-row { display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;margin-top:7px;padding:6px 7px;border-radius:7px;border:1px solid rgba(96,239,255,.13);background:rgba(1,8,17,.62); }
+        .raja-side-entry-status { font-size:7.1px;font-weight:950;letter-spacing:.25px;line-height:1.2; }
+        .raja-side-entry-status.enter { color:#00ff87; }
+        .raja-side-entry-status.wait { color:#fbbf24; }
+        .raja-side-entry-status.expired { color:#94a3b8; }
+        .raja-side-entry-countdown { color:#dff7ff;font-size:7px;font-weight:950;font-variant-numeric:tabular-nums;white-space:nowrap; }
+        .raja-side-entry-help { grid-column:1/-1;color:#8aa3b8;font-size:5.9px;font-weight:800;line-height:1.3; }
+        .raja-side-signal-meta { display:flex;justify-content:space-between;gap:5px;margin-top:6px;color:#a0b3c4;font-size:6.1px;font-weight:850; }
+        .raja-side-source-badge { display:inline-flex;align-items:center;gap:3px;margin-top:5px;border-radius:999px;padding:2px 5px;font-size:5.8px;font-weight:950;border:1px solid rgba(96,239,255,.18);color:#8edcff;background:rgba(96,239,255,.05); }
+        .raja-side-source-badge.exact { color:#7dffd1;border-color:rgba(0,255,135,.24);background:rgba(0,255,135,.05); }
+        .raja-side-source-badge.reference { color:#f8d66d;border-color:rgba(251,191,36,.24);background:rgba(251,191,36,.05); }
+        .raja-side-signal-strength { height:4px;background:rgba(255,255,255,.08);border-radius:99px;overflow:hidden;margin-top:5px; }
         .raja-side-signal-strength i { display:block;height:100%;width:var(--side-strength,0%);background:linear-gradient(90deg,#00ff87,#60efff);border-radius:99px; }
         .raja-side-signal-card.sell .raja-side-signal-strength i { background:linear-gradient(90deg,#ff3366,#ff8ca4); }
-        .raja-side-signal-empty { color:#748da3;font-size:6.5px;line-height:1.45;text-align:center;padding:12px 5px;border:1px dashed rgba(96,239,255,.14);border-radius:8px; }
-        .raja-side-auto-footer { margin-top:7px;color:#5f7b91;font-size:5.7px;font-weight:800;text-align:center;letter-spacing:.1px; }
+        .raja-side-signal-empty { color:#91a8bc;font-size:7px;line-height:1.5;text-align:center;padding:14px 7px;border:1px dashed rgba(96,239,255,.17);border-radius:8px; }
+        .raja-side-auto-footer { margin-top:8px;color:#718b9f;font-size:6.1px;font-weight:850;text-align:center;letter-spacing:.1px; }
         .raja-side-auto-footer.scanning { color:#60efff; }
         .raja-side-auto-footer.error { color:#ff8099; }
 
@@ -5925,16 +5940,40 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
         }
         @media (min-width:901px) and (max-height:900px) {
-            .raja-side-auto-signals { padding:6px; }
-            .raja-side-signal-list { max-height:205px;gap:4px; }
-            .raja-side-signal-card { padding:5px 6px; }
-            .raja-side-auto-head { margin-bottom:5px; }
-            .raja-side-auto-tabs { margin-bottom:5px; }
-            .raja-side-auto-footer { margin-top:5px; }
+            .raja-side-auto-signals { padding:7px; }
+            .raja-side-signal-list { max-height:245px;gap:5px; }
+            .raja-side-signal-card { padding:6px 7px; }
+            .raja-side-auto-head { margin-bottom:6px; }
+            .raja-side-auto-tabs { margin-bottom:6px; }
+            .raja-side-auto-footer { margin-top:6px; }
         }
         @media (max-width:900px) {
-            /* User requested the extra feed on the left only, never over/inside the front HUD. */
-            .raja-side-auto-signals { display:none !important; }
+            #rajaSideAutoMobileMount { display:block; width:100%; margin:0 0 8px; }
+            #rajaSideAutoMobileMount .raja-side-auto-signals { display:block !important; margin:0; max-width:none; }
+            #rajaSideAutoMobileMount .raja-side-signal-list { max-height:310px; }
+            #rajaSideAutoMobileMount .raja-side-auto-head strong { font-size:11px; }
+            #rajaSideAutoMobileMount .raja-side-auto-head small { font-size:8px; }
+            #rajaSideAutoMobileMount .raja-side-auto-status span,
+            #rajaSideAutoMobileMount .raja-side-auto-status b { font-size:8px; }
+            #rajaSideAutoMobileMount .raja-side-auto-tabs button { min-height:36px;font-size:9px; }
+            #rajaSideAutoMobileMount .raja-side-signal-card { padding:10px; }
+            #rajaSideAutoMobileMount .raja-side-signal-pair { font-size:12px; }
+            #rajaSideAutoMobileMount .raja-side-signal-dir { font-size:15px; }
+            #rajaSideAutoMobileMount .raja-side-signal-trade { font-size:11px; }
+            #rajaSideAutoMobileMount .raja-side-entry-status { font-size:9.5px; }
+            #rajaSideAutoMobileMount .raja-side-entry-countdown { font-size:9px; }
+            #rajaSideAutoMobileMount .raja-side-entry-help,
+            #rajaSideAutoMobileMount .raja-side-signal-meta,
+            #rajaSideAutoMobileMount .raja-side-source-badge { font-size:7.5px; }
+        }
+        @media (max-width:600px) {
+            #rajaSideAutoMobileMount { margin:0 0 6px; }
+            #rajaSideAutoMobileMount .raja-side-auto-signals { border-radius:10px;padding:8px; }
+            #rajaSideAutoMobileMount .raja-side-signal-list { max-height:285px; }
+            #rajaSideAutoMobileMount .raja-side-signal-card { padding:9px; }
+            #rajaSideAutoMobileMount .raja-side-signal-pair { font-size:11px; }
+            #rajaSideAutoMobileMount .raja-side-signal-dir { font-size:14px; }
+            #rajaSideAutoMobileMount .raja-side-signal-trade { font-size:10px; }
         }
     </style>
 
@@ -6237,6 +6276,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             </button>
                         </div>
                     </section>
+
+                    <div id="rajaSideAutoMobileMount" aria-label="Auto scan signals mobile placement"></div>
 
                     <section class="main-panel-card">
                         <div class="scan-heading-row">
@@ -7630,6 +7671,83 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             } catch (_) { return '--:--'; }
         }
 
+        function rajaSideTfMs(tf) {
+            return tf === '5m' ? 5 * 60 * 1000 : 60 * 1000;
+        }
+
+        function rajaSideEntryGraceMs(tf) {
+            // Entry is only labelled ENTER NOW near the start of the target candle.
+            // This avoids telling a user to enter late into an already-moving candle.
+            return tf === '5m' ? 45 * 1000 : 20 * 1000;
+        }
+
+        function rajaSideSignalTiming(item, tf, nowMs = Date.now()) {
+            const tfMs = rajaSideTfMs(tf);
+            const closedEpochMs = Number(item?.closed_candle_epoch || 0) * 1000;
+            let targetStart = Number(item?.target_candle_start_ms || 0);
+            let targetEnd = Number(item?.target_candle_end_ms || 0);
+
+            if (!targetStart && closedEpochMs > 0) targetStart = closedEpochMs + tfMs;
+            if (!targetEnd && targetStart > 0) targetEnd = targetStart + tfMs;
+
+            // Older stored cards may not have a candle epoch. Give them one conservative
+            // lifetime from scan time, then let the normal expiry cleanup remove them.
+            if (!targetStart) {
+                targetStart = Number(item?.scanned_at || nowMs);
+                targetEnd = targetStart + tfMs;
+            }
+
+            const enterUntil = Math.min(targetEnd, targetStart + rajaSideEntryGraceMs(tf));
+            if (nowMs < targetStart) {
+                return {
+                    state:'wait', label:'WAIT FOR NEW CANDLE',
+                    helper:'Direction is ready. Enter only when the target candle opens.',
+                    remaining:targetStart - nowMs, targetStart, targetEnd, enterUntil
+                };
+            }
+            if (nowMs < enterUntil) {
+                return {
+                    state:'enter', label:'ENTER NOW',
+                    helper:'Fresh target candle is open. Follow the direction shown above.',
+                    remaining:enterUntil - nowMs, targetStart, targetEnd, enterUntil
+                };
+            }
+            if (nowMs < targetEnd) {
+                return {
+                    state:'wait', label:'WAIT FOR NEW CANDLE',
+                    helper:'Entry window passed. Do not chase this candle; wait for a fresh direction.',
+                    remaining:targetEnd - nowMs, targetStart, targetEnd, enterUntil
+                };
+            }
+            return {
+                state:'expired', label:'SIGNAL EXPIRED',
+                helper:'Waiting for the next fresh direction.',
+                remaining:0, targetStart, targetEnd, enterUntil
+            };
+        }
+
+        function pruneRajaSideSignalHistory(nowMs = Date.now()) {
+            let changed = false;
+            for (const tf of ['1m','5m']) {
+                const rows = Array.isArray(rajaSideSignalHistory[tf]) ? rajaSideSignalHistory[tf] : [];
+                const fresh = rows.filter(item => rajaSideSignalTiming(item, tf, nowMs).state !== 'expired');
+                if (fresh.length !== rows.length) changed = true;
+                rajaSideSignalHistory[tf] = fresh.slice(0, 8);
+            }
+            if (changed) saveRajaSideSignalHistory();
+            return changed;
+        }
+
+        function rajaSideSourceInfo(item) {
+            const mode = String(item?.source_mode || '').toLowerCase();
+            const source = String(item?.source || '').trim();
+            if (mode === 'broker_otc_exact') return {label:'EXACT QUOTEX', cls:'exact'};
+            if (mode.includes('proxy') || mode.includes('reference') || item?.bridge_fallback_used) {
+                return {label:'REFERENCE FEED', cls:'reference'};
+            }
+            return {label:source || 'LIVE FEED', cls:''};
+        }
+
         function setRajaSideSignalTab(tf) {
             rajaSideSignalActiveTf = tf === '5m' ? '5m' : '1m';
             const one = document.getElementById('rajaSideTab1m');
@@ -7637,6 +7755,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (one) one.classList.toggle('active', rajaSideSignalActiveTf === '1m');
             if (five) five.classList.toggle('active', rajaSideSignalActiveTf === '5m');
             renderRajaSideSignals();
+        }
+
+        function relocateRajaSideAutoPanel() {
+            const panel = document.getElementById('rajaSideAutoSignalsPanel');
+            const mobileMount = document.getElementById('rajaSideAutoMobileMount');
+            const desktopBtn = document.getElementById('rajaFullscreenDesktopBtn');
+            if (!panel) return;
+            if (window.matchMedia('(max-width: 900px)').matches) {
+                if (mobileMount && panel.parentElement !== mobileMount) mobileMount.appendChild(panel);
+            } else if (desktopBtn && desktopBtn.parentElement && panel.previousElementSibling !== desktopBtn) {
+                desktopBtn.insertAdjacentElement('afterend', panel);
+            }
         }
 
         function updateRajaSideAutoHeader() {
@@ -7659,10 +7789,12 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         function renderRajaSideSignals() {
             const list = document.getElementById('rajaSideSignalList');
             if (!list) return;
+            const nowMs = Date.now();
+            pruneRajaSideSignalHistory(nowMs);
             const tf = rajaSideSignalActiveTf === '5m' ? '5m' : '1m';
             const rows = Array.isArray(rajaSideSignalHistory[tf]) ? rajaSideSignalHistory[tf] : [];
             if (!rows.length) {
-                list.innerHTML = `<div class="raja-side-signal-empty">No saved ${tf.toUpperCase()} background signal yet.<br>Auto Scan checks again every 3 minutes.</div>`;
+                list.innerHTML = `<div class="raja-side-signal-empty"><strong>WAITING FOR NEXT DIRECTION</strong><br>No active ${tf.toUpperCase()} signal right now.<br>Auto Scan checks again every 3 minutes.</div>`;
                 return;
             }
             list.innerHTML = rows.map(item => {
@@ -7673,11 +7805,21 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 const regime = escapeHtml(String(item.market_regime || 'LIVE'));
                 const direction = buy ? 'UP ↑' : 'DOWN ↓';
                 const trade = buy ? 'BUY / CALL' : 'SELL / PUT';
-                return `<div class="raja-side-signal-card ${buy ? 'buy' : 'sell'}">
-                    <div class="raja-side-signal-top"><span class="raja-side-signal-time">${rajaSideSignalClock(item.scanned_at)}</span><span class="raja-side-signal-tf">${tf.toUpperCase()}</span></div>
+                const timing = rajaSideSignalTiming(item, tf, nowMs);
+                const sourceInfo = rajaSideSourceInfo(item);
+                const stateClass = timing.state === 'enter' ? 'status-enter' : 'status-wait';
+                const countdownLabel = timing.state === 'enter' ? `Entry ${formatCountdown(timing.remaining)}` : (nowMs < timing.targetStart ? `Opens ${formatCountdown(timing.remaining)}` : `Expires ${formatCountdown(timing.remaining)}`);
+                return `<div class="raja-side-signal-card ${buy ? 'buy' : 'sell'} ${stateClass}">
+                    <div class="raja-side-signal-top"><span class="raja-side-signal-time">Signal ${rajaSideSignalClock(item.scanned_at)}</span><span class="raja-side-signal-tf">${tf.toUpperCase()}</span></div>
                     <div class="raja-side-signal-pair">${pair}</div>
                     <div class="raja-side-signal-main"><span class="raja-side-signal-dir">${direction}</span><span class="raja-side-signal-trade">${trade}</span></div>
-                    <div class="raja-side-signal-meta"><span>Next candle</span><span>${score.toFixed(0)}% · ${regime}</span></div>
+                    <div class="raja-side-entry-row">
+                        <span class="raja-side-entry-status ${timing.state}">${timing.label}</span>
+                        <span class="raja-side-entry-countdown">${countdownLabel}</span>
+                        <span class="raja-side-entry-help">${timing.helper}</span>
+                    </div>
+                    <div class="raja-side-signal-meta"><span>Strength ${score.toFixed(0)}%</span><span>${regime}</span></div>
+                    <span class="raja-side-source-badge ${sourceInfo.cls}">${escapeHtml(sourceInfo.label)}</span>
                     <div class="raja-side-signal-strength"><i style="--side-strength:${score.toFixed(0)}%"></i></div>
                 </div>`;
             }).join('');
@@ -7686,7 +7828,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         function rememberRajaSideSignal(tf, item) {
             if (!item || !item.pair || !['CALL','PUT'].includes(String(item.signal || '').toUpperCase())) return false;
             const keyTf = tf === '5m' ? '5m' : '1m';
-            const rows = Array.isArray(rajaSideSignalHistory[keyTf]) ? rajaSideSignalHistory[keyTf] : [];
+            const tfMs = rajaSideTfMs(keyTf);
+            const closedEpochMs = Number(item.closed_candle_epoch || 0) * 1000;
+            const targetStart = closedEpochMs > 0 ? closedEpochMs + tfMs : Date.now();
+            const targetEnd = targetStart + tfMs;
             const normalized = {
                 pair: String(item.pair || ''),
                 signal: String(item.signal || '').toUpperCase(),
@@ -7694,21 +7839,44 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 market_regime: String(item.market_regime || ''),
                 stability: Number(item.stability || 0),
                 closed_candle_epoch: Number(item.closed_candle_epoch || 0),
+                target_candle_start_ms: targetStart,
+                target_candle_end_ms: targetEnd,
+                source: String(item.source || ''),
+                source_mode: String(item.source_mode || ''),
+                bridge_fallback_used: Boolean(item.bridge_fallback_used),
                 scanned_at: Date.now()
             };
-            const duplicate = rows[0] &&
-                String(rows[0].pair) === normalized.pair &&
-                String(rows[0].signal) === normalized.signal &&
-                Number(rows[0].closed_candle_epoch || 0) === normalized.closed_candle_epoch;
-            if (duplicate) {
-                rows[0] = {...rows[0], ...normalized};
-                rajaSideSignalHistory[keyTf] = rows.slice(0, 12);
+
+            // Do not resurrect a signal whose intended candle has already completed.
+            if (rajaSideSignalTiming(normalized, keyTf).state === 'expired') return false;
+
+            let rows = Array.isArray(rajaSideSignalHistory[keyTf]) ? rajaSideSignalHistory[keyTf] : [];
+            rows = rows.filter(old => rajaSideSignalTiming(old, keyTf).state !== 'expired');
+            const duplicateIndex = rows.findIndex(old =>
+                String(old.pair) === normalized.pair &&
+                String(old.signal) === normalized.signal &&
+                Number(old.closed_candle_epoch || 0) === normalized.closed_candle_epoch
+            );
+            if (duplicateIndex >= 0) {
+                rows[duplicateIndex] = {...rows[duplicateIndex], ...normalized};
+                rajaSideSignalHistory[keyTf] = rows.slice(0, 8);
                 saveRajaSideSignalHistory();
                 return false;
             }
-            rajaSideSignalHistory[keyTf] = [normalized, ...rows].slice(0, 12);
+            rajaSideSignalHistory[keyTf] = [normalized, ...rows].slice(0, 8);
             saveRajaSideSignalHistory();
             return true;
+        }
+
+        let rajaSideLifecycleTicker = null;
+        function startRajaSideLifecycleTicker() {
+            if (rajaSideLifecycleTicker) clearInterval(rajaSideLifecycleTicker);
+            rajaSideLifecycleTicker = setInterval(() => {
+                const changed = pruneRajaSideSignalHistory();
+                // Re-render every second while visible so ENTER/WAIT countdowns stay readable.
+                if (document.visibilityState === 'visible') renderRajaSideSignals();
+                if (changed) updateRajaSideAutoHeader();
+            }, 1000);
         }
 
         async function runSideAutoSignalScan() {
@@ -10430,9 +10598,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         document.addEventListener('fullscreenchange', updateRajaFullscreenButton);
         document.addEventListener('webkitfullscreenchange', updateRajaFullscreenButton);
+        let rajaSideRelocateResizeTimer = null;
+        window.addEventListener('resize', () => { clearTimeout(rajaSideRelocateResizeTimer); rajaSideRelocateResizeTimer = setTimeout(() => relocateRajaSideAutoPanel(), 120); });
 
 
-        document.addEventListener('DOMContentLoaded', () => { updateRajaFullscreenButton(); installHistoryMirror(); updateAutoRescanUI(); renderRajaSideSignals(); updateRajaSideAutoHeader(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
+        document.addEventListener('DOMContentLoaded', () => { updateRajaFullscreenButton(); installHistoryMirror(); updateAutoRescanUI(); relocateRajaSideAutoPanel(); renderRajaSideSignals(); updateRajaSideAutoHeader(); startRajaSideLifecycleTicker(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
 
     
 
