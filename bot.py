@@ -3564,6 +3564,85 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
     }
 
 
+
+# =========================================================
+# LEFT-SIDE BACKGROUND AUTO SIGNAL FEED (1M + 5M)
+# This is deliberately independent from the main HUD scan/tracking flow.
+# It does not create tracked trades or increment the user's main scan history.
+# =========================================================
+SIDE_AUTO_SIGNAL_TIMEFRAMES = ("1m", "5m")
+SIDE_AUTO_SIGNAL_DEADLINE_SECONDS = max(
+    20.0, min(75.0, float(os.environ.get("RAJA_SIDE_AUTO_DEADLINE_SECONDS", "68")))
+)
+
+
+def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=None, broker=None):
+    """Return safe 1m/5m next-candle candidates for the left-side background feed."""
+    opts = normalize_scan_options(scan_options)
+    if pair not in YAHOO_SYMBOLS:
+        return []
+
+    base_df, data_age, symbol, source_info = get_market_data(pair, bridge_user=bridge_user, broker=broker)
+    if base_df is None or base_df.empty:
+        return []
+    if data_age is not None and float(data_age) > MAX_SOURCE_CANDLE_AGE_SECONDS:
+        return []
+
+    # A per-timeframe feed should stay selective even though it does not require 4-of-6 agreement.
+    mode_floor = {"SAFE": 72.0, "BALANCED": 66.0, "AGGRESSIVE": 60.0}
+    side_min_score = mode_floor.get(opts["mode"], max(60.0, float(opts.get("min_score") or 65.0) - 4.0))
+    candidates = []
+
+    for tf_name in SIDE_AUTO_SIGNAL_TIMEFRAMES:
+        tf_df = build_timeframe(base_df, TIMEFRAMES[tf_name])
+        analysis = analyze_timeframe(tf_df, tf_name)
+        signal = str((analysis or {}).get("signal") or "").upper()
+        if signal not in {"CALL", "PUT"}:
+            continue
+
+        score = float(analysis.get("score") or 0.0)
+        if score < side_min_score:
+            continue
+
+        # Reuse the main bot's safety concepts without forcing a full multi-TF HUD signal.
+        stability_score, risk_level, volatility_pct = market_stability_metrics(
+            analysis.get("price"), analysis.get("atr"), analysis.get("adx"), data_age, score
+        )
+        if str(risk_level or "").upper() == "HIGH" or float(stability_score or 0.0) < 55.0:
+            continue
+        if volatility_pct < float(opts.get("vol_min") or 0.0) or volatility_pct > float(opts.get("vol_max") or 10.0):
+            continue
+
+        regime = market_regime_router(analysis, signal, stability_score)
+        if bool(regime.get("blocked")):
+            continue
+
+        late_entry = late_entry_guard(base_df, analysis.get("price"), analysis.get("atr"), signal, opts["mode"])
+        if bool(late_entry.get("blocked")):
+            continue
+
+        rank_score = score * 0.72 + float(stability_score or 0.0) * 0.18 + float(regime.get("quality") or 0.0) * 0.10
+        candidates.append({
+            "pair": pair,
+            "timeframe": tf_name,
+            "signal": signal,
+            "direction": "UP" if signal == "CALL" else "DOWN",
+            "trade": "BUY / CALL" if signal == "CALL" else "SELL / PUT",
+            "score": round(score, 2),
+            "rank_score": round(rank_score, 2),
+            "stability": round(float(stability_score or 0.0), 1),
+            "risk": str(risk_level or ""),
+            "volatility_pct": volatility_pct,
+            "market_regime": str(regime.get("regime") or ""),
+            "closed_candle_epoch": analysis.get("closed_candle_epoch"),
+            "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
+            "source": str((source_info or {}).get("source") or ""),
+            "source_mode": str((source_info or {}).get("source_mode") or ""),
+            "yahoo_symbol": symbol,
+        })
+
+    return candidates
+
 def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
     """
     Build a REFERENCE-ONLY snapshot from the last Yahoo candles even when the
@@ -4903,6 +4982,119 @@ def forex_otc_fallback_data():
         "data": rows,
         "live_restored": any(bool(row.get("live_fresh")) for row in rows),
         "max_fresh_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
+    })
+
+
+@app.route("/side-auto-signals", methods=["POST"])
+def side_auto_signals():
+    """3-minute left-rail feed. Returns ranked 1m and 5m candidates without changing the HUD."""
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+
+    maintenance = scan_maintenance_state()
+    if maintenance:
+        return jsonify({
+            "status": "error",
+            "maintenance": True,
+            "message": maintenance.get("maintenance_message") or "RAJA AI scans are temporarily paused.",
+        }), 503
+
+    requested_pairs = data.get("pairs") or []
+    market = str(data.get("market") or "Unknown")[:80]
+    broker = str(data.get("broker") or "").strip()[:80]
+    opts = normalize_scan_options(data.get("scan_options"))
+    if not isinstance(requested_pairs, list):
+        return jsonify({"status": "error", "message": "pairs must be an array."}), 400
+
+    pairs, seen = [], set()
+    for raw in requested_pairs[:40]:
+        pair = str(raw).strip()
+        if pair in YAHOO_SYMBOLS and pair not in seen:
+            pairs.append(pair)
+            seen.add(pair)
+    if not pairs:
+        return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
+
+    # Same Forex news protection as the main scanner. The side rail must never bypass it.
+    news_lock = evaluate_news_safety_lock(pairs, market)
+    if news_lock:
+        return jsonify({
+            "status": "success",
+            "signals": {"1m": [], "5m": []},
+            "news_safety_lock": news_lock,
+            "generated_at": int(time.time()),
+            "interval_seconds": 180,
+            "diagnostics": {
+                "total_pairs": len(pairs),
+                "completed_pairs": len(pairs),
+                "timed_out_pairs_count": 0,
+                "candidates_1m": 0,
+                "candidates_5m": 0,
+                "scan_mode": opts["mode"],
+            },
+        })
+
+    results_by_pair = {}
+    timed_out_pairs = []
+    workers = min(BATCH_SCAN_WORKERS, len(pairs))
+    started = time.time()
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-side-auto")
+    future_map = {
+        pool.submit(calculate_side_auto_signal_candidates, pair, opts, auth["user"], broker): pair
+        for pair in pairs
+    }
+    done, pending = wait(future_map.keys(), timeout=SIDE_AUTO_SIGNAL_DEADLINE_SECONDS)
+    for future in done:
+        pair = future_map[future]
+        try:
+            results_by_pair[pair] = future.result() or []
+        except Exception as exc:
+            print(f"Side auto signal error for {pair}: {exc}")
+            results_by_pair[pair] = []
+    for future in pending:
+        pair = future_map[future]
+        timed_out_pairs.append(pair)
+        future.cancel()
+        results_by_pair[pair] = []
+    pool.shutdown(wait=False, cancel_futures=True)
+
+    grouped = {"1m": [], "5m": []}
+    for pair in pairs:
+        for item in results_by_pair.get(pair, []):
+            tf = str(item.get("timeframe") or "")
+            if tf in grouped:
+                grouped[tf].append(item)
+
+    # Highest quality candidate first. Return several so the UI can evolve without another backend change.
+    for tf in grouped:
+        grouped[tf].sort(
+            key=lambda item: (
+                float(item.get("rank_score") or 0.0),
+                float(item.get("score") or 0.0),
+                float(item.get("stability") or 0.0),
+            ),
+            reverse=True,
+        )
+        grouped[tf] = grouped[tf][:8]
+
+    return jsonify({
+        "status": "success",
+        "signals": grouped,
+        "generated_at": int(time.time()),
+        "interval_seconds": 180,
+        "news_safety_lock": None,
+        "diagnostics": {
+            "total_pairs": len(pairs),
+            "completed_pairs": len(done),
+            "timed_out_pairs": timed_out_pairs,
+            "timed_out_pairs_count": len(timed_out_pairs),
+            "candidates_1m": len(grouped["1m"]),
+            "candidates_5m": len(grouped["5m"]),
+            "elapsed_seconds": round(time.time() - started, 2),
+            "scan_mode": opts["mode"],
+        },
     })
 
 
