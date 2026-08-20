@@ -5858,6 +5858,86 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 </style>
 
+
+
+    <style id="raja-side-auto-signals-v1">
+        /* =========================================================
+           LEFT-ONLY BACKGROUND AUTO SIGNAL FEED
+           - Never renders 1M/5M background signals in the main HUD.
+           - Desktop/tablet-left rail only; hidden on compact/mobile layouts.
+           ========================================================= */
+        .raja-side-auto-signals {
+            margin-top:8px;
+            border:1px solid rgba(34,211,238,.28);
+            border-radius:12px;
+            background:linear-gradient(180deg,rgba(3,15,28,.96),rgba(2,9,18,.98));
+            box-shadow:inset 0 0 24px rgba(34,211,238,.035),0 0 16px rgba(0,0,0,.18);
+            padding:8px;
+            flex:0 0 auto;
+            min-width:0;
+        }
+        .raja-side-auto-head { display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:7px; }
+        .raja-side-auto-head strong { display:block;color:#60efff;font-size:8.2px;font-weight:950;letter-spacing:.45px;white-space:nowrap; }
+        .raja-side-auto-head small { display:block;color:#7f96aa;font-size:6.3px;font-weight:800;margin-top:1px; }
+        .raja-side-auto-live { color:#00ff87;border:1px solid rgba(0,255,135,.36);background:rgba(0,255,135,.08);border-radius:999px;padding:2px 5px;font-size:6px;font-weight:950; }
+        .raja-side-auto-status { display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px;border:1px solid rgba(0,255,135,.15);background:rgba(0,255,135,.035);border-radius:8px;margin-bottom:7px; }
+        .raja-side-auto-status span { color:#9fffd5;font-size:6.6px;font-weight:900;white-space:nowrap; }
+        .raja-side-auto-status span i { display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;background:#00ff87;box-shadow:0 0 8px rgba(0,255,135,.8);vertical-align:-1px; }
+        .raja-side-auto-status b { color:#8edcff;font-size:6.2px;font-weight:900;text-align:right; }
+        .raja-side-auto-signals.is-off .raja-side-auto-status { border-color:rgba(255,93,125,.2);background:rgba(255,93,125,.035); }
+        .raja-side-auto-signals.is-off .raja-side-auto-status span { color:#ff8099; }
+        .raja-side-auto-signals.is-off .raja-side-auto-status span i { background:#ff5d7d;box-shadow:0 0 8px rgba(255,93,125,.7); }
+        .raja-side-auto-tabs { display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:7px; }
+        .raja-side-auto-tabs button { min-width:0;border:1px solid rgba(96,239,255,.16);background:#071522;color:#8aa4ba;border-radius:7px;padding:6px 2px;font-size:6.5px;font-weight:950;cursor:pointer; }
+        .raja-side-auto-tabs button.active { color:#03110f;background:linear-gradient(135deg,#00ff87,#60efff);border-color:transparent;box-shadow:0 0 12px rgba(0,255,135,.16); }
+        .raja-side-signal-list { display:grid;gap:6px;max-height:282px;overflow-y:auto;padding-right:2px;scrollbar-width:thin;scrollbar-color:rgba(96,239,255,.34) transparent; }
+        .raja-side-signal-card { border:1px solid rgba(96,239,255,.14);background:rgba(5,15,27,.92);border-radius:9px;padding:7px;min-width:0; }
+        .raja-side-signal-card.buy { border-color:rgba(0,255,135,.30);background:linear-gradient(180deg,rgba(0,255,135,.065),rgba(4,14,24,.96)); }
+        .raja-side-signal-card.sell { border-color:rgba(255,93,125,.31);background:linear-gradient(180deg,rgba(255,51,102,.065),rgba(4,14,24,.96)); }
+        .raja-side-signal-top { display:flex;align-items:center;justify-content:space-between;gap:4px;margin-bottom:4px; }
+        .raja-side-signal-time { color:#70889e;font-size:5.8px;font-weight:800; }
+        .raja-side-signal-tf { color:#dff7ff;border:1px solid rgba(255,255,255,.15);border-radius:999px;padding:1px 4px;font-size:5.7px;font-weight:950; }
+        .raja-side-signal-pair { color:#f5fbff;font-size:8px;font-weight:950;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px; }
+        .raja-side-signal-main { display:flex;align-items:flex-end;justify-content:space-between;gap:4px; }
+        .raja-side-signal-dir { font-size:9px;font-weight:950;line-height:1; }
+        .raja-side-signal-card.buy .raja-side-signal-dir { color:#00ff87; }
+        .raja-side-signal-card.sell .raja-side-signal-dir { color:#ff5d7d; }
+        .raja-side-signal-trade { font-size:7px;font-weight:950;text-align:right; }
+        .raja-side-signal-card.buy .raja-side-signal-trade { color:#71ffc1; }
+        .raja-side-signal-card.sell .raja-side-signal-trade { color:#ff829b; }
+        .raja-side-signal-meta { display:flex;justify-content:space-between;gap:5px;margin-top:5px;color:#91a8bc;font-size:5.8px;font-weight:800; }
+        .raja-side-signal-strength { height:3px;background:rgba(255,255,255,.07);border-radius:99px;overflow:hidden;margin-top:4px; }
+        .raja-side-signal-strength i { display:block;height:100%;width:var(--side-strength,0%);background:linear-gradient(90deg,#00ff87,#60efff);border-radius:99px; }
+        .raja-side-signal-card.sell .raja-side-signal-strength i { background:linear-gradient(90deg,#ff3366,#ff8ca4); }
+        .raja-side-signal-empty { color:#748da3;font-size:6.5px;line-height:1.45;text-align:center;padding:12px 5px;border:1px dashed rgba(96,239,255,.14);border-radius:8px; }
+        .raja-side-auto-footer { margin-top:7px;color:#5f7b91;font-size:5.7px;font-weight:800;text-align:center;letter-spacing:.1px; }
+        .raja-side-auto-footer.scanning { color:#60efff; }
+        .raja-side-auto-footer.error { color:#ff8099; }
+
+        @media (min-width:901px) {
+            #mainAppContent .side-panel {
+                position:sticky;
+                top:5px;
+                max-height:calc(100dvh - 10px);
+                overflow-y:auto;
+                scrollbar-width:thin;
+                scrollbar-color:rgba(96,239,255,.24) transparent;
+            }
+        }
+        @media (min-width:901px) and (max-height:900px) {
+            .raja-side-auto-signals { padding:6px; }
+            .raja-side-signal-list { max-height:205px;gap:4px; }
+            .raja-side-signal-card { padding:5px 6px; }
+            .raja-side-auto-head { margin-bottom:5px; }
+            .raja-side-auto-tabs { margin-bottom:5px; }
+            .raja-side-auto-footer { margin-top:5px; }
+        }
+        @media (max-width:900px) {
+            /* User requested the extra feed on the left only, never over/inside the front HUD. */
+            .raja-side-auto-signals { display:none !important; }
+        }
+    </style>
+
 </head>
 <body>
 
@@ -6056,11 +6136,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     <div class="nav-list">
                         <button class="nav-item active" data-section="dashboard" onclick="showDefaultView()">▦ Dashboard</button>
                         <button class="nav-item" data-section="scan" onclick="showDefaultView()">◉ AI Market Scan</button>
-                        <button class="nav-item" data-section="history" onclick="openHistoryInline()">◷ History</button>
-                        <button class="nav-item" data-section="settings" onclick="openSettingsInline()">⚙ Settings</button>
-                        <button class="nav-item" data-section="news" onclick="openNewsInline()">▤ News · LIVE</button>
-                        <button class="nav-item" data-section="risk" onclick="openRiskInline()">♢ Risk & Recovery</button>
-                        <button class="nav-item" data-section="profile" onclick="openProfileInline()">👤 Profile</button>
                     </div>
                     <div class="premium-risk-mini" onclick="openRiskInline()" role="button" tabindex="0" title="Open Risk & Recovery">
                         <div class="premium-risk-mini-title"><span>Risk & Recovery Premium</span><b>LIVE</b></div>
@@ -6077,7 +6152,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         <div>AI Engine Status <strong>LIVE</strong></div>
                         <div>Engine: Multi-TF 4-of-6</div>
                         <div id="rajaEngineSourceText">Source: AUTO · Yahoo → Twelve Data</div>
-                        <div>Re-scan interval: <strong>5 min</strong></div>
+                        <div>Side Auto Signals: <strong>3 min</strong></div>
                     </div>
                     <button id="rajaFullscreenDesktopBtn" class="raja-fullscreen-inline raja-sidebar-fullscreen" type="button"
                             onclick="toggleRajaFullscreen()" title="Open dashboard in full screen"
@@ -6085,6 +6160,28 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         <span class="fs-icon">⛶</span>
                         <span class="fs-label">FULL SCREEN</span>
                     </button>
+
+                    <section id="rajaSideAutoSignalsPanel" class="raja-side-auto-signals" aria-label="Background auto scan signals" aria-live="polite">
+                        <div class="raja-side-auto-head">
+                            <div>
+                                <strong>AUTO SCAN SIGNALS</strong>
+                                <small>Every 3 Minutes</small>
+                            </div>
+                            <span id="rajaSideAutoLiveBadge" class="raja-side-auto-live">LIVE</span>
+                        </div>
+                        <div class="raja-side-auto-status">
+                            <span id="rajaSideAutoState"><i></i> AUTO SCAN: ON</span>
+                            <b id="rajaSideAutoCountdown">READY</b>
+                        </div>
+                        <div class="raja-side-auto-tabs" role="tablist" aria-label="Auto signal timeframe">
+                            <button id="rajaSideTab1m" class="active" type="button" onclick="setRajaSideSignalTab('1m')">1M SIGNALS</button>
+                            <button id="rajaSideTab5m" type="button" onclick="setRajaSideSignalTab('5m')">5M SIGNALS</button>
+                        </div>
+                        <div id="rajaSideSignalList" class="raja-side-signal-list">
+                            <div class="raja-side-signal-empty">Waiting for the first background scan…</div>
+                        </div>
+                        <div id="rajaSideAutoFooter" class="raja-side-auto-footer">Side feed only · HUD stays unchanged</div>
+                    </section>
                 </aside>
 
                 <main class="main-column">
@@ -6094,8 +6191,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div id="scanSessionChip" class="scan-session-chip"><span class="session-pulse"></span><span id="scanSessionText">Scan Session Active · 0%</span></div>
                             <div class="rescan-stack">
                                 <button class="rescan-card" id="autoRescanCard" onclick="toggleAutoRescan()">
-                                    <span class="rescan-title" id="autoRescanState">↻ Auto Re-Scan: ON</span>
-                                    <span class="rescan-time" id="autoRescanCountdown">Next Re-Scan: READY</span>
+                                    <span class="rescan-title" id="autoRescanState">↻ Auto Signals: ON</span>
+                                    <span class="rescan-time" id="autoRescanCountdown">Next Auto Signal: READY</span>
                                 </button>
                             </div>
                             <button id="installAppBtn" class="top-btn install-btn" style="display:inline-flex" onclick="installPWA()">⬇ INSTALL APP</button>
@@ -6181,7 +6278,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                     <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
                                     <div class="ready-copy">
                                         <div class="ready-title">AI Deep Scan Ready</div>
-                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS / HOME on mobile anytime while the scan is running. Auto Re-Scan can run the next market scan after five minutes.</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS / HOME on mobile anytime while the scan is running. Background Auto Signals update the left panel every three minutes; the main HUD changes only when you run a scan.</div>
                                         <div class="scan-stage-list" style="margin-top:18px;">
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
@@ -6600,7 +6697,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                     </div>
                                 </div>
 
-                                <div class="inline-list-box"><div class="inline-item"><span>Active Indicators:</span><span style="color:#00ff87;">8 Layers Active ✔</span></div><div class="inline-item"><span>Multi-TF Engine:</span><span id="settingsModeStatus" style="color:#00ff87;">BALANCED ✔</span></div><div class="inline-item"><span>Auto Re-Scan:</span><span style="color:#00ff87;">5 Minutes · Full Selected Market ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Underlying proxy feed</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                                <div class="inline-list-box"><div class="inline-item"><span>Active Indicators:</span><span style="color:#00ff87;">8 Layers Active ✔</span></div><div class="inline-item"><span>Multi-TF Engine:</span><span id="settingsModeStatus" style="color:#00ff87;">BALANCED ✔</span></div><div class="inline-item"><span>Auto Signals:</span><span style="color:#00ff87;">3 Minutes · Left Panel Only ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Underlying proxy feed</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             </div>
                             <div id="newsInlineView" class="inline-content-view">
                                 <div class="inline-title">📰 Live Economic News / Calendar</div>
@@ -6635,7 +6732,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                     <div class="status-grid">
                         <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><div class="selected-pair-head"><span class="selected-pair-label">SELECTED TARGET PAIR</span><div class="selected-pair-badges"><span id="selectedBrokerBadge" class="target-context-badge broker-badge">⚡ QUOTEX</span><span id="selectedMarketBadge" class="target-context-badge market-badge">📈 CRYPTO LIVE</span></div></div><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ Multi-TF opportunity scanner</div></div></section>
-                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="rajaBaseFeedLabel">Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Re-Scan</small><strong>5 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>6 Timeframes</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>4-of-6</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="rajaBaseFeedLabel">Yahoo 1m</strong></div><div class="snapshot-cell"><small>Auto Signals</small><strong>3 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
                     </div>
 
                     <section class="upgrade-card" id="dailyPerformancePanel">
@@ -7471,7 +7568,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
 
-        const AUTO_RESCAN_INTERVAL_MS = 5 * 60 * 1000;
+        const AUTO_RESCAN_INTERVAL_MS = 3 * 60 * 1000;
         let autoRescanEnabled = localStorage.getItem('raja_auto_rescan_enabled') !== 'false';
         let autoRescanTimeout = null;
         let autoRescanTicker = null;
@@ -7488,23 +7585,215 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const state = document.getElementById('autoRescanState');
             const countdown = document.getElementById('autoRescanCountdown');
             const card = document.getElementById('autoRescanCard');
-            if (!state || !countdown || !card) return;
 
             if (!autoRescanEnabled) {
-                state.innerText = '↻ Auto Re-Scan: OFF';
-                countdown.innerText = 'Click to enable';
-                state.style.color = '#ff5d7d';
-                card.style.borderColor = 'rgba(255,93,125,.35)';
+                if (state) { state.innerText = '↻ Auto Signals: OFF'; state.style.color = '#ff5d7d'; }
+                if (countdown) countdown.innerText = 'Click to enable';
+                if (card) card.style.borderColor = 'rgba(255,93,125,.35)';
+                if (typeof updateRajaSideAutoHeader === 'function') updateRajaSideAutoHeader();
                 return;
             }
 
-            state.innerText = '↻ Auto Re-Scan: ON';
-            state.style.color = '#00ff87';
-            card.style.borderColor = 'rgba(0,255,135,.28)';
-            if (nextAutoRescanAt > Date.now()) {
-                countdown.innerText = 'Next Re-Scan in ' + formatCountdown(nextAutoRescanAt - Date.now());
-            } else {
-                countdown.innerText = 'Next Re-Scan: READY';
+            if (state) { state.innerText = '↻ Auto Signals: ON'; state.style.color = '#00ff87'; }
+            if (card) card.style.borderColor = 'rgba(0,255,135,.28)';
+            if (countdown) {
+                if (nextAutoRescanAt > Date.now()) {
+                    countdown.innerText = 'Next Auto Signal in ' + formatCountdown(nextAutoRescanAt - Date.now());
+                } else {
+                    countdown.innerText = 'Next Auto Signal: READY';
+                }
+            }
+            if (typeof updateRajaSideAutoHeader === 'function') updateRajaSideAutoHeader();
+        }
+
+        const RAJA_SIDE_SIGNAL_HISTORY_KEY = 'raja_side_auto_signal_history_v1';
+        let rajaSideSignalActiveTf = '1m';
+        let rajaSideAutoScanRunning = false;
+        let rajaSideAutoScanController = null;
+        let rajaSideSignalHistory = (() => {
+            try {
+                const parsed = JSON.parse(localStorage.getItem(RAJA_SIDE_SIGNAL_HISTORY_KEY) || '{}');
+                return {
+                    '1m': Array.isArray(parsed?.['1m']) ? parsed['1m'].slice(0, 12) : [],
+                    '5m': Array.isArray(parsed?.['5m']) ? parsed['5m'].slice(0, 12) : []
+                };
+            } catch (_) { return {'1m': [], '5m': []}; }
+        })();
+
+        function saveRajaSideSignalHistory() {
+            try { localStorage.setItem(RAJA_SIDE_SIGNAL_HISTORY_KEY, JSON.stringify(rajaSideSignalHistory)); } catch (_) {}
+        }
+
+        function rajaSideSignalClock(ts) {
+            try {
+                return new Date(Number(ts || Date.now())).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            } catch (_) { return '--:--'; }
+        }
+
+        function setRajaSideSignalTab(tf) {
+            rajaSideSignalActiveTf = tf === '5m' ? '5m' : '1m';
+            const one = document.getElementById('rajaSideTab1m');
+            const five = document.getElementById('rajaSideTab5m');
+            if (one) one.classList.toggle('active', rajaSideSignalActiveTf === '1m');
+            if (five) five.classList.toggle('active', rajaSideSignalActiveTf === '5m');
+            renderRajaSideSignals();
+        }
+
+        function updateRajaSideAutoHeader() {
+            const panel = document.getElementById('rajaSideAutoSignalsPanel');
+            const state = document.getElementById('rajaSideAutoState');
+            const countdown = document.getElementById('rajaSideAutoCountdown');
+            const live = document.getElementById('rajaSideAutoLiveBadge');
+            if (!panel) return;
+            panel.classList.toggle('is-off', !autoRescanEnabled);
+            if (state) state.innerHTML = `<i></i> AUTO SCAN: ${autoRescanEnabled ? 'ON' : 'OFF'}`;
+            if (live) live.textContent = rajaSideAutoScanRunning ? 'SCAN' : (autoRescanEnabled ? 'LIVE' : 'OFF');
+            if (countdown) {
+                if (rajaSideAutoScanRunning) countdown.textContent = 'SCANNING…';
+                else if (!autoRescanEnabled) countdown.textContent = 'DISABLED';
+                else if (nextAutoRescanAt > Date.now()) countdown.textContent = formatCountdown(nextAutoRescanAt - Date.now());
+                else countdown.textContent = 'READY';
+            }
+        }
+
+        function renderRajaSideSignals() {
+            const list = document.getElementById('rajaSideSignalList');
+            if (!list) return;
+            const tf = rajaSideSignalActiveTf === '5m' ? '5m' : '1m';
+            const rows = Array.isArray(rajaSideSignalHistory[tf]) ? rajaSideSignalHistory[tf] : [];
+            if (!rows.length) {
+                list.innerHTML = `<div class="raja-side-signal-empty">No saved ${tf.toUpperCase()} background signal yet.<br>Auto Scan checks again every 3 minutes.</div>`;
+                return;
+            }
+            list.innerHTML = rows.map(item => {
+                const sig = String(item.signal || '').toUpperCase();
+                const buy = sig === 'CALL';
+                const score = Math.max(0, Math.min(100, Number(item.score || 0)));
+                const pair = escapeHtml(String(item.pair || '--'));
+                const regime = escapeHtml(String(item.market_regime || 'LIVE'));
+                const direction = buy ? 'UP ↑' : 'DOWN ↓';
+                const trade = buy ? 'BUY / CALL' : 'SELL / PUT';
+                return `<div class="raja-side-signal-card ${buy ? 'buy' : 'sell'}">
+                    <div class="raja-side-signal-top"><span class="raja-side-signal-time">${rajaSideSignalClock(item.scanned_at)}</span><span class="raja-side-signal-tf">${tf.toUpperCase()}</span></div>
+                    <div class="raja-side-signal-pair">${pair}</div>
+                    <div class="raja-side-signal-main"><span class="raja-side-signal-dir">${direction}</span><span class="raja-side-signal-trade">${trade}</span></div>
+                    <div class="raja-side-signal-meta"><span>Next candle</span><span>${score.toFixed(0)}% · ${regime}</span></div>
+                    <div class="raja-side-signal-strength"><i style="--side-strength:${score.toFixed(0)}%"></i></div>
+                </div>`;
+            }).join('');
+        }
+
+        function rememberRajaSideSignal(tf, item) {
+            if (!item || !item.pair || !['CALL','PUT'].includes(String(item.signal || '').toUpperCase())) return false;
+            const keyTf = tf === '5m' ? '5m' : '1m';
+            const rows = Array.isArray(rajaSideSignalHistory[keyTf]) ? rajaSideSignalHistory[keyTf] : [];
+            const normalized = {
+                pair: String(item.pair || ''),
+                signal: String(item.signal || '').toUpperCase(),
+                score: Number(item.score || 0),
+                market_regime: String(item.market_regime || ''),
+                stability: Number(item.stability || 0),
+                closed_candle_epoch: Number(item.closed_candle_epoch || 0),
+                scanned_at: Date.now()
+            };
+            const duplicate = rows[0] &&
+                String(rows[0].pair) === normalized.pair &&
+                String(rows[0].signal) === normalized.signal &&
+                Number(rows[0].closed_candle_epoch || 0) === normalized.closed_candle_epoch;
+            if (duplicate) {
+                rows[0] = {...rows[0], ...normalized};
+                rajaSideSignalHistory[keyTf] = rows.slice(0, 12);
+                saveRajaSideSignalHistory();
+                return false;
+            }
+            rajaSideSignalHistory[keyTf] = [normalized, ...rows].slice(0, 12);
+            saveRajaSideSignalHistory();
+            return true;
+        }
+
+        async function runSideAutoSignalScan() {
+            const footer = document.getElementById('rajaSideAutoFooter');
+            if (!autoRescanEnabled || !isUserVerified) return false;
+            if (rajaSideAutoScanRunning) return false;
+            if (!navigator.onLine) {
+                if (footer) { footer.textContent = 'Offline · waiting for connection'; footer.className = 'raja-side-auto-footer error'; }
+                return false;
+            }
+            // Never let the background feed interfere with a user-started HUD scan.
+            if (rajaScanStartPending || scanSessionState.running) {
+                if (footer) { footer.textContent = 'HUD scan active · side scan queued'; footer.className = 'raja-side-auto-footer'; }
+                return false;
+            }
+
+            const broker = String(document.getElementById('brokerSelect')?.value || 'Quotex');
+            const market = String(document.getElementById('marketType')?.value || '');
+            const rows = brokerData?.[broker]?.[market];
+            const pairs = Array.isArray(rows) ? rows.slice(1).filter(Boolean) : [];
+            if (!pairs.length) {
+                if (footer) { footer.textContent = 'No configured pairs for this market'; footer.className = 'raja-side-auto-footer error'; }
+                return false;
+            }
+
+            rajaSideAutoScanRunning = true;
+            updateRajaSideAutoHeader();
+            if (footer) { footer.textContent = `Background scan · ${pairs.length} assets`; footer.className = 'raja-side-auto-footer scanning'; }
+
+            const controller = new AbortController();
+            rajaSideAutoScanController = controller;
+            const timeoutId = setTimeout(() => controller.abort(), 90000);
+            try {
+                const response = await fetch('/side-auto-signals', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({
+                        pairs,
+                        market,
+                        broker,
+                        scan_options: getScanOptions(),
+                        client_id: deviceSessionId,
+                        ...getAuthPayload()
+                    }),
+                    signal: controller.signal
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') {
+                    throw new Error((result && result.message) || `Background scan failed: ${response.status}`);
+                }
+
+                let added = 0;
+                for (const tf of ['1m','5m']) {
+                    const candidates = Array.isArray(result?.signals?.[tf]) ? result.signals[tf] : [];
+                    if (candidates[0] && rememberRajaSideSignal(tf, candidates[0])) added += 1;
+                }
+                renderRajaSideSignals();
+
+                const oneCount = Array.isArray(result?.signals?.['1m']) ? result.signals['1m'].length : 0;
+                const fiveCount = Array.isArray(result?.signals?.['5m']) ? result.signals['5m'].length : 0;
+                if (footer) {
+                    if (result.news_safety_lock) {
+                        footer.textContent = 'News Safety Lock · no side trade';
+                        footer.className = 'raja-side-auto-footer error';
+                    } else if (!oneCount && !fiveCount) {
+                        footer.textContent = 'No safe 1M/5M setup · wait';
+                        footer.className = 'raja-side-auto-footer';
+                    } else {
+                        footer.textContent = `Updated now · ${added ? 'new signal saved' : 'same candle refreshed'}`;
+                        footer.className = 'raja-side-auto-footer';
+                    }
+                }
+                return true;
+            } catch (error) {
+                console.warn('RAJA side auto signal scan:', error);
+                if (footer) {
+                    footer.textContent = error?.name === 'AbortError' ? ((rajaScanStartPending || scanSessionState.running) ? 'HUD scan active · side scan paused' : 'Background scan timed out · retry queued') : 'Background scan unavailable · retry queued';
+                    footer.className = 'raja-side-auto-footer error';
+                }
+                return false;
+            } finally {
+                clearTimeout(timeoutId);
+                if (rajaSideAutoScanController === controller) rajaSideAutoScanController = null;
+                rajaSideAutoScanRunning = false;
+                updateRajaSideAutoHeader();
             }
         }
 
@@ -7531,12 +7820,12 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             autoRescanTimeout = setTimeout(async () => {
                 clearAutoRescanSchedule(true);
                 if (!autoRescanEnabled || !isUserVerified) return;
-                const btn = document.getElementById('scanBtn');
-                if (btn && btn.disabled) {
+                if (rajaScanStartPending || scanSessionState.running) {
                     armAutoRescan(30000);
                     return;
                 }
-                await startDeepScan(true);
+                await runSideAutoSignalScan();
+                if (autoRescanEnabled && isUserVerified) armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
             }, delay);
         }
 
@@ -7552,19 +7841,26 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
             const saved = Number(localStorage.getItem('raja_next_auto_rescan_at') || 0);
             if (saved > Date.now()) {
-                armAutoRescan(saved - Date.now());
+                armAutoRescan(Math.min(saved - Date.now(), AUTO_RESCAN_INTERVAL_MS));
             } else {
                 nextAutoRescanAt = 0;
                 localStorage.removeItem('raja_next_auto_rescan_at');
-                updateAutoRescanUI();
+                armAutoRescan(1500);
             }
         }
 
         function toggleAutoRescan() {
             autoRescanEnabled = !autoRescanEnabled;
             localStorage.setItem('raja_auto_rescan_enabled', autoRescanEnabled ? 'true' : 'false');
-            if (!autoRescanEnabled) clearAutoRescanSchedule(true);
-            else updateAutoRescanUI();
+            if (!autoRescanEnabled) {
+                clearAutoRescanSchedule(true);
+                try { if (rajaSideAutoScanController) rajaSideAutoScanController.abort(); } catch (_) {}
+            } else if (isUserVerified) {
+                armAutoRescan(800);
+            } else {
+                updateAutoRescanUI();
+            }
+            renderRajaSideSignals();
             playClickSound();
         }
 
@@ -9177,7 +9473,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 console.error('Batch scan error:', error);
                 if (error && error.name === 'AbortError') {
                     if (rajaScanStopRequested) throw new Error('__RAJA_SCAN_STOPPED__');
-                    throw new Error('Shared scan exceeded 90 seconds. Live market data is delayed; Auto Re-Scan will retry automatically.');
+                    throw new Error('Shared scan exceeded 90 seconds. Live market data is delayed; the background auto feed will retry automatically.');
                 }
                 throw error;
             } finally {
@@ -9213,6 +9509,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (consoleEl) consoleEl.innerHTML = '<div class="live-scan-row rejected">■ Scan stopped by user. Ready for a fresh scan.</div>';
             renderPrimaryView();
             if (typeof syncV32StopControls === 'function') syncV32StopControls();
+            if (autoRescanEnabled && isUserVerified) armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
         }
 
         function stopRajaScan() {
@@ -9270,6 +9567,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             // Previous tracked/history records remain stored separately.
             // ---------------------------------------------------------
             clearAutoRescanSchedule(true);
+            try { if (rajaSideAutoScanController) rajaSideAutoScanController.abort(); } catch (_) {}
+            rajaSideAutoScanRunning = false;
+            updateRajaSideAutoHeader();
             rajaScanStopRequested = false;
             rajaScanStartPending = true;
             currentSection = 'dashboard';
@@ -9312,7 +9612,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             if (existingScanBtn) {
                 existingScanBtn.disabled = true;
-                existingScanBtn.innerText = autoTriggered ? '↻ AUTO RE-SCAN IN PROGRESS...' : '▶ AI MARKET SCAN IN PROGRESS...';
+                existingScanBtn.innerText = '▶ AI MARKET SCAN IN PROGRESS...';
             }
 
             // Check server-side maintenance without making the button feel dead.
@@ -9386,7 +9686,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             let progressBar = document.getElementById('scanProgressBar');
             let scanStep = document.getElementById('scanStepText');
             let scanBtn = document.getElementById('scanBtn');
-            scanBtn.innerText = autoTriggered ? '↻ AUTO RE-SCAN IN PROGRESS...' : '▶ AI MARKET SCAN IN PROGRESS...';
+            scanBtn.innerText = '▶ AI MARKET SCAN IN PROGRESS...';
             scanBtn.disabled = true;
             setScanProgress(8);
 
@@ -9527,7 +9827,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         const isBatchDelay = /exceeded .*seconds|timed out|safety window|failed to fetch|network|temporarily unavailable/i.test(String(scanFailureMessage));
                         titleEl.innerText = isBatchDelay ? '⚠️ MARKET DATA DELAYED · RETRY READY' : '⚠️ SCAN REQUEST FAILED';
                         descEl.innerText = isBatchDelay
-                            ? 'The live source did not answer inside the safety window. No stale signal was used. Auto Re-Scan will retry; you can also press SCAN AGAIN.'
+                            ? 'The live source did not answer inside the safety window. No stale signal was used. Background Auto Signals will retry; you can also press SCAN AGAIN.'
                             : scanFailureMessage;
                     } else if (rajaLatestNewsLock) {
                         titleEl.innerText = '⚠️ HIGH IMPACT NEWS — SCAN PAUSED';
@@ -10132,7 +10432,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         document.addEventListener('webkitfullscreenchange', updateRajaFullscreenButton);
 
 
-        document.addEventListener('DOMContentLoaded', () => { updateRajaFullscreenButton(); installHistoryMirror(); updateAutoRescanUI(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
+        document.addEventListener('DOMContentLoaded', () => { updateRajaFullscreenButton(); installHistoryMirror(); updateAutoRescanUI(); renderRajaSideSignals(); updateRajaSideAutoHeader(); syncSelectedExpiryUI(); calculateRisk(); hydrateUpgradeSettings(); renderPremiumMarketSnapshot(); renderPerformanceHeatmap(); renderReplaySpotlight(); updateSetupBuildMeterProgress(0); });
 
     
 
@@ -13355,7 +13655,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     !(typeof scanSessionState !== 'undefined' && scanSessionState.running) &&
                     !(typeof rajaScanStartPending !== 'undefined' && rajaScanStartPending)
                 ) {
-                    try { await startDeepScan(true); } catch (_) {}
+                    try { await runSideAutoSignalScan(); if (autoRescanEnabled) armAutoRescan(AUTO_RESCAN_INTERVAL_MS); } catch (_) {}
                 }
             }, 500);
         }
