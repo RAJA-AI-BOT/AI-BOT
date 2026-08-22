@@ -9366,6 +9366,72 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             return /OTC$/i.test(String(market || ''));
         }
 
+        async function rajaPreflightExactOtcSource(broker, market, selectedPair) {
+            if (!RAJA_STRICT_BROKER_OTC_UI || !rajaIsOtcMarket(market)) {
+                return { ok:true };
+            }
+
+            const isPocket = broker === 'PocketOption';
+            const brokerName = isPocket ? 'Pocket Option' : 'Quotex';
+            const endpoint = isPocket ? '/pocket-bridge/status' : '/quotex-bridge/status';
+            const pairText = String(selectedPair || '');
+            const isAuto = pairText.includes('Auto Scan') || pairText === '';
+            const payload = { ...getAuthPayload() };
+            if (!isAuto && pairText) payload.pair = pairText;
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 6500);
+            try {
+                const response = await fetch(endpoint, {
+                    method:'POST',
+                    headers:{ 'Content-Type':'application/json' },
+                    body:JSON.stringify(payload),
+                    cache:'no-store',
+                    signal:controller.signal
+                });
+                const result = await response.json().catch(() => null);
+                if (!response.ok || !result || result.status !== 'success') {
+                    return {
+                        ok:false, brokerName,
+                        reason:`${brokerName} exact OTC source check failed. Scan was not started.`
+                    };
+                }
+
+                const data = result.data || {};
+                const connected = Boolean(data.connected);
+                const candleCount = Number(data.candle_count || 0);
+                const pairsWithData = Number(data.pairs_with_data || 0);
+                const hasUsableData = isAuto ? pairsWithData > 0 : candleCount > 0;
+
+                if (!connected) {
+                    return {
+                        ok:false, brokerName,
+                        reason:`${brokerName} exact OTC feed is OFFLINE. Connect/start the ${brokerName} bridge/companion first. RAJA AI will not scan OTC with Yahoo/reference candles.`
+                    };
+                }
+                if (!hasUsableData) {
+                    return {
+                        ok:false, brokerName,
+                        reason:isAuto
+                            ? `${brokerName} bridge is connected but no OTC pair is streaming yet. Open an OTC pair on the broker and wait for live candles before scanning.`
+                            : `${brokerName} bridge is connected but ${pairText} has no live broker candles yet. Open the same pair on the broker and wait for streaming data.`
+                    };
+                }
+
+                return { ok:true, brokerName, data };
+            } catch (error) {
+                const timedOut = error && error.name === 'AbortError';
+                return {
+                    ok:false, brokerName,
+                    reason: timedOut
+                        ? `${brokerName} exact OTC source check timed out. Scan was not started.`
+                        : `${brokerName} exact OTC source is unreachable. Scan was not started.`
+                };
+            } finally {
+                clearTimeout(timeoutId);
+            }
+        }
+
         async function rajaWaitForExactOtcClose(broker, market, expiry) {
             if (!RAJA_STRICT_BROKER_OTC_UI || !rajaIsOtcMarket(market)) return;
             const durationMs = Math.max(1000, getExpirySeconds(expiry) * 1000);
@@ -9763,6 +9829,28 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 }
             } catch (_) {}
             const isAutoScan = selectedPair.includes('Auto Scan') || selectedPair === '';
+
+            // STRICT OTC SOURCE PREFLIGHT
+            // Do not enter the animated SCANNING state until the exact broker
+            // feed is actually connected and has usable candles. This prevents
+            // a dead Pocket/Quotex bridge from looking like an active scan.
+            if (RAJA_STRICT_BROKER_OTC_UI && rajaIsOtcMarket(market)) {
+                const sourceCheck = await rajaPreflightExactOtcSource(broker, market, selectedPair);
+                if (!sourceCheck.ok) {
+                    rajaLatestNoTradeReason = String(sourceCheck.reason || 'Exact broker OTC feed is unavailable.');
+                    if (existingScanBtn) {
+                        existingScanBtn.disabled = false;
+                        existingScanBtn.innerText = rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN';
+                    }
+                    if (typeof v23SetLifecycle === 'function') v23SetLifecycle('ready');
+                    if (typeof v23SetHeroStatus === 'function') v23SetHeroStatus('OTC FEED OFFLINE · SCAN NOT STARTED');
+                    showRajaNoTradeView(
+                        `⛔ ${String(sourceCheck.brokerName || brokerDisplayName(broker)).toUpperCase()} OTC FEED OFFLINE`,
+                        rajaLatestNoTradeReason
+                    );
+                    return;
+                }
+            }
 
             // ---------------------------------------------------------
             // INSTANT FRESH-SCAN UX
