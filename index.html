@@ -9484,7 +9484,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 marketRegimeReason:data.market_regime_reason||'', pairTimeframePerformance:data.pair_timeframe_performance||{},
                 effectiveMinScore:Number(data.effective_min_score||0), lateEntry:data.late_entry||{},
                 chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[], scanMode:data.scan_mode||scanMode,
-                scanThresholds:data.scan_thresholds||{}, source:data.source||'Yahoo Finance', sourceMode:data.source_mode||'',
+                scanThresholds:data.scan_thresholds||{}, source:data.source||((/\(OTC\)/i.test(String(data.pair||document.getElementById('pairSelect')?.value||'')) && /Quotex|Pocket/i.test(String(document.getElementById('brokerSelect')?.value||'')))?'Broker feed unavailable':'Yahoo Finance'), sourceMode:data.source_mode||'',
                 providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used)
             };
         }
@@ -12244,7 +12244,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         const s=String(source||'AUTO');
         if(/Quotex Native WebSocket/i.test(s)) return 'QUOTEX OTC 1m · NATIVE WS';
         if(/Pocket Option Native WebSocket/i.test(s)) return 'POCKET OTC 1m · NATIVE WS';
-        if(/Quotex Bridge/i.test(s)) return 'QUOTEX OTC 1m · BRIDGE BACKUP';
+        if(/Quotex Browser Bridge|Quotex Bridge/i.test(s)) return 'QUOTEX OTC 1m · BROWSER BRIDGE';
+        if(/Pocket Option Browser Bridge/i.test(s)) return 'POCKET OTC 1m · BROWSER BRIDGE';
         if(/Twelve Data/i.test(s)) return 'TWELVE DATA 1m · BACKUP LIVE';
         if(/Yahoo/i.test(s)) return 'YAHOO 1m · PRIMARY LIVE';
         if(/MIXED/i.test(s)) return 'YAHOO + TWELVE · LIVE';
@@ -13366,7 +13367,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 scanThresholds:{},
                 fallbackReference:true,
                 fallbackWarning:forexOtcFallbackWarning(),
-                source:String(rawRow?.source || 'Yahoo Finance'),
+                source:String(rawRow?.source || ((/\(OTC\)/i.test(String(rawRow?.pair||'')) && /Quotex|Pocket/i.test(String(document.getElementById('brokerSelect')?.value||''))) ? 'Broker feed unavailable' : 'Yahoo Finance')),
                 sourceMode:'fallback_reference_only',
                 providerSymbol:String(rawRow?.provider_symbol || rawRow?.yahoo_symbol || '')
             };
@@ -14816,7 +14817,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 </style>
 
 
-<script id="raja-quotex-bridge-ui-v1">
+<script id="raja-broker-bridge-ui-v2">
 (() => {
     let bridgeConnected = false;
     let bridgeStatusTimer = null;
@@ -14830,21 +14831,32 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         return String(document.getElementById('pairSelect')?.value || '').trim();
     }
 
+    function currentBridgeBroker() {
+        const raw = String(document.getElementById('brokerSelect')?.value || 'Quotex').trim();
+        return /pocket/i.test(raw) ? 'Pocket Option' : 'Quotex';
+    }
+
+    function isBrokerOtcScreen() {
+        const broker = currentBridgeBroker();
+        const market = String(document.getElementById('marketType')?.value || '');
+        return (broker === 'Quotex' || broker === 'Pocket Option') && /OTC/i.test(market);
+    }
+
     function updateBridgeUi(status) {
         bridgeConnected = Boolean(status && status.connected);
-        const btn = document.getElementById('rajaQuotexBridgeBtn');
+        const broker = currentBridgeBroker();
+        const short = broker === 'Pocket Option' ? 'POCKET' : 'QUOTEX';
+        const btn = document.getElementById('rajaBrokerBridgeBtn');
         if (btn) {
-            btn.textContent = bridgeConnected ? '🟢 QUOTEX BRIDGE CONNECTED' : '🔗 CONNECT QUOTEX BRIDGE';
+            btn.textContent = bridgeConnected ? `🟢 ${short} BRIDGE CONNECTED` : '🔗 CONNECT BROKER BRIDGE';
             btn.title = bridgeConnected
-                ? `Quotex bridge backup active${status?.pair ? ' · ' + status.pair : ''}`
-                : 'Optional backup: pair the RAJA Quotex Bridge. Native Railway WebSocket remains primary.';
+                ? `${broker} browser bridge active${status?.pair ? ' · ' + status.pair : ''}`
+                : `Pair the local RAJA Broker Bridge, then keep ${broker} open on the OTC pair.`;
         }
         const base = document.getElementById('rajaBaseFeedLabel');
-        const broker = String(document.getElementById('brokerSelect')?.value || '');
-        const market = String(document.getElementById('marketType')?.value || '');
         if (base) {
-            if (broker === 'Quotex' && /OTC/i.test(market)) {
-                base.textContent = bridgeConnected ? 'Native WS + Bridge Backup' : 'Broker Native WS Primary';
+            if (isBrokerOtcScreen()) {
+                base.textContent = bridgeConnected ? `${broker} Browser Bridge 1m` : 'Broker Feed Required';
             } else {
                 base.textContent = 'Yahoo 1m';
             }
@@ -14853,14 +14865,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
     async function refreshBridgeStatus() {
         const auth = bridgeAuth();
-        if (!auth.key || !auth.user || !auth.device || !auth.session_token) {
+        if (!auth.key || !auth.user || !auth.device || !auth.session_token || !isBrokerOtcScreen()) {
             updateBridgeUi(null);
             return null;
         }
         try {
-            const response = await fetch('/quotex-bridge/status', {
+            const response = await fetch('/broker-bridge/status', {
                 method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
-                body:JSON.stringify({ pair:currentBridgePair(), ...auth })
+                body:JSON.stringify({ broker:currentBridgeBroker(), pair:currentBridgePair(), ...auth })
             });
             const payload = await response.json().catch(() => null);
             if (response.ok && payload?.status === 'success') {
@@ -14875,11 +14887,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     async function createBridgePairCode() {
         const auth = bridgeAuth();
         if (!auth.key || !auth.user || !auth.device || !auth.session_token) {
-            alert('Login to RAJA AI first, then connect the Quotex Bridge.');
+            alert('Login to RAJA AI first, then connect the Broker Bridge.');
             return;
         }
         try {
-            const response = await fetch('/quotex-bridge/pair-code', {
+            const response = await fetch('/broker-bridge/pair-code', {
                 method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
                 body:JSON.stringify(auth)
             });
@@ -14888,7 +14900,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const code = String(payload.data?.pair_code || '');
             try { await navigator.clipboard.writeText(code); } catch (_) {}
             window.prompt(
-                'RAJA QUOTEX BRIDGE PAIR CODE\n\n1) Open the RAJA Quotex Bridge extension on your PC.\n2) Enter this code.\n3) Keep Quotex open on the OTC pair you want to scan.\n\nCode is valid for about 10 minutes and has also been copied:',
+                'RAJA BROKER BRIDGE PAIR CODE\n\n1) Open the RAJA Broker Bridge extension on this PC.\n2) Enter this code once.\n3) Keep your selected Quotex/Pocket Option OTC pair open in its logged-in browser tab.\n\nThe extension sends parsed prices/candles only — not your broker password or cookies.\n\nCode:',
                 code
             );
         } catch (error) {
@@ -14897,19 +14909,24 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 
     function installBridgeButton() {
-        if (document.getElementById('rajaQuotexBridgeBtn')) return;
+        if (document.getElementById('rajaBrokerBridgeBtn')) return;
+        const old = document.getElementById('rajaQuotexBridgeBtn');
+        if (old) old.remove();
         const grid = document.querySelector('.utility-grid');
         if (!grid) return;
         const btn = document.createElement('button');
-        btn.id = 'rajaQuotexBridgeBtn';
+        btn.id = 'rajaBrokerBridgeBtn';
         btn.type = 'button';
         btn.className = 'utility-btn';
-        btn.textContent = '🔗 CONNECT BRIDGE BACKUP';
+        btn.textContent = '🔗 CONNECT BROKER BRIDGE';
         btn.addEventListener('click', createBridgePairCode);
         grid.appendChild(btn);
         refreshBridgeStatus();
     }
 
+    window.rajaCreateBrokerBridgePairCode = createBridgePairCode;
+    window.rajaRefreshBrokerBridgeStatus = refreshBridgeStatus;
+    // Backward-compatible names used by older UI code.
     window.rajaCreateQuotexBridgePairCode = createBridgePairCode;
     window.rajaRefreshQuotexBridgeStatus = refreshBridgeStatus;
 
