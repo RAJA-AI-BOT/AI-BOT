@@ -9875,20 +9875,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                     scanDiagnostics = batch.diagnostics || null;
 
-                    // Self-healing Forex OTC: if exact/live data is unavailable for the
-                    // whole market, arm the existing reference fallback and continue the
-                    // SAME scan immediately instead of leaving the user on a dead screen.
-                    if (
-                        market === 'ForexOTC' &&
-                        scanDiagnostics &&
-                        scanDiagnostics.all_market_data_blocked &&
-                        typeof window.rajaArmForexOtcFallback === 'function' &&
-                        typeof window.rajaRunForexOtcFailoverScan === 'function'
-                    ) {
-                        window.rajaArmForexOtcFallback('Exact/live Forex OTC data unavailable; automatic reference fallback activated.');
-                        await window.rajaRunForexOtcFailoverScan(selectedPair);
-                        return;
-                    }
+                    // V29 strict broker OTC: never replace Quotex/Pocket Option OTC
+                    // candles with Yahoo/Twelve Data when the exact bridge cache is
+                    // warming or a pair is not streaming.  The backend returns a fast
+                    // per-pair WARMING/UNAVAILABLE result instead.
                     const eligibleSet = new Set(eligiblePairs);
                     const rawResults = batch.results;
                     const rankableResults = rawResults.filter(row =>
@@ -9937,8 +9927,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     });
 
                     const skippedSlow = Number((scanDiagnostics && scanDiagnostics.timed_out_pairs_count) || 0);
+                    const bridgeSkipped = Number((scanDiagnostics && scanDiagnostics.bridge_skipped_pairs_count) || 0);
+                    const bridgeReadyRaw = scanDiagnostics && scanDiagnostics.bridge_ready_pairs_count;
+                    const bridgeReady = Number.isFinite(Number(bridgeReadyRaw)) ? Number(bridgeReadyRaw) : null;
+                    const requiredBridgeCandles = Number((scanDiagnostics && scanDiagnostics.bridge_mode_required_candles) || 0);
+                    if (bridgeReady !== null) {
+                        const assetsNow = document.getElementById('scanActiveAssetsValue');
+                        if (assetsNow) assetsNow.innerText = String(bridgeReady);
+                        scanConsole.innerHTML += `<div class="live-scan-row scanning"><span>🔗 Exact broker cache</span><span>${bridgeReady} ready · ${bridgeSkipped} warming/unavailable${requiredBridgeCandles ? ` · need ${requiredBridgeCandles}×1m` : ''}</span></div>`;
+                    }
                     const partialTag = skippedSlow > 0 ? ` · ${skippedSlow} SLOW SKIPPED` : '';
-                    scanStep.innerText = `Shared scan complete: ${processed}/${eligiblePairs.length} eligible${partialTag}${batch.cacheHit ? ' · CACHE HIT' : ''}`;
+                    const bridgeTag = bridgeReady !== null ? ` · BRIDGE READY ${bridgeReady}/${eligiblePairs.length}` : '';
+                    scanStep.innerText = `Shared scan complete: ${processed}/${eligiblePairs.length} eligible${bridgeTag}${partialTag}${batch.cacheHit ? ' · CACHE HIT' : ''}`;
                     if (skippedSlow > 0) {
                         scanConsole.innerHTML += `<div class="live-scan-row scanning"><span>⚡ Partial scan returned safely</span><span>${skippedSlow} slow pair(s) retry next cycle</span></div>`;
                     }
@@ -9951,18 +9951,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                     const indicatorResult = await scanPairFromBackend(selectedPair);
 
-                    if (
-                        market === 'ForexOTC' &&
-                        !indicatorResult &&
-                        rajaLatestMarketState &&
-                        rajaLatestMarketState.scan_paused &&
-                        typeof window.rajaArmForexOtcFallback === 'function' &&
-                        typeof window.rajaRunForexOtcFailoverScan === 'function'
-                    ) {
-                        window.rajaArmForexOtcFallback(rajaLatestMarketState.reason || 'Exact/live Forex OTC data unavailable; automatic reference fallback activated.');
-                        await window.rajaRunForexOtcFailoverScan(selectedPair);
-                        return;
-                    }
+                    // Strict broker OTC stays NO DATA / NO TRADE when the exact
+                    // browser/native feed is unavailable.  No reference-feed failover.
 
                     setScanProgress(100);
                     if (indicatorResult) {
@@ -10049,9 +10039,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         const brokerOtcNow = /OTC/i.test(selectedMarketNow) && (selectedBrokerNow === 'Quotex' || selectedBrokerNow === 'PocketOption');
                         if (total > 0 && dataOk === 0) {
                             titleEl.innerText = brokerOtcNow ? '⚠️ BROKER OTC DATA UNAVAILABLE' : '⚠️ LIVE MARKET DATA TEMPORARILY UNAVAILABLE';
-                            descEl.innerText = brokerOtcNow
-                                ? `0/${total} pairs returned exact broker candles. Native broker WebSocket / exact backup is unavailable; Yahoo OTC substitution is disabled.`
-                                : `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
+                            if (brokerOtcNow) {
+                                const bridgeSkipped = Number(scanDiagnostics.bridge_skipped_pairs_count || 0);
+                                const bridgeReady = Number(scanDiagnostics.bridge_ready_pairs_count || 0);
+                                const need = Number(scanDiagnostics.bridge_mode_required_candles || 0);
+                                const warmingRows = Array.isArray(rawResults) ? rawResults.filter(row => row && row.scan_skip_reason === 'bridge_cache_warming') : [];
+                                const bestDepth = warmingRows.reduce((m,row) => Math.max(m, Number(row?.bridge_cache?.candle_count || 0)), 0);
+                                descEl.innerText = bridgeSkipped > 0
+                                    ? `Exact broker bridge is connected, but the selected ${scanMode} mode cache is still warming. ${bridgeReady}/${total} pairs are analysis-ready${need ? `; ${need} exact 1m candles are required per ready pair` : ''}${bestDepth ? ` (best cache now ${bestDepth})` : ''}. Cached candles are reused automatically; Yahoo OTC substitution stays disabled.`
+                                    : `0/${total} pairs returned exact broker candles. Keep the broker bridge connected and stream the required OTC pair(s). Yahoo OTC substitution is disabled.`;
+                            } else {
+                                descEl.innerText = `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
+                            }
                         } else {
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
