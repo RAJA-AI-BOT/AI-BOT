@@ -440,6 +440,17 @@ pocket_bridge_candles = {}
 pocket_bridge_status = {}
 pocket_bridge_data_lock = threading.RLock()
 
+# V29 bridge scan optimizer.  Pair freshness is tracked separately from the
+# extension's global heartbeat so a live USD/JPY tab can never make an old
+# EUR/JPY cache look current.  Auto Scan also uses this metadata to skip
+# unavailable broker pairs immediately instead of spending the shared batch
+# deadline on pairs that have no exact candles yet.
+BROKER_BRIDGE_PAIR_FRESH_SECONDS = max(5.0, min(60.0, float(os.environ.get("RAJA_BRIDGE_PAIR_FRESH_SECONDS", "20"))))
+BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS = max(60.0, min(float(MAX_SOURCE_CANDLE_AGE_SECONDS), float(os.environ.get("RAJA_BRIDGE_MARKET_MAX_AGE_SECONDS", "180"))))
+BROKER_BRIDGE_SCAN_MIN_CANDLES = max(30, min(300, int(os.environ.get("RAJA_BRIDGE_SCAN_MIN_CANDLES", "61"))))
+quotex_bridge_pair_seen = {}
+pocket_bridge_pair_seen = {}
+
 
 # =========================================================
 # RAJA QUOTEX OTC BRIDGE
@@ -563,15 +574,19 @@ def _bridge_upsert_tick(user, pair, price, epoch=None):
 
 def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=None):
     user = normalize_user_id(user)
+    now = time.time()
     with quotex_bridge_data_lock:
         current = dict(quotex_bridge_status.get(user) or {})
         current.update({
             "connected": True,
-            "last_seen": time.time(),
+            "last_seen": now,
             "device": str(device or "")[:160],
+            "broker": "Quotex",
         })
         if pair:
-            current["pair"] = str(pair)[:120]
+            clean_pair = str(pair)[:120]
+            current["pair"] = clean_pair
+            quotex_bridge_pair_seen[_quotex_bridge_pair_key(user, clean_pair)] = now
         if price is not None:
             try: current["price"] = float(price)
             except Exception: pass
@@ -580,20 +595,63 @@ def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=N
         quotex_bridge_status[user] = current
 
 
+def _bridge_book_snapshot(book, pair_seen_at):
+    now = time.time()
+    rows = list(book.items()) if book else []
+    pair_seen_at = float(pair_seen_at or 0.0)
+    upload_age = max(0.0, now - pair_seen_at) if pair_seen_at else None
+    latest_epoch = int(rows[-1][0]) if rows else None
+    market_age = max(0.0, now - float(latest_epoch)) if latest_epoch else None
+    return rows, upload_age, latest_epoch, market_age
+
+
+def _bridge_analysis_depth(candle_count):
+    # analyze_timeframe() needs 60 CLOSED candles per timeframe.  One extra
+    # 1m row is kept because build_timeframe() drops the forming bucket.
+    count = max(0, int(candle_count or 0))
+    thresholds = (("1m", 61), ("2m", 121), ("5m", 301), ("10m", 601), ("15m", 901), ("30m", 1801))
+    return [name for name, needed in thresholds if count >= needed]
+
+
+def _bridge_required_base_candles(min_tf):
+    # The strict gate requires N agreeing timeframes.  Because the configured
+    # timeframes are ordered 1m,2m,5m,10m,15m,30m, this is the minimum exact
+    # 1m history depth needed before that gate can possibly pass.
+    try:
+        need = max(1, min(6, int(min_tf)))
+    except Exception:
+        need = 4
+    thresholds = [61, 121, 301, 601, 901, 1801]
+    return thresholds[need - 1]
+
+
 def _get_quotex_bridge_status(user, pair=None):
     user = normalize_user_id(user)
     now = time.time()
     with quotex_bridge_data_lock:
         status = dict(quotex_bridge_status.get(user) or {})
         if pair:
-            book = quotex_bridge_candles.get(_quotex_bridge_pair_key(user, pair))
-            status["candle_count"] = len(book) if book else 0
+            key = _quotex_bridge_pair_key(user, pair)
+            book = quotex_bridge_candles.get(key)
+            pair_seen = quotex_bridge_pair_seen.get(key)
+            rows, pair_age, latest_epoch, market_age = _bridge_book_snapshot(book, pair_seen)
+            status["candle_count"] = len(rows)
+            status["pair_age_seconds"] = round(pair_age, 2) if pair_age is not None else None
+            status["latest_candle_epoch"] = latest_epoch
+            status["market_age_seconds"] = round(market_age, 2) if market_age is not None else None
+            status["analysis_timeframes_ready"] = _bridge_analysis_depth(len(rows))
+            status["scan_ready"] = bool(
+                len(rows) >= BROKER_BRIDGE_SCAN_MIN_CANDLES
+                and pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
+                and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
+            )
         else:
             status["pairs_with_data"] = sum(1 for (u, _p), book in quotex_bridge_candles.items() if u == user and book)
     last_seen = float(status.get("last_seen") or 0.0)
     age = max(0.0, now - last_seen) if last_seen else None
     status["age_seconds"] = round(age, 2) if age is not None else None
-    status["connected"] = bool(last_seen and age <= 20.0)
+    status["connected"] = bool(last_seen and age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS)
+    status.setdefault("broker", "Quotex")
     return status
 
 
@@ -603,29 +661,33 @@ def get_quotex_bridge_market_data(user, pair):
     key = _quotex_bridge_pair_key(user, pair)
     with quotex_bridge_data_lock:
         book = quotex_bridge_candles.get(key)
-        rows = list(book.items()) if book else []
-        status = dict(quotex_bridge_status.get(user) or {})
+        pair_seen = quotex_bridge_pair_seen.get(key)
+        rows, pair_age, latest_epoch, market_age = _bridge_book_snapshot(book, pair_seen)
     source_info = {
-        "source": "Quotex Bridge",
+        "source": "Quotex Browser Bridge",
         "source_mode": "broker_otc_exact",
         "provider_symbol": pair,
         "yahoo_symbol": YAHOO_SYMBOLS.get(pair),
-        "backup_used": False,
+        "backup_used": True,
         "exact_broker_feed": True,
+        "browser_bridge": True,
+        "candle_count": len(rows),
+        "latest_candle_epoch": latest_epoch,
+        "analysis_timeframes_ready": _bridge_analysis_depth(len(rows)),
     }
     if not rows:
-        source_info["unavailable_reason"] = "Quotex Bridge is not streaming this OTC pair yet. Open the same pair in Quotex and keep the bridge connected."
+        source_info["unavailable_reason"] = "Quotex Browser Bridge has no exact candles for this OTC pair yet. Open/stream the pair in Quotex first."
         return None, None, pair, source_info
-    last_seen = float(status.get("last_seen") or 0.0)
-    age = max(0.0, time.time() - last_seen) if last_seen else float("inf")
-    if age > 20.0:
-        source_info["unavailable_reason"] = f"Quotex Bridge feed is disconnected/stale ({int(age)}s since last tick)."
-        return None, age, pair, source_info
+    if pair_age is None or pair_age > BROKER_BRIDGE_PAIR_FRESH_SECONDS:
+        source_info["unavailable_reason"] = f"Quotex Browser Bridge is not actively streaming this pair ({int(pair_age or 0)}s since its last upload)."
+        return None, market_age, pair, source_info
+    if market_age is None or market_age > BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS:
+        source_info["unavailable_reason"] = f"Quotex Browser Bridge cached candles for this pair are stale ({int(market_age or 0)}s market age)."
+        return None, market_age, pair, source_info
     pd = _get_pandas()
     index = pd.to_datetime([epoch for epoch, _row in rows], unit="s", utc=True)
-    frame = pd.DataFrame([row for _epoch, row in rows], index=index)
-    frame = frame.sort_index()
-    return frame, age, pair, source_info
+    frame = pd.DataFrame([row for _epoch, row in rows], index=index).sort_index()
+    return frame, market_age, pair, source_info
 
 
 # =========================================================
@@ -697,16 +759,19 @@ def _pocket_bridge_upsert_tick(user, pair, price, epoch=None):
 
 def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=None):
     user = normalize_user_id(user)
+    now = time.time()
     with pocket_bridge_data_lock:
         current = dict(pocket_bridge_status.get(user) or {})
         current.update({
             "connected": True,
-            "last_seen": time.time(),
+            "last_seen": now,
             "device": str(device or "")[:160],
             "broker": "Pocket Option",
         })
         if pair:
-            current["pair"] = str(pair)[:120]
+            clean_pair = str(pair)[:120]
+            current["pair"] = clean_pair
+            pocket_bridge_pair_seen[_pocket_bridge_pair_key(user, clean_pair)] = now
         if price is not None:
             try:
                 current["price"] = float(price)
@@ -723,14 +788,26 @@ def _get_pocket_bridge_status(user, pair=None):
     with pocket_bridge_data_lock:
         status = dict(pocket_bridge_status.get(user) or {})
         if pair:
-            book = pocket_bridge_candles.get(_pocket_bridge_pair_key(user, pair))
-            status["candle_count"] = len(book) if book else 0
+            key = _pocket_bridge_pair_key(user, pair)
+            book = pocket_bridge_candles.get(key)
+            pair_seen = pocket_bridge_pair_seen.get(key)
+            rows, pair_age, latest_epoch, market_age = _bridge_book_snapshot(book, pair_seen)
+            status["candle_count"] = len(rows)
+            status["pair_age_seconds"] = round(pair_age, 2) if pair_age is not None else None
+            status["latest_candle_epoch"] = latest_epoch
+            status["market_age_seconds"] = round(market_age, 2) if market_age is not None else None
+            status["analysis_timeframes_ready"] = _bridge_analysis_depth(len(rows))
+            status["scan_ready"] = bool(
+                len(rows) >= BROKER_BRIDGE_SCAN_MIN_CANDLES
+                and pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
+                and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
+            )
         else:
             status["pairs_with_data"] = sum(1 for (u, _p), book in pocket_bridge_candles.items() if u == user and book)
     last_seen = float(status.get("last_seen") or 0.0)
     age = max(0.0, now - last_seen) if last_seen else None
     status["age_seconds"] = round(age, 2) if age is not None else None
-    status["connected"] = bool(last_seen and age <= 20.0)
+    status["connected"] = bool(last_seen and age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS)
     status.setdefault("broker", "Pocket Option")
     return status
 
@@ -741,8 +818,8 @@ def get_pocket_bridge_market_data(user, pair):
     key = _pocket_bridge_pair_key(user, pair)
     with pocket_bridge_data_lock:
         book = pocket_bridge_candles.get(key)
-        rows = list(book.items()) if book else []
-        status = dict(pocket_bridge_status.get(user) or {})
+        pair_seen = pocket_bridge_pair_seen.get(key)
+        rows, pair_age, latest_epoch, market_age = _bridge_book_snapshot(book, pair_seen)
     source_info = {
         "source": "Pocket Option Browser Bridge",
         "source_mode": "broker_otc_exact",
@@ -751,20 +828,83 @@ def get_pocket_bridge_market_data(user, pair):
         "backup_used": True,
         "exact_broker_feed": True,
         "browser_bridge": True,
+        "candle_count": len(rows),
+        "latest_candle_epoch": latest_epoch,
+        "analysis_timeframes_ready": _bridge_analysis_depth(len(rows)),
     }
     if not rows:
-        source_info["unavailable_reason"] = "Pocket Option Browser Bridge is not streaming this OTC pair yet. Open the same pair in Pocket Option and keep the bridge connected."
+        source_info["unavailable_reason"] = "Pocket Option Browser Bridge has no exact candles for this OTC pair yet. Open/stream the pair in Pocket Option first."
         return None, None, pair, source_info
-    last_seen = float(status.get("last_seen") or 0.0)
-    age = max(0.0, time.time() - last_seen) if last_seen else float("inf")
-    if age > 20.0:
-        source_info["unavailable_reason"] = f"Pocket Option Browser Bridge feed is disconnected/stale ({int(age)}s since last tick)."
-        return None, age, pair, source_info
+    if pair_age is None or pair_age > BROKER_BRIDGE_PAIR_FRESH_SECONDS:
+        source_info["unavailable_reason"] = f"Pocket Option Browser Bridge is not actively streaming this pair ({int(pair_age or 0)}s since its last upload)."
+        return None, market_age, pair, source_info
+    if market_age is None or market_age > BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS:
+        source_info["unavailable_reason"] = f"Pocket Option Browser Bridge cached candles for this pair are stale ({int(market_age or 0)}s market age)."
+        return None, market_age, pair, source_info
     pd = _get_pandas()
     index = pd.to_datetime([epoch for epoch, _row in rows], unit="s", utc=True)
-    frame = pd.DataFrame([row for _epoch, row in rows], index=index)
-    frame = frame.sort_index()
-    return frame, age, pair, source_info
+    frame = pd.DataFrame([row for _epoch, row in rows], index=index).sort_index()
+    return frame, market_age, pair, source_info
+
+
+def _broker_bridge_ready_pairs(user, broker, requested_pairs=None):
+    """Return fresh exact bridge pairs with per-pair depth metadata.
+
+    This is intentionally read-only: it never opens/switches a broker asset and
+    never falls back to Yahoo for OTC.
+    """
+    user = normalize_user_id(user)
+    broker_key = str(broker or "").strip().casefold().replace(" ", "")
+    is_pocket = broker_key in {"pocketoption", "pocket_option", "pocket"}
+    if is_pocket:
+        lock, books, seen_map, label = pocket_bridge_data_lock, pocket_bridge_candles, pocket_bridge_pair_seen, "Pocket Option"
+    else:
+        lock, books, seen_map, label = quotex_bridge_data_lock, quotex_bridge_candles, quotex_bridge_pair_seen, "Quotex"
+    allow = set(str(p).strip() for p in (requested_pairs or []) if str(p).strip())
+    now = time.time()
+    rows = []
+    with lock:
+        for (u, pair), book in books.items():
+            if u != user or not book or (allow and pair not in allow):
+                continue
+            count = len(book)
+            pair_seen = float(seen_map.get((u, pair)) or 0.0)
+            pair_age = max(0.0, now - pair_seen) if pair_seen else None
+            latest_epoch = int(next(reversed(book))) if book else None
+            market_age = max(0.0, now - latest_epoch) if latest_epoch else None
+            tf_ready = _bridge_analysis_depth(count)
+            stream_fresh = bool(pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS)
+            market_fresh = bool(market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS)
+            rows.append({
+                "pair": pair,
+                "broker": label,
+                "candle_count": count,
+                "pair_age_seconds": round(pair_age, 2) if pair_age is not None else None,
+                "market_age_seconds": round(market_age, 2) if market_age is not None else None,
+                "latest_candle_epoch": latest_epoch,
+                "analysis_timeframes_ready": tf_ready,
+                "analysis_timeframes_ready_count": len(tf_ready),
+                "stream_fresh": stream_fresh,
+                "market_fresh": market_fresh,
+                "scan_ready": bool(stream_fresh and market_fresh and count >= BROKER_BRIDGE_SCAN_MIN_CANDLES),
+            })
+    rows.sort(key=lambda row: str(row.get("pair") or ""))
+    return rows
+
+
+def _broker_bridge_cache_signature(user, broker, pairs):
+    """Small immutable signature for safe batch-cache reuse.
+
+    It changes when a pair gains backfilled candles or rolls into a new 1m
+    bucket, so a 30-second cached WARMING result cannot hide newly-arrived exact
+    broker data.
+    """
+    rows = _broker_bridge_ready_pairs(user, broker, pairs)
+    meta = {row.get("pair"): row for row in rows}
+    return tuple(
+        (pair, int((meta.get(pair) or {}).get("candle_count") or 0), int((meta.get(pair) or {}).get("latest_candle_epoch") or 0))
+        for pair in pairs
+    )
 
 
 # Permanent license storage:
@@ -4444,6 +4584,49 @@ def quotex_bridge_tick():
     return jsonify({"status": "success", "data": {"accepted": accepted, **status}})
 
 
+@app.route("/broker-bridge/ready-pairs", methods=["POST"])
+def broker_bridge_ready_pairs_route():
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+    broker = str(data.get("broker") or "").strip()
+    broker_key = broker.casefold().replace(" ", "")
+    if broker_key not in {"quotex", "pocketoption", "pocket_option", "pocket"}:
+        return jsonify({"status": "error", "message": "Broker bridge status is available only for Quotex or Pocket Option."}), 400
+    requested = data.get("pairs") if isinstance(data.get("pairs"), list) else None
+    opts = normalize_scan_options(data.get("scan_options"))
+    required_candles = _bridge_required_base_candles(opts.get("min_tf"))
+    rows = _broker_bridge_ready_pairs(auth["user"], broker, requested)
+    for row in rows:
+        row["mode_required_candles"] = required_candles
+        row["mode_scan_ready"] = bool(row.get("stream_fresh") and row.get("market_fresh") and int(row.get("candle_count") or 0) >= required_candles)
+    ready = [row for row in rows if row.get("mode_scan_ready")]
+    try:
+        native_state = native_feed_status() if callable(native_feed_status) else {}
+        native_row = (native_state or {}).get("pocket_option" if broker_key in {"pocketoption", "pocket_option", "pocket"} else "quotex") or {}
+    except Exception:
+        native_row = {}
+    return jsonify({
+        "status": "success",
+        "data": {
+            "broker": "Pocket Option" if broker_key in {"pocketoption", "pocket_option", "pocket"} else "Quotex",
+            "pairs": rows,
+            "ready_pairs": [row["pair"] for row in ready],
+            "ready_count": len(ready),
+            "cached_count": len(rows),
+            "native_configured": bool(native_row.get("enabled") and native_row.get("configured")),
+            "native_connected": bool(native_row.get("connected")),
+            "pair_fresh_seconds": BROKER_BRIDGE_PAIR_FRESH_SECONDS,
+            "market_max_age_seconds": BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS,
+            "scan_min_candles": BROKER_BRIDGE_SCAN_MIN_CANDLES,
+            "mode": opts.get("mode"),
+            "min_tf": opts.get("min_tf"),
+            "mode_required_candles": required_candles,
+        },
+    })
+
+
 @app.route("/health", methods=["GET"])
 def health():
     with cache_lock:
@@ -4459,6 +4642,9 @@ def health():
         "cached_symbols": cached_symbols,
         "quotex_bridge_enabled": True,
         "browser_bridge_brokers": ["Quotex", "Pocket Option"],
+        "broker_bridge_pair_fresh_seconds": BROKER_BRIDGE_PAIR_FRESH_SECONDS,
+        "broker_bridge_market_max_age_seconds": BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS,
+        "broker_bridge_scan_min_candles": BROKER_BRIDGE_SCAN_MIN_CANDLES,
         "quotex_bridge_required_for_otc": False,
         "legacy_bridge_required_env": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
         "quotex_reference_fallback_enabled": False,
@@ -5458,7 +5644,13 @@ def scan_batch():
     # Accuracy V24 includes user-specific pair/expiry history, so cached qualified
     # results must never cross user boundaries. Quotex bridge data is user-specific too.
     performance_cache_user = auth["user"]
-    key = (broker, performance_cache_user, selected_expiry, tuple(pairs), options_key); now = time.time()
+    bridge_cache_signature = None
+    if broker_is_native and all("(otc)" in str(pair).casefold() for pair in pairs):
+        try:
+            bridge_cache_signature = _broker_bridge_cache_signature(auth["user"], broker, pairs)
+        except Exception:
+            bridge_cache_signature = None
+    key = (broker, performance_cache_user, selected_expiry, tuple(pairs), options_key, bridge_cache_signature); now = time.time()
     with batch_cache_lock:
         cached = batch_cache.get(key)
         if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
@@ -5479,10 +5671,70 @@ def scan_batch():
                 return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
 
         results_by_pair, timed_out_pairs = {}, []
-        workers = min(BATCH_SCAN_WORKERS, len(pairs)); batch_started = time.time()
-        pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch")
-        future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry, opts, auth["user"], broker): pair for pair in pairs}
-        done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
+        batch_started = time.time()
+
+        # V29 fast exact-OTC path: if the unofficial native connector is disabled
+        # (the recommended bridge-only setup), do not create workers for broker
+        # pairs that the paired browser is not currently streaming.  This removes
+        # the apparent "stuck on one pair" behaviour and makes the response time
+        # proportional to READY pairs rather than the full configured market.
+        compute_pairs = list(pairs)
+        bridge_skipped_pairs = []
+        broker_otc_batch = broker_is_native and all("(otc)" in str(pair).casefold() for pair in pairs)
+        native_ready = False
+        try:
+            native_state = native_feed_status() if callable(native_feed_status) else {}
+            native_row = (native_state or {}).get("pocket_option" if broker_key in {"pocketoption", "pocket_option", "pocket"} else "quotex") or {}
+            native_ready = bool(native_row.get("enabled") and native_row.get("configured") and native_row.get("connected"))
+        except Exception:
+            native_ready = False
+
+        if broker_otc_batch and not native_ready:
+            bridge_rows = _broker_bridge_ready_pairs(auth["user"], broker, pairs)
+            bridge_meta = {row["pair"]: row for row in bridge_rows}
+            compute_pairs = []
+            source_label = "Pocket Option Browser Bridge" if broker_key in {"pocketoption", "pocket_option", "pocket"} else "Quotex Browser Bridge"
+            required_bridge_candles = _bridge_required_base_candles(opts.get("min_tf"))
+            for pair in pairs:
+                meta = bridge_meta.get(pair)
+                mode_ready = bool(
+                    meta and meta.get("stream_fresh") and meta.get("market_fresh")
+                    and int(meta.get("candle_count") or 0) >= required_bridge_candles
+                )
+                if mode_ready:
+                    compute_pairs.append(pair)
+                    continue
+                bridge_skipped_pairs.append(pair)
+                if meta:
+                    reason = (
+                        f"{source_label} cache is warming for {pair}: {int(meta.get('candle_count') or 0)}/{required_bridge_candles} "
+                        f"exact 1m candles needed for {opts.get('mode')} {opts.get('min_tf')}-of-6 mode; "
+                        f"stream_fresh={bool(meta.get('stream_fresh'))}, market_fresh={bool(meta.get('market_fresh'))}."
+                    )
+                    data_age = meta.get("market_age_seconds")
+                else:
+                    reason = f"{source_label} is not streaming {pair} yet. Open/subscribe this OTC pair in the broker tab first."
+                    data_age = None
+                info = {
+                    "source": source_label, "source_mode": "broker_otc_exact",
+                    "provider_symbol": pair, "exact_broker_feed": True,
+                    "browser_bridge": True, "backup_used": True,
+                }
+                row = no_signal_result(pair, reason, symbol=pair, data_age=data_age, source_info=info)
+                row.update({
+                    "data_delayed": True, "scan_paused": True,
+                    "market_status": "WARMING" if meta else "UNAVAILABLE",
+                    "data_status": "WARMING" if meta else "UNAVAILABLE",
+                    "exclude_from_history": True, "exclude_from_performance": True,
+                    "scan_skip_reason": "bridge_cache_warming" if meta else "bridge_pair_not_streaming",
+                    "bridge_cache": meta or {},
+                })
+                results_by_pair[pair] = row
+
+        workers = min(BATCH_SCAN_WORKERS, len(compute_pairs)) if compute_pairs else 0
+        pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch") if workers else None
+        future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry, opts, auth["user"], broker): pair for pair in compute_pairs} if pool else {}
+        done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS) if future_map else (set(), set())
         for future in done:
             pair = future_map[future]
             try: results_by_pair[pair] = future.result()
@@ -5491,7 +5743,8 @@ def scan_batch():
         for future in pending:
             pair = future_map[future]; timed_out_pairs.append(pair); future.cancel()
             results_by_pair[pair] = no_signal_result(pair, "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.", symbol=YAHOO_SYMBOLS.get(pair))
-        pool.shutdown(wait=False, cancel_futures=True)
+        if pool is not None:
+            pool.shutdown(wait=False, cancel_futures=True)
         results = [results_by_pair[pair] for pair in pairs]
         stale_pairs = [r for r in results if r.get("source_stale")]
         delayed_pairs = [r for r in results if r.get("data_delayed")]
@@ -5503,7 +5756,7 @@ def scan_batch():
         all_market_data_blocked = bool(results) and not batch_results_are_countable(results)
         diagnostics = {
             "total_pairs": len(results),
-            "completed_pairs": len(done),
+            "completed_pairs": len(done) + len(bridge_skipped_pairs),
             "timed_out_pairs": timed_out_pairs,
             "timed_out_pairs_count": len(timed_out_pairs),
             "partial_response": bool(timed_out_pairs),
@@ -5518,6 +5771,10 @@ def scan_batch():
             "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
             "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
             "batch_workers": workers,
+            "bridge_ready_pairs_count": len(compute_pairs) if broker_otc_batch and not native_ready else None,
+            "bridge_skipped_pairs": bridge_skipped_pairs,
+            "bridge_skipped_pairs_count": len(bridge_skipped_pairs),
+            "bridge_mode_required_candles": (_bridge_required_base_candles(opts.get("min_tf")) if broker_otc_batch and not native_ready else None),
             "scan_mode": opts["mode"],
         }
         payload = {"data": results, "diagnostics": diagnostics}
