@@ -43,6 +43,16 @@ if not WEBHOOK_SECRET and BOT_TOKEN:
     WEBHOOK_SECRET = hashlib.sha256(("raja-telegram:" + BOT_TOKEN).encode("utf-8")).hexdigest()[:48]
 
 TELEGRAM_API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}" if BOT_TOKEN else ""
+TELEGRAM_WEBHOOK_PATH = "/telegram/webhook"
+TELEGRAM_WEBHOOK_REPAIR_INTERVAL = max(60, int(os.environ.get("RAJA_TELEGRAM_WEBHOOK_REPAIR_INTERVAL", "300")))
+TELEGRAM_AUTO_WEBHOOK = str(os.environ.get("RAJA_TELEGRAM_AUTO_WEBHOOK", "1")).strip().lower() not in {"0", "false", "no", "off"}
+_TELEGRAM_RUNTIME = {
+    "bot_ok": False, "bot_username": BOT_USERNAME, "webhook_ok": False,
+    "webhook_url": "", "last_error": "", "last_check": 0, "last_configured": 0,
+}
+_TELEGRAM_RUNTIME_LOCK = threading.RLock()
+_TELEGRAM_MONITOR_STARTED = False
+_TELEGRAM_MONITOR_LOCK = threading.Lock()
 
 MARKET_PAIRS = {
     "CryptoLive": ["BTC-USD", "ETH-USD", "SOL-USD", "LTC-USD", "XRP-USD", "ADA-USD", "DOGE-USD"],
@@ -340,6 +350,52 @@ def tg_api(method, payload=None, timeout=20):
         raise RuntimeError(f"Telegram {method} HTTP {exc.code}: {body[:300]}") from exc
     except URLError as exc:
         raise RuntimeError(f"Telegram {method} network error: {exc}") from exc
+
+
+def _set_runtime(**updates):
+    with _TELEGRAM_RUNTIME_LOCK:
+        _TELEGRAM_RUNTIME.update(updates)
+        _TELEGRAM_RUNTIME["last_check"] = int(time.time())
+
+
+def get_webhook_info():
+    if not BOT_TOKEN:
+        return {}
+    info = tg_api("getWebhookInfo", {}, timeout=10) or {}
+    return info if isinstance(info, dict) else {}
+
+
+def telegram_self_test():
+    if not BOT_TOKEN:
+        _set_runtime(bot_ok=False, webhook_ok=False, last_error="TELEGRAM_BOT_TOKEN is not configured")
+        return False
+    try:
+        me = tg_api("getMe", {}, timeout=10) or {}
+        actual_username = str(me.get("username") or BOT_USERNAME).lstrip("@")
+        info = get_webhook_info()
+        expected_url = f"{PUBLIC_BASE_URL}{TELEGRAM_WEBHOOK_PATH}" if PUBLIC_BASE_URL else ""
+        actual_url = str(info.get("url") or "")
+        webhook_ok = bool(expected_url and actual_url == expected_url and not info.get("last_error_message"))
+        _set_runtime(bot_ok=True, bot_username=actual_username, webhook_ok=webhook_ok,
+                     webhook_url=actual_url, last_error=str(info.get("last_error_message") or ""))
+        return webhook_ok
+    except Exception as exc:
+        _set_runtime(bot_ok=False, webhook_ok=False, last_error=str(exc)[:300])
+        return False
+
+
+def configure_bot_commands():
+    commands = [
+        {"command": "start", "description": "Open RAJA AI menu"},
+        {"command": "menu", "description": "Show main menu"},
+        {"command": "status", "description": "Show bot/access status"},
+    ]
+    try:
+        tg_api("setMyCommands", {"commands": commands}, timeout=10)
+        return True
+    except Exception as exc:
+        print(f"Telegram setMyCommands warning: {exc}")
+        return False
 
 
 def send_message(chat_id, text, keyboard=None, parse_mode="HTML"):
@@ -697,8 +753,8 @@ def trial_expiry_reminder_worker(services):
                         try:
                             send_message(
                                 user["chat_id"],
-                                "⏳ <b>FREE TRIAL EXPIRY REMINDER</b>\\n\\n"
-                                f"Your RAJA AI free trial has approximately <b>{_format_remaining(remaining)}</b> remaining.\\n\\n"
+                                "⏳ <b>FREE TRIAL EXPIRY REMINDER</b>\n\n"
+                                f"Your RAJA AI free trial has approximately <b>{_format_remaining(remaining)}</b> remaining.\n\n"
                                 "If you want to continue after expiry, contact admin for VIP access.",
                                 markup([[btn("💬 CONTACT ADMIN", url=contact_url())]])
                             )
@@ -717,8 +773,8 @@ def trial_expiry_reminder_worker(services):
                         try:
                             send_message(
                                 user["chat_id"],
-                                "⌛ <b>FREE TRIAL EXPIRED</b>\\n\\n"
-                                "Your RAJA AI free trial has ended. Market scanning is now locked for this trial.\\n\\n"
+                                "⌛ <b>FREE TRIAL EXPIRED</b>\n\n"
+                                "Your RAJA AI free trial has ended. Market scanning is now locked for this trial.\n\n"
                                 "Contact admin if you want to activate VIP access.",
                                 markup([[btn("💬 CONTACT ADMIN", url=contact_url())]])
                             )
@@ -747,6 +803,20 @@ def handle_message(message, services):
             show_approved_to_admin(chat_id)
         else:
             send_message(chat_id, "⛔ Admin only command.")
+        return
+
+    if text.split(maxsplit=1)[0].lower() in {"/status", "/health"}:
+        runtime = dict(_TELEGRAM_RUNTIME)
+        access = str(user.get("status") or "NEW").upper()
+        send_message(
+            chat_id,
+            "🩺 <b>RAJA AI BOT STATUS</b>\n\n"
+            f"Bot: <b>{'ONLINE' if runtime.get('bot_ok') else 'CHECKING'}</b>\n"
+            f"Webhook: <b>{'OK' if runtime.get('webhook_ok') else 'REPAIRING'}</b>\n"
+            f"Your access: <b>{html.escape(access)}</b>\n"
+            f"Public server: <code>{html.escape(PUBLIC_BASE_URL)}</code>",
+            start_keyboard(access == "ACTIVE"),
+        )
         return
 
     if text.startswith("/admin"):
@@ -1099,17 +1169,73 @@ def handle_update(update, services):
 
 def configure_webhook():
     if not BOT_TOKEN or not PUBLIC_BASE_URL:
+        _set_runtime(webhook_ok=False, last_error="Bot token or RAJA_PUBLIC_BASE_URL is missing")
         return False
+    if not PUBLIC_BASE_URL.lower().startswith("https://"):
+        _set_runtime(webhook_ok=False, last_error="Telegram webhook requires an HTTPS RAJA_PUBLIC_BASE_URL")
+        return False
+    try:
+        me = tg_api("getMe", {}, timeout=12) or {}
+        actual_username = str(me.get("username") or BOT_USERNAME).lstrip("@")
+    except Exception as exc:
+        _set_runtime(bot_ok=False, webhook_ok=False, last_error=str(exc)[:300])
+        raise
+
+    webhook_url = f"{PUBLIC_BASE_URL}{TELEGRAM_WEBHOOK_PATH}"
     payload = {
-        "url": f"{PUBLIC_BASE_URL}/telegram/webhook",
+        "url": webhook_url,
         "allowed_updates": ["message", "callback_query"],
         "drop_pending_updates": False,
+        "max_connections": 40,
     }
     if WEBHOOK_SECRET:
         payload["secret_token"] = WEBHOOK_SECRET
+
     result = tg_api("setWebhook", payload, timeout=20)
-    print(f"Telegram webhook configured for @{BOT_USERNAME}: {result}")
-    return bool(result)
+    configure_bot_commands()
+    info = get_webhook_info()
+    actual_url = str(info.get("url") or "")
+    last_error = str(info.get("last_error_message") or "")
+    ok = bool(result and actual_url == webhook_url)
+    _set_runtime(bot_ok=True, bot_username=actual_username, webhook_ok=ok, webhook_url=actual_url,
+                 last_error=last_error, last_configured=int(time.time()))
+    print(f"Telegram webhook configured for @{actual_username}: {ok} -> {actual_url}")
+    return ok
+
+
+def telegram_webhook_monitor():
+    # Railway may start the process before the public URL is fully reachable.
+    # Retry automatically so one failed cold-start does not leave the bot dead.
+    for delay in (3, 8, 20):
+        time.sleep(delay)
+        try:
+            if telegram_self_test():
+                break
+            configure_webhook()
+            if telegram_self_test():
+                break
+        except Exception as exc:
+            print(f"Telegram webhook startup retry warning: {exc}")
+
+    while TELEGRAM_AUTO_WEBHOOK and BOT_TOKEN:
+        time.sleep(TELEGRAM_WEBHOOK_REPAIR_INTERVAL)
+        try:
+            if not telegram_self_test():
+                configure_webhook()
+        except Exception as exc:
+            print(f"Telegram webhook monitor warning: {exc}")
+
+
+def _start_webhook_monitor_once():
+    global _TELEGRAM_MONITOR_STARTED
+    if not TELEGRAM_AUTO_WEBHOOK or not BOT_TOKEN:
+        return
+    with _TELEGRAM_MONITOR_LOCK:
+        if _TELEGRAM_MONITOR_STARTED:
+            return
+        _TELEGRAM_MONITOR_STARTED = True
+        threading.Thread(target=telegram_webhook_monitor, daemon=True,
+                         name="raja-telegram-webhook-monitor").start()
 
 
 def register_telegram_routes(app, services):
@@ -1135,29 +1261,43 @@ def register_telegram_routes(app, services):
 
     @app.route("/telegram/health", methods=["GET"])
     def telegram_health():
+        runtime = dict(_TELEGRAM_RUNTIME)
         return jsonify({
-            "status": "ok",
+            "status": "ok" if BOT_TOKEN else "not_configured",
             "telegram_enabled": bool(BOT_TOKEN),
-            "bot_username": BOT_USERNAME,
+            "bot_ok": bool(runtime.get("bot_ok")),
+            "bot_username": runtime.get("bot_username") or BOT_USERNAME,
             "support_username": SUPPORT_USERNAME,
             "admin_bound": bool(admin_id()),
             "public_base_url": PUBLIC_BASE_URL,
+            "expected_webhook_url": f"{PUBLIC_BASE_URL}{TELEGRAM_WEBHOOK_PATH}" if PUBLIC_BASE_URL else "",
+            "webhook_ok": bool(runtime.get("webhook_ok")),
+            "webhook_url": runtime.get("webhook_url") or "",
+            "last_error": runtime.get("last_error") or "",
+            "last_check": runtime.get("last_check") or 0,
+            "last_configured": runtime.get("last_configured") or 0,
+            "auto_repair": bool(TELEGRAM_AUTO_WEBHOOK),
         })
 
-    if BOT_TOKEN:
-        def delayed_setup():
-            time.sleep(5)
-            try:
-                configure_webhook()
-            except Exception as exc:
-                print(f"Telegram webhook setup warning: {exc}")
+    @app.route("/telegram/repair", methods=["POST"])
+    def telegram_repair():
+        data = request.get_json(silent=True) or {}
+        if not ADMIN_SETUP_CODE:
+            return jsonify({"ok": False, "message": "TELEGRAM_ADMIN_SETUP_CODE is not configured."}), 503
+        if str(data.get("setup_code") or "") != ADMIN_SETUP_CODE:
+            return jsonify({"ok": False, "message": "Invalid setup code."}), 403
+        try:
+            ok = configure_webhook()
+            return jsonify({"ok": bool(ok), "runtime": dict(_TELEGRAM_RUNTIME)})
+        except Exception as exc:
+            return jsonify({"ok": False, "message": str(exc)[:300], "runtime": dict(_TELEGRAM_RUNTIME)}), 503
 
-        threading.Thread(target=delayed_setup, daemon=True).start()
+    if BOT_TOKEN:
+        _start_webhook_monitor_once()
         threading.Thread(
-            target=trial_expiry_reminder_worker,
-            args=(services,),
-            daemon=True,
+            target=trial_expiry_reminder_worker, args=(services,), daemon=True,
             name="raja-trial-expiry-reminder",
         ).start()
     else:
+        _set_runtime(last_error="TELEGRAM_BOT_TOKEN is not set")
         print("Telegram integration loaded but TELEGRAM_BOT_TOKEN is not set.")
