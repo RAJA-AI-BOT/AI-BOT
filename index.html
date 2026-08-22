@@ -8841,7 +8841,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 backendTrackedHistory.forEach((item, index) => {
                     const score = Number(item.score || 0).toFixed(1) + '%';
                     const otc = String(item.pair || '').includes('(OTC)');
-                    const awaiting = String(item.status || '').toUpperCase() === 'AWAITING_QX';
+                    const awaiting = ['AWAITING_QX','AWAITING_BROKER'].includes(String(item.status || '').toUpperCase());
                     const proxy = String(item.yahoo_result || '').toUpperCase();
                     const phase = String(item.phase || '').toUpperCase();
                     const result = String(item.result || '').toUpperCase();
@@ -8852,8 +8852,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     if (result === 'WIN' || result === 'LOSS' || result === 'DRAW') {
                         label = `[${result}]`;
                         color = result === 'WIN' ? '#00ff87' : (result === 'LOSS' ? '#ff3366' : '#f7d36a');
-                    } else if (awaiting || phase === 'QX_VERIFY') {
-                        label = proxy ? `[PROXY ${proxy} · QX VERIFY]` : '[QX RESULT REQUIRED]';
+                    } else if (awaiting || phase === 'QX_VERIFY' || phase === 'BROKER_VERIFY') {
+                        label = '[BROKER RESULT REQUIRED]';
                         color = '#f7d36a';
                     } else if (phase === 'WAITING_ENTRY') {
                         label = '[WAITING ENTRY]';
@@ -8869,8 +8869,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         label = '[PENDING]';
                     }
 
-                    const showQx = otc && !item.result && (awaiting || phase === 'QX_VERIFY');
-                    html += `<div class="inline-item" style="gap:5px;"><span style="flex:1;min-width:0;">${index+1}. ${escapeHtml(item.pair)} (${escapeHtml(item.signal)}) · ${escapeHtml(item.expiry)} · <strong style="color:#60efff;">${score}</strong><br><span style="font-size:7.5px;color:#94a3b8;">${escapeHtml(item.scan_mode||'BALANCED')} · Stability ${escapeHtml(item.market_stability_score??'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span></span><span style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end;"><span style="color:${color};font-weight:900;">${label}</span><button class="history-replay-btn" onclick="openSignalReplay('${item.id}')">REPLAY</button>${showQx?`<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">QX WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">QX LOSS</button>`:''}</span></div>`;
+                    const showQx = otc && !item.result && (awaiting || phase === 'QX_VERIFY' || phase === 'BROKER_VERIFY');
+                    html += `<div class="inline-item" style="gap:5px;"><span style="flex:1;min-width:0;">${index+1}. ${escapeHtml(item.pair)} (${escapeHtml(item.signal)}) · ${escapeHtml(item.expiry)} · <strong style="color:#60efff;">${score}</strong><br><span style="font-size:7.5px;color:#94a3b8;">${escapeHtml(item.scan_mode||'BALANCED')} · Stability ${escapeHtml(item.market_stability_score??'--')} · ${escapeHtml(formatDateTime(item.created_at))}</span></span><span style="display:flex;align-items:center;gap:3px;flex-wrap:wrap;justify-content:flex-end;"><span style="color:${color};font-weight:900;">${label}</span><button class="history-replay-btn" onclick="openSignalReplay('${item.id}')">REPLAY</button>${showQx?`<button class="win-action-btn" onclick="markBackendSignalResult('${item.id}','WIN')">BROKER WIN</button><button class="loss-action-btn" onclick="markBackendSignalResult('${item.id}','LOSS')">BROKER LOSS</button>`:''}</span></div>`;
                 });
                 listContainer.innerHTML = html;
                 return;
@@ -9359,6 +9359,39 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             return 60;
         }
 
+        const RAJA_STRICT_BROKER_OTC_UI = true;
+        const RAJA_EXACT_OTC_FINAL_DELAY_MS = 900;
+
+        function rajaIsOtcMarket(market) {
+            return /OTC$/i.test(String(market || ''));
+        }
+
+        async function rajaWaitForExactOtcClose(broker, market, expiry) {
+            if (!RAJA_STRICT_BROKER_OTC_UI || !rajaIsOtcMarket(market)) return;
+            const durationMs = Math.max(1000, getExpirySeconds(expiry) * 1000);
+            const now = Date.now();
+            const phase = ((now % durationMs) + durationMs) % durationMs;
+
+            // If the new selected-timeframe candle has just opened, scan immediately.
+            // Otherwise wait for the current candle to close, then give the broker
+            // ~0.9s to publish the first tick of the new candle before final confirmation.
+            if (phase <= 2500) return;
+
+            const target = now - phase + durationMs + RAJA_EXACT_OTC_FINAL_DELAY_MS;
+            const consoleEl = document.getElementById('liveScanConsole');
+            const stepEl = document.getElementById('scanStepText');
+            if (consoleEl) consoleEl.innerHTML = `<div class="live-scan-row scanning"><span>⏳ CLOSE CONFIRM</span><span>Waiting for current ${escapeHtml(String(expiry).toUpperCase())} broker candle to close...</span></div>`;
+
+            while (Date.now() < target) {
+                if (rajaScanStopRequested) throw new Error('__RAJA_SCAN_STOPPED__');
+                const left = Math.max(0, target - Date.now());
+                if (stepEl) stepEl.innerText = `Exact ${brokerDisplayName(broker)} OTC · final close confirmation in ${(left/1000).toFixed(1)}s`;
+                await new Promise(resolve => setTimeout(resolve, Math.min(250, left || 1)));
+            }
+
+            if (stepEl) stepEl.innerText = `New ${String(expiry).toUpperCase()} candle opened · validating first broker ticks...`;
+        }
+
         function setExpiry(button, time) {
             document.querySelectorAll('.expiry-btn').forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
@@ -9485,7 +9518,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 effectiveMinScore:Number(data.effective_min_score||0), lateEntry:data.late_entry||{},
                 chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[], scanMode:data.scan_mode||scanMode,
                 scanThresholds:data.scan_thresholds||{}, source:data.source||'Yahoo Finance', sourceMode:data.source_mode||'',
-                providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used)
+                providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used),
+                exactBrokerFeed:Boolean(data.exact_broker_feed), entryPlan:data.entry_plan||null,
+                entryEpoch:Number(data.entry_epoch||0), expiryEpoch:Number(data.expiry_epoch||0),
+                entryConfirmation:data.entry_confirmation||'', lossCooldown:data.loss_cooldown||{}
             };
         }
 
@@ -9864,6 +9900,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             let scanFailureMessage = '';
 
             try {
+                await rajaWaitForExactOtcClose(broker, market, selectedExpiry);
                 if (isAutoScan) {
                     // One shared batch request replaces 21 browser requests. The backend
                     // caches this market snapshot so many users reuse the same scan.
@@ -9879,7 +9916,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     // whole market, arm the existing reference fallback and continue the
                     // SAME scan immediately instead of leaving the user on a dead screen.
                     if (
-                        market === 'ForexOTC' &&
+                        !RAJA_STRICT_BROKER_OTC_UI && market === 'ForexOTC' &&
                         scanDiagnostics &&
                         scanDiagnostics.all_market_data_blocked &&
                         typeof window.rajaArmForexOtcFallback === 'function' &&
@@ -9952,7 +9989,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     const indicatorResult = await scanPairFromBackend(selectedPair);
 
                     if (
-                        market === 'ForexOTC' &&
+                        !RAJA_STRICT_BROKER_OTC_UI && market === 'ForexOTC' &&
                         !indicatorResult &&
                         rajaLatestMarketState &&
                         rajaLatestMarketState.scan_paused &&
@@ -10045,13 +10082,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         const dataOk = Number(scanDiagnostics.data_available || 0);
                         const dataBad = Number(scanDiagnostics.data_unavailable || 0);
                         if (total > 0 && dataOk === 0) {
-                            titleEl.innerText = '⚠️ YAHOO DATA TEMPORARILY UNAVAILABLE';
-                            descEl.innerText = `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
+                            titleEl.innerText = '⚠️ BROKER MARKET DATA TEMPORARILY UNAVAILABLE';
+                            descEl.innerText = `0/${total} pairs returned usable broker candles. Keep the exact broker feed connected and retry on the next candle close.`;
                         } else {
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
                             const unavailableOnly = Math.max(0, dataBad - skippedSlow);
-                            descEl.innerText = `Yahoo data loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
+                            descEl.innerText = `${dataOk}/${total} pairs returned usable data${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None passed ${scanMode} mode + ${selectedExpiry} close confirmation and next-open safety gate.`;
                         }
                     } else {
                         titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
@@ -10066,7 +10103,9 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         async function registerSignalForTracking(signalData) {
             const direction = signalData.dir.includes('CALL') ? 'CALL' : 'PUT';
             const selectedTfMs = getExpirySeconds(selectedExpiry) * 1000;
-            activeSignalEntryEpochMs = (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
+            activeSignalEntryEpochMs = signalData.entryEpoch
+                ? Number(signalData.entryEpoch) * 1000
+                : (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
 
             if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
             if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('WAITING ENTRY','pending');
@@ -10095,6 +10134,12 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         market_regime_quality: signalData.marketRegimeQuality,
                         pair_timeframe_performance: signalData.pairTimeframePerformance || {},
                         late_entry: signalData.lateEntry || {},
+                        entry_epoch: Number(signalData.entryEpoch || 0) || undefined,
+                        entry_plan: signalData.entryPlan || {},
+                        source: signalData.source || '',
+                        source_mode: signalData.sourceMode || '',
+                        provider_symbol: signalData.providerSymbol || '',
+                        broker: document.getElementById('brokerSelect')?.value || 'Quotex',
                         market: document.getElementById('marketType')?.value || '',
                         snapshot: {
                             rsi: signalData.rsi,
@@ -12107,7 +12152,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             item = rows.find(x => {
                 const status = String(x?.status || '').toUpperCase();
                 return (!currentPair || String(x?.pair || '').trim() === currentPair) &&
-                       (status === 'PENDING' || status === 'AWAITING_QX');
+                       (status === 'PENDING' || status === 'AWAITING_QX' || status === 'AWAITING_BROKER');
             }) || null;
             if (item?.id) activeTrackedSignalId = item.id;
         }
@@ -12138,12 +12183,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             return;
         }
 
-        if (status === 'AWAITING_QX' || phase === 'QX_VERIFY') {
-            if (proxy === 'WIN' || proxy === 'LOSS' || proxy === 'DRAW') {
-                v24SetOutcomeBadge('PROXY ' + proxy + ' · QX VERIFY','verify');
-            } else {
-                v24SetOutcomeBadge('QX RESULT REQUIRED','verify');
-            }
+        if (status === 'AWAITING_QX' || status === 'AWAITING_BROKER' || phase === 'QX_VERIFY' || phase === 'BROKER_VERIFY') {
+            v24SetOutcomeBadge('BROKER RESULT REQUIRED','verify');
             if (typeof v23SetLifecycle === 'function') v23SetLifecycle('completed');
             return;
         }
@@ -12817,11 +12858,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (!target) return;
             target.querySelectorAll('.inline-item > span:last-child > span').forEach(el => {
                 const raw = String(el.textContent || '').trim();
-                if (/QX RESULT REQUIRED/i.test(raw)) el.textContent = 'QX VERIFY';
-                else if (/PROXY\s+(.+?)\s*·\s*QX VERIFY/i.test(raw)) {
-                    const match = raw.match(/PROXY\s+(.+?)\s*·\s*QX VERIFY/i);
-                    el.textContent = match ? `QX · ${match[1].replace(/[\[\]]/g,'').trim()}` : 'QX VERIFY';
-                }
+                if (/BROKER RESULT REQUIRED/i.test(raw)) el.textContent = 'BROKER VERIFY';
+                else if (/QX RESULT REQUIRED/i.test(raw)) el.textContent = 'BROKER VERIFY';
             });
         }
 
@@ -14503,11 +14541,15 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         window.rajaRefreshAvailableMarkets = refreshAllMarkets;
         window.rajaScanAvailableMarket = scanAvailableMarket;
         window.rajaScanBestAvailableMarket = scanBestAvailableMarket;
-        window.rajaArmForexOtcFallback = armForexOtcFallback;
+        window.rajaArmForexOtcFallback = RAJA_STRICT_BROKER_OTC_UI
+            ? (() => { try { disarmForexOtcFallback(); } catch (_) {} return false; })
+            : armForexOtcFallback;
         window.rajaDisarmForexOtcFallback = disarmForexOtcFallback;
-        window.rajaIsForexOtcFallbackActive = () => Boolean(forexOtcFallbackArmed);
+        window.rajaIsForexOtcFallbackActive = () => Boolean(!RAJA_STRICT_BROKER_OTC_UI && forexOtcFallbackArmed);
         window.rajaCheckForexOtcLiveRecovery = checkForexOtcLiveRecovery;
-        window.rajaRunForexOtcFailoverScan = runForexOtcFailoverFromNormalScan;
+        window.rajaRunForexOtcFailoverScan = RAJA_STRICT_BROKER_OTC_UI
+            ? (async () => null)
+            : runForexOtcFailoverFromNormalScan;
 
         document.addEventListener('DOMContentLoaded', () => {
             install();
@@ -14803,7 +14845,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 </style>
 
 
-<script id="raja-quotex-bridge-ui-v1">
+<script id="raja-broker-bridge-ui-v2">
 (() => {
     let bridgeConnected = false;
     let bridgeStatusTimer = null;
@@ -14817,21 +14859,33 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         return String(document.getElementById('pairSelect')?.value || '').trim();
     }
 
+    function currentBridgeBroker() {
+        return String(document.getElementById('brokerSelect')?.value || 'Quotex');
+    }
+
+    function bridgeConfig() {
+        const broker = currentBridgeBroker();
+        if (broker === 'PocketOption') {
+            return { broker, label:'POCKET OPTION', endpoint:'/pocket-bridge' };
+        }
+        return { broker:'Quotex', label:'QUOTEX', endpoint:'/quotex-bridge' };
+    }
+
     function updateBridgeUi(status) {
+        const cfg = bridgeConfig();
         bridgeConnected = Boolean(status && status.connected);
         const btn = document.getElementById('rajaQuotexBridgeBtn');
         if (btn) {
-            btn.textContent = bridgeConnected ? '🟢 QUOTEX BRIDGE CONNECTED' : '🔗 CONNECT QUOTEX BRIDGE';
+            btn.textContent = bridgeConnected ? `🟢 ${cfg.label} BRIDGE CONNECTED` : `🔗 CONNECT ${cfg.label} BRIDGE`;
             btn.title = bridgeConnected
-                ? `Exact Quotex OTC feed active${status?.pair ? ' · ' + status.pair : ''}`
-                : 'Generate a one-time pairing code for the RAJA Quotex Bridge extension.';
+                ? `Exact ${cfg.label} OTC feed active${status?.pair ? ' · ' + status.pair : ''}`
+                : `Generate a one-time pairing code for the RAJA ${cfg.label} Bridge/companion.`;
         }
         const base = document.getElementById('rajaBaseFeedLabel');
-        const broker = String(document.getElementById('brokerSelect')?.value || '');
         const market = String(document.getElementById('marketType')?.value || '');
         if (base) {
-            if (broker === 'Quotex' && /OTC/i.test(market)) {
-                base.textContent = bridgeConnected ? 'Quotex Bridge 1m' : 'Bridge Required';
+            if (/OTC/i.test(market)) {
+                base.textContent = bridgeConnected ? `${cfg.label} EXACT 1m` : `${cfg.label} BRIDGE REQUIRED`;
             } else {
                 base.textContent = 'Yahoo 1m';
             }
@@ -14840,12 +14894,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
     async function refreshBridgeStatus() {
         const auth = bridgeAuth();
+        const cfg = bridgeConfig();
         if (!auth.key || !auth.user || !auth.device || !auth.session_token) {
             updateBridgeUi(null);
             return null;
         }
         try {
-            const response = await fetch('/quotex-bridge/status', {
+            const response = await fetch(cfg.endpoint + '/status', {
                 method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
                 body:JSON.stringify({ pair:currentBridgePair(), ...auth })
             });
@@ -14861,12 +14916,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
     async function createBridgePairCode() {
         const auth = bridgeAuth();
+        const cfg = bridgeConfig();
         if (!auth.key || !auth.user || !auth.device || !auth.session_token) {
-            alert('Login to RAJA AI first, then connect the Quotex Bridge.');
+            alert('Login to RAJA AI first, then connect the broker bridge.');
             return;
         }
         try {
-            const response = await fetch('/quotex-bridge/pair-code', {
+            const response = await fetch(cfg.endpoint + '/pair-code', {
                 method:'POST', headers:{'Content-Type':'application/json'}, cache:'no-store',
                 body:JSON.stringify(auth)
             });
@@ -14875,7 +14931,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const code = String(payload.data?.pair_code || '');
             try { await navigator.clipboard.writeText(code); } catch (_) {}
             window.prompt(
-                'RAJA QUOTEX BRIDGE PAIR CODE\n\n1) Open the RAJA Quotex Bridge extension on your PC.\n2) Enter this code.\n3) Keep Quotex open on the OTC pair you want to scan.\n\nCode is valid for about 10 minutes and has also been copied:',
+                `RAJA ${cfg.label} BRIDGE PAIR CODE\n\n1) Open the matching RAJA broker Bridge/companion on your PC.\n2) Enter this code.\n3) Keep the broker logged in and the OTC feed streaming.\n\nThe code is valid for about 10 minutes and has also been copied:`,
                 code
             );
         } catch (error) {
@@ -14891,14 +14947,16 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         btn.id = 'rajaQuotexBridgeBtn';
         btn.type = 'button';
         btn.className = 'utility-btn';
-        btn.textContent = '🔗 CONNECT QUOTEX BRIDGE';
+        btn.textContent = '🔗 CONNECT BROKER BRIDGE';
         btn.addEventListener('click', createBridgePairCode);
         grid.appendChild(btn);
         refreshBridgeStatus();
     }
 
     window.rajaCreateQuotexBridgePairCode = createBridgePairCode;
+    window.rajaCreateBrokerBridgePairCode = createBridgePairCode;
     window.rajaRefreshQuotexBridgeStatus = refreshBridgeStatus;
+    window.rajaRefreshBrokerBridgeStatus = refreshBridgeStatus;
 
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installBridgeButton, {once:true});
     else installBridgeButton();
