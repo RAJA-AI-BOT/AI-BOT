@@ -432,6 +432,14 @@ quotex_bridge_candles = {}
 quotex_bridge_status = {}
 quotex_bridge_data_lock = threading.RLock()
 
+# Pocket Option uses the same signed pairing token but keeps a completely
+# separate candle/status book so identical OTC pair names can never mix
+# between brokers.  The browser extension uploads only parsed OHLC/ticks;
+# session cookies/auth frames stay inside the broker tab.
+pocket_bridge_candles = {}
+pocket_bridge_status = {}
+pocket_bridge_data_lock = threading.RLock()
+
 
 # =========================================================
 # RAJA QUOTEX OTC BRIDGE
@@ -618,6 +626,146 @@ def get_quotex_bridge_market_data(user, pair):
     frame = pd.DataFrame([row for _epoch, row in rows], index=index)
     frame = frame.sort_index()
     return frame, age, pair, source_info
+
+
+# =========================================================
+# RAJA POCKET OPTION OTC BROWSER BRIDGE
+# =========================================================
+def _pocket_bridge_pair_key(user, pair):
+    return normalize_user_id(user), str(pair or "").strip()
+
+
+def _pocket_bridge_upsert_candle(user, pair, candle):
+    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
+        return False
+    if not isinstance(candle, dict):
+        return False
+    epoch = _normalize_bridge_epoch(candle.get("t", candle.get("time", candle.get("timestamp"))))
+    try:
+        o = float(candle.get("o", candle.get("open")))
+        h = float(candle.get("h", candle.get("high")))
+        l = float(candle.get("l", candle.get("low")))
+        c = float(candle.get("c", candle.get("close")))
+    except Exception:
+        return False
+    if epoch is None or min(o, h, l, c) <= 0 or h < max(o, c) or l > min(o, c):
+        return False
+    minute = int(epoch // 60 * 60)
+    key = _pocket_bridge_pair_key(user, pair)
+    with pocket_bridge_data_lock:
+        book = pocket_bridge_candles.setdefault(key, OrderedDict())
+        existing = book.get(minute)
+        if existing:
+            existing["Open"] = float(existing.get("Open", o))
+            existing["High"] = max(float(existing.get("High", h)), h)
+            existing["Low"] = min(float(existing.get("Low", l)), l)
+            existing["Close"] = c
+        else:
+            book[minute] = {"Open": o, "High": h, "Low": l, "Close": c, "Volume": 0.0}
+        book.move_to_end(minute)
+        while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
+            book.popitem(last=False)
+    return True
+
+
+def _pocket_bridge_upsert_tick(user, pair, price, epoch=None):
+    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
+        return False
+    try:
+        price = float(price)
+    except Exception:
+        return False
+    if price <= 0:
+        return False
+    epoch = _normalize_bridge_epoch(epoch) or int(time.time())
+    minute = int(epoch // 60 * 60)
+    key = _pocket_bridge_pair_key(user, pair)
+    with pocket_bridge_data_lock:
+        book = pocket_bridge_candles.setdefault(key, OrderedDict())
+        row = book.get(minute)
+        if row:
+            row["High"] = max(float(row["High"]), price)
+            row["Low"] = min(float(row["Low"]), price)
+            row["Close"] = price
+        else:
+            book[minute] = {"Open": price, "High": price, "Low": price, "Close": price, "Volume": 0.0}
+        book.move_to_end(minute)
+        while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
+            book.popitem(last=False)
+    return True
+
+
+def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=None):
+    user = normalize_user_id(user)
+    with pocket_bridge_data_lock:
+        current = dict(pocket_bridge_status.get(user) or {})
+        current.update({
+            "connected": True,
+            "last_seen": time.time(),
+            "device": str(device or "")[:160],
+            "broker": "Pocket Option",
+        })
+        if pair:
+            current["pair"] = str(pair)[:120]
+        if price is not None:
+            try:
+                current["price"] = float(price)
+            except Exception:
+                pass
+        if source_page:
+            current["source_page"] = str(source_page)[:300]
+        pocket_bridge_status[user] = current
+
+
+def _get_pocket_bridge_status(user, pair=None):
+    user = normalize_user_id(user)
+    now = time.time()
+    with pocket_bridge_data_lock:
+        status = dict(pocket_bridge_status.get(user) or {})
+        if pair:
+            book = pocket_bridge_candles.get(_pocket_bridge_pair_key(user, pair))
+            status["candle_count"] = len(book) if book else 0
+        else:
+            status["pairs_with_data"] = sum(1 for (u, _p), book in pocket_bridge_candles.items() if u == user and book)
+    last_seen = float(status.get("last_seen") or 0.0)
+    age = max(0.0, now - last_seen) if last_seen else None
+    status["age_seconds"] = round(age, 2) if age is not None else None
+    status["connected"] = bool(last_seen and age <= 20.0)
+    status.setdefault("broker", "Pocket Option")
+    return status
+
+
+def get_pocket_bridge_market_data(user, pair):
+    """Return exact Pocket Option browser-tab 1m OHLC captured by the paired local extension."""
+    user = normalize_user_id(user)
+    key = _pocket_bridge_pair_key(user, pair)
+    with pocket_bridge_data_lock:
+        book = pocket_bridge_candles.get(key)
+        rows = list(book.items()) if book else []
+        status = dict(pocket_bridge_status.get(user) or {})
+    source_info = {
+        "source": "Pocket Option Browser Bridge",
+        "source_mode": "broker_otc_exact",
+        "provider_symbol": pair,
+        "yahoo_symbol": YAHOO_SYMBOLS.get(pair),
+        "backup_used": True,
+        "exact_broker_feed": True,
+        "browser_bridge": True,
+    }
+    if not rows:
+        source_info["unavailable_reason"] = "Pocket Option Browser Bridge is not streaming this OTC pair yet. Open the same pair in Pocket Option and keep the bridge connected."
+        return None, None, pair, source_info
+    last_seen = float(status.get("last_seen") or 0.0)
+    age = max(0.0, time.time() - last_seen) if last_seen else float("inf")
+    if age > 20.0:
+        source_info["unavailable_reason"] = f"Pocket Option Browser Bridge feed is disconnected/stale ({int(age)}s since last tick)."
+        return None, age, pair, source_info
+    pd = _get_pandas()
+    index = pd.to_datetime([epoch for epoch, _row in rows], unit="s", utc=True)
+    frame = pd.DataFrame([row for _epoch, row in rows], index=index)
+    frame = frame.sort_index()
+    return frame, age, pair, source_info
+
 
 # Permanent license storage:
 # - Recommended on Render Free: set DATABASE_URL (for example a Neon/Supabase PostgreSQL URL).
@@ -2263,9 +2411,14 @@ def get_market_data(pair, bridge_user=None, broker=None):
             if native_df is not None and not native_df.empty:
                 return native_df, native_age, native_symbol or pair, native_info
 
-        # Quotex browser bridge remains an exact-broker fallback.
-        if is_quotex and bridge_user:
-            bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
+        # Local browser bridge is an exact-broker fallback for BOTH brokers.
+        # It reads the already logged-in broker tab and never needs Railway to
+        # authenticate to the broker directly.
+        if bridge_user:
+            if is_quotex:
+                bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
+            else:
+                bridge_df, bridge_age, bridge_symbol, bridge_info = get_pocket_bridge_market_data(bridge_user, pair)
             if bridge_df is not None and not bridge_df.empty:
                 bridge_info = dict(bridge_info or {})
                 bridge_info.update({
@@ -2279,7 +2432,7 @@ def get_market_data(pair, bridge_user=None, broker=None):
         if is_quotex:
             reason += " Quotex browser bridge is also not streaming this pair."
         else:
-            reason += " Pocket Option direct session/feed is unavailable."
+            reason += " Pocket Option browser bridge is also not streaming this pair."
         blocked_info = dict(native_info or {})
         blocked_info.update({
             "source": blocked_info.get("source") or ("Quotex Native WebSocket" if is_quotex else "Pocket Option Native WebSocket"),
@@ -4157,6 +4310,7 @@ def otc_fallback_config():
     })
 
 
+@app.route("/broker-bridge/pair-code", methods=["POST"])
 @app.route("/quotex-bridge/pair-code", methods=["POST"])
 def quotex_bridge_pair_code():
     data = request.get_json(silent=True) or {}
@@ -4187,11 +4341,12 @@ def quotex_bridge_pair_code():
             "pair_code": code,
             "expires_in_seconds": QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS,
             "server_url": request.host_url.rstrip("/"),
-            "instructions": "Open the RAJA Quotex Bridge extension and enter this code once."
+            "instructions": "Open the RAJA Broker Bridge extension and enter this code once."
         }
     })
 
 
+@app.route("/broker-bridge/activate", methods=["POST"])
 @app.route("/quotex-bridge/activate", methods=["POST"])
 def quotex_bridge_activate():
     data = request.get_json(silent=True) or {}
@@ -4214,6 +4369,7 @@ def quotex_bridge_activate():
     })
 
 
+@app.route("/broker-bridge/status", methods=["POST"])
 @app.route("/quotex-bridge/status", methods=["POST"])
 def quotex_bridge_status_route():
     data = request.get_json(silent=True) or {}
@@ -4223,9 +4379,16 @@ def quotex_bridge_status_route():
     pair = str(data.get("pair") or "").strip()
     if pair and pair not in YAHOO_SYMBOLS:
         pair = ""
-    return jsonify({"status": "success", "data": _get_quotex_bridge_status(auth["user"], pair or None)})
+    broker = str(data.get("broker") or ("Quotex" if request.path.startswith("/quotex-bridge/") else "Quotex")).strip().casefold().replace(" ", "")
+    if broker in {"pocketoption", "pocket_option", "pocket"}:
+        status = _get_pocket_bridge_status(auth["user"], pair or None)
+    else:
+        status = _get_quotex_bridge_status(auth["user"], pair or None)
+        status.setdefault("broker", "Quotex")
+    return jsonify({"status": "success", "data": status})
 
 
+@app.route("/broker-bridge/tick", methods=["POST"])
 @app.route("/quotex-bridge/tick", methods=["POST"])
 def quotex_bridge_tick():
     data = request.get_json(silent=True) or {}
@@ -4237,27 +4400,47 @@ def quotex_bridge_tick():
     if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
         return jsonify({"status": "error", "message": "Unsupported or non-OTC bridge pair."}), 400
 
+    broker = str(data.get("broker") or ("Quotex" if request.path.startswith("/quotex-bridge/") else "")).strip().casefold().replace(" ", "")
+    is_pocket = broker in {"pocketoption", "pocket_option", "pocket"}
+    if not is_pocket and broker not in {"quotex", ""}:
+        return jsonify({"status": "error", "message": "Unsupported broker bridge."}), 400
+
     accepted = 0
     candles = data.get("candles")
     if isinstance(candles, list):
         for candle in candles[-500:]:
-            accepted += int(_bridge_upsert_candle(bridge_auth["user"], pair, candle))
+            if is_pocket:
+                accepted += int(_pocket_bridge_upsert_candle(bridge_auth["user"], pair, candle))
+            else:
+                accepted += int(_bridge_upsert_candle(bridge_auth["user"], pair, candle))
 
     price = data.get("price")
     epoch = data.get("timestamp")
     tick_ok = False
     if price is not None:
-        tick_ok = _bridge_upsert_tick(bridge_auth["user"], pair, price, epoch)
+        if is_pocket:
+            tick_ok = _pocket_bridge_upsert_tick(bridge_auth["user"], pair, price, epoch)
+        else:
+            tick_ok = _bridge_upsert_tick(bridge_auth["user"], pair, price, epoch)
         accepted += int(tick_ok)
 
     if not accepted:
-        return jsonify({"status": "error", "message": "No valid Quotex price/candle data was supplied."}), 400
+        label = "Pocket Option" if is_pocket else "Quotex"
+        return jsonify({"status": "error", "message": f"No valid {label} price/candle data was supplied."}), 400
 
-    _set_quotex_bridge_status(
-        bridge_auth["user"], bridge_auth["device"], pair=pair,
-        price=price if tick_ok else None, source_page=data.get("source_page")
-    )
-    status = _get_quotex_bridge_status(bridge_auth["user"], pair)
+    if is_pocket:
+        _set_pocket_bridge_status(
+            bridge_auth["user"], bridge_auth["device"], pair=pair,
+            price=price if tick_ok else None, source_page=data.get("source_page")
+        )
+        status = _get_pocket_bridge_status(bridge_auth["user"], pair)
+    else:
+        _set_quotex_bridge_status(
+            bridge_auth["user"], bridge_auth["device"], pair=pair,
+            price=price if tick_ok else None, source_page=data.get("source_page")
+        )
+        status = _get_quotex_bridge_status(bridge_auth["user"], pair)
+        status.setdefault("broker", "Quotex")
     return jsonify({"status": "success", "data": {"accepted": accepted, **status}})
 
 
@@ -4275,6 +4458,7 @@ def health():
         "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
         "cached_symbols": cached_symbols,
         "quotex_bridge_enabled": True,
+        "browser_bridge_brokers": ["Quotex", "Pocket Option"],
         "quotex_bridge_required_for_otc": False,
         "legacy_bridge_required_env": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
         "quotex_reference_fallback_enabled": False,
