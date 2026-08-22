@@ -3,3 +3,16 @@ Flask-Cors>=4.0,<7
 gunicorn>=22,<27
 yfinance>=0.2.65,<1
 pandas>=2.2,<3
+psycopg[binary]>=3.2,<4
+requests>=2.32,<3
+websockets>=12,<16
+websocket-client>=1.8,<2
+httpx>=0.27,<1
+beautifulsoup4>=4.12,<5
+fake-useragent==2.2.0
+certifi>=2025.1.31
+rich>=13.7,<14
+tzlocal>=5,<6
+backoff>=2.2,<3
+git+https://github.com/cleitonleonel/pyquotex.git
+git+https://github.com/chema-creator/PocketOptionApi.git
