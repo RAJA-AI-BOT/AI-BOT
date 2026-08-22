@@ -309,6 +309,7 @@ class QuotexNativeFeed:
         self.enabled = _env_bool("RAJA_QUOTEX_NATIVE_ENABLED", bool(self.ssid or (self.email and self.password)))
         self.history_seconds = max(7200, min(86400, int(os.environ.get("RAJA_NATIVE_HISTORY_SECONDS", "21600"))))
         self.cache_seconds = max(2, min(30, int(os.environ.get("RAJA_NATIVE_CACHE_SECONDS", "8"))))
+        self.history_refresh_seconds = max(30, min(900, int(os.environ.get("RAJA_NATIVE_HISTORY_REFRESH_SECONDS", "120"))))
         self.timeout = max(4, min(30, int(os.environ.get("RAJA_NATIVE_REQUEST_TIMEOUT", "14"))))
         self.state = FeedState(configured=bool(self.enabled and (self.ssid or (self.email and self.password))))
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -403,10 +404,23 @@ class QuotexNativeFeed:
             except Exception:
                 pass
             if asset not in self.state.subscriptions:
-                await client.start_candles_stream(asset, 60)
+                # Current pyquotex exposes start_realtime_price(); older variants
+                # used candle-stream helpers. Support both so a library update does
+                # not silently break the RAJA native feed.
+                if hasattr(client, "start_realtime_price"):
+                    await client.start_realtime_price(asset, 60)
+                elif hasattr(client, "start_candles_one_stream"):
+                    await client.start_candles_one_stream(asset, 60)
+                elif hasattr(client, "start_candles_stream"):
+                    try:
+                        await client.start_candles_stream(asset, 60)
+                    except TypeError:
+                        await client.start_candles_stream(asset, 60, 1000)
+                else:
+                    raise AttributeError("Installed pyquotex has no supported realtime subscription method")
                 self.state.subscriptions.add(asset)
                 # Give the first realtime tick a short chance to arrive.
-                await asyncio.sleep(0.15)
+                await asyncio.sleep(0.25)
 
             # Keep a local broker-native frame and refresh history periodically.
             # This avoids hammering history/load for every scan while realtime
@@ -491,6 +505,7 @@ class PocketNativeFeed:
         self.enabled = _env_bool("RAJA_POCKET_NATIVE_ENABLED", bool(self.ssid))
         self.history_offset = max(9000, min(120000, int(os.environ.get("RAJA_POCKET_HISTORY_OFFSET", "45000"))))
         self.cache_seconds = max(2, min(30, int(os.environ.get("RAJA_NATIVE_CACHE_SECONDS", "8"))))
+        self.history_refresh_seconds = max(30, min(900, int(os.environ.get("RAJA_NATIVE_HISTORY_REFRESH_SECONDS", "120"))))
         self.state = FeedState(configured=bool(self.enabled and self.ssid))
         self._client: Any = None
         self._lock = threading.RLock()
