@@ -398,11 +398,27 @@ ADMIN_PASSWORD = (os.environ.get("RAJA_ADMIN_PASSWORD") or "").strip()
 # Quotex browser tab. No Quotex password/cookie is sent to RAJA AI.
 RAJA_QUOTEX_OTC_URL = (os.environ.get("RAJA_QUOTEX_OTC_URL") or "https://qxbroker.com/en/").strip()
 RAJA_QUOTEX_OTC_COMPANION_URL = (os.environ.get("RAJA_QUOTEX_OTC_COMPANION_URL") or "").strip()
-RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC", "0")).strip().lower() not in {"0", "false", "no", "off"}
-# Keep the scanner usable when the browser bridge is connected but not yet streaming.
-# Exact Quotex OTC candles are preferred; when they are missing, a clearly-labelled
-# Yahoo/Twelve Data reference feed may be used instead of hard-blocking the whole bot.
-RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK = str(os.environ.get("RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
+# STRICT OTC SOURCE POLICY (v2)
+# Broker OTC candles are broker-generated and can differ materially from Yahoo/Twelve Data.
+# Production default is therefore FAIL-CLOSED: an OTC scan is allowed only when an exact
+# broker feed is available. Reference feeds remain available for non-OTC/live markets only.
+RAJA_STRICT_BROKER_OTC = str(os.environ.get("RAJA_STRICT_BROKER_OTC", "1")).strip().lower() not in {"0", "false", "no", "off"}
+RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC", "1")).strip().lower() not in {"0", "false", "no", "off"}
+RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK = str(os.environ.get("RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK", "0")).strip().lower() not in {"0", "false", "no", "off"}
+
+# Candle-close / next-open safety. For exact broker OTC signals the final scan must
+# be based on the just-closed selected timeframe candle and must arrive inside the
+# opening window of the immediately following candle. This stops late signals from
+# being treated as if they belonged to the next trade candle.
+RAJA_NEXT_OPEN_GRACE_SECONDS = max(1.0, min(10.0, float(os.environ.get("RAJA_NEXT_OPEN_GRACE_SECONDS", "4.0"))))
+RAJA_SAFE_OPEN_CONFIRM_MIN_SECONDS = max(0.0, min(3.0, float(os.environ.get("RAJA_SAFE_OPEN_CONFIRM_MIN_SECONDS", "0.65"))))
+RAJA_SAFE_OPEN_MAX_ADVERSE_ATR = max(0.02, min(1.0, float(os.environ.get("RAJA_SAFE_OPEN_MAX_ADVERSE_ATR", "0.16"))))
+RAJA_SAFE_OPEN_MAX_CHASE_ATR = max(0.05, min(1.5, float(os.environ.get("RAJA_SAFE_OPEN_MAX_CHASE_ATR", "0.42"))))
+
+# Loss-streak circuit breaker. Consecutive losses on the same pair+expiry pause
+# that setup for a short period instead of immediately forcing another trade.
+RAJA_LOSS_COOLDOWN_CONSECUTIVE = max(1, min(10, int(os.environ.get("RAJA_LOSS_COOLDOWN_CONSECUTIVE", "2"))))
+RAJA_LOSS_COOLDOWN_SECONDS = max(60, min(86400, int(os.environ.get("RAJA_LOSS_COOLDOWN_SECONDS", "900"))))
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
 QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "2500"))))
@@ -419,6 +435,14 @@ quotex_bridge_pair_codes_lock = threading.RLock()
 quotex_bridge_candles = {}
 quotex_bridge_status = {}
 quotex_bridge_data_lock = threading.RLock()
+
+# Pocket Option exact-feed bridge uses the same privacy model: the browser/companion
+# keeps the broker session locally and sends only normalized OTC ticks/candles.
+pocket_bridge_pair_codes = {}
+pocket_bridge_pair_codes_lock = threading.RLock()
+pocket_bridge_candles = {}
+pocket_bridge_status = {}
+pocket_bridge_data_lock = threading.RLock()
 
 
 # =========================================================
@@ -605,6 +629,135 @@ def get_quotex_bridge_market_data(user, pair):
     index = pd.to_datetime([epoch for epoch, _row in rows], unit="s", utc=True)
     frame = pd.DataFrame([row for _epoch, row in rows], index=index)
     frame = frame.sort_index()
+    return frame, age, pair, source_info
+
+
+# =========================================================
+# RAJA POCKET OPTION OTC BRIDGE
+# =========================================================
+def _pocket_bridge_pair_key(user, pair):
+    return normalize_user_id(user), str(pair or "").strip()
+
+
+def _pocket_bridge_upsert_candle(user, pair, candle):
+    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair or not isinstance(candle, dict):
+        return False
+    epoch = _normalize_bridge_epoch(candle.get("t", candle.get("time", candle.get("timestamp"))))
+    try:
+        o = float(candle.get("o", candle.get("open")))
+        h = float(candle.get("h", candle.get("high")))
+        l = float(candle.get("l", candle.get("low")))
+        c = float(candle.get("c", candle.get("close")))
+    except Exception:
+        return False
+    if epoch is None or min(o, h, l, c) <= 0 or h < max(o, c) or l > min(o, c):
+        return False
+    minute = int(epoch // 60 * 60)
+    key = _pocket_bridge_pair_key(user, pair)
+    with pocket_bridge_data_lock:
+        book = pocket_bridge_candles.setdefault(key, OrderedDict())
+        existing = book.get(minute)
+        if existing:
+            existing["Open"] = float(existing.get("Open", o))
+            existing["High"] = max(float(existing.get("High", h)), h)
+            existing["Low"] = min(float(existing.get("Low", l)), l)
+            existing["Close"] = c
+        else:
+            book[minute] = {"Open": o, "High": h, "Low": l, "Close": c, "Volume": 0.0}
+        book.move_to_end(minute)
+        while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
+            book.popitem(last=False)
+    return True
+
+
+def _pocket_bridge_upsert_tick(user, pair, price, epoch=None):
+    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
+        return False
+    try:
+        price = float(price)
+    except Exception:
+        return False
+    if price <= 0:
+        return False
+    epoch = _normalize_bridge_epoch(epoch) or int(time.time())
+    minute = int(epoch // 60 * 60)
+    key = _pocket_bridge_pair_key(user, pair)
+    with pocket_bridge_data_lock:
+        book = pocket_bridge_candles.setdefault(key, OrderedDict())
+        row = book.get(minute)
+        if row:
+            row["High"] = max(float(row["High"]), price)
+            row["Low"] = min(float(row["Low"]), price)
+            row["Close"] = price
+        else:
+            book[minute] = {"Open": price, "High": price, "Low": price, "Close": price, "Volume": 0.0}
+        book.move_to_end(minute)
+        while len(book) > QUOTEX_BRIDGE_MAX_CANDLES:
+            book.popitem(last=False)
+    return True
+
+
+def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=None):
+    user = normalize_user_id(user)
+    with pocket_bridge_data_lock:
+        current = dict(pocket_bridge_status.get(user) or {})
+        current.update({"connected": True, "last_seen": time.time(), "device": str(device or "")[:160]})
+        if pair:
+            current["pair"] = str(pair)[:120]
+        if price is not None:
+            try:
+                current["price"] = float(price)
+            except Exception:
+                pass
+        if source_page:
+            current["source_page"] = str(source_page)[:300]
+        pocket_bridge_status[user] = current
+
+
+def _get_pocket_bridge_status(user, pair=None):
+    user = normalize_user_id(user)
+    now = time.time()
+    with pocket_bridge_data_lock:
+        status = dict(pocket_bridge_status.get(user) or {})
+        if pair:
+            book = pocket_bridge_candles.get(_pocket_bridge_pair_key(user, pair))
+            status["candle_count"] = len(book) if book else 0
+        else:
+            status["pairs_with_data"] = sum(1 for (u, _p), book in pocket_bridge_candles.items() if u == user and book)
+    last_seen = float(status.get("last_seen") or 0.0)
+    age = max(0.0, now - last_seen) if last_seen else None
+    status["age_seconds"] = round(age, 2) if age is not None else None
+    status["connected"] = bool(last_seen and age <= 20.0)
+    return status
+
+
+def get_pocket_bridge_market_data(user, pair):
+    """Return exact Pocket Option OTC 1m OHLC supplied by the local companion/bridge."""
+    user = normalize_user_id(user)
+    key = _pocket_bridge_pair_key(user, pair)
+    with pocket_bridge_data_lock:
+        book = pocket_bridge_candles.get(key)
+        rows = list(book.items()) if book else []
+        status = dict(pocket_bridge_status.get(user) or {})
+    source_info = {
+        "source": "Pocket Option Bridge",
+        "source_mode": "broker_otc_exact",
+        "provider_symbol": pair,
+        "yahoo_symbol": YAHOO_SYMBOLS.get(pair),
+        "backup_used": False,
+        "exact_broker_feed": True,
+    }
+    if not rows:
+        source_info["unavailable_reason"] = "Pocket Option Bridge is not streaming this OTC pair yet. Keep the broker tab/companion connected."
+        return None, None, pair, source_info
+    last_seen = float(status.get("last_seen") or 0.0)
+    age = max(0.0, time.time() - last_seen) if last_seen else float("inf")
+    if age > 20.0:
+        source_info["unavailable_reason"] = f"Pocket Option exact feed is disconnected/stale ({int(age)}s since last tick)."
+        return None, age, pair, source_info
+    pd = _get_pandas()
+    index = pd.to_datetime([epoch for epoch, _row in rows], unit="s", utc=True)
+    frame = pd.DataFrame([row for _epoch, row in rows], index=index).sort_index()
     return frame, age, pair, source_info
 
 # Permanent license storage:
@@ -1537,26 +1690,44 @@ def resolve_tracked_signal(item):
         return False
 
     preferred_source = str(item.get("source") or "Yahoo Finance")
+    source_mode = str(item.get("source_mode") or "")
+    broker = str(item.get("broker") or "").strip()
     data = None
     resolved_source = None
+    exact_broker_result = False
 
-    if preferred_source == "Twelve Data" and TWELVE_DATA_ENABLED:
-        data, _ = get_twelve_data_market_data(pair, force=True)
-        if data is not None and not data.empty:
-            resolved_source = "Twelve Data"
+    # Exact OTC outcomes should be resolved from the same broker feed that created
+    # the signal. Never use Yahoo/Twelve Data as the official OTC result.
+    if "(OTC)" in str(pair) and source_mode == "broker_otc_exact" and broker:
+        try:
+            data, _age, _symbol, exact_info = get_market_data(
+                pair, bridge_user=item.get("user"), broker=broker
+            )
+            if data is not None and not data.empty:
+                resolved_source = str((exact_info or {}).get("source") or f"{broker} exact feed")
+                exact_broker_result = True
+        except Exception as exc:
+            print(f"Exact broker outcome lookup warning for {pair}: {exc}")
 
-    if data is None or getattr(data, "empty", True):
-        update_symbol_cache(yahoo_symbol, force=True)
-        with cache_lock:
-            cached = market_cache.get(yahoo_symbol)
-        if cached:
-            data = cached.get("data")
-            resolved_source = "Yahoo Finance"
+    # Reference providers are allowed for non-OTC signals only.
+    if "(OTC)" not in str(pair):
+        if preferred_source == "Twelve Data" and TWELVE_DATA_ENABLED:
+            data, _ = get_twelve_data_market_data(pair, force=True)
+            if data is not None and not data.empty:
+                resolved_source = "Twelve Data"
 
-    if (data is None or getattr(data, "empty", True)) and TWELVE_DATA_ENABLED:
-        data, _ = get_twelve_data_market_data(pair, force=True)
-        if data is not None and not data.empty:
-            resolved_source = "Twelve Data"
+        if data is None or getattr(data, "empty", True):
+            update_symbol_cache(yahoo_symbol, force=True)
+            with cache_lock:
+                cached = market_cache.get(yahoo_symbol)
+            if cached:
+                data = cached.get("data")
+                resolved_source = "Yahoo Finance"
+
+        if (data is None or getattr(data, "empty", True)) and TWELVE_DATA_ENABLED:
+            data, _ = get_twelve_data_market_data(pair, force=True)
+            if data is not None and not data.empty:
+                resolved_source = "Twelve Data"
 
     rows = dataframe_epoch_rows(data)
     if not rows:
@@ -1599,7 +1770,11 @@ def resolve_tracked_signal(item):
     item["reference_result"] = result
     item["result_reference_source"] = resolved_source or preferred_source
 
-    if resolved_source == "Yahoo Finance":
+    if exact_broker_result:
+        item["broker_result"] = result
+        item["result_source"] = "broker_exact"
+        item["result_reference_source"] = resolved_source or preferred_source
+    elif resolved_source == "Yahoo Finance":
         item["yahoo_result"] = result
         item["result_source"] = "yahoo_live"
     else:
@@ -1620,8 +1795,8 @@ def tracked_signal_phase(item, now=None):
 
     if result in {"WIN", "LOSS", "DRAW"} or status == "COMPLETED":
         return "COMPLETED"
-    if status == "AWAITING_QX":
-        return "QX_VERIFY"
+    if status in {"AWAITING_QX", "AWAITING_BROKER"}:
+        return "BROKER_VERIFY"
 
     entry_epoch = int(item.get("entry_epoch") or 0)
     expiry_epoch = int(item.get("expiry_epoch") or 0)
@@ -1654,27 +1829,24 @@ def resolve_due_signals(items, now=None):
 
         pair = str(item.get("pair", ""))
 
-        # Yahoo is not the Quotex OTC price feed. For OTC we calculate a
-        # clearly-labelled Yahoo proxy result, but actual WIN/LOSS remains
-        # a manual Quotex confirmation.
         if "(OTC)" in pair:
-            proxy_item = dict(item)
-            if resolve_tracked_signal(proxy_item):
-                for field in (
-                    "entry_price", "exit_price", "entry_candle_epoch",
-                    "exit_candle_epoch", "yahoo_result", "backup_result",
-                    "reference_result", "result_reference_source"
-                ):
-                    if field in proxy_item:
-                        item[field] = proxy_item.get(field)
-            item["status"] = "AWAITING_QX"
+            # First try exact broker auto-resolution. If the browser/native feed is
+            # gone by expiry, keep the result pending for broker/manual verification
+            # rather than inventing an outcome from an underlying proxy.
+            if resolve_tracked_signal(item):
+                invalidate_performance_history_cache(item.get("user"))
+                changed = True
+                continue
+            broker = str(item.get("broker") or "Quotex").strip() or "Quotex"
+            item["status"] = "AWAITING_QX" if broker.casefold() == "quotex" else "AWAITING_BROKER"
             item["result"] = None
-            item["result_source"] = "awaiting_quotex"
+            item["result_source"] = "awaiting_broker_exact"
             item["resolved_at"] = now
             changed = True
             continue
 
         if resolve_tracked_signal(item):
+            invalidate_performance_history_cache(item.get("user"))
             changed = True
 
     return changed
@@ -1804,6 +1976,56 @@ def pair_timeframe_performance(user, pair, expiry):
         "minimum_gate_sample": 12,
         "hard_block_sample": 25,
     }
+
+
+def loss_cooldown_state(user, pair, expiry):
+    """Return an active cooldown after consecutive losses on the same pair+expiry.
+
+    This is intentionally conservative and only uses completed, countable outcomes.
+    A WIN/DRAW breaks the consecutive-loss streak.
+    """
+    pair = str(pair or "").strip()
+    expiry = str(expiry or "").strip()
+    rows = [
+        x for x in _completed_performance_history(user)
+        if str(x.get("pair") or "").strip() == pair
+        and (not expiry or str(x.get("expiry") or "").strip() == expiry)
+    ]
+    rows.sort(key=lambda x: int(x.get("resolved_at") or x.get("expiry_epoch") or x.get("created_at") or 0), reverse=True)
+
+    streak = 0
+    latest_loss_epoch = 0
+    for item in rows:
+        result = str(item.get("result") or "").upper()
+        if result == "LOSS":
+            streak += 1
+            if not latest_loss_epoch:
+                latest_loss_epoch = int(item.get("resolved_at") or item.get("expiry_epoch") or item.get("created_at") or 0)
+            if streak >= RAJA_LOSS_COOLDOWN_CONSECUTIVE:
+                break
+        elif result in {"WIN", "DRAW"}:
+            break
+
+    now = int(time.time())
+    remaining = max(0, latest_loss_epoch + RAJA_LOSS_COOLDOWN_SECONDS - now) if latest_loss_epoch else 0
+    active = bool(streak >= RAJA_LOSS_COOLDOWN_CONSECUTIVE and remaining > 0)
+    return {
+        "active": active,
+        "consecutive_losses": streak,
+        "threshold": RAJA_LOSS_COOLDOWN_CONSECUTIVE,
+        "cooldown_seconds": RAJA_LOSS_COOLDOWN_SECONDS,
+        "remaining_seconds": remaining,
+        "latest_loss_epoch": latest_loss_epoch or None,
+        "scope": "pair+expiry",
+    }
+
+
+def invalidate_performance_history_cache(user):
+    user = normalize_user_id(user)
+    if not user:
+        return
+    with performance_history_cache_lock:
+        performance_history_cache.pop(user, None)
 
 
 def calibrate_confidence(user, expiry, technical_quality):
@@ -2213,31 +2435,107 @@ def _market_source_info(pair, yahoo_symbol, source="Yahoo Finance", provider_sym
 
 def get_market_data(pair, bridge_user=None, broker=None):
     """
-    Priority: Yahoo fresh -> Twelve Data fresh -> freshest stale reference.
-    Normal scanning still blocks stale data; OTC fallback may use the stale history.
+    Market-data router.
+
+    LIVE / non-OTC instruments:
+        Yahoo fresh -> Twelve Data fresh -> freshest stale reference.
+
+    OTC instruments in strict mode:
+        EXACT BROKER FEED ONLY. Yahoo/Twelve Data are deliberately forbidden.
+        Quotex uses the RAJA exact bridge store. Pocket Option uses the RAJA
+        Pocket Option exact bridge store when its local/browser companion is connected.
+
+    This prevents a Quotex/Pocket Option OTC signal from ever being calculated
+    from an underlying Yahoo candle that is not the candle shown by the broker.
     """
+    pair_text = str(pair or "").strip()
+    is_otc = "(OTC)" in pair_text
     yahoo_symbol = YAHOO_SYMBOLS.get(pair)
+    broker_name = str(broker or "").strip().casefold().replace(" ", "")
+
+    # ---------- Exact broker OTC routing ----------
+    if is_otc and RAJA_STRICT_BROKER_OTC:
+        if broker_name == "quotex":
+            if not bridge_user:
+                info = {
+                    "source": "Quotex Bridge",
+                    "source_mode": "broker_otc_exact_required",
+                    "exact_broker_feed": False,
+                    "backup_used": False,
+                    "yahoo_symbol": yahoo_symbol,
+                    "unavailable_reason": "Exact Quotex OTC feed required. Connect the RAJA Quotex Bridge first.",
+                }
+                return None, None, yahoo_symbol, info
+
+            bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
+            bridge_info = dict(bridge_info or {})
+            bridge_info["bridge_requested"] = True
+            bridge_info["bridge_fallback_used"] = False
+            if bridge_df is not None and not bridge_df.empty:
+                bridge_info["exact_broker_feed"] = True
+                bridge_info["source_mode"] = "broker_otc_exact"
+                return bridge_df, bridge_age, bridge_symbol, bridge_info
+
+            bridge_info["exact_broker_feed"] = False
+            bridge_info["source_mode"] = "broker_otc_exact_required"
+            bridge_info["unavailable_reason"] = bridge_info.get("unavailable_reason") or (
+                "Exact Quotex OTC candles are unavailable. Open the same OTC pair in Quotex and keep the bridge connected."
+            )
+            return None, bridge_age, bridge_symbol, bridge_info
+
+        if broker_name in {"pocketoption", "pocket-option", "pocket"}:
+            if not bridge_user:
+                info = {
+                    "source": "Pocket Option Bridge",
+                    "source_mode": "broker_otc_exact_required",
+                    "exact_broker_feed": False,
+                    "backup_used": False,
+                    "yahoo_symbol": yahoo_symbol,
+                    "unavailable_reason": "Exact Pocket Option OTC feed required. Connect the RAJA Pocket Option Bridge first.",
+                }
+                return None, None, yahoo_symbol, info
+            pocket_df, pocket_age, pocket_symbol, pocket_info = get_pocket_bridge_market_data(bridge_user, pair)
+            pocket_info = dict(pocket_info or {})
+            pocket_info["bridge_requested"] = True
+            pocket_info["bridge_fallback_used"] = False
+            if pocket_df is not None and not pocket_df.empty:
+                pocket_info["exact_broker_feed"] = True
+                pocket_info["source_mode"] = "broker_otc_exact"
+                return pocket_df, pocket_age, pocket_symbol, pocket_info
+            pocket_info["exact_broker_feed"] = False
+            pocket_info["source_mode"] = "broker_otc_exact_required"
+            pocket_info["unavailable_reason"] = pocket_info.get("unavailable_reason") or (
+                "Exact Pocket Option OTC candles are unavailable. Keep the Pocket Option companion connected."
+            )
+            return None, pocket_age, pocket_symbol, pocket_info
+
+        info = {
+            "source": "Broker Exact Feed",
+            "source_mode": "broker_otc_exact_required",
+            "exact_broker_feed": False,
+            "backup_used": False,
+            "yahoo_symbol": yahoo_symbol,
+            "unavailable_reason": "Select the broker and connect its exact OTC feed before scanning.",
+        }
+        return None, None, yahoo_symbol, info
+
     if not yahoo_symbol:
         return None, None, None, _market_source_info(pair, None)
 
-    broker_name = str(broker or "").strip().casefold()
+    # Legacy/reference mode is intentionally reachable only when strict OTC mode
+    # is explicitly disabled. Quotex exact bridge still has priority.
     bridge_fallback_info = None
-    if bridge_user and broker_name == "quotex" and "(OTC)" in str(pair):
+    if bridge_user and broker_name == "quotex" and is_otc:
         bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
         if bridge_df is not None and not bridge_df.empty:
             bridge_info = dict(bridge_info or {})
             bridge_info["bridge_fallback_used"] = False
             bridge_info["bridge_requested"] = True
             return bridge_df, bridge_age, bridge_symbol, bridge_info
-
         bridge_fallback_info = dict(bridge_info or {})
         bridge_fallback_info["bridge_requested"] = True
         bridge_fallback_info["bridge_fallback_used"] = True
         bridge_fallback_info["bridge_unavailable_reason"] = bridge_fallback_info.get("unavailable_reason") or "Quotex Bridge has no fresh candles for this pair yet."
-
-        # Strict mode is still available for installations that never want proxy/reference
-        # data, but the default production behaviour is self-healing: continue to the
-        # normal Yahoo -> Twelve Data reference chain rather than freezing the scanner.
         if RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC and not RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK:
             return None, bridge_age, bridge_symbol, bridge_fallback_info
 
@@ -2248,7 +2546,7 @@ def get_market_data(pair, bridge_user=None, broker=None):
             info["bridge_fallback_used"] = True
             info["exact_broker_feed"] = False
             info["bridge_unavailable_reason"] = bridge_fallback_info.get("bridge_unavailable_reason")
-            info["fallback_notice"] = "Quotex exact OTC feed unavailable; using reference market data. Broker OTC quotes can differ."
+            info["fallback_notice"] = "Exact OTC feed unavailable; using reference market data because strict OTC mode is disabled."
         return info
 
     yahoo_data = None
@@ -2309,10 +2607,7 @@ def get_market_data(pair, bridge_user=None, broker=None):
         _, data, age, source_info = min(candidates, key=lambda item: item[0])
         return data.copy(), age, yahoo_symbol, source_info
 
-    missing_info = _with_bridge_fallback(_market_source_info(pair, yahoo_symbol))
-    if bridge_fallback_info and not missing_info.get("unavailable_reason"):
-        missing_info["unavailable_reason"] = bridge_fallback_info.get("bridge_unavailable_reason") or "No fresh bridge/reference market data is available."
-    return None, None, yahoo_symbol, missing_info
+    return None, None, yahoo_symbol, _with_bridge_fallback(_market_source_info(pair, yahoo_symbol))
 
 
 def background_market_poller():
@@ -3108,6 +3403,7 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, 
         "data_age": round(data_age, 2) if data_age is not None else None,
         "source": source_info.get("source") or "Yahoo Finance",
         "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
+        "exact_broker_feed": bool(source_info.get("exact_broker_feed")),
         "backup_used": bool(source_info.get("backup_used")),
         "provider_symbol": source_info.get("provider_symbol"),
         "otc_proxy_warning": bool("(OTC)" in pair and source_info.get("source_mode") != "broker_otc_exact"),
@@ -3274,6 +3570,164 @@ def normalize_scan_options(raw):
     return base
 
 
+def _selected_expiry_seconds(selected_expiry):
+    return int(AUTO_TRACK_EXPIRIES.get(str(selected_expiry or "").strip()) or 0)
+
+
+def next_candle_open_guard(base_df, required_result, selected_expiry, signal):
+    """Validate that an exact-OTC signal belongs to the *immediate* next candle.
+
+    The selected timeframe's just-closed candle determines the entry boundary. The
+    first broker tick(s) of the new candle are then used only as a safety guard:
+    a sharp immediate move against the predicted direction, or an already-stretched
+    chase, cancels the trade instead of changing the predicted direction.
+    """
+    duration = _selected_expiry_seconds(selected_expiry)
+    closed_epoch = int((required_result or {}).get("closed_candle_epoch") or 0)
+    if not duration or not closed_epoch:
+        return {
+            "blocked": True,
+            "status": "NO_ENTRY_PLAN",
+            "reason": "Next-candle timing could not be synchronized to the selected timeframe.",
+        }
+
+    entry_epoch = closed_epoch + duration
+    now = time.time()
+    elapsed = now - entry_epoch
+    plan = {
+        "blocked": False,
+        "status": "ENTRY_OPEN" if elapsed >= 0 else "WAITING_CLOSE",
+        "analysis_closed_epoch": closed_epoch,
+        "entry_epoch": entry_epoch,
+        "expiry_epoch": entry_epoch + duration,
+        "seconds_from_entry": round(elapsed, 3),
+        "entry_grace_seconds": RAJA_NEXT_OPEN_GRACE_SECONDS,
+        "safe_open_min_seconds": RAJA_SAFE_OPEN_CONFIRM_MIN_SECONDS,
+        "mode": "CLOSE_CONFIRM_PLUS_OPEN_GUARD",
+    }
+
+    # A final exact-OTC confirmation is only valid for the candle immediately after
+    # the analyzed close. If the opening window has already passed, wait for a new close.
+    if elapsed < -0.35:
+        plan.update({
+            "blocked": True,
+            "status": "WAIT_FOR_CLOSE",
+            "reason": "Current selected-timeframe candle has not closed yet. Final confirmation waits for the close.",
+        })
+        return plan
+    if elapsed > RAJA_NEXT_OPEN_GRACE_SECONDS:
+        plan.update({
+            "blocked": True,
+            "status": "MISSED_ENTRY",
+            "reason": f"Next-candle entry window was missed by {elapsed:.1f}s. Wait for the next candle close; do not chase.",
+        })
+        return plan
+
+    if base_df is None or base_df.empty:
+        plan.update({"blocked": True, "status": "NO_OPEN_TICK", "reason": "Broker open tick is unavailable."})
+        return plan
+
+    current_row = None
+    previous_row = None
+    try:
+        rows = dataframe_epoch_rows(base_df)
+        for epoch, row in rows:
+            if epoch < entry_epoch:
+                previous_row = row
+            elif entry_epoch <= epoch < entry_epoch + 60:
+                current_row = row
+                break
+    except Exception:
+        rows = []
+
+    if current_row is None:
+        plan.update({
+            "blocked": True,
+            "status": "WAITING_FIRST_TICK",
+            "reason": "The new broker candle has opened but its first tick has not arrived yet. Retry immediately.",
+        })
+        return plan
+
+    try:
+        open_price = float(current_row["Open"])
+        current_price = float(current_row["Close"])
+    except Exception:
+        plan.update({"blocked": True, "status": "BAD_OPEN_TICK", "reason": "Broker opening tick is invalid."})
+        return plan
+
+    try:
+        atr = float((required_result or {}).get("atr") or 0.0)
+    except Exception:
+        atr = 0.0
+    if atr <= 0:
+        try:
+            recent = base_df.iloc[-16:-1] if len(base_df) > 2 else base_df
+            atr = float((recent["High"] - recent["Low"]).abs().mean())
+        except Exception:
+            atr = 0.0
+    if atr <= 0:
+        atr = max(abs(open_price) * 0.00005, 1e-9)
+
+    move = current_price - open_price
+    move_atr = move / atr
+    previous_close = None
+    gap_atr = None
+    if previous_row is not None:
+        try:
+            previous_close = float(previous_row["Close"])
+            gap_atr = (open_price - previous_close) / atr
+        except Exception:
+            previous_close = None
+            gap_atr = None
+
+    plan.update({
+        "open_price": round(open_price, 8),
+        "current_price": round(current_price, 8),
+        "previous_close": round(previous_close, 8) if previous_close is not None else None,
+        "move_atr": round(move_atr, 4),
+        "gap_atr": round(gap_atr, 4) if gap_atr is not None else None,
+        "open_direction": "UP" if move > 0 else ("DOWN" if move < 0 else "FLAT"),
+        "safe_open_checked": bool(elapsed >= RAJA_SAFE_OPEN_CONFIRM_MIN_SECONDS),
+    })
+
+    # If the scan returns extremely quickly, timing synchronization is still valid;
+    # the frontend deliberately waits ~0.9s after the boundary, so this is normally
+    # already true. We do not sleep inside batch workers.
+    if elapsed >= RAJA_SAFE_OPEN_CONFIRM_MIN_SECONDS:
+        if signal == "CALL" and move_atr < -RAJA_SAFE_OPEN_MAX_ADVERSE_ATR:
+            plan.update({
+                "blocked": True,
+                "status": "OPEN_INVALIDATED",
+                "reason": f"Safe Open cancelled CALL: first ticks moved {abs(move_atr):.2f} ATR against the setup.",
+            })
+            return plan
+        if signal == "PUT" and move_atr > RAJA_SAFE_OPEN_MAX_ADVERSE_ATR:
+            plan.update({
+                "blocked": True,
+                "status": "OPEN_INVALIDATED",
+                "reason": f"Safe Open cancelled PUT: first ticks moved {abs(move_atr):.2f} ATR against the setup.",
+            })
+            return plan
+
+        if signal == "CALL" and move_atr > RAJA_SAFE_OPEN_MAX_CHASE_ATR:
+            plan.update({
+                "blocked": True,
+                "status": "OPEN_TOO_EXTENDED",
+                "reason": f"No chase: CALL already moved {move_atr:.2f} ATR after the open.",
+            })
+            return plan
+        if signal == "PUT" and move_atr < -RAJA_SAFE_OPEN_MAX_CHASE_ATR:
+            plan.update({
+                "blocked": True,
+                "status": "OPEN_TOO_EXTENDED",
+                "reason": f"No chase: PUT already moved {abs(move_atr):.2f} ATR after the open.",
+            })
+            return plan
+
+    plan["status"] = "ENTRY_CONFIRMED"
+    return plan
+
+
 def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
     """Scan synchronized timeframes using a SAFE/BALANCED/AGGRESSIVE/CUSTOM gate."""
     opts = normalize_scan_options(scan_options)
@@ -3416,6 +3870,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
 
     regime_profile = market_regime_router(representative, signal, stability_score)
     performance_profile = pair_timeframe_performance(bridge_user, pair, selected_expiry)
+    loss_cooldown = loss_cooldown_state(bridge_user, pair, selected_expiry)
     late_entry = late_entry_guard(
         base_df, representative.get("price"), representative.get("atr"), signal, opts["mode"]
     )
@@ -3431,6 +3886,7 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
             "market_regime_quality": regime_profile.get("quality"),
             "market_regime_reason": regime_profile.get("reason"),
             "pair_timeframe_performance": performance_profile,
+            "loss_cooldown": loss_cooldown,
             "effective_min_score": round(effective_min_score, 2),
             "late_entry": late_entry,
             "no_trade": True,
@@ -3458,6 +3914,11 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
             f"{performance_profile.get('smoothed_win_rate'):.1f}% smoothed wins across "
             f"{performance_profile.get('sample_size')} decided trades."
         )
+    if bool(loss_cooldown.get("active")):
+        return quality_rejected(
+            f"Loss Cooldown: {loss_cooldown.get('consecutive_losses')} consecutive losses on "
+            f"{pair} {selected_expiry or ''}. Pause {loss_cooldown.get('remaining_seconds')}s before another entry."
+        )
     if bool(late_entry.get("blocked")):
         return quality_rejected(str(late_entry.get("reason") or "Late Entry Block rejected the setup."))
     if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
@@ -3472,6 +3933,18 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         return quality_rejected(
             f"Technical confluence {multi_tf_score:.1f}% is below effective threshold {effective_min_score:.1f}%." + history_note
         )
+
+    # Exact broker OTC: final decision is synchronized to the just-closed selected
+    # timeframe candle, then guarded by the first tick(s) of the new candle.
+    entry_plan = None
+    if "(OTC)" in str(pair) and bool(source_info.get("exact_broker_feed")):
+        required_for_entry = results.get(required_tf) if required_tf else representative
+        entry_plan = next_candle_open_guard(base_df, required_for_entry, selected_expiry, signal)
+        if bool(entry_plan.get("blocked")):
+            blocked = quality_rejected(str(entry_plan.get("reason") or "Next-candle entry synchronization rejected the setup."))
+            blocked["entry_plan"] = entry_plan
+            blocked["scan_skip_reason"] = str(entry_plan.get("status") or "next_candle_gate").lower()
+            return blocked
 
     # Deep quality ranking (ranking only, NOT an extra rejection gate).
     # This keeps BALANCED signal frequency while comparing every qualified pair more carefully.
@@ -3572,8 +4045,13 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "market_regime_quality": regime_profile.get("quality"),
         "market_regime_reason": regime_profile.get("reason"),
         "pair_timeframe_performance": performance_profile,
+        "loss_cooldown": loss_cooldown,
         "effective_min_score": round(effective_min_score, 2),
         "late_entry": late_entry,
+        "entry_plan": entry_plan,
+        "entry_epoch": (entry_plan or {}).get("entry_epoch"),
+        "expiry_epoch": (entry_plan or {}).get("expiry_epoch"),
+        "entry_confirmation": (entry_plan or {}).get("status") if entry_plan else None,
         "chart_preview": chart_preview,
         "deep_quality_score": round(deep_quality_score, 2),
         "calibrated_confidence": confidence_calibration.get("calibrated_confidence"),
@@ -3687,6 +4165,16 @@ def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
     - This function does not write signal history/performance records.
     - Frontend JavaScript applies the separate fallback confidence gate.
     """
+    if RAJA_STRICT_BROKER_OTC:
+        return {
+            "pair": pair,
+            "available": False,
+            "live_fresh": False,
+            "reason": "Reference fallback is disabled in STRICT BROKER OTC mode. Exact broker candles are required.",
+            "source": "Broker Exact Feed",
+            "source_mode": "broker_otc_exact_required",
+            "warning": "YAHOO/TWELVE DATA OTC PROXY DISABLED",
+        }
     if pair not in FOREX_OTC_PAIRS:
         return {
             "pair": pair,
@@ -4067,11 +4555,11 @@ def otc_fallback_config():
     pairs_with_data = int(bridge.get("pairs_with_data") or 0)
     direct_ready = bool(bridge_connected and pairs_with_data > 0)
     if direct_ready:
-        bridge_message = "RAJA Quotex Bridge is connected and streaming broker OTC data."
+        bridge_message = "RAJA Quotex Bridge is connected and streaming exact broker OTC data."
     elif bridge_connected:
-        bridge_message = "RAJA Quotex Bridge is connected but has not captured usable OTC candles yet. Reference fallback remains available."
+        bridge_message = "RAJA Quotex Bridge is connected but has not captured usable OTC candles yet. Exact OTC scan stays paused."
     else:
-        bridge_message = "Quotex can be opened; exact OTC scanning needs the RAJA Quotex Bridge. Reference fallback remains available."
+        bridge_message = "Quotex can be opened; exact OTC scanning needs the RAJA Quotex Bridge. Proxy fallback is disabled in strict mode."
     return jsonify({
         "status": "success",
         "data": {
@@ -4193,6 +4681,110 @@ def quotex_bridge_tick():
     return jsonify({"status": "success", "data": {"accepted": accepted, **status}})
 
 
+@app.route("/pocket-bridge/pair-code", methods=["POST"])
+def pocket_bridge_pair_code():
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+    now = time.time()
+    with pocket_bridge_pair_codes_lock:
+        for old_code, row in list(pocket_bridge_pair_codes.items()):
+            if float(row.get("expires_at") or 0) <= now:
+                pocket_bridge_pair_codes.pop(old_code, None)
+        code = None
+        for _ in range(20):
+            candidate = f"{secrets.randbelow(900000) + 100000:06d}"
+            if candidate not in pocket_bridge_pair_codes:
+                code = candidate
+                break
+        if not code:
+            return jsonify({"status": "error", "message": "Could not create a Pocket bridge pairing code. Retry."}), 503
+        pocket_bridge_pair_codes[code] = {
+            "user": auth["user"],
+            "device": auth["device"],
+            "expires_at": now + QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS,
+        }
+    return jsonify({
+        "status": "success",
+        "data": {
+            "pair_code": code,
+            "expires_in_seconds": QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS,
+            "server_url": request.host_url.rstrip("/"),
+            "instructions": "Open the RAJA Pocket Option Bridge/companion and enter this code once.",
+        },
+    })
+
+
+@app.route("/pocket-bridge/activate", methods=["POST"])
+def pocket_bridge_activate():
+    data = request.get_json(silent=True) or {}
+    code = str(data.get("pair_code") or "").strip()
+    if not code:
+        return jsonify({"status": "error", "message": "Pairing code is required."}), 400
+    now = time.time()
+    with pocket_bridge_pair_codes_lock:
+        row = pocket_bridge_pair_codes.pop(code, None)
+    if not row or float(row.get("expires_at") or 0) <= now:
+        return jsonify({"status": "error", "message": "Pairing code is invalid or expired. Generate a new code in RAJA AI."}), 401
+    token = _issue_quotex_bridge_token(row["user"], row["device"])
+    return jsonify({
+        "status": "success",
+        "data": {
+            "bridge_token": token,
+            "expires_at": int(now) + QUOTEX_BRIDGE_TOKEN_TTL_SECONDS,
+            "user": row["user"],
+        },
+    })
+
+
+@app.route("/pocket-bridge/status", methods=["POST"])
+def pocket_bridge_status_route():
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error:
+        return error
+    pair = str(data.get("pair") or "").strip()
+    if pair and pair not in YAHOO_SYMBOLS:
+        pair = ""
+    return jsonify({"status": "success", "data": _get_pocket_bridge_status(auth["user"], pair or None)})
+
+
+@app.route("/pocket-bridge/tick", methods=["POST"])
+def pocket_bridge_tick():
+    data = request.get_json(silent=True) or {}
+    token = request.headers.get("X-RAJA-Bridge-Token") or data.get("bridge_token")
+    bridge_auth = _validate_quotex_bridge_token(token)
+    if not bridge_auth:
+        return jsonify({"status": "error", "message": "Bridge token is invalid or expired. Pair the companion again."}), 401
+    pair = str(data.get("pair") or "").strip()
+    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
+        return jsonify({"status": "error", "message": "Unsupported or non-OTC Pocket Option pair."}), 400
+
+    accepted = 0
+    candles = data.get("candles")
+    if isinstance(candles, list):
+        for candle in candles[-500:]:
+            accepted += int(_pocket_bridge_upsert_candle(bridge_auth["user"], pair, candle))
+
+    price = data.get("price")
+    epoch = data.get("timestamp")
+    tick_ok = False
+    if price is not None:
+        tick_ok = _pocket_bridge_upsert_tick(bridge_auth["user"], pair, price, epoch)
+        accepted += int(tick_ok)
+
+    if not accepted:
+        return jsonify({"status": "error", "message": "No valid Pocket Option price/candle data was supplied."}), 400
+
+    _set_pocket_bridge_status(
+        bridge_auth["user"], bridge_auth["device"], pair=pair,
+        price=price if tick_ok else None, source_page=data.get("source_page")
+    )
+    status = _get_pocket_bridge_status(bridge_auth["user"], pair)
+    return jsonify({"status": "success", "data": {"accepted": accepted, **status}})
+
+
 @app.route("/health", methods=["GET"])
 def health():
     with cache_lock:
@@ -4207,12 +4799,21 @@ def health():
         "unique_yahoo_symbols": len(UNIQUE_YAHOO_SYMBOLS),
         "cached_symbols": cached_symbols,
         "quotex_bridge_enabled": True,
+        "pocket_option_bridge_enabled": True,
+        "strict_broker_otc": RAJA_STRICT_BROKER_OTC,
         "quotex_bridge_required_for_otc": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
         "quotex_reference_fallback_enabled": RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK,
+        "otc_reference_proxies_allowed": bool(not RAJA_STRICT_BROKER_OTC),
+        "next_open_grace_seconds": RAJA_NEXT_OPEN_GRACE_SECONDS,
+        "safe_open_confirm_min_seconds": RAJA_SAFE_OPEN_CONFIRM_MIN_SECONDS,
+        "safe_open_max_adverse_atr": RAJA_SAFE_OPEN_MAX_ADVERSE_ATR,
+        "safe_open_max_chase_atr": RAJA_SAFE_OPEN_MAX_CHASE_ATR,
+        "loss_cooldown_consecutive": RAJA_LOSS_COOLDOWN_CONSECUTIVE,
+        "loss_cooldown_seconds": RAJA_LOSS_COOLDOWN_SECONDS,
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "4-of-6 Strong + Regime + History + Entry Guard",
+        "confirmation_mode": "Closed Candle + Multi-TF + Regime + History + Next-Open Guard",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -4226,7 +4827,7 @@ def health():
         "twelve_data_cache_seconds": TWELVE_DATA_CACHE_SECONDS,
         "twelve_data_fetch_concurrency": TWELVE_DATA_FETCH_CONCURRENCY,
         "twelve_data_request_timeout_seconds": TWELVE_DATA_REQUEST_TIMEOUT_SECONDS,
-        "market_data_priority": ["Yahoo Finance", "Twelve Data", "stale reference fallback"],
+        "market_data_priority": ["Exact broker feed for OTC", "Yahoo Finance for live/non-OTC", "Twelve Data backup for live/non-OTC"],
         "max_source_candle_age_seconds": MAX_SOURCE_CANDLE_AGE_SECONDS,
         "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
         "forex_otc_fallback_deadline_seconds": FOREX_OTC_FALLBACK_DEADLINE_SECONDS,
@@ -4803,16 +5404,30 @@ def track_signal():
         return jsonify({"status": "success", "auto_tracking": False,
                         "message": "15s/30s outcome tracking is disabled because the Yahoo base feed is 1-minute."})
     now = int(time.time()); duration = AUTO_TRACK_EXPIRIES[expiry]
-    entry_epoch = ((now // duration) + 1) * duration; expiry_epoch = entry_epoch + duration
+    planned_entry_epoch = int(data.get("entry_epoch") or data.get("planned_entry_epoch") or 0)
+    if planned_entry_epoch:
+        # Accept the server-produced next-candle boundary only when it is still the
+        # immediate opening window for this selected expiry.
+        if planned_entry_epoch < now - int(RAJA_NEXT_OPEN_GRACE_SECONDS) or planned_entry_epoch > now + duration + 2:
+            return jsonify({
+                "status": "error",
+                "message": "Signal entry boundary is stale or not the immediate next candle. Run a fresh close-confirm scan.",
+            }), 409
+        entry_epoch = planned_entry_epoch
+    else:
+        entry_epoch = ((now // duration) + 1) * duration
+    expiry_epoch = entry_epoch + duration
     signal_id = "sig_" + secrets.token_hex(8)
     item = {
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
         "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
         "expiry_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
         "status": "PENDING", "result_source": "pending",
+        "broker": str(data.get("broker") or "").strip()[:80],
         "source": str(data.get("source") or "Yahoo Finance"),
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
         "provider_symbol": data.get("provider_symbol"),
+        "entry_plan": data.get("entry_plan") or {},
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
         "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
         "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
@@ -4846,15 +5461,19 @@ def set_signal_result():
         if target.get("user") and normalize_user_id(target.get("user")) != auth["user"]:
             return jsonify({"status": "error", "message": "This signal belongs to another user."}), 403
         if "(OTC)" not in str(target.get("pair", "")):
-            return jsonify({"status": "error", "message": "Manual Quotex result is only used for OTC signals."}), 400
-        target["result"] = result; target["status"] = "COMPLETED"; target["result_source"] = "quotex_manual"; target["resolved_at"] = int(time.time())
+            return jsonify({"status": "error", "message": "Manual broker result is only used for OTC signals."}), 400
+        broker = str(target.get("broker") or "Quotex").strip() or "Quotex"
+        target["result"] = result; target["status"] = "COMPLETED"; target["result_source"] = "broker_manual"; target["resolved_at"] = int(time.time())
+        target["broker_result_source"] = broker
+        invalidate_performance_history_cache(auth["user"])
         save_signals(items)
     return jsonify({
         "status": "success",
         "signal_id": signal_id,
         "result": result,
-        "result_source": "quotex_manual",
-        "yahoo_proxy_result": target.get("yahoo_result"),
+        "result_source": "broker_manual",
+        "broker": target.get("broker") or "Quotex",
+        "broker_exact_result": target.get("broker_result"),
         "reference_proxy_result": target.get("reference_result") or target.get("yahoo_result") or target.get("backup_result"),
         "reference_proxy_source": target.get("result_reference_source") or target.get("source"),
     })
