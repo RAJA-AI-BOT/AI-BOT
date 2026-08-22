@@ -23,12 +23,5 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ],
-  "related_applications": [
-    {
-      "platform": "webapp",
-      "url": "/manifest.json",
-      "id": "https://raja-ai-bot.up.railway.app/"
-    }
   ]
 }
