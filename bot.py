@@ -398,7 +398,11 @@ ADMIN_PASSWORD = (os.environ.get("RAJA_ADMIN_PASSWORD") or "").strip()
 # Quotex browser tab. No Quotex password/cookie is sent to RAJA AI.
 RAJA_QUOTEX_OTC_URL = (os.environ.get("RAJA_QUOTEX_OTC_URL") or "https://qxbroker.com/en/").strip()
 RAJA_QUOTEX_OTC_COMPANION_URL = (os.environ.get("RAJA_QUOTEX_OTC_COMPANION_URL") or "").strip()
-RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC", "1")).strip().lower() not in {"0", "false", "no", "off"}
+RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC", "0")).strip().lower() not in {"0", "false", "no", "off"}
+# Keep the scanner usable when the browser bridge is connected but not yet streaming.
+# Exact Quotex OTC candles are preferred; when they are missing, a clearly-labelled
+# Yahoo/Twelve Data reference feed may be used instead of hard-blocking the whole bot.
+RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK = str(os.environ.get("RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
 QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "2500"))))
@@ -2217,12 +2221,35 @@ def get_market_data(pair, bridge_user=None, broker=None):
         return None, None, None, _market_source_info(pair, None)
 
     broker_name = str(broker or "").strip().casefold()
+    bridge_fallback_info = None
     if bridge_user and broker_name == "quotex" and "(OTC)" in str(pair):
         bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
         if bridge_df is not None and not bridge_df.empty:
+            bridge_info = dict(bridge_info or {})
+            bridge_info["bridge_fallback_used"] = False
+            bridge_info["bridge_requested"] = True
             return bridge_df, bridge_age, bridge_symbol, bridge_info
-        if RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC:
-            return None, bridge_age, bridge_symbol, bridge_info
+
+        bridge_fallback_info = dict(bridge_info or {})
+        bridge_fallback_info["bridge_requested"] = True
+        bridge_fallback_info["bridge_fallback_used"] = True
+        bridge_fallback_info["bridge_unavailable_reason"] = bridge_fallback_info.get("unavailable_reason") or "Quotex Bridge has no fresh candles for this pair yet."
+
+        # Strict mode is still available for installations that never want proxy/reference
+        # data, but the default production behaviour is self-healing: continue to the
+        # normal Yahoo -> Twelve Data reference chain rather than freezing the scanner.
+        if RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC and not RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK:
+            return None, bridge_age, bridge_symbol, bridge_fallback_info
+
+    def _with_bridge_fallback(info):
+        info = dict(info or {})
+        if bridge_fallback_info:
+            info["bridge_requested"] = True
+            info["bridge_fallback_used"] = True
+            info["exact_broker_feed"] = False
+            info["bridge_unavailable_reason"] = bridge_fallback_info.get("bridge_unavailable_reason")
+            info["fallback_notice"] = "Quotex exact OTC feed unavailable; using reference market data. Broker OTC quotes can differ."
+        return info
 
     yahoo_data = None
     yahoo_age = None
@@ -2248,9 +2275,9 @@ def get_market_data(pair, bridge_user=None, broker=None):
 
     if yahoo_data is not None and not yahoo_data.empty:
         if yahoo_age is None or yahoo_age <= MAX_SOURCE_CANDLE_AGE_SECONDS:
-            return yahoo_data, yahoo_age, yahoo_symbol, _market_source_info(
+            return yahoo_data, yahoo_age, yahoo_symbol, _with_bridge_fallback(_market_source_info(
                 pair, yahoo_symbol, "Yahoo Finance", yahoo_symbol
-            )
+            ))
 
     td_data = None
     td_age = None
@@ -2260,29 +2287,32 @@ def get_market_data(pair, bridge_user=None, broker=None):
         if td_data is not None and not td_data.empty:
             td_age = _source_candle_age_seconds(td_data)
             if td_age is None or td_age <= MAX_SOURCE_CANDLE_AGE_SECONDS:
-                return td_data, td_age, yahoo_symbol, _market_source_info(
+                return td_data, td_age, yahoo_symbol, _with_bridge_fallback(_market_source_info(
                     pair, yahoo_symbol, "Twelve Data", td_symbol
-                )
+                ))
 
     candidates = []
     if yahoo_data is not None and not yahoo_data.empty:
         candidates.append((
             float(yahoo_age) if yahoo_age is not None else float("inf"),
             yahoo_data, yahoo_age,
-            _market_source_info(pair, yahoo_symbol, "Yahoo Finance", yahoo_symbol),
+            _with_bridge_fallback(_market_source_info(pair, yahoo_symbol, "Yahoo Finance", yahoo_symbol)),
         ))
     if td_data is not None and not td_data.empty:
         candidates.append((
             float(td_age) if td_age is not None else float("inf"),
             td_data, td_age,
-            _market_source_info(pair, yahoo_symbol, "Twelve Data", td_symbol),
+            _with_bridge_fallback(_market_source_info(pair, yahoo_symbol, "Twelve Data", td_symbol)),
         ))
 
     if candidates:
         _, data, age, source_info = min(candidates, key=lambda item: item[0])
         return data.copy(), age, yahoo_symbol, source_info
 
-    return None, None, yahoo_symbol, _market_source_info(pair, yahoo_symbol)
+    missing_info = _with_bridge_fallback(_market_source_info(pair, yahoo_symbol))
+    if bridge_fallback_info and not missing_info.get("unavailable_reason"):
+        missing_info["unavailable_reason"] = bridge_fallback_info.get("bridge_unavailable_reason") or "No fresh bridge/reference market data is available."
+    return None, None, yahoo_symbol, missing_info
 
 
 def background_market_poller():
@@ -3525,6 +3555,10 @@ def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bri
         "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
         "backup_used": bool(source_info.get("backup_used")),
         "provider_symbol": source_info.get("provider_symbol"),
+        "bridge_requested": bool(source_info.get("bridge_requested")),
+        "bridge_fallback_used": bool(source_info.get("bridge_fallback_used")),
+        "bridge_unavailable_reason": source_info.get("bridge_unavailable_reason"),
+        "fallback_notice": source_info.get("fallback_notice"),
         "otc_proxy_warning": bool("(OTC)" in pair and source_info.get("source_mode") != "broker_otc_exact"), "yahoo_symbol": symbol,
         "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
         "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
@@ -4029,23 +4063,28 @@ def otc_fallback_config():
 
     companion_url = RAJA_QUOTEX_OTC_COMPANION_URL
     bridge = _get_quotex_bridge_status(auth["user"])
-    direct_ready = bool(bridge.get("connected"))
+    bridge_connected = bool(bridge.get("connected"))
+    pairs_with_data = int(bridge.get("pairs_with_data") or 0)
+    direct_ready = bool(bridge_connected and pairs_with_data > 0)
+    if direct_ready:
+        bridge_message = "RAJA Quotex Bridge is connected and streaming broker OTC data."
+    elif bridge_connected:
+        bridge_message = "RAJA Quotex Bridge is connected but has not captured usable OTC candles yet. Reference fallback remains available."
+    else:
+        bridge_message = "Quotex can be opened; exact OTC scanning needs the RAJA Quotex Bridge. Reference fallback remains available."
     return jsonify({
         "status": "success",
         "data": {
             "enabled": bool(RAJA_QUOTEX_OTC_URL),
             "market": "ForexOTC",
             "launch_url": RAJA_QUOTEX_OTC_URL,
-            "companion_connected": direct_ready or bool(companion_url),
+            "companion_connected": bridge_connected or bool(companion_url),
             "companion_url": companion_url,
             "direct_scan_available": direct_ready,
             "bridge": bridge,
             "bridge_required_for_quotex_otc": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
-            "message": (
-                "RAJA Quotex Bridge is connected and streaming broker OTC data."
-                if direct_ready
-                else "Quotex can be opened, but exact OTC scanning needs the RAJA Quotex Bridge extension."
-            ),
+            "reference_fallback_enabled": RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK,
+            "message": bridge_message,
         },
     })
 
@@ -4169,6 +4208,7 @@ def health():
         "cached_symbols": cached_symbols,
         "quotex_bridge_enabled": True,
         "quotex_bridge_required_for_otc": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
+        "quotex_reference_fallback_enabled": RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK,
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
