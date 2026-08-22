@@ -9874,6 +9874,21 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     const batch = await scanPairsBatchFromBackend(eligiblePairs);
 
                     scanDiagnostics = batch.diagnostics || null;
+
+                    // Self-healing Forex OTC: if exact/live data is unavailable for the
+                    // whole market, arm the existing reference fallback and continue the
+                    // SAME scan immediately instead of leaving the user on a dead screen.
+                    if (
+                        market === 'ForexOTC' &&
+                        scanDiagnostics &&
+                        scanDiagnostics.all_market_data_blocked &&
+                        typeof window.rajaArmForexOtcFallback === 'function' &&
+                        typeof window.rajaRunForexOtcFailoverScan === 'function'
+                    ) {
+                        window.rajaArmForexOtcFallback('Exact/live Forex OTC data unavailable; automatic reference fallback activated.');
+                        await window.rajaRunForexOtcFailoverScan(selectedPair);
+                        return;
+                    }
                     const eligibleSet = new Set(eligiblePairs);
                     const rawResults = batch.results;
                     const rankableResults = rawResults.filter(row =>
@@ -9935,6 +9950,20 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     setScanProgress(35);
 
                     const indicatorResult = await scanPairFromBackend(selectedPair);
+
+                    if (
+                        market === 'ForexOTC' &&
+                        !indicatorResult &&
+                        rajaLatestMarketState &&
+                        rajaLatestMarketState.scan_paused &&
+                        typeof window.rajaArmForexOtcFallback === 'function' &&
+                        typeof window.rajaRunForexOtcFailoverScan === 'function'
+                    ) {
+                        window.rajaArmForexOtcFallback(rajaLatestMarketState.reason || 'Exact/live Forex OTC data unavailable; automatic reference fallback activated.');
+                        await window.rajaRunForexOtcFailoverScan(selectedPair);
+                        return;
+                    }
+
                     setScanProgress(100);
                     if (indicatorResult) {
                         updatePremiumMarketSnapshotFromNormalized(indicatorResult);
