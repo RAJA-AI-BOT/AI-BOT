@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v25-exact-otc-close-confirm';
+const CACHE_VERSION = 'raja-ai-pwa-v27-native-broker-otc';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -25,7 +25,6 @@ const API_PREFIXES = [
   '/otc-fallback-config',
   '/forex-otc-fallback-data',
   '/quotex-bridge/',
-  '/pocket-bridge/',
   '/telegram/',
   '/admin/'
 ];
