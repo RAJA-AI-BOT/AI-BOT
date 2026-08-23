@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import os
 import time
+import io
+import math
 import json
 import secrets
 import hmac
@@ -10,6 +12,10 @@ import base64
 import threading
 import queue
 from pathlib import Path
+from typing import Any
+
+import numpy as np
+from PIL import Image, ImageEnhance, ImageOps, UnidentifiedImageError
 from concurrent.futures import ThreadPoolExecutor, as_completed, wait
 from collections import Counter, OrderedDict
 from datetime import datetime, timezone
@@ -606,23 +612,22 @@ def _bridge_book_snapshot(book, pair_seen_at):
 
 
 def _bridge_analysis_depth(candle_count):
-    # analyze_timeframe() needs 60 CLOSED candles per timeframe.  One extra
-    # 1m row is kept because build_timeframe() drops the forming bucket.
+    """Closed-candle depths suitable for the SK25 strategy engine (no indicator warm-up)."""
     count = max(0, int(candle_count or 0))
-    thresholds = (("1m", 61), ("2m", 121), ("5m", 301), ("10m", 601), ("15m", 901), ("30m", 1801))
+    thresholds = (("1m", 15), ("2m", 25), ("5m", 56), ("10m", 111), ("15m", 166), ("30m", 331))
     return [name for name, needed in thresholds if count >= needed]
 
 
-def _bridge_required_base_candles(min_tf):
-    # The strict gate requires N agreeing timeframes.  Because the configured
-    # timeframes are ordered 1m,2m,5m,10m,15m,30m, this is the minimum exact
-    # 1m history depth needed before that gate can possibly pass.
-    try:
-        need = max(1, min(6, int(min_tf)))
-    except Exception:
-        need = 4
-    thresholds = [61, 121, 301, 601, 901, 1801]
-    return thresholds[need - 1]
+def _sk25_required_base_candles(timeframe):
+    """Approximate 1m rows needed to form >=11 closed candles of a requested timeframe."""
+    tf = str(timeframe or "1m").strip().lower()
+    minutes = TIMEFRAMES.get(tf, 1)
+    return max(15, int(minutes) * 11 + 1)
+
+
+def _bridge_required_base_candles(_min_tf=None):
+    # Compatibility helper retained for older bridge status callers.
+    return 15
 
 
 def _get_quotex_bridge_status(user, pair=None):
@@ -2665,1463 +2670,505 @@ def background_market_poller():
 
 
 def build_timeframe(base_df, minutes):
-    """Create a CLOSED-candle timeframe from Yahoo 1m OHLCV."""
+    """Build a timeframe and exclude ONLY a genuinely forming candle/bucket."""
     if base_df is None or base_df.empty:
         return None
+    minutes = max(1, int(minutes))
+    df = base_df.copy().sort_index()
 
-    df = base_df.copy()
+    def drop_forming(frame, span_minutes):
+        if frame is None or frame.empty:
+            return frame
+        try:
+            last_epoch = float(frame.index[-1].timestamp())
+            bucket_end = last_epoch + int(span_minutes) * 60
+            # A 1-second grace avoids treating a just-closed bucket as forming.
+            if time.time() < bucket_end - 1.0:
+                return frame.iloc[:-1]
+        except Exception:
+            # Unknown timestamp format: conservative fallback keeps original behavior.
+            if len(frame) > 1:
+                return frame.iloc[:-1]
+        return frame
 
     if minutes == 1:
-        # Last Yahoo minute may still be forming; analyze only closed candles.
-        if len(df) > 1:
-            df = df.iloc[:-1]
-        return df
+        return drop_forming(df, 1)
 
     rule = f"{minutes}min"
-
-    agg = {
-        "Open": "first",
-        "High": "max",
-        "Low": "min",
-        "Close": "last",
-    }
-
+    agg = {"Open":"first","High":"max","Low":"min","Close":"last"}
     if "Volume" in df.columns:
         agg["Volume"] = "sum"
-
     try:
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-            origin="start_day",
-        ).agg(agg)
+        tf = df.resample(rule, label="left", closed="left", origin="start_day").agg(agg)
     except TypeError:
-        # Compatibility fallback for older pandas versions.
-        tf = df.resample(
-            rule,
-            label="left",
-            closed="left",
-        ).agg(agg)
+        tf = df.resample(rule, label="left", closed="left").agg(agg)
+    tf = tf.dropna(subset=["Open","High","Low","Close"])
+    return drop_forming(tf, minutes)
 
-    tf = tf.dropna(subset=["Open", "High", "Low", "Close"])
-
-    # The last resampled bucket can still be forming.
-    if len(tf) > 1:
-        tf = tf.iloc[:-1]
-
-    return tf
 
 
 # =========================================================
-# INDICATORS
+# SK TRADING CLUB PATTERN TYPE 1-25 — STRATEGY ONLY ENGINE
+# No RSI / EMA / MACD / Bollinger / Stochastic / ADX / ATR signal logic.
+# Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    avg_loss = loss.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    rs = avg_gain / avg_loss.replace(0, 1e-12)
-    return 100 - (100 / (1 + rs))
+SK25_ENGINE_VERSION = "RAJA_SK25_STRATEGY_ONLY_V28"
+SK25_PATTERN_LIBRARY_SIZE = 25
+SK25_LIVE_MIN_CANDLES = 10
 
 
-def calculate_ema(series, period):
-    return series.ewm(
-        span=period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_macd(series):
-    ema12 = calculate_ema(series, 12)
-    ema26 = calculate_ema(series, 26)
-    macd = ema12 - ema26
-    signal = macd.ewm(
-        span=9,
-        adjust=False,
-        min_periods=9,
-    ).mean()
-    return macd, signal
-
-
-def calculate_bollinger_bands(series, period=20, std_dev=2):
-    middle = series.rolling(period).mean()
-    std = series.rolling(period).std()
-    upper = middle + (std_dev * std)
-    lower = middle - (std_dev * std)
-    return upper, middle, lower
-
-
-
-def calculate_stochastic_rsi(rsi_series, period=14, smooth_k=3, smooth_d=3):
-    """Stochastic RSI for entry timing. Returns smoothed %K and %D series (0..100)."""
-    rsi_low = rsi_series.rolling(period).min()
-    rsi_high = rsi_series.rolling(period).max()
-    spread = (rsi_high - rsi_low).replace(0, 1e-12)
-    raw = ((rsi_series - rsi_low) / spread * 100.0).clip(lower=0.0, upper=100.0)
-    k = raw.rolling(smooth_k).mean()
-    d = k.rolling(smooth_d).mean()
-    return k, d
-
-
-def detect_rsi_divergence(close, rsi_series, lookback=34, pivot_span=2, min_rsi_delta=2.0):
-    """Detect simple closed-candle regular RSI divergence from the latest two swing pivots."""
-    n = min(len(close), len(rsi_series), int(lookback))
-    if n < 12:
-        return "NONE"
-    prices = close.iloc[-n:]
-    rsis = rsi_series.reindex(prices.index)
-    p = [safe_float(v) for v in prices.tolist()]
-    r = [safe_float(v) for v in rsis.tolist()]
-    lows, highs = [], []
-    span = max(1, int(pivot_span))
-    for i in range(span, n - span):
-        if p[i] is None or r[i] is None:
-            continue
-        local_p = [x for x in p[i-span:i+span+1] if x is not None]
-        if len(local_p) < (span * 2 + 1):
-            continue
-        if p[i] <= min(local_p):
-            lows.append(i)
-        if p[i] >= max(local_p):
-            highs.append(i)
-
-    bullish = False
-    bearish = False
-    bull_end = -1
-    bear_end = -1
-    if len(lows) >= 2:
-        a, b = lows[-2], lows[-1]
-        if r[a] is not None and r[b] is not None:
-            bullish = p[b] < p[a] and r[b] >= r[a] + float(min_rsi_delta)
-            if bullish:
-                bull_end = b
-    if len(highs) >= 2:
-        a, b = highs[-2], highs[-1]
-        if r[a] is not None and r[b] is not None:
-            bearish = p[b] > p[a] and r[b] <= r[a] - float(min_rsi_delta)
-            if bearish:
-                bear_end = b
-
-    if bullish and bearish:
-        return "BULLISH" if bull_end >= bear_end else "BEARISH"
-    if bullish:
-        return "BULLISH"
-    if bearish:
-        return "BEARISH"
-    return "NONE"
-
-
-def calculate_support_resistance(df, lookback=42, pivot_span=2):
-    """Nearest recent closed-candle pivot support/resistance, excluding the current candle."""
-    if df is None or len(df) < 12:
-        return None, None
-    history = df.iloc[:-1].tail(max(12, int(lookback)))
-    if history.empty:
-        return None, None
-    current_price = safe_float(df["Close"].iloc[-1])
-    highs = [safe_float(v) for v in history["High"].tolist()]
-    lows = [safe_float(v) for v in history["Low"].tolist()]
-    span = max(1, int(pivot_span))
-    pivot_highs, pivot_lows = [], []
-    for i in range(span, len(history) - span):
-        if highs[i] is None or lows[i] is None:
-            continue
-        hwin = [x for x in highs[i-span:i+span+1] if x is not None]
-        lwin = [x for x in lows[i-span:i+span+1] if x is not None]
-        if len(hwin) == span * 2 + 1 and highs[i] >= max(hwin):
-            pivot_highs.append(highs[i])
-        if len(lwin) == span * 2 + 1 and lows[i] <= min(lwin):
-            pivot_lows.append(lows[i])
-
-    valid_highs = [x for x in pivot_highs if x is not None]
-    valid_lows = [x for x in pivot_lows if x is not None]
-    fallback_high = max([x for x in highs if x is not None], default=None)
-    fallback_low = min([x for x in lows if x is not None], default=None)
-
-    if current_price is None:
-        return fallback_low, fallback_high
-
-    lower_levels = [x for x in valid_lows if x <= current_price]
-    upper_levels = [x for x in valid_highs if x >= current_price]
-    support = max(lower_levels) if lower_levels else (min(valid_lows) if valid_lows else fallback_low)
-    resistance = min(upper_levels) if upper_levels else (max(valid_highs) if valid_highs else fallback_high)
-    return support, resistance
-
-
-def bollinger_signal_context(df, bb_upper, bb_middle, bb_lower, atr):
-    """Full Bollinger context: rejection, squeeze, breakout and band expansion."""
-    close = df["Close"]
-    last = df.iloc[-1]
-    price = safe_float(close.iloc[-1])
-    prev_close = safe_float(close.iloc[-2])
-    upper_now = safe_float(bb_upper.iloc[-1])
-    lower_now = safe_float(bb_lower.iloc[-1])
-    mid_now = safe_float(bb_middle.iloc[-1])
-    upper_prev = safe_float(bb_upper.iloc[-2])
-    lower_prev = safe_float(bb_lower.iloc[-2])
-    mid_prev = safe_float(bb_middle.iloc[-2])
-    if None in (price, prev_close, upper_now, lower_now, mid_now, upper_prev, lower_prev, mid_prev):
-        return {
-            "bull_points": 0.0, "bear_points": 0.0, "context": "UNAVAILABLE",
-            "squeeze": False, "expanding": False,
-        }
-
-    width = (bb_upper - bb_lower) / bb_middle.abs().replace(0, 1e-12)
-    width_now = safe_float(width.iloc[-1], 0.0)
-    width_prev = safe_float(width.iloc[-2], width_now)
-    width_avg = safe_float(width.rolling(20).mean().iloc[-1], width_now)
-    squeeze = bool(width_avg > 0 and width_now <= width_avg * 0.80)
-    expanding = bool(width_now > max(width_prev * 1.03, width_avg * 0.92))
-
-    candle_open = safe_float(last["Open"])
-    candle_high = safe_float(last["High"])
-    candle_low = safe_float(last["Low"])
-    candle_close = safe_float(last["Close"])
-    bull_candle = candle_close is not None and candle_open is not None and candle_close > candle_open
-    bear_candle = candle_close is not None and candle_open is not None and candle_close < candle_open
-
-    breakout_up = bool(price > upper_now and prev_close <= upper_prev and expanding)
-    breakout_down = bool(price < lower_now and prev_close >= lower_prev and expanding)
-    lower_rejection = bool(candle_low is not None and candle_low <= lower_now and price > lower_now and bull_candle)
-    upper_rejection = bool(candle_high is not None and candle_high >= upper_now and price < upper_now and bear_candle)
-    mid_up = bool(price > mid_now and mid_now >= mid_prev)
-    mid_down = bool(price < mid_now and mid_now <= mid_prev)
-
-    bull_points = 0.0
-    bear_points = 0.0
-    context = "NEUTRAL"
-    if breakout_up:
-        bull_points += 1.20
-        context = "BULL BREAKOUT + EXPANSION"
-    elif breakout_down:
-        bear_points += 1.20
-        context = "BEAR BREAKOUT + EXPANSION"
-    elif lower_rejection:
-        bull_points += 1.00
-        context = "LOWER BAND REJECTION"
-    elif upper_rejection:
-        bear_points += 1.00
-        context = "UPPER BAND REJECTION"
-    elif expanding and mid_up:
-        bull_points += 0.65
-        context = "BULL BAND EXPANSION"
-    elif expanding and mid_down:
-        bear_points += 0.65
-        context = "BEAR BAND EXPANSION"
-    elif not squeeze and mid_up:
-        bull_points += 0.35
-        context = "ABOVE RISING MID"
-    elif not squeeze and mid_down:
-        bear_points += 0.35
-        context = "BELOW FALLING MID"
-    elif squeeze:
-        context = "SQUEEZE / WAIT BREAKOUT"
-
-    return {
-        "bull_points": bull_points,
-        "bear_points": bear_points,
-        "context": context,
-        "squeeze": squeeze,
-        "expanding": expanding,
-        "bandwidth": width_now,
-    }
-
-
-def calculate_true_range(df):
-    previous_close = df["Close"].shift(1)
-    high_low = df["High"] - df["Low"]
-    high_close = (df["High"] - previous_close).abs()
-    low_close = (df["Low"] - previous_close).abs()
-    return high_low.combine(high_close, max).combine(low_close, max)
-
-
-def calculate_atr(df, period=14):
-    tr = calculate_true_range(df)
-    return tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-
-def calculate_adx_components(df, period=14):
-    high = df["High"]
-    low = df["Low"]
-
-    up_move = high.diff()
-    down_move = -low.diff()
-
-    plus_dm = up_move.where(
-        (up_move > down_move) & (up_move > 0),
-        0.0,
-    )
-    minus_dm = down_move.where(
-        (down_move > up_move) & (down_move > 0),
-        0.0,
-    )
-
-    tr = calculate_true_range(df)
-    atr = tr.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    plus_di = (
-        100
-        * plus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    minus_di = (
-        100
-        * minus_dm.ewm(
-            alpha=1 / period,
-            adjust=False,
-            min_periods=period,
-        ).mean()
-        / atr.replace(0, 1e-12)
-    )
-
-    dx = (
-        100
-        * (plus_di - minus_di).abs()
-        / (plus_di + minus_di).replace(0, 1e-12)
-    )
-
-    adx = dx.ewm(
-        alpha=1 / period,
-        adjust=False,
-        min_periods=period,
-    ).mean()
-
-    return adx, plus_di, minus_di
-
-
-def safe_float(value, default=None):
+def _f(value, default=0.0):
     try:
         value = float(value)
-        if value != value:
-            return default
-        return value
+        return default if value != value else value
     except Exception:
         return default
 
 
-def analyze_timeframe(df, timeframe):
-    """Analyze one CLOSED timeframe with RAJA HYBRID weighted confluence. No random values."""
-    if df is None or df.empty or len(df) < 60:
-        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Insufficient closed candles"}
+def _candle_rows(df, limit=80):
+    if df is None or getattr(df, "empty", True):
+        return []
+    rows = []
+    for idx, row in df.tail(max(12, min(int(limit), 120))).iterrows():
+        try:
+            o = float(row["Open"]); h = float(row["High"]); l = float(row["Low"]); c = float(row["Close"])
+            if not all(x == x for x in (o,h,l,c)) or h < l:
+                continue
+            rng = max(h-l, 1e-12)
+            body = abs(c-o)
+            direction = 1 if c > o else (-1 if c < o else 0)
+            rows.append({
+                "epoch": int(idx.timestamp()) if hasattr(idx, "timestamp") else 0,
+                "open": o, "high": h, "low": l, "close": c,
+                "dir": direction, "range": rng, "body": body,
+                "body_ratio": body/rng,
+                "upper_wick": max(0.0, h-max(o,c)),
+                "lower_wick": max(0.0, min(o,c)-l),
+                "body_top": max(o,c), "body_bottom": min(o,c),
+            })
+        except Exception:
+            continue
+    return rows
 
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(df.columns):
-        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Missing OHLC columns"}
 
-    df = df.copy().dropna(subset=list(required))
-    if len(df) < 60:
-        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Insufficient clean candles"}
+def _median(values, default=0.0):
+    vals = sorted(float(v) for v in values if v is not None)
+    if not vals:
+        return float(default)
+    m = len(vals)//2
+    return vals[m] if len(vals)%2 else (vals[m-1]+vals[m])/2.0
 
-    close = df["Close"]
-    rsi_series = calculate_rsi(close, 14)
-    rsi = safe_float(rsi_series.iloc[-1])
-    ema9 = safe_float(calculate_ema(close, 9).iloc[-1])
-    ema21 = safe_float(calculate_ema(close, 21).iloc[-1])
-    ema50 = safe_float(calculate_ema(close, 50).iloc[-1])
 
-    macd, macd_signal = calculate_macd(close)
-    macd_now = safe_float(macd.iloc[-1])
-    macd_sig_now = safe_float(macd_signal.iloc[-1])
+def _sk25_trend(candles, lookback=8):
+    seq = candles[-max(3, min(int(lookback), len(candles))):]
+    if len(seq) < 3:
+        return 0.0
+    med_range = max(_median([x["range"] for x in seq], 1e-8), 1e-8)
+    move = seq[-1]["close"] - seq[0]["close"]
+    scale = med_range * max(2.0, len(seq)-1)
+    return max(-1.0, min(1.0, move/scale))
 
-    bb_upper, bb_middle, bb_lower = calculate_bollinger_bands(close)
-    bb_mid = safe_float(bb_middle.iloc[-1])
-    bb_upper_now = safe_float(bb_upper.iloc[-1])
-    bb_lower_now = safe_float(bb_lower.iloc[-1])
 
-    atr = safe_float(calculate_atr(df, 14).iloc[-1])
-    adx, plus_di, minus_di = calculate_adx_components(df, 14)
-    adx_now = safe_float(adx.iloc[-1])
-    plus_di_now = safe_float(plus_di.iloc[-1])
-    minus_di_now = safe_float(minus_di.iloc[-1])
+def _sk25_level_clusters(values, tolerance, min_touches=2):
+    values = sorted(float(v) for v in values)
+    groups = []
+    for value in values:
+        placed = False
+        for group in groups:
+            center = sum(group)/len(group)
+            if abs(value-center) <= tolerance:
+                group.append(value); placed = True; break
+        if not placed:
+            groups.append([value])
+    return [sum(g)/len(g) for g in groups if len(g) >= min_touches]
 
-    stoch_k_series, stoch_d_series = calculate_stochastic_rsi(rsi_series, 14, 3, 3)
-    stoch_k = safe_float(stoch_k_series.iloc[-1])
-    stoch_d = safe_float(stoch_d_series.iloc[-1])
-    stoch_k_prev = safe_float(stoch_k_series.iloc[-2])
-    stoch_d_prev = safe_float(stoch_d_series.iloc[-2])
 
-    price = safe_float(close.iloc[-1])
-    previous_close = safe_float(close.iloc[-2])
+def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
+    """Evaluate only the supplied SK Pattern Type 1-25 rules on CLOSED OHLC candles."""
+    tf = str(timeframe or "1m").strip().lower()
+    market_name = str(market or "LIVE").upper()
+    previous_outcome = str(last_outcome or "").strip().upper()
+    if previous_outcome.startswith("RECOVERY_"):
+        previous_outcome = previous_outcome.split("_", 1)[1]
 
-    values = [
-        rsi, ema9, ema21, ema50, macd_now, macd_sig_now,
-        bb_mid, bb_upper_now, bb_lower_now, atr, adx_now,
-        plus_di_now, minus_di_now, stoch_k, stoch_d,
-        stoch_k_prev, stoch_d_prev, price, previous_close,
-    ]
-    if any(v is None for v in values) or atr <= 0:
-        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Indicators not ready"}
-
-    ema_bullish = price > ema9 > ema21 > ema50
-    ema_bearish = price < ema9 < ema21 < ema50
-    macd_bullish = macd_now > macd_sig_now
-    macd_bearish = macd_now < macd_sig_now
-    adx_bullish = adx_now >= 18 and plus_di_now > minus_di_now
-    adx_bearish = adx_now >= 18 and minus_di_now > plus_di_now
-
-    last = df.iloc[-1]
-    candle_open = safe_float(last["Open"])
-    candle_high = safe_float(last["High"])
-    candle_low = safe_float(last["Low"])
-    candle_close = safe_float(last["Close"])
-    if None in (candle_open, candle_high, candle_low, candle_close):
-        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Latest candle incomplete"}
-
-    candle_range = candle_high - candle_low
-    if candle_range <= 0:
-        return {"timeframe": timeframe, "signal": "NO SIGNAL", "score": 0, "reason": "Invalid candle range"}
-
-    bullish_candle = candle_close > candle_open
-    bearish_candle = candle_close < candle_open
-    candle_body = abs(candle_close - candle_open)
-    upper_wick = candle_high - max(candle_open, candle_close)
-    lower_wick = min(candle_open, candle_close) - candle_low
-
-    # UPGRADE 5: Precision Wick Rejection.
-    # A valid rejection wick must be meaningful relative to BOTH the candle body
-    # and the full candle range. This removes many weak 25%-wick false positives.
-    wick_body_reference = max(candle_body, candle_range * 0.05)
-    lower_wick_ratio = lower_wick / candle_range
-    upper_wick_ratio = upper_wick / candle_range
-    lower_wick_body_multiple = lower_wick / max(wick_body_reference, 1e-12)
-    upper_wick_body_multiple = upper_wick / max(wick_body_reference, 1e-12)
-    bullish_rejection = bool(
-        bullish_candle
-        and lower_wick_ratio >= 0.35
-        and lower_wick_body_multiple >= 1.50
-    )
-    bearish_rejection = bool(
-        bearish_candle
-        and upper_wick_ratio >= 0.35
-        and upper_wick_body_multiple >= 1.50
-    )
-
-    # UPGRADE 1: Full Bollinger logic replaces the old middle-band-only vote.
-    bb_ctx = bollinger_signal_context(df, bb_upper, bb_middle, bb_lower, atr)
-
-    # UPGRADE 2: RSI keeps its normal momentum role and adds regular divergence context.
-    rsi_divergence = detect_rsi_divergence(close, rsi_series)
-
-    # UPGRADE 3: Stochastic RSI becomes the fast timing layer; one-candle momentum is only a small bonus.
-    stoch_bullish_cross = stoch_k_prev <= stoch_d_prev and stoch_k > stoch_d and stoch_k <= 65
-    stoch_bearish_cross = stoch_k_prev >= stoch_d_prev and stoch_k < stoch_d and stoch_k >= 35
-    stoch_bullish_timing = stoch_k > stoch_d and stoch_k <= 35
-    stoch_bearish_timing = stoch_k < stoch_d and stoch_k >= 65
-    momentum_bullish = price > previous_close
-    momentum_bearish = price < previous_close
-
-    # UPGRADE 4: Wick rejection is strongest only at an important recent S/R level.
-    support, resistance = calculate_support_resistance(df, 42, 2)
-    level_tolerance = max(float(atr) * 0.40, abs(float(price)) * 0.00020)
-    near_support = support is not None and candle_low <= float(support) + level_tolerance and candle_close >= float(support) - level_tolerance * 0.20
-    near_resistance = resistance is not None and candle_high >= float(resistance) - level_tolerance and candle_close <= float(resistance) + level_tolerance * 0.20
-    support_rejection = bool(bullish_rejection and near_support)
-    resistance_rejection = bool(bearish_rejection and near_resistance)
-
-    # Precision confluence: Wick + S/R is mandatory. Bollinger rejection and
-    # EMA50 alignment upgrade the setup instead of allowing a random wick to dominate.
-    bb_lower_wick_rejection = bool(
-        bullish_rejection and candle_low <= bb_lower_now and candle_close > bb_lower_now
-    )
-    bb_upper_wick_rejection = bool(
-        bearish_rejection and candle_high >= bb_upper_now and candle_close < bb_upper_now
-    )
-    ema50_call_filter = bool(candle_close >= ema50)
-    ema50_put_filter = bool(candle_close <= ema50)
-
-    wick_call_confirmations = int(bool(near_support)) + int(bb_lower_wick_rejection) + int(ema50_call_filter)
-    wick_put_confirmations = int(bool(near_resistance)) + int(bb_upper_wick_rejection) + int(ema50_put_filter)
-
-    precision_wick_call = bool(
-        support_rejection and (bb_lower_wick_rejection or ema50_call_filter)
-    )
-    precision_wick_put = bool(
-        resistance_rejection and (bb_upper_wick_rejection or ema50_put_filter)
-    )
-    premium_wick_call = bool(
-        support_rejection and bb_lower_wick_rejection and ema50_call_filter
-    )
-    premium_wick_put = bool(
-        resistance_rejection and bb_upper_wick_rejection and ema50_put_filter
-    )
-
-    if premium_wick_call:
-        wick_context = "PREMIUM CALL · WICK + SUPPORT + LOWER BB + EMA50"
-    elif premium_wick_put:
-        wick_context = "PREMIUM PUT · WICK + RESISTANCE + UPPER BB + EMA50"
-    elif precision_wick_call:
-        wick_context = "PRECISION CALL · WICK + SUPPORT + CONFIRMATION"
-    elif precision_wick_put:
-        wick_context = "PRECISION PUT · WICK + RESISTANCE + CONFIRMATION"
-    elif support_rejection:
-        wick_context = "SUPPORT WICK REJECTION"
-    elif resistance_rejection:
-        wick_context = "RESISTANCE WICK REJECTION"
-    elif bullish_rejection:
-        wick_context = "RAW BULLISH WICK"
-    elif bearish_rejection:
-        wick_context = "RAW BEARISH WICK"
-    else:
-        wick_context = "NONE"
-
-    resistance_breakout = bool(resistance is not None and candle_close > float(resistance) + atr * 0.12 and previous_close <= float(resistance) + atr * 0.05)
-    support_breakdown = bool(support is not None and candle_close < float(support) - atr * 0.12 and previous_close >= float(support) - atr * 0.05)
-    if support_rejection:
-        sr_context = "SUPPORT REJECTION"
-    elif resistance_rejection:
-        sr_context = "RESISTANCE REJECTION"
-    elif resistance_breakout:
-        sr_context = "RESISTANCE BREAKOUT"
-    elif support_breakdown:
-        sr_context = "SUPPORT BREAKDOWN"
-    elif near_support:
-        sr_context = "NEAR SUPPORT"
-    elif near_resistance:
-        sr_context = "NEAR RESISTANCE"
-    else:
-        sr_context = "MID-RANGE"
-
-    volume_bullish = False
-    volume_bearish = False
-    if "Volume" in df.columns:
-        volume = df["Volume"].fillna(0)
-        current_volume = safe_float(volume.iloc[-1], 0.0)
-        avg_volume = safe_float(volume.rolling(20).mean().iloc[-1], 0.0)
-        if current_volume > 0 and avg_volume > 0:
-            volume_bullish = bullish_candle and current_volume > avg_volume
-            volume_bearish = bearish_candle and current_volume > avg_volume
-
-    bullish_points = 0.0
-    bearish_points = 0.0
-
-    # RSI normal momentum, less dominant than trend/SR.
-    if 52 <= rsi <= 70:
-        bullish_points += 0.75
-    elif 30 <= rsi <= 48:
-        bearish_points += 0.75
-    if rsi_divergence == "BULLISH":
-        bullish_points += 0.65
-    elif rsi_divergence == "BEARISH":
-        bearish_points += 0.65
-
-    # Trend core retained.
-    if ema_bullish:
-        bullish_points += 2.0
-    elif ema_bearish:
-        bearish_points += 2.0
-
-    if macd_bullish:
-        bullish_points += 1.0
-    elif macd_bearish:
-        bearish_points += 1.0
-
-    # Full Bollinger weighted context.
-    bullish_points += float(bb_ctx.get("bull_points") or 0.0)
-    bearish_points += float(bb_ctx.get("bear_points") or 0.0)
-
-    if adx_bullish:
-        bullish_points += 1.5
-    elif adx_bearish:
-        bearish_points += 1.5
-
-    # StochRSI timing replaces the old 1.0-point single-candle momentum vote.
-    if stoch_bullish_cross:
-        bullish_points += 1.0
-    elif stoch_bearish_cross:
-        bearish_points += 1.0
-    elif stoch_bullish_timing:
-        bullish_points += 0.70
-    elif stoch_bearish_timing:
-        bearish_points += 0.70
-
-    # Raw momentum stays only as a tiny tie-breaker.
-    if momentum_bullish:
-        bullish_points += 0.25
-    elif momentum_bearish:
-        bearish_points += 0.25
-
-    # Precision wick weighting. The strongest score is reserved for a rejection
-    # confirmed by S/R + Bollinger Band + EMA50; a naked wick gets very little weight.
-    if premium_wick_call:
-        bullish_points += 1.75
-    elif premium_wick_put:
-        bearish_points += 1.75
-    elif precision_wick_call:
-        bullish_points += 1.45
-    elif precision_wick_put:
-        bearish_points += 1.45
-    elif support_rejection:
-        bullish_points += 1.10
-    elif resistance_rejection:
-        bearish_points += 1.10
-    elif resistance_breakout:
-        bullish_points += 1.00
-    elif support_breakdown:
-        bearish_points += 1.00
-    elif bullish_rejection:
-        bullish_points += 0.10
-    elif bearish_rejection:
-        bearish_points += 0.10
-    elif bullish_candle:
-        bullish_points += 0.15
-    elif bearish_candle:
-        bearish_points += 0.15
-
-    # Being close to a level is useful context, but not a hard veto.
-    if near_support and not support_breakdown:
-        bullish_points += 0.20
-    if near_resistance and not resistance_breakout:
-        bearish_points += 0.20
-
-    if volume_bullish:
-        bullish_points += 0.75
-    elif volume_bearish:
-        bearish_points += 0.75
-
-    difference = abs(bullish_points - bearish_points)
-    winning_points = max(bullish_points, bearish_points)
-
-    # Keep the existing balanced per-TF gate; upgrades improve vote quality rather than making it stricter.
-    diagnostics = {
-        "rsi": round(rsi, 2),
-        "adx": round(adx_now, 2),
-        "atr": round(atr, 8),
-        "stoch_rsi_k": round(stoch_k, 2),
-        "stoch_rsi_d": round(stoch_d, 2),
-        "rsi_divergence": rsi_divergence,
-        "bb_context": str(bb_ctx.get("context") or "NEUTRAL"),
-        "bb_squeeze": bool(bb_ctx.get("squeeze")),
-        "bb_expanding": bool(bb_ctx.get("expanding")),
-        "support": round(float(support), 8) if support is not None else None,
-        "resistance": round(float(resistance), 8) if resistance is not None else None,
-        "sr_context": sr_context,
-        "wick_context": wick_context,
-        "bullish_rejection": bullish_rejection,
-        "bearish_rejection": bearish_rejection,
-        "lower_wick_ratio": round(lower_wick_ratio, 3),
-        "upper_wick_ratio": round(upper_wick_ratio, 3),
-        "lower_wick_body_multiple": round(lower_wick_body_multiple, 2),
-        "upper_wick_body_multiple": round(upper_wick_body_multiple, 2),
-        "bb_lower_wick_rejection": bb_lower_wick_rejection,
-        "bb_upper_wick_rejection": bb_upper_wick_rejection,
-        "ema50_call_filter": ema50_call_filter,
-        "ema50_put_filter": ema50_put_filter,
-        "wick_call_confirmations": wick_call_confirmations,
-        "wick_put_confirmations": wick_put_confirmations,
-        "precision_wick_call": precision_wick_call,
-        "precision_wick_put": precision_wick_put,
-        "premium_wick_call": premium_wick_call,
-        "premium_wick_put": premium_wick_put,
-        "bullish_points": round(bullish_points, 2),
-        "bearish_points": round(bearish_points, 2),
-    }
-    if difference < 1.5 or winning_points < 3.5:
+    candles = _candle_rows(df, 90)
+    count = len(candles)
+    if count < SK25_LIVE_MIN_CANDLES:
         return {
-            "timeframe": timeframe, "signal": "NO SIGNAL", "score": 0,
-            "reason": "Weak/conflicting hybrid timeframe", **diagnostics,
-            "closed_candle_epoch": int(df.index[-1].timestamp()) if len(df.index) else None,
+            "signal":"NO SIGNAL", "score":0.0, "pattern_type":0,
+            "selected_pattern":"NO TYPE 1-25 SETUP", "pattern_direction":"NONE",
+            "next_candle_color":"NONE", "setup_match":0.0,
+            "rules":[], "pattern_signals":[], "conflict_gate":False,
+            "reason":f"Only {count} closed candles are available; need at least {SK25_LIVE_MIN_CANDLES} for strict strategy scanning.",
+            "closed_candle_epoch": candles[-1]["epoch"] if candles else None,
         }
 
-    signal = "CALL" if bullish_points > bearish_points else "PUT"
-    score = 50 + difference * 6
-    if adx_now >= 20:
-        score += min(adx_now - 20, 15) * 0.5
-    score = max(50, min(95, score))
+    recent = candles[-min(count,24):]
+    med_range = max(_median([x["range"] for x in recent], 1e-8), 1e-8)
+    med_body = max(_median([x["body"] for x in recent], med_range*0.45), med_range*0.04)
+    tol = max(med_range*0.20, abs(candles[-1]["close"])*1e-7)
+    trend = _sk25_trend(candles, 9)
+    is_otc = "OTC" in market_name
+    is_live = not is_otc
+
+    def seq_is(seq, dirs):
+        return len(seq)==len(dirs) and all(int(x["dir"])==d for x,d in zip(seq, dirs))
+    def normal(x):
+        return x["body_ratio"] >= 0.28 and x["body"] >= med_body*0.45 and x["body"] <= med_body*2.20
+    def small(x):
+        return x["body_ratio"] <= 0.30 or x["body"] <= med_body*0.52
+    def long_body(x):
+        return x["body_ratio"] >= 0.66 and x["body"] >= med_body*1.28
+    def marubozu(x):
+        return long_body(x) and (x["upper_wick"]+x["lower_wick"]) <= max(tol*0.6, x["body"]*0.42)
+    def long_lower(x):
+        return x["lower_wick"] >= max(tol*0.8, x["body"]*0.68, med_range*0.20)
+    def long_upper(x):
+        return x["upper_wick"] >= max(tol*0.8, x["body"]*0.68, med_range*0.20)
+    def body_inside(inner, outer, extra=0.0):
+        return inner["body_top"] <= outer["body_top"]+extra and inner["body_bottom"] >= outer["body_bottom"]-extra
+
+    exact=[]; near=[]
+    priority={1:120,2:105,3:120,4:115,5:125,6:170,7:80,8:80,9:145,10:145,11:160,12:165,13:175,14:150,15:170,16:75,17:75,18:155,19:155,20:145,21:145,22:155,23:155,24:180,25:175}
+    def add(tno, direction, rules, setup, why, family="Candle Sequence", recovery=False, tf_rule="ANY"):
+        matched=sum(1 for _,ok in rules if bool(ok)); total=max(1,len(rules)); pct=round(100.0*matched/total,1)
+        item={
+            "name":f"Pattern Type {tno}", "pattern_type":tno, "direction":"UP" if direction>0 else "DOWN",
+            "signal":"CALL" if direction>0 else "PUT", "next_candle":"GREEN" if direction>0 else "RED",
+            "score":pct, "priority":priority.get(tno,100), "setup":setup, "why":why, "family":family,
+            "rules_matched":matched, "rules_total":total,
+            "rules":[{"name":name,"ok":bool(ok)} for name,ok in rules],
+            "recovery_trade":bool(recovery), "timeframe_rule":tf_rule,
+        }
+        if matched==total: exact.append(item)
+        elif pct>=60: near.append(item)
+
+    # Type 1 — OTC: 8 same-colour closed candles -> next same colour.
+    last8=candles[-8:]
+    add(1,1,[("OTC market",is_otc),("8 back-to-back GREEN candles",all(x["dir"]>0 for x in last8))],"8 GREEN candles in OTC","Next candle GREEN.",tf_rule="OTC ONLY")
+    add(1,-1,[("OTC market",is_otc),("8 back-to-back RED candles",all(x["dir"]<0 for x in last8))],"8 RED candles in OTC","Next candle RED.",tf_rule="OTC ONLY")
+
+    # Type 2 — two green at respected resistance + first red reversal -> next red.
+    a,b,c=candles[-3:]
+    resistance_touch=abs(a["high"]-b["high"]) <= tol*1.55
+    rejection=c["dir"]<0 and c["close"] < b["close"]+tol*0.15
+    add(2,-1,[("GREEN, GREEN, RED setup",seq_is([a,b,c],[1,1,-1])),("Recent highs respect one resistance area",resistance_touch),("First RED shows reversal",rejection)],"2 GREEN + first RED at resistance","Resistance reversal targets next RED.","Resistance")
+
+    # Type 3 — sideways G-R-G, third green sweeps prior lows with lower wick -> next red.
+    wick_break=c["dir"]>0 and c["low"] < min(a["low"],b["low"])-tol*0.15 and long_lower(c)
+    add(3,-1,[("GREEN, RED, GREEN setup",seq_is([a,b,c],[1,-1,1])),("3rd GREEN lower wick breaks prior lows",wick_break),("Sideways/mixed context",abs(trend)<0.60)],"GREEN-RED-GREEN downside wick sweep","Next candle RED.","Sideways")
+
+    # Type 4 — red long tail then green -> next green.
+    a,b=candles[-2:]
+    add(4,1,[("RED then GREEN",seq_is([a,b],[-1,1])),("1st RED lower tail is long",long_lower(a)),("RED tail longer than GREEN head",a["lower_wick"]>max(b["upper_wick"]*1.12,med_range*0.18))],"RED long-tail + GREEN","Next candle GREEN.")
+
+    # Type 5 — R,R long tails; second red does not break first red high; then G -> next R.
+    a,b,c=candles[-3:]
+    add(5,-1,[("RED, RED, GREEN setup",seq_is([a,b,c],[-1,-1,1])),("First two RED lower tails are long",long_lower(a) and long_lower(b)),("2nd RED high does not break 1st RED",b["high"]<=a["high"]+tol*0.35),("Sideways/mixed context",abs(trend)<0.68)],"2 long-tail RED + GREEN","Next candle RED.","Sideways")
+
+    # Type 6 — recovery only after recorded LOSS: R-G-R -> next R.
+    add(6,-1,[("Previous trade marked LOSS",previous_outcome=="LOSS"),("RED, GREEN, RED setup",seq_is([a,b,c],[-1,1,-1]))],"Recovery RED-GREEN-RED","RECOVERY TRADE targets next RED.","Recovery",True,"AFTER LOSS ONLY")
+
+    # Types 7/8.
+    add(7,-1,[("RED, GREEN, GREEN setup",seq_is([a,b,c],[-1,1,1])),("Two GREEN candles have normal bodies",normal(b) and normal(c))],"RED + 2 normal GREEN","Next candle RED.")
+    add(8,1,[("GREEN, RED, RED setup",seq_is([a,b,c],[1,-1,-1])),("Two RED candles have normal bodies",normal(b) and normal(c))],"GREEN + 2 normal RED","Next candle GREEN.")
+
+    # Types 9/10.
+    a,b,c,d=candles[-4:]
+    add(9,1,[("3 GREEN + 1 RED setup",seq_is([a,b,c,d],[1,1,1,-1])),("Opposite RED has long lower tail",long_lower(d))],"3 GREEN + long-tail RED","Next candle GREEN.")
+    add(10,-1,[("3 RED + 1 GREEN setup",seq_is([a,b,c,d],[-1,-1,-1,1])),("Opposite GREEN has long upper head",long_upper(d))],"3 RED + long-head GREEN","Next candle RED.")
+
+    # Type 11 — only works when a real 30-second closed-candle feed is supplied.
+    prior_high=max(x["high"] for x in (a,b,c))
+    add(11,1,[("30-second timeframe",tf=="30s"),("RED, RED, RED, GREEN setup",seq_is([a,b,c,d],[-1,-1,-1,1])),("First 3 RED candles normal",all(normal(x) for x in (a,b,c))),("GREEN does not break previous 3 RED highs",d["high"]<=prior_high+tol*0.35)],"3 normal RED + contained GREEN","Next 30s candle GREEN.",tf_rule="30S ONLY")
+
+    # Type 12 — 2m only: RR + GG contained below first-red resistance.
+    resistance=max(a["high"],b["high"])
+    greens_contained=c["high"]<=resistance+tol*0.35 and d["high"]<=resistance+tol*0.35
+    close_near=abs(d["close"]-resistance)<=max(tol*2.8,med_range*0.65)
+    add(12,-1,[("2-minute timeframe",tf=="2m"),("RED, RED, GREEN, GREEN setup",seq_is([a,b,c,d],[-1,-1,1,1])),("Normal body candles",all(normal(x) for x in (a,b,c,d))),("GREEN candles do not break first RED resistance",greens_contained),("Last GREEN stays near horizontal level",close_near)],"2 RED + 2 GREEN below resistance","Next 2m candle RED.","Horizontal Level",False,"2M ONLY")
+
+    # Type 13 — 2m repeated level retest + breakout, next candle opposite reversal.
+    prior=candles[-10:-1] if count>=10 else candles[:-1]; last=candles[-1]
+    high_clusters=_sk25_level_clusters([x["high"] for x in prior],tol*1.25,2)
+    low_clusters=_sk25_level_clusters([x["low"] for x in prior],tol*1.25,2)
+    resistance=max(high_clusters) if high_clusters else max(x["high"] for x in prior)
+    support=min(low_clusters) if low_clusters else min(x["low"] for x in prior)
+    res_touches=sum(1 for x in prior if abs(x["high"]-resistance)<=tol*1.25)
+    sup_touches=sum(1 for x in prior if abs(x["low"]-support)<=tol*1.25)
+    up_break=last["dir"]>0 and last["close"]>resistance+tol*0.20
+    dn_break=last["dir"]<0 and last["close"]<support-tol*0.20
+    add(13,-1,[("2-minute timeframe",tf=="2m"),("Resistance retested several times",res_touches>=2),("Latest GREEN closes above resistance",up_break)],"Repeated resistance retest + breakout","Next 2m candle RED.","Breakout Reversal",False,"2M ONLY")
+    add(13,1,[("2-minute timeframe",tf=="2m"),("Support retested several times",sup_touches>=2),("Latest RED closes below support",dn_break)],"Repeated support retest + breakdown","Next 2m candle GREEN.","Breakout Reversal",False,"2M ONLY")
+
+    # Type 14 — R,G,G define support then RED breaks; mirror G,R,R + GREEN breakout.
+    a,b,c,d=candles[-4:]
+    support_ok=seq_is([a,b,c,d],[-1,1,1,-1]) and abs(b["low"]-c["low"])<=tol*1.25 and d["close"]<((b["low"]+c["low"])/2)-tol*0.20
+    resistance_ok=seq_is([a,b,c,d],[1,-1,-1,1]) and abs(b["high"]-c["high"])<=tol*1.25 and d["close"]>((b["high"]+c["high"])/2)+tol*0.20
+    add(14,-1,[("RED + 2 GREEN define support",seq_is([a,b,c],[-1,1,1]) and abs(b["low"]-c["low"])<=tol*1.25),("Latest RED closes below support",support_ok)],"Horizontal support breakdown","Next candle RED.","Horizontal Break")
+    add(14,1,[("GREEN + 2 RED define resistance",seq_is([a,b,c],[1,-1,-1]) and abs(b["high"]-c["high"])<=tol*1.25),("Latest GREEN closes above resistance",resistance_ok)],"Horizontal resistance breakout","Next candle GREEN.","Horizontal Break")
+
+    # Type 15 — V / inverted-V breakout, next candle opposite.
+    shape=candles[-7:-1]; last=candles[-1]
+    closes=[x["close"] for x in shape]
+    low_i=closes.index(min(closes)); high_i=closes.index(max(closes))
+    v_shape=1<=low_i<=len(shape)-2 and (closes[0]-closes[low_i])>=med_range*0.8 and (closes[-1]-closes[low_i])>=med_range*0.7
+    iv_shape=1<=high_i<=len(shape)-2 and (closes[high_i]-closes[0])>=med_range*0.8 and (closes[high_i]-closes[-1])>=med_range*0.7
+    v_level=max(shape[0]["high"],shape[1]["high"]); iv_level=min(shape[0]["low"],shape[1]["low"])
+    add(15,-1,[("V shape formed",v_shape),("Latest GREEN breaks horizontal top",last["dir"]>0 and last["close"]>v_level+tol*0.15)],"V + upside breakout","Opposite-direction target: next RED.","V Reversal")
+    add(15,1,[("Inverted-V shape formed",iv_shape),("Latest RED breaks horizontal bottom",last["dir"]<0 and last["close"]<iv_level-tol*0.15)],"Inverted V + downside breakout","Opposite-direction target: next GREEN.","V Reversal")
+
+    # Types 16/17 — 3-4 continuation run then one opposite candle.
+    last=candles[-1]
+    if last["dir"]<0:
+        run=0; i=count-2
+        while i>=0 and candles[i]["dir"]>0 and run<5: run+=1; i-=1
+        seq=candles[count-run-1:count-1] if run else []
+        add(16,1,[("3 to 4 back-to-back GREEN candles",3<=run<=4),("GREEN bodies normal",bool(seq) and all(normal(x) for x in seq)),("One opposite RED setup candle",True)],"3-4 normal GREEN + 1 RED","Next candle GREEN.")
+    if last["dir"]>0:
+        run=0; i=count-2
+        while i>=0 and candles[i]["dir"]<0 and run<5: run+=1; i-=1
+        seq=candles[count-run-1:count-1] if run else []
+        add(17,-1,[("3 to 4 back-to-back RED candles",3<=run<=4),("RED bodies normal",bool(seq) and all(normal(x) for x in seq)),("One opposite GREEN setup candle",True)],"3-4 normal RED + 1 GREEN","Next candle RED.")
+
+    # Types 18/19 — no automatic Martingale/recovery.
+    a,b,c,d,e=candles[-5:]
+    add(18,-1,[("Long RED marubozu first candle",a["dir"]<0 and marubozu(a)),("Then GREEN, GREEN, GREEN, RED",seq_is([b,c,d,e],[1,1,1,-1])),("Three GREEN candles normal",all(normal(x) for x in (b,c,d))),("No wick/body breaks first RED resistance",all(x["high"]<=a["high"]+tol*0.30 for x in (b,c,d,e))),("Sideways/mixed context",abs(trend)<0.72)],"Long RED + 3 GREEN + RED below resistance","Next candle RED.","Sideways Level")
+    add(19,1,[("Long GREEN marubozu first candle",a["dir"]>0 and marubozu(a)),("Then RED, RED, RED, GREEN",seq_is([b,c,d,e],[-1,-1,-1,1])),("Three RED candles normal",all(normal(x) for x in (b,c,d))),("No wick/body breaks first GREEN support",all(x["low"]>=a["low"]-tol*0.30 for x in (b,c,d,e))),("Sideways/mixed context",abs(trend)<0.72)],"Long GREEN + 3 RED + GREEN above support","Next candle GREEN.","Sideways Level")
+
+    # Types 20/21.
+    a,b,c,d=candles[-4:]
+    add(20,-1,[("Downtrend context",trend<-0.10),("RED, RED, GREEN, RED setup",seq_is([a,b,c,d],[-1,-1,1,-1])),("First two RED candles normal",normal(a) and normal(b)),("4th RED does not break previous GREEN low",d["low"]>=c["low"]-tol*0.35)],"Downtrend R-R-G-R hold","Next candle RED.","Downtrend")
+    add(21,1,[("Uptrend context",trend>0.10),("GREEN, GREEN, RED, GREEN setup",seq_is([a,b,c,d],[1,1,-1,1])),("First two GREEN candles normal",normal(a) and normal(b)),("4th GREEN does not break previous RED high",d["high"]<=c["high"]+tol*0.35)],"Uptrend G-G-R-G hold","Next candle GREEN.","Uptrend")
+
+    # Types 22/23.
+    last=candles[-1]; prev=candles[-2]
+    if last["dir"]<0:
+        run=0; i=count-2
+        while i>=0 and candles[i]["dir"]>0 and run<6: run+=1; i-=1
+        greens=candles[count-run-1:count-1] if run else []
+        add(22,1,[("Uptrend context",trend>0.08),("3 to 5 back-to-back GREEN candles",3<=run<=5),("GREEN candles normal",bool(greens) and all(normal(x) for x in greens)),("Opposite RED body smaller than previous GREEN",last["body"]<prev["body"]),("RED body does not break previous GREEN body",body_inside(last,prev,tol*0.20))],"3-5 GREEN + smaller contained RED","Next candle GREEN.","Uptrend")
+    if last["dir"]>0:
+        run=0; i=count-2
+        while i>=0 and candles[i]["dir"]<0 and run<6: run+=1; i-=1
+        reds=candles[count-run-1:count-1] if run else []
+        add(23,-1,[("Downtrend context",trend<-0.08),("3 to 5 back-to-back RED candles",3<=run<=5),("RED candles normal",bool(reds) and all(normal(x) for x in reds)),("Opposite GREEN body smaller than previous RED",last["body"]<prev["body"]),("GREEN body does not break previous RED body",body_inside(last,prev,tol*0.20))],"3-5 RED + smaller contained GREEN","Next candle RED.","Downtrend")
+
+    # Type 24 — LIVE sideways: G,R,small-R,G,smaller-R at S/R -> next green.
+    a,b,c,d,e=candles[-5:]
+    snr=(a["high"]+b["high"])/2.0
+    snr_respected=all(x["high"]<=snr+tol*0.40 for x in (a,b,c,d,e))
+    add(24,1,[("LIVE market",is_live),("GREEN, RED, RED, GREEN, RED setup",seq_is([a,b,c,d,e],[1,-1,-1,1,-1])),("First GREEN and second RED maintain S/R",abs(a["high"]-b["high"])<=tol*1.45),("3rd RED is Doji/small",small(c)),("4th GREEN does not break S/R",d["high"]<=snr+tol*0.40),("5th RED body smaller than previous GREEN",e["body"]<d["body"]),("No setup candle breaks S/R",snr_respected),("Sideways/mixed context",abs(trend)<0.72)],"LIVE sideways G-R-smallR-G-smallR at S/R","Next candle GREEN.","Live S/R",False,"LIVE ONLY")
+
+    # Type 25 — small red, normal red, long green breaks first-red resistance -> next green.
+    a,b,c=candles[-3:]
+    add(25,1,[("RED, RED, GREEN setup",seq_is([a,b,c],[-1,-1,1])),("1st RED small/Doji",small(a)),("2nd RED normal",normal(b)),("3rd GREEN long",long_body(c)),("Long GREEN closes above 1st RED resistance",c["close"]>a["high"]+tol*0.15)],"Small RED + normal RED + long GREEN breakout","Next candle GREEN.","S/R Breakout")
+
+    exact.sort(key=lambda x:(int(x["priority"]),int(x["rules_total"]),int(x["pattern_type"])),reverse=True)
+    near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"])),reverse=True)
+    directions={x["direction"] for x in exact}
+    conflict=len(directions)>1
+    best=None if conflict or not exact else exact[0]
+    closest=near[0] if near else None
+    closed_epoch=candles[-1]["epoch"]
+
+    if conflict:
+        return {
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"CONFLICTING TYPE 1-25 SETUPS",
+            "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":0.0,
+            "rules":[],"pattern_signals":exact[:8],"conflict_gate":True,
+            "reason":"NO TRADE · CONFLICTING SETUPS: exact UP and DOWN Pattern Type rules are both present on the same closed-candle snapshot.",
+            "closed_candle_epoch":closed_epoch,
+        }
+    if not best:
+        watch=f" Closest: {closest['name']} {closest['rules_matched']}/{closest['rules_total']} rules." if closest else ""
+        return {
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO TYPE 1-25 SETUP",
+            "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":float(closest["score"]) if closest else 0.0,
+            "rules":list(closest.get("rules") or []) if closest else [],"pattern_signals":near[:8],"conflict_gate":False,
+            "reason":"No exact Pattern Type 1-25 setup is complete on the latest CLOSED candles."+watch,
+            "closed_candle_epoch":closed_epoch,
+        }
 
     return {
-        "timeframe": timeframe,
-        "signal": signal,
-        "score": round(score, 2),
-        "price": round(price, 8),
-        **diagnostics,
-        "closed_candle_epoch": int(df.index[-1].timestamp()) if len(df.index) else None,
+        "signal":best["signal"],"score":100.0,"pattern_type":best["pattern_type"],"selected_pattern":best["name"],
+        "pattern_direction":best["direction"],"next_candle_color":best["next_candle"],"setup_match":100.0,
+        "rules":best["rules"],"pattern_signals":exact[:8],"conflict_gate":False,
+        "setup":best["setup"],"reason":f"{best['name']} exact setup matched {best['rules_matched']}/{best['rules_total']} rules. NEXT candle {best['next_candle']} ({best['direction']}).",
+        "family":best["family"],"recovery_trade":bool(best.get("recovery_trade")),"timeframe_rule":best.get("timeframe_rule"),
+        "pattern_priority":best["priority"],"rules_matched":best["rules_matched"],"rules_total":best["rules_total"],
+        "closed_candle_epoch":closed_epoch,
     }
-
-
-
-def should_suppress_duplicate(pair, signal, timeframe_summary):
-    """Suppress same pair+direction when the analyzed TF context has not changed."""
-    context = tuple(
-        (tf, details.get("signal"), details.get("score"))
-        for tf, details in sorted((timeframe_summary or {}).items())
-    )
-    fingerprint = (pair, signal, context)
-    now = time.time()
-
-    with recent_signal_lock:
-        existing = recent_signals.get(pair)
-
-        if existing:
-            same_signal = existing.get("signal") == signal
-            same_context = existing.get("fingerprint") == fingerprint
-            still_locked = (now - existing.get("timestamp", 0)) < DUPLICATE_SIGNAL_COOLDOWN
-
-            if same_signal and same_context and still_locked:
-                return True
-
-        recent_signals[pair] = {
-            "signal": signal,
-            "fingerprint": fingerprint,
-            "timestamp": now,
-        }
-
-    return False
 
 
 def format_market_data_age(seconds):
-    """Human-readable market-data age for UI/status responses."""
-    try:
-        total = max(0, int(round(float(seconds or 0))))
-    except Exception:
-        return "--"
-
-    if total < 60:
-        return f"{total}s"
-
-    minutes = total // 60
-    if minutes < 60:
-        return f"{minutes}m"
-
-    hours, rem_minutes = divmod(minutes, 60)
-    if hours < 48:
-        return f"{hours}h {rem_minutes}m" if rem_minutes else f"{hours}h"
-
-    days, rem_hours = divmod(hours, 24)
-    return f"{days}d {rem_hours}h" if rem_hours else f"{days}d"
+    if seconds is None: return "--"
+    try: seconds=max(0,int(float(seconds)))
+    except Exception: return "--"
+    if seconds<60: return f"{seconds}s"
+    if seconds<3600: return f"{seconds//60}m {seconds%60}s"
+    return f"{seconds//3600}h {(seconds%3600)//60}m"
 
 
 def market_result_is_countable(result):
-    """Stale/unavailable feed attempts are operational checks, not trading scans."""
-    if not isinstance(result, dict):
-        return False
-    if result.get("exclude_from_performance") or result.get("exclude_from_history"):
-        return False
-    if result.get("source_stale"):
-        return False
-    if result.get("data_delayed") and result.get("scan_paused"):
-        return False
-    return True
+    result=result or {}
+    return not bool(result.get("exclude_from_history") or result.get("source_stale") or result.get("data_delayed"))
 
 
 def batch_results_are_countable(results):
-    rows = [row for row in (results or []) if isinstance(row, dict)]
-    return any(market_result_is_countable(row) for row in rows)
+    return any(market_result_is_countable(x) for x in (results or []) if isinstance(x,dict))
 
 
 def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, source_info=None):
-    source_info = source_info or _market_source_info(pair, symbol)
+    source_info=source_info or _market_source_info(pair,symbol)
     return {
-        "pair": pair,
-        "score": 0,
-        "signal": "NO SIGNAL",
-        "reason": reason,
-        "rsi": None,
-        "adx": None,
-        "atr": None,
-        "price": None,
-        "bullish_points": 0,
-        "bearish_points": 0,
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": source_info.get("source") or "Yahoo Finance",
-        "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
-        "backup_used": bool(source_info.get("backup_used")),
-        "provider_symbol": source_info.get("provider_symbol"),
-        "otc_proxy_warning": bool("(OTC)" in pair and source_info.get("source_mode") != "broker_otc_exact"),
-        "yahoo_symbol": symbol,
-        "timeframe_summary": timeframes or {},
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "no_trade": True,
-        "no_trade_reason": str(reason or "Current conditions did not pass the safety gate."),
-        "quality_gate": "BLOCKED",
+        "pair":pair,"score":0.0,"signal":"NO SIGNAL","reason":str(reason or "No exact Pattern Type 1-25 setup."),
+        "pattern_type":0,"selected_pattern":"NO TYPE 1-25 SETUP","pattern_direction":"NONE","next_candle_color":"NONE",
+        "setup_match":0.0,"rules":[],"pattern_signals":[],"conflict_gate":False,"recovery_trade":False,
+        "data_age":round(float(data_age),2) if data_age is not None else None,
+        "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
+        "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
+        "timeframe_summary":timeframes or {},"timeframes_scanned":[],"no_trade":True,
+        "no_trade_reason":str(reason or "No exact Pattern Type 1-25 setup."),"quality_gate":"PATTERN_ONLY",
+        "engine":SK25_ENGINE_VERSION,
     }
 
 
 def serialize_candles(df, limit=28):
-    if df is None or df.empty:
-        return []
-    out = []
-    for idx, row in df.tail(max(8, min(int(limit), 60))).iterrows():
+    if df is None or getattr(df,"empty",True): return []
+    out=[]
+    for idx,row in df.tail(max(8,min(int(limit),60))).iterrows():
         try:
-            out.append({
-                "t": int(idx.timestamp()),
-                "o": round(float(row["Open"]), 8),
-                "h": round(float(row["High"]), 8),
-                "l": round(float(row["Low"]), 8),
-                "c": round(float(row["Close"]), 8),
-            })
-        except Exception:
-            continue
+            out.append({"t":int(idx.timestamp()),"o":round(float(row["Open"]),8),"h":round(float(row["High"]),8),"l":round(float(row["Low"]),8),"c":round(float(row["Close"]),8)})
+        except Exception: continue
     return out
 
 
-def market_stability_metrics(price, atr, adx, data_age, agreement_pct):
+def normalize_scan_options(_raw):
+    # Compatibility object for existing UI/routes. No technical thresholds are used.
+    return {"mode":"SK25_STRICT","min_tf":1,"min_agreement":100.0,"min_score":100.0,"vol_min":0.0,"vol_max":999.0}
+
+
+def _last_strategy_outcome(user):
+    user=normalize_user_id(user)
+    if not user: return ""
     try:
-        price = abs(float(price or 0))
-        atr = abs(float(atr or 0))
-        vol_pct = (atr / price * 100.0) if price > 0 else 0.0
-    except Exception:
-        vol_pct = 0.0
-    age = max(0.0, float(data_age or 0))
-    adx_val = max(0.0, min(60.0, float(adx or 0)))
-    agreement = max(0.0, min(100.0, float(agreement_pct or 0)))
-    data_score = max(0.0, 100.0 - min(age, 180.0) / 1.8)
-    trend_score = min(100.0, 35.0 + adx_val * 1.15)
-    if vol_pct < 0.003:
-        vol_score = 58.0
-    elif vol_pct <= 0.8:
-        vol_score = 96.0 - abs(vol_pct - 0.16) * 18.0
-    elif vol_pct <= 1.8:
-        vol_score = 78.0 - (vol_pct - 0.8) * 28.0
-    else:
-        vol_score = max(18.0, 50.0 - (vol_pct - 1.8) * 20.0)
-    score = max(0.0, min(100.0, data_score * 0.28 + trend_score * 0.24 + agreement * 0.30 + vol_score * 0.18))
-    risk = "LOW" if score >= 78 else ("MEDIUM" if score >= 58 else "HIGH")
-    return round(score, 1), risk, round(vol_pct, 5)
+        for item in load_signals():
+            if normalize_user_id(item.get("user"))!=user: continue
+            result=str(item.get("result") or "").upper()
+            if result in {"WIN","LOSS"}: return result
+    except Exception: pass
+    return ""
 
 
-
-def market_regime_router(representative, signal, stability_score):
-    """Route qualified setups through TREND/RANGE/BREAKOUT/TRANSITION/CHOP context."""
-    representative = representative or {}
-    adx = float(representative.get("adx") or 0.0)
-    bb_context = str(representative.get("bb_context") or "NEUTRAL").upper()
-    sr_context = str(representative.get("sr_context") or "MID-RANGE").upper()
-    squeeze = bool(representative.get("bb_squeeze"))
-    expanding = bool(representative.get("bb_expanding"))
-    signal = str(signal or "").upper()
-
-    bull_breakout = signal == "CALL" and ("BULL BREAKOUT" in bb_context or "RESISTANCE BREAKOUT" in sr_context)
-    bear_breakout = signal == "PUT" and ("BEAR BREAKOUT" in bb_context or "SUPPORT BREAKDOWN" in sr_context)
-    level_fit = (
-        (signal == "CALL" and ("SUPPORT" in sr_context or "LOWER BAND REJECTION" in bb_context))
-        or (signal == "PUT" and ("RESISTANCE" in sr_context or "UPPER BAND REJECTION" in bb_context))
-    )
-
-    if float(stability_score or 0.0) < 55.0:
-        return {"regime": "BAD", "quality": 25.0, "blocked": True,
-                "reason": "Market stability is below the safety floor."}
-
-    if expanding and (bull_breakout or bear_breakout):
-        quality = min(96.0, 78.0 + max(0.0, adx - 18.0) * 1.2)
-        return {"regime": "BREAKOUT", "quality": round(quality, 1), "blocked": False,
-                "reason": "Band expansion and directional level break agree."}
-
-    if adx >= 23.0 and not squeeze:
-        quality = min(95.0, 76.0 + (adx - 23.0) * 1.1)
-        return {"regime": "TREND", "quality": round(quality, 1), "blocked": False,
-                "reason": "ADX supports a directional trend regime."}
-
-    if adx <= 20.0 and (squeeze or level_fit or "REJECTION" in bb_context):
-        if squeeze and not level_fit and "REJECTION" not in bb_context:
-            return {"regime": "COMPRESSION", "quality": 48.0, "blocked": True,
-                    "reason": "Bollinger squeeze is still compressed without a confirmed level rejection/breakout."}
-        quality = 82.0 if level_fit else 68.0
-        return {"regime": "RANGE", "quality": quality, "blocked": False,
-                "reason": "Low-trend market is trading from a meaningful S/R or Bollinger rejection zone."}
-
-    if adx < 17.0 and sr_context == "MID-RANGE" and bb_context in {"NEUTRAL", "ABOVE RISING MID", "BELOW FALLING MID"}:
-        return {"regime": "CHOP", "quality": 38.0, "blocked": True,
-                "reason": "Low ADX + mid-range price action indicates chop; skip the setup."}
-
-    return {"regime": "TRANSITION", "quality": 64.0, "blocked": False,
-            "reason": "Market is between clean trend/range/breakout regimes; normal safety gates still apply."}
+def _movement_info(df):
+    if df is None or getattr(df,"empty",True) or len(df)<2: return {"label":"--","percent":0.0}
+    part=df.tail(min(12,len(df)))
+    vals=[]
+    for _,row in part.iterrows():
+        c=abs(_f(row.get("Close"),0.0)); rng=max(0.0,_f(row.get("High"),0.0)-_f(row.get("Low"),0.0))
+        if c>0: vals.append(rng/c*100.0)
+    pct=_median(vals,0.0)
+    label="LOW" if pct<0.03 else ("HIGH" if pct>0.30 else "NORMAL")
+    return {"label":label,"percent":round(pct,5)}
 
 
-def late_entry_guard(base_df, signal_price, atr, signal, mode="BALANCED"):
-    """Block chasing a setup after price has already stretched too far from the analyzed closed candle."""
-    try:
-        current_price = float(base_df["Close"].iloc[-1])
-        signal_price = float(signal_price)
-        atr = abs(float(atr))
-    except Exception:
-        return {"blocked": False, "status": "UNAVAILABLE", "current_price": None,
-                "extension_atr": 0.0, "adverse_atr": 0.0, "limit_atr": None}
-    if atr <= 0:
-        return {"blocked": False, "status": "UNAVAILABLE", "current_price": current_price,
-                "extension_atr": 0.0, "adverse_atr": 0.0, "limit_atr": None}
+def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
+    """Single-pair strategy-only scan. One selected timeframe; exact SK25 match or NO SIGNAL."""
+    opts=normalize_scan_options(scan_options)
+    tf=str(selected_expiry or "1m").strip().lower()
+    if tf not in TIMEFRAMES:
+        result=no_signal_result(pair,f"Live source does not provide {tf} closed candles. Type 11 (30s) remains available in Chart Scanner camera mode.")
+        result.update({"scan_mode":"SK25_STRICT","selected_expiry":tf,"exclude_from_history":True})
+        return result
 
-    signal = str(signal or "").upper()
-    directional_move = (current_price - signal_price) if signal == "CALL" else (signal_price - current_price)
-    extension_atr = max(0.0, directional_move / atr)
-    adverse_atr = max(0.0, -directional_move / atr)
-    mode = str(mode or "BALANCED").upper()
-    chase_limits = {"SAFE": 0.38, "BALANCED": 0.52, "AGGRESSIVE": 0.70, "CUSTOM": 0.52}
-    adverse_limits = {"SAFE": 0.48, "BALANCED": 0.62, "AGGRESSIVE": 0.82, "CUSTOM": 0.62}
-    chase_limit = chase_limits.get(mode, 0.52)
-    adverse_limit = adverse_limits.get(mode, 0.62)
-
-    if extension_atr > chase_limit:
-        return {"blocked": True, "status": "OVEREXTENDED", "current_price": round(current_price, 8),
-                "extension_atr": round(extension_atr, 3), "adverse_atr": round(adverse_atr, 3),
-                "limit_atr": chase_limit,
-                "reason": f"Late Entry Block: price already moved {extension_atr:.2f} ATR in the signal direction (limit {chase_limit:.2f})."}
-    if adverse_atr > adverse_limit:
-        return {"blocked": True, "status": "SETUP_DRIFT", "current_price": round(current_price, 8),
-                "extension_atr": round(extension_atr, 3), "adverse_atr": round(adverse_atr, 3),
-                "limit_atr": adverse_limit,
-                "reason": f"Entry Drift Block: price moved {adverse_atr:.2f} ATR against the analyzed setup before entry."}
-    return {"blocked": False, "status": "ON_TIME", "current_price": round(current_price, 8),
-            "extension_atr": round(extension_atr, 3), "adverse_atr": round(adverse_atr, 3),
-            "limit_atr": chase_limit, "reason": "Entry timing remains inside the ATR extension guard."}
-
-
-def normalize_scan_options(raw):
-    raw = raw if isinstance(raw, dict) else {}
-    mode = str(raw.get("mode") or "BALANCED").strip().upper()
-    presets = {
-        "SAFE": {"min_tf": 5, "min_agreement": 80.0, "min_score": 80.0, "vol_min": 0.003, "vol_max": 1.20},
-        "BALANCED": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.002, "vol_max": 2.00},
-        "AGGRESSIVE": {"min_tf": 4, "min_agreement": 66.7, "min_score": 55.0, "vol_min": 0.0, "vol_max": 3.00},
-        "CUSTOM": {"min_tf": 4, "min_agreement": 66.7, "min_score": 65.0, "vol_min": 0.0, "vol_max": 3.00},
-    }
-    base = dict(presets.get(mode, presets["BALANCED"]))
-    if mode == "CUSTOM":
-        try: base["min_tf"] = max(4, min(6, int(raw.get("min_tf", base["min_tf"]))))
-        except Exception: pass
-        try: base["min_agreement"] = max(60.0, min(100.0, float(raw.get("min_agreement", base["min_agreement"]))))
-        except Exception: pass
-        try: base["min_score"] = max(50.0, min(95.0, float(raw.get("min_score", base["min_score"]))))
-        except Exception: pass
-        try: base["vol_min"] = max(0.0, min(5.0, float(raw.get("vol_min", base["vol_min"]))))
-        except Exception: pass
-        try: base["vol_max"] = max(base["vol_min"], min(10.0, float(raw.get("vol_max", base["vol_max"]))))
-        except Exception: pass
-    base["mode"] = mode if mode in presets else "BALANCED"
-    return base
-
-
-def calculate_live_indicators(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
-    """Scan synchronized timeframes using a SAFE/BALANCED/AGGRESSIVE/CUSTOM gate."""
-    opts = normalize_scan_options(scan_options)
-    broker_key = str(broker or "").strip().casefold().replace(" ", "")
-    broker_otc = "(otc)" in str(pair).casefold() and broker_key in {"quotex", "pocketoption", "pocket_option", "pocket"}
+    broker_key=str(broker or "").strip().casefold().replace(" ","")
+    broker_otc="(otc)" in str(pair).casefold() and broker_key in {"quotex","pocketoption","pocket_option","pocket"}
     if pair not in YAHOO_SYMBOLS and not broker_otc:
-        result = no_signal_result(pair, "Pair is not configured for this market-data source.")
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts})
-        return result
+        return no_signal_result(pair,"Pair is not configured for this market-data source.")
 
-    base_df, data_age, symbol, source_info = get_market_data(pair, bridge_user=bridge_user, broker=broker)
+    base_df,data_age,symbol,source_info=get_market_data(pair,bridge_user=bridge_user,broker=broker)
     if base_df is None or base_df.empty:
-        result = no_signal_result(
-            pair,
-            source_info.get("unavailable_reason") or "Live reference data is temporarily unavailable. Scan safely paused; retry when the source responds.",
-            symbol=symbol,
-            data_age=data_age,
-            source_info=source_info,
-        )
-        result.update({
-            "scan_mode": opts["mode"],
-            "scan_thresholds": opts,
-            "data_delayed": True,
-            "scan_paused": True,
-            "market_status": "UNAVAILABLE",
-            "data_status": "UNAVAILABLE",
-            "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
-            "data_age_label": format_market_data_age(data_age) if data_age is not None else "--",
-            "exclude_from_history": True,
-            "exclude_from_performance": True,
-            "scan_skip_reason": "market_data_unavailable",
-        })
+        result=no_signal_result(pair,source_info.get("unavailable_reason") or "Live market data is unavailable.",symbol=symbol,data_age=data_age,source_info=source_info)
+        result.update({"data_delayed":True,"scan_paused":True,"market_status":"UNAVAILABLE","data_status":"UNAVAILABLE","exclude_from_history":True,"scan_skip_reason":"market_data_unavailable"})
+        return result
+    if data_age is not None and float(data_age)>MAX_SOURCE_CANDLE_AGE_SECONDS:
+        age_label=format_market_data_age(data_age)
+        result=no_signal_result(pair,f"STALE DATA — latest source candle is {age_label} old. No strategy signal generated.",symbol=symbol,data_age=data_age,source_info=source_info)
+        result.update({"data_delayed":True,"source_stale":True,"scan_paused":True,"market_status":"BAD","data_status":"STALE","data_age_label":age_label,"exclude_from_history":True,"scan_skip_reason":"stale_market_data"})
         return result
 
-    if data_age is not None and data_age > MAX_SOURCE_CANDLE_AGE_SECONDS:
-        age_label = format_market_data_age(data_age)
-        provider_name = str(source_info.get("source") or "reference source")
-        result = no_signal_result(
-            pair,
-            f"BAD MARKET / STALE DATA — latest {provider_name} 1m candle is {age_label} old. "
-            "The configured market-data source did not provide a fresh usable candle.",
-            symbol=symbol,
-            data_age=data_age,
-            source_info=source_info,
-        )
-        result.update({
-            "scan_mode": opts["mode"],
-            "scan_thresholds": opts,
-            "data_delayed": True,
-            "source_stale": True,
-            "bad_market": True,
-            "scan_paused": True,
-            "market_status": "BAD",
-            "data_status": "STALE",
-            "data_age_seconds": round(float(data_age), 2),
-            "data_age_label": age_label,
-            "exclude_from_history": True,
-            "exclude_from_performance": True,
-            "scan_skip_reason": "stale_market_data",
-        })
-        return result
-
-    chart_preview = serialize_candles(base_df, 28)
-    results = {}
-    for tf_name, minutes in TIMEFRAMES.items():
-        tf_df = build_timeframe(base_df, minutes)
-        results[tf_name] = analyze_timeframe(tf_df, tf_name)
-
-    call_results = [r for r in results.values() if r.get("signal") == "CALL"]
-    put_results = [r for r in results.values() if r.get("signal") == "PUT"]
-    valid_count = len(call_results) + len(put_results)
-    summary = {
-        tf: {
-            "signal": r.get("signal"), "score": r.get("score", 0), "rsi": r.get("rsi"),
-            "adx": r.get("adx"), "atr": r.get("atr"),
-            "stoch_rsi_k": r.get("stoch_rsi_k"), "stoch_rsi_d": r.get("stoch_rsi_d"),
-            "rsi_divergence": r.get("rsi_divergence"), "bb_context": r.get("bb_context"),
-            "bb_squeeze": bool(r.get("bb_squeeze")), "bb_expanding": bool(r.get("bb_expanding")),
-            "support": r.get("support"), "resistance": r.get("resistance"),
-            "sr_context": r.get("sr_context"), "wick_context": r.get("wick_context"),
-            "lower_wick_ratio": r.get("lower_wick_ratio"), "upper_wick_ratio": r.get("upper_wick_ratio"),
-            "wick_call_confirmations": r.get("wick_call_confirmations", 0),
-            "wick_put_confirmations": r.get("wick_put_confirmations", 0),
-            "precision_wick_call": bool(r.get("precision_wick_call")),
-            "precision_wick_put": bool(r.get("precision_wick_put")),
-            "premium_wick_call": bool(r.get("premium_wick_call")),
-            "premium_wick_put": bool(r.get("premium_wick_put")),
-            "bullish_points": r.get("bullish_points", 0), "bearish_points": r.get("bearish_points", 0),
-            "closed_candle_epoch": r.get("closed_candle_epoch")
-        }
-        for tf, r in results.items()
-    }
-
-    def rejected(reason):
-        result = no_signal_result(pair, reason, symbol=symbol, data_age=data_age, timeframes=summary, source_info=source_info)
-        result.update({"scan_mode": opts["mode"], "scan_thresholds": opts, "chart_preview": chart_preview})
-        return result
-
-    if valid_count < opts["min_tf"]:
-        return rejected(f"Fewer than {opts['min_tf']} timeframes reached valid confluence for {opts['mode']} mode.")
-
-    if len(call_results) > len(put_results):
-        signal, supporters, opponents = "CALL", call_results, put_results
-    elif len(put_results) > len(call_results):
-        signal, supporters, opponents = "PUT", put_results, call_results
-    else:
-        return rejected("Multi-timeframe direction is tied.")
-
-    if len(supporters) < opts["min_tf"]:
-        return rejected(f"Fewer than {opts['min_tf']} timeframes agree with the final direction.")
-
-    agreement_ratio = len(supporters) / valid_count
-    if agreement_ratio * 100.0 < opts["min_agreement"]:
-        return rejected(f"Multi-timeframe agreement below {opts['min_agreement']:.1f}% for {opts['mode']} mode.")
-
-    required_tf = EXPIRY_CONFIRMATION_TIMEFRAME.get(str(selected_expiry or "").strip())
-    if required_tf:
-        required_result = results.get(required_tf) or {}
-        required_signal = required_result.get("signal")
-        if required_signal != signal:
-            return rejected(
-                f"Selected expiry {selected_expiry} requires {required_tf} confirmation; "
-                f"{required_tf} is {required_signal or 'NO SIGNAL'} while final direction is {signal}."
-            )
-
-    avg_support_score = sum(r["score"] for r in supporters) / len(supporters)
-    multi_tf_score = max(50, min(95, avg_support_score + ((agreement_ratio - 0.5) * 12)))
-
-    representative = None
-    for preferred in ("5m", "2m", "1m", "10m", "15m", "30m"):
-        r = results.get(preferred)
-        if r and r.get("signal") == signal:
-            representative = r
-            break
-    if representative is None:
-        representative = max(supporters, key=lambda x: x.get("score", 0))
-
-    stability_score, risk_level, volatility_pct = market_stability_metrics(
-        representative.get("price"), representative.get("atr"), representative.get("adx"),
-        data_age, agreement_ratio * 100.0,
-    )
-
-    regime_profile = market_regime_router(representative, signal, stability_score)
-    performance_profile = pair_timeframe_performance(bridge_user, pair, selected_expiry)
-    late_entry = late_entry_guard(
-        base_df, representative.get("price"), representative.get("atr"), signal, opts["mode"]
-    )
-    effective_min_score = min(95.0, float(opts["min_score"]) + float(performance_profile.get("threshold_raise") or 0.0))
-
-    def quality_rejected(reason):
-        blocked = rejected(reason)
-        blocked.update({
-            "market_stability_score": stability_score,
-            "market_risk_level": risk_level,
-            "volatility_pct": volatility_pct,
-            "market_regime": regime_profile.get("regime"),
-            "market_regime_quality": regime_profile.get("quality"),
-            "market_regime_reason": regime_profile.get("reason"),
-            "pair_timeframe_performance": performance_profile,
-            "effective_min_score": round(effective_min_score, 2),
-            "late_entry": late_entry,
-            "no_trade": True,
-            "no_trade_reason": reason,
-            "quality_gate": "BLOCKED",
-        })
-        return blocked
-
-    # Smart NO TRADE gate: do not force a signal through a weak or high-risk regime.
-    if str(risk_level or "").upper() == "HIGH":
-        return quality_rejected(
-            f"Smart NO TRADE: market risk is HIGH (stability {stability_score:.1f}/100)."
-        )
-    if float(stability_score or 0) < 55.0:
-        return quality_rejected(
-            f"Smart NO TRADE: market stability {stability_score:.1f}/100 is below the 55/100 safety floor."
-        )
-    if bool(regime_profile.get("blocked")):
-        return quality_rejected(
-            f"Market Regime Router: {regime_profile.get('regime')} blocked — {regime_profile.get('reason')}"
-        )
-    if bool(performance_profile.get("hard_block")):
-        return quality_rejected(
-            f"Pair/Timeframe Performance Gate: {pair} {selected_expiry or ''} has only "
-            f"{performance_profile.get('smoothed_win_rate'):.1f}% smoothed wins across "
-            f"{performance_profile.get('sample_size')} decided trades."
-        )
-    if bool(late_entry.get("blocked")):
-        return quality_rejected(str(late_entry.get("reason") or "Late Entry Block rejected the setup."))
-    if volatility_pct < opts["vol_min"] or volatility_pct > opts["vol_max"]:
-        return quality_rejected(
-            f"Volatility {volatility_pct:.4f}% is outside {opts['mode']} range "
-            f"({opts['vol_min']:.4f}%–{opts['vol_max']:.2f}%)."
-        )
-    if multi_tf_score < effective_min_score:
-        history_note = ""
-        if performance_profile.get("status") in {"CAUTION", "WEAK"}:
-            history_note = f" Historical {performance_profile.get('status')} profile raised the threshold."
-        return quality_rejected(
-            f"Technical confluence {multi_tf_score:.1f}% is below effective threshold {effective_min_score:.1f}%." + history_note
-        )
-
-    # Deep quality ranking (ranking only, NOT an extra rejection gate).
-    # This keeps BALANCED signal frequency while comparing every qualified pair more carefully.
-    selected_result = results.get(required_tf) if required_tf else None
-    if not selected_result or selected_result.get("signal") != signal:
-        selected_result = representative
-    selected_tf_score = float(selected_result.get("score") or multi_tf_score)
-
-    # Neighbouring timeframes add context quality but do not veto an otherwise valid setup.
-    context_map = {
-        "1m": ("1m", "2m", "5m"),
-        "2m": ("1m", "2m", "5m"),
-        "5m": ("2m", "5m", "10m"),
-        "10m": ("5m", "10m", "15m"),
-        "15m": ("10m", "15m", "30m"),
-        "30m": ("15m", "30m"),
-    }
-    context_tfs = context_map.get(required_tf or "", tuple(TIMEFRAMES.keys()))
-    context_rows = [results.get(tf) or {} for tf in context_tfs]
-    context_valid = [r for r in context_rows if r.get("signal") in {"CALL", "PUT"}]
-    context_same = sum(1 for r in context_valid if r.get("signal") == signal)
-    context_alignment_pct = (context_same / len(context_valid) * 100.0) if context_valid else agreement_ratio * 100.0
-
-    supporter_scores = [float(r.get("score") or 0.0) for r in supporters]
-    supporter_score_avg = (sum(supporter_scores) / len(supporter_scores)) if supporter_scores else multi_tf_score
-    supporter_score_spread = (max(supporter_scores) - min(supporter_scores)) if supporter_scores else 0.0
-    consistency_score = max(50.0, min(100.0, 100.0 - supporter_score_spread * 2.5))
-
-    supporter_adx = [float(r.get("adx") or 0.0) for r in supporters if r.get("adx") is not None]
-    avg_support_adx = (sum(supporter_adx) / len(supporter_adx)) if supporter_adx else float(representative.get("adx") or 0.0)
-    trend_quality = max(45.0, min(100.0, 45.0 + max(0.0, avg_support_adx - 15.0) * 2.2))
-
-    rep_bull = float(representative.get("bullish_points") or 0.0)
-    rep_bear = float(representative.get("bearish_points") or 0.0)
-    directional_edge = abs(rep_bull - rep_bear)
-    edge_quality = max(50.0, min(100.0, 50.0 + directional_edge * 8.0))
-
-    regime_quality = float(regime_profile.get("quality") or 60.0)
-    performance_quality = (
-        float(performance_profile.get("smoothed_win_rate") or 50.0)
-        if int(performance_profile.get("sample_size") or 0) >= 12 else 60.0
-    )
-    deep_quality_score = (
-        float(multi_tf_score) * 0.29
-        + float(agreement_ratio * 100.0) * 0.17
-        + float(stability_score) * 0.14
-        + float(selected_tf_score) * 0.11
-        + float(context_alignment_pct) * 0.08
-        + float(trend_quality) * 0.05
-        + float(consistency_score) * 0.03
-        + float(edge_quality) * 0.03
-        + float(regime_quality) * 0.06
-        + float(performance_quality) * 0.04
-    )
-    deep_quality_score += float(performance_profile.get("score_adjustment") or 0.0)
-    deep_quality_score = max(0.0, min(100.0, deep_quality_score))
-    confidence_calibration = calibrate_confidence(bridge_user, selected_expiry, deep_quality_score)
-
-    aligned_tfs = [r["timeframe"] for r in supporters]
-    opposing_tfs = [r["timeframe"] for r in opponents]
-    return {
-        "pair": pair, "score": round(multi_tf_score, 2), "signal": signal,
-        "reason": f"{opts['mode']} · Multi-TF agreement: {len(supporters)}/{valid_count} valid timeframes -> {signal}",
-        "rsi": representative.get("rsi"), "adx": representative.get("adx"), "atr": representative.get("atr"),
-        "stoch_rsi_k": representative.get("stoch_rsi_k"), "stoch_rsi_d": representative.get("stoch_rsi_d"),
-        "rsi_divergence": representative.get("rsi_divergence"), "bb_context": representative.get("bb_context"),
-        "support": representative.get("support"), "resistance": representative.get("resistance"),
-        "sr_context": representative.get("sr_context"),
-        "wick_context": representative.get("wick_context"),
-        "wick_call_confirmations": representative.get("wick_call_confirmations", 0),
-        "wick_put_confirmations": representative.get("wick_put_confirmations", 0),
-        "precision_wick_call": bool(representative.get("precision_wick_call")),
-        "precision_wick_put": bool(representative.get("precision_wick_put")),
-        "premium_wick_call": bool(representative.get("premium_wick_call")),
-        "premium_wick_put": bool(representative.get("premium_wick_put")),
-        "hybrid_engine": "RAJA_HYBRID_98_REGIME_PERFORMANCE_V24",
-        "price": representative.get("price"), "bullish_points": representative.get("bullish_points", 0),
-        "bearish_points": representative.get("bearish_points", 0),
-        "data_age": round(data_age, 2) if data_age is not None else None,
-        "source": source_info.get("source") or "Yahoo Finance",
-        "source_mode": source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
-        "backup_used": bool(source_info.get("backup_used")),
-        "provider_symbol": source_info.get("provider_symbol"),
-        "bridge_requested": bool(source_info.get("bridge_requested")),
-        "bridge_fallback_used": bool(source_info.get("bridge_fallback_used")),
-        "bridge_unavailable_reason": source_info.get("bridge_unavailable_reason"),
-        "fallback_notice": source_info.get("fallback_notice"),
-        "otc_proxy_warning": bool("(OTC)" in pair and source_info.get("source_mode") != "broker_otc_exact"), "yahoo_symbol": symbol,
-        "timeframes_scanned": list(TIMEFRAMES.keys()), "aligned_timeframes": aligned_tfs,
-        "opposing_timeframes": opposing_tfs, "timeframe_summary": summary,
-        "multi_tf_agreement": round(agreement_ratio * 100, 1), "selected_expiry": selected_expiry,
-        "required_expiry_timeframe": required_tf,
-        "confirmation_mode": f"{opts['mode']} · {opts['min_tf']}-of-6 + {required_tf or 'TF'} Required",
-        "duplicate_protection": False, "scan_mode": opts["mode"], "scan_thresholds": opts,
-        "market_stability_score": stability_score, "market_risk_level": risk_level,
-        "volatility_pct": volatility_pct,
-        "market_regime": regime_profile.get("regime"),
-        "market_regime_quality": regime_profile.get("quality"),
-        "market_regime_reason": regime_profile.get("reason"),
-        "pair_timeframe_performance": performance_profile,
-        "effective_min_score": round(effective_min_score, 2),
-        "late_entry": late_entry,
-        "chart_preview": chart_preview,
-        "deep_quality_score": round(deep_quality_score, 2),
-        "calibrated_confidence": confidence_calibration.get("calibrated_confidence"),
-        "calibration_status": confidence_calibration.get("status"),
-        "calibration_sample_size": confidence_calibration.get("sample_size"),
-        "calibration_observed_win_rate": confidence_calibration.get("observed_win_rate"),
-        "calibration_note": confidence_calibration.get("note"),
-        "deep_quality_components": {
-            "technical": round(float(multi_tf_score), 2),
-            "agreement": round(float(agreement_ratio * 100.0), 1),
-            "stability": round(float(stability_score), 1),
-            "selected_tf": round(float(selected_tf_score), 2),
-            "context_alignment": round(float(context_alignment_pct), 1),
-            "avg_adx": round(float(avg_support_adx), 2),
-            "consistency": round(float(consistency_score), 1),
-            "directional_edge": round(float(directional_edge), 2),
-            "regime_quality": round(float(regime_quality), 1),
-            "historical_quality": round(float(performance_quality), 1),
-        },
-        "deep_scan_mode": "FULL_MARKET_QUALIFIED_RANKING",
-        "no_trade": False, "quality_gate": "PASSED",
-    }
+    tf_df=build_timeframe(base_df,TIMEFRAMES[tf])
+    market_name="OTC" if "(OTC)" in str(pair).upper() else "LIVE"
+    last_outcome=_last_strategy_outcome(bridge_user)
+    strategy=analyze_sk25_ohlc(tf_df,tf,market_name,last_outcome)
+    movement=_movement_info(tf_df)
+    summary={tf:{
+        "signal":strategy.get("signal"),"score":strategy.get("score",0),"pattern_type":strategy.get("pattern_type",0),
+        "selected_pattern":strategy.get("selected_pattern"),"setup_match":strategy.get("setup_match",0),
+        "next_candle_color":strategy.get("next_candle_color"),"closed_candle_epoch":strategy.get("closed_candle_epoch"),
+    }}
+    result=dict(strategy)
+    result.update({
+        "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
+        "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if strategy.get("signal") in {"CALL","PUT"} else [],
+        "opposing_timeframes":[],"multi_tf_agreement":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
+        "confirmation_mode":"SK25 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "data_age":round(float(data_age),2) if data_age is not None else None,
+        "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
+        "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
+        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"SK Pattern Type 1-25","pattern_library_size":25,
+        "closed_candle_verified":True,"forming_candle_excluded":True,
+        "movement_info":movement,"volatility_pct":movement["percent"],"market_stability_score":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
+        "market_risk_level":"INFO ONLY","market_regime":strategy.get("selected_pattern") or "NO SETUP",
+        "deep_quality_score":float(strategy.get("pattern_priority") or 0),"calibration_status":"DISABLED","calibrated_confidence":0.0,
+        "no_trade":strategy.get("signal") not in {"CALL","PUT"},"quality_gate":"PASSED" if strategy.get("signal") in {"CALL","PUT"} else "PATTERN_ONLY",
+    })
+    if result["no_trade"]: result["no_trade_reason"]=result.get("reason")
+    return result
 
 
-
-# =========================================================
-# LEFT-SIDE BACKGROUND AUTO SIGNAL FEED (1M + 5M)
-# This is deliberately independent from the main HUD scan/tracking flow.
-# It does not create tracked trades or increment the user's main scan history.
-# =========================================================
 SIDE_AUTO_SIGNAL_TIMEFRAMES = ("1m", "5m")
-SIDE_AUTO_SIGNAL_DEADLINE_SECONDS = max(
-    20.0, min(75.0, float(os.environ.get("RAJA_SIDE_AUTO_DEADLINE_SECONDS", "68")))
-)
+SIDE_AUTO_SIGNAL_DEADLINE_SECONDS = max(20.0, min(75.0, float(os.environ.get("RAJA_SIDE_AUTO_DEADLINE_SECONDS", "68"))))
 
 
 def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=None, broker=None):
-    """Return safe 1m/5m next-candle candidates for the left-side background feed."""
-    opts = normalize_scan_options(scan_options)
-    broker_key = str(broker or "").strip().casefold().replace(" ", "")
-    broker_otc = "(otc)" in str(pair).casefold() and broker_key in {"quotex", "pocketoption", "pocket_option", "pocket"}
-    if pair not in YAHOO_SYMBOLS and not broker_otc:
-        return []
-
-    base_df, data_age, symbol, source_info = get_market_data(pair, bridge_user=bridge_user, broker=broker)
-    if base_df is None or base_df.empty:
-        return []
-    if data_age is not None and float(data_age) > MAX_SOURCE_CANDLE_AGE_SECONDS:
-        return []
-
-    # A per-timeframe feed should stay selective even though it does not require 4-of-6 agreement.
-    mode_floor = {"SAFE": 72.0, "BALANCED": 66.0, "AGGRESSIVE": 60.0}
-    side_min_score = mode_floor.get(opts["mode"], max(60.0, float(opts.get("min_score") or 65.0) - 4.0))
-    candidates = []
-
-    for tf_name in SIDE_AUTO_SIGNAL_TIMEFRAMES:
-        tf_df = build_timeframe(base_df, TIMEFRAMES[tf_name])
-        analysis = analyze_timeframe(tf_df, tf_name)
-        signal = str((analysis or {}).get("signal") or "").upper()
-        if signal not in {"CALL", "PUT"}:
-            continue
-
-        score = float(analysis.get("score") or 0.0)
-        if score < side_min_score:
-            continue
-
-        # Reuse the main bot's safety concepts without forcing a full multi-TF HUD signal.
-        stability_score, risk_level, volatility_pct = market_stability_metrics(
-            analysis.get("price"), analysis.get("atr"), analysis.get("adx"), data_age, score
-        )
-        if str(risk_level or "").upper() == "HIGH" or float(stability_score or 0.0) < 55.0:
-            continue
-        if volatility_pct < float(opts.get("vol_min") or 0.0) or volatility_pct > float(opts.get("vol_max") or 10.0):
-            continue
-
-        regime = market_regime_router(analysis, signal, stability_score)
-        if bool(regime.get("blocked")):
-            continue
-
-        late_entry = late_entry_guard(base_df, analysis.get("price"), analysis.get("atr"), signal, opts["mode"])
-        if bool(late_entry.get("blocked")):
-            continue
-
-        rank_score = score * 0.72 + float(stability_score or 0.0) * 0.18 + float(regime.get("quality") or 0.0) * 0.10
-        candidates.append({
-            "pair": pair,
-            "timeframe": tf_name,
-            "signal": signal,
-            "direction": "UP" if signal == "CALL" else "DOWN",
-            "trade": "BUY / CALL" if signal == "CALL" else "SELL / PUT",
-            "score": round(score, 2),
-            "rank_score": round(rank_score, 2),
-            "stability": round(float(stability_score or 0.0), 1),
-            "risk": str(risk_level or ""),
-            "volatility_pct": volatility_pct,
-            "market_regime": str(regime.get("regime") or ""),
-            "closed_candle_epoch": analysis.get("closed_candle_epoch"),
-            "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
-            "source": str((source_info or {}).get("source") or ""),
-            "source_mode": str((source_info or {}).get("source_mode") or ""),
-            "yahoo_symbol": symbol,
+    """Background feed also uses ONLY exact SK25 rules (1m and 5m)."""
+    out=[]
+    for tf in ("1m","5m"):
+        row=calculate_live_strategy_signal(pair,tf,scan_options,bridge_user,broker)
+        if row.get("signal") not in {"CALL","PUT"}: continue
+        out.append({
+            "pair":pair,"timeframe":tf,"signal":row["signal"],"direction":"UP" if row["signal"]=="CALL" else "DOWN",
+            "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT","score":100.0,
+            "rank_score":float(row.get("pattern_priority") or 0),"stability":100.0,"risk":"INFO ONLY",
+            "volatility_pct":row.get("volatility_pct",0),"market_regime":row.get("selected_pattern"),
+            "pattern_type":row.get("pattern_type"),"selected_pattern":row.get("selected_pattern"),"setup_match":100.0,
+            "next_candle_color":row.get("next_candle_color"),"rules":row.get("rules") or [],"recovery_trade":bool(row.get("recovery_trade")),
+            "closed_candle_epoch":row.get("closed_candle_epoch"),"data_age_seconds":row.get("data_age"),
+            "source":row.get("source"),"source_mode":row.get("source_mode"),"yahoo_symbol":row.get("yahoo_symbol"),
         })
+    return out
 
-    return candidates
 
 def calculate_forex_otc_fallback_snapshot(pair, selected_expiry=None):
-    """
-    Build a REFERENCE-ONLY snapshot from the last Yahoo candles even when the
-    normal live freshness gate is closed.
-
-    Important:
-    - This is NOT live broker OTC data.
-    - This function does not write signal history/performance records.
-    - Frontend JavaScript applies the separate fallback confidence gate.
-    """
-    if pair not in FOREX_OTC_PAIRS:
-        return {
-            "pair": pair,
-            "available": False,
-            "live_fresh": False,
-            "reason": "Pair is not part of the configured Forex OTC list.",
-            "source": "Yahoo Finance",
-            "source_mode": "fallback_reference_only",
-        }
-
-    base_df, data_age, symbol, source_info = get_market_data(pair)
+    """Reference-only diagnostic; never upgrades a proxy OTC candle into an exact broker signal."""
+    tf=str(selected_expiry or "1m").strip().lower()
+    if tf not in TIMEFRAMES: tf="1m"
+    base_df,data_age,symbol,source_info=get_market_data(pair)
     if base_df is None or base_df.empty:
-        return {
-            "pair": pair,
-            "available": False,
-            "live_fresh": False,
-            "reason": "No Yahoo/Twelve Data reference history is currently available for this pair.",
-            "source": source_info.get("source") or "Yahoo Finance",
-            "source_mode": "fallback_reference_only",
-            "backup_used": bool(source_info.get("backup_used")),
-            "provider_symbol": source_info.get("provider_symbol"),
-            "yahoo_symbol": symbol,
-            "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
-            "data_age_label": format_market_data_age(data_age) if data_age is not None else "--",
-        }
-
-    age_value = float(data_age or 0.0)
-    live_fresh = age_value <= float(MAX_SOURCE_CANDLE_AGE_SECONDS)
-
-    results = {}
-    for tf_name, minutes in TIMEFRAMES.items():
-        tf_df = build_timeframe(base_df, minutes)
-        results[tf_name] = analyze_timeframe(tf_df, tf_name)
-
-    summary = {
-        tf: {
-            "signal": row.get("signal"),
-            "score": row.get("score", 0),
-            "rsi": row.get("rsi"),
-            "adx": row.get("adx"),
-            "atr": row.get("atr"),
-            "price": row.get("price"),
-            "stoch_rsi_k": row.get("stoch_rsi_k"),
-            "stoch_rsi_d": row.get("stoch_rsi_d"),
-            "rsi_divergence": row.get("rsi_divergence"),
-            "bb_context": row.get("bb_context"),
-            "bb_squeeze": bool(row.get("bb_squeeze")),
-            "bb_expanding": bool(row.get("bb_expanding")),
-            "support": row.get("support"),
-            "resistance": row.get("resistance"),
-            "sr_context": row.get("sr_context"),
-            "wick_context": row.get("wick_context"),
-            "lower_wick_ratio": row.get("lower_wick_ratio"),
-            "upper_wick_ratio": row.get("upper_wick_ratio"),
-            "wick_call_confirmations": row.get("wick_call_confirmations", 0),
-            "wick_put_confirmations": row.get("wick_put_confirmations", 0),
-            "precision_wick_call": bool(row.get("precision_wick_call")),
-            "precision_wick_put": bool(row.get("precision_wick_put")),
-            "premium_wick_call": bool(row.get("premium_wick_call")),
-            "premium_wick_put": bool(row.get("premium_wick_put")),
-            "bullish_points": row.get("bullish_points", 0),
-            "bearish_points": row.get("bearish_points", 0),
-            "closed_candle_epoch": row.get("closed_candle_epoch"),
-        }
-        for tf, row in results.items()
-    }
-
+        return {"pair":pair,"available":False,"live_fresh":False,"reason":"No reference history available.","source":source_info.get("source") or "Yahoo Finance","source_mode":"fallback_reference_only"}
+    tf_df=build_timeframe(base_df,TIMEFRAMES[tf])
+    watch=analyze_sk25_ohlc(tf_df,tf,"OTC","")
     return {
-        "pair": pair,
-        "available": True,
-        "live_fresh": bool(live_fresh),
-        "normal_scan_required": bool(live_fresh),
-        "reference_stale": not bool(live_fresh),
-        "source": source_info.get("source") or "Yahoo Finance",
-        "source_mode": "fallback_reference_only",
-        "backup_used": bool(source_info.get("backup_used")),
-        "provider_symbol": source_info.get("provider_symbol"),
-        "warning": "REFERENCE-BASED FALLBACK · NOT LIVE BROKER OTC DATA",
-        "yahoo_symbol": symbol,
-        "data_age_seconds": round(age_value, 2),
-        "data_age_label": format_market_data_age(age_value),
-        "selected_expiry": str(selected_expiry or ""),
-        "timeframe_summary": summary,
-        "timeframes_scanned": list(TIMEFRAMES.keys()),
-        "chart_preview": serialize_candles(base_df, 60),
+        "pair":pair,"available":True,"live_fresh":bool(float(data_age or 0)<=MAX_SOURCE_CANDLE_AGE_SECONDS),
+        "normal_scan_required":True,"reference_stale":bool(float(data_age or 0)>MAX_SOURCE_CANDLE_AGE_SECONDS),
+        "source":source_info.get("source") or "Yahoo Finance","source_mode":"fallback_reference_only","provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
+        "data_age_seconds":round(float(data_age),2) if data_age is not None else None,"data_age_label":format_market_data_age(data_age),
+        "selected_expiry":tf,"strategy_watch":watch,"signal":"NO SIGNAL","reason":"Reference-only OTC data is never used for a trading signal.",
+        "chart_preview":serialize_candles(tf_df,40),
     }
-
 
 
 # =========================================================
@@ -5257,15 +4304,13 @@ def track_signal():
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
         "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
-        "market_stability_score": data.get("market_stability_score"), "market_risk_level": data.get("market_risk_level"),
-        "volatility_pct": data.get("volatility_pct"), "scan_mode": data.get("scan_mode"),
-        "deep_quality_score": data.get("deep_quality_score"),
-        "calibrated_confidence": data.get("calibrated_confidence"),
-        "calibration_status": data.get("calibration_status"),
-        "market_regime": data.get("market_regime"),
-        "market_regime_quality": data.get("market_regime_quality"),
-        "pair_timeframe_performance": data.get("pair_timeframe_performance") or {},
-        "late_entry": data.get("late_entry") or {},
+        "scan_mode": "SK25_STRICT", "volatility_pct": data.get("volatility_pct"),
+        "pattern_type": int(data.get("pattern_type") or 0),
+        "selected_pattern": str(data.get("selected_pattern") or ""),
+        "next_candle_color": str(data.get("next_candle_color") or ""),
+        "setup_match": float(data.get("setup_match") or score or 0),
+        "rules": data.get("rules") or [], "recovery_trade": bool(data.get("recovery_trade")),
+        "closed_candle_epoch": data.get("closed_candle_epoch"),
         "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
         "broker": str(data.get("broker") or ""),
     }
@@ -5476,6 +4521,1123 @@ def forex_otc_fallback_data():
     })
 
 
+
+
+# =========================================================
+# RAJA AI CHART SCANNER · V11 VISUAL SK25 ENGINE
+# Separate camera/screenshot mode inside the same RAJA AI license session.
+# =========================================================
+Image.MAX_IMAGE_PIXELS = 25_000_000
+RAJA_CHART_SCAN_MAX_UPLOAD = max(2, min(16, int(os.environ.get("RAJA_CHART_SCAN_MAX_MB", "8")))) * 1024 * 1024
+
+def _quality_score(rgb: np.ndarray) -> tuple[float, list[str]]:
+    """Estimate screenshot readability without punishing large dark chart backgrounds.
+
+    Broker charts contain broad, intentionally smooth/dark regions. A plain mean-gradient
+    metric marks those clean screenshots as "blurred", so this version measures contrast,
+    edge density and the stronger part of the gradient distribution instead.
+    """
+    h, w, _ = rgb.shape
+    gray = rgb.astype(np.float32).mean(axis=2)
+    contrast = float(np.std(gray))
+
+    gx = np.abs(np.diff(gray, axis=1)) if w > 1 else np.zeros((h, 1), dtype=np.float32)
+    gy = np.abs(np.diff(gray, axis=0)) if h > 1 else np.zeros((1, w), dtype=np.float32)
+    gradients = np.concatenate([gx.ravel(), gy.ravel()]) if gx.size and gy.size else np.array([0.0], dtype=np.float32)
+
+    # Strong-edge percentile is much better for candlestick screenshots than the mean.
+    p85 = float(np.percentile(gradients, 85))
+    p95 = float(np.percentile(gradients, 95))
+    edge_density = float(np.mean(gradients > 10.0))
+
+    size_score = min(1.0, min(w / 700.0, h / 420.0))
+    contrast_score = min(1.0, contrast / 25.0)
+    edge_score = min(1.0, (0.45 * p85 + 0.55 * p95) / 12.0)
+    density_score = min(1.0, edge_density / 0.05)
+
+    score = 100.0 * (
+        0.28 * size_score
+        + 0.28 * contrast_score
+        + 0.30 * edge_score
+        + 0.14 * density_score
+    )
+
+    notes: list[str] = []
+    if size_score < 0.60:
+        notes.append("Image resolution is low; use a clearer full chart screenshot.")
+    if contrast_score < 0.35:
+        notes.append("Chart contrast is weak; candles may be hard to separate.")
+    # Only warn for blur when both edge strength and edge density are genuinely poor.
+    if edge_score < 0.20 and density_score < 0.24:
+        notes.append("Image looks soft/blurred; hold the camera steady or upload a screenshot.")
+
+    return round(max(0.0, min(100.0, score)), 1), notes
+
+
+def _group_columns(active: np.ndarray) -> list[tuple[int, int]]:
+    groups = []
+    start = None
+    for i, on in enumerate(active.tolist()):
+        if on and start is None:
+            start = i
+        elif not on and start is not None:
+            groups.append((start, i - 1))
+            start = None
+    if start is not None:
+        groups.append((start, len(active) - 1))
+    return groups
+
+
+
+def _connected_color_components(mask: np.ndarray) -> list[tuple[int, int, int, int, int]]:
+    """Return 8-connected component boxes as (left,right,top,bottom,pixels).
+
+    The old V9 counter projected every coloured pixel onto the X axis. On Pocket
+    Option mobile screenshots, wide BUY/SELL/sentiment UI bands could make many
+    separate candles look like one huge X component. This run-length component
+    labeller keeps candles separate in 2D without adding OpenCV/scipy dependencies.
+    """
+    h, w = mask.shape
+    parent: list[int] = []
+    runs: list[tuple[int, int, int, int]] = []
+    prev: list[tuple[int, int, int]] = []
+
+    def make_label() -> int:
+        parent.append(len(parent))
+        return len(parent) - 1
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    def union(a: int, b: int) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[rb] = ra
+
+    for y in range(h):
+        xs = np.flatnonzero(mask[y])
+        curr: list[tuple[int, int, int]] = []
+        if xs.size:
+            run_start = run_last = int(xs[0])
+            for xv in xs[1:]:
+                x = int(xv)
+                if x == run_last + 1:
+                    run_last = x
+                else:
+                    curr.append((run_start, run_last, make_label()))
+                    run_start = run_last = x
+            curr.append((run_start, run_last, make_label()))
+
+        # Runs are X-sorted. Connect current row to overlapping/adjacent previous runs.
+        pi = 0
+        for left, right, label in curr:
+            while pi < len(prev) and prev[pi][1] < left - 1:
+                pi += 1
+            pj = pi
+            while pj < len(prev) and prev[pj][0] <= right + 1:
+                p_left, p_right, p_label = prev[pj]
+                if left <= p_right + 1 and right >= p_left - 1:
+                    union(label, p_label)
+                pj += 1
+            runs.append((y, left, right, label))
+        prev = curr
+
+    boxes: dict[int, list[int]] = {}
+    for y, left, right, label in runs:
+        root = find(label)
+        box = boxes.setdefault(root, [w, -1, h, -1, 0])
+        box[0] = min(box[0], left)
+        box[1] = max(box[1], right)
+        box[2] = min(box[2], y)
+        box[3] = max(box[3], y)
+        box[4] += right - left + 1
+    return [tuple(v) for v in boxes.values()]
+
+
+def _regular_candle_run(candles: list[dict[str, Any]], cw: int) -> list[dict[str, Any]]:
+    """Keep the densest regularly-spaced candle sequence and discard UI glyphs.
+
+    Broker candles are almost equally spaced horizontally. Price text/icons can also
+    be red/green, but they normally appear as tiny duplicate components or as an
+    isolated group beyond a large gap. This filter removes those without inventing
+    missing candles.
+    """
+    if len(candles) < 6:
+        return candles
+
+    candles = sorted(candles, key=lambda c: float(c["x"]))
+    xs = np.array([float(c["x"]) for c in candles], dtype=float)
+    gaps = np.diff(xs)
+    useful = gaps[(gaps >= max(3.0, cw * 0.008)) & (gaps <= cw * 0.14)]
+    if useful.size < 3:
+        return candles
+
+    spacing = float(np.median(useful))
+
+    # If two candidates are much closer than the normal candle spacing, they are
+    # usually split wick/body fragments or coloured UI text. Keep the stronger one.
+    min_gap = max(3.0, spacing * 0.72)
+    de_duped: list[dict[str, Any]] = []
+    for c in candles:
+        if de_duped and float(c["x"]) - float(de_duped[-1]["x"]) < min_gap:
+            if float(c.get("pixels") or 0) > float(de_duped[-1].get("pixels") or 0):
+                de_duped[-1] = c
+        else:
+            de_duped.append(c)
+
+    if len(de_duped) < 6:
+        return de_duped
+
+    xs = np.array([float(c["x"]) for c in de_duped], dtype=float)
+    gaps = np.diff(xs)
+    useful = gaps[(gaps >= max(3.0, cw * 0.008)) & (gaps <= cw * 0.14)]
+    spacing = float(np.median(useful)) if useful.size else spacing
+    split_gap = max(18.0, cw * 0.078, spacing * 1.60)
+
+    runs: list[list[dict[str, Any]]] = []
+    run_start = 0
+    for i, gap in enumerate(gaps):
+        if gap > split_gap:
+            runs.append(de_duped[run_start:i + 1])
+            run_start = i + 1
+    runs.append(de_duped[run_start:])
+    runs.sort(
+        key=lambda seq: (len(seq), sum(float(c.get("pixels") or 0) for c in seq)),
+        reverse=True,
+    )
+    best = runs[0]
+    return best if len(best) >= 4 else de_duped
+
+
+def _adaptive_candle_color_masks(chart: np.ndarray) -> tuple[np.ndarray, np.ndarray, dict[str, float]]:
+    """Return bearish/bullish candle masks with phone/theme adaptive colour thresholds.
+
+    This is deterministic computer vision (not an external ML model): it adapts saturation
+    and brightness floors to each frame, then combines hue-like channel dominance with
+    the older fixed masks. It is intentionally lightweight for Render and older phones.
+    """
+    rgb = chart.astype(np.float32)
+    r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+    mx = np.maximum(np.maximum(r, g), b)
+    mn = np.minimum(np.minimum(r, g), b)
+    chroma = mx - mn
+    sat = chroma / np.maximum(mx, 1.0)
+    value = mx / 255.0
+
+    bright = value > 0.16
+    sat_sample = sat[bright]
+    if sat_sample.size:
+        sat_floor = float(np.clip(np.percentile(sat_sample, 42), 0.12, 0.24))
+    else:
+        sat_floor = 0.16
+
+    # Theme/phone adaptive dominance floors. Purple/blue backgrounds are rejected by
+    # requiring a clear red or green/cyan dominance plus meaningful saturation.
+    red_dom = r - np.maximum(g, b * 0.84)
+    green_dom = g - r
+    cyan_dom = ((g + b) * 0.5) - r
+    red_pos = red_dom[(red_dom > 0) & bright & (sat >= sat_floor)]
+    green_pos = green_dom[(green_dom > 0) & bright & (sat >= sat_floor * 0.75)]
+    red_floor = float(np.clip(np.percentile(red_pos, 35), 8, 18)) if red_pos.size else 11.0
+    green_floor = float(np.clip(np.percentile(green_pos, 30), 5, 14)) if green_pos.size else 7.0
+
+    adaptive_red = (value >= 0.22) & (sat >= sat_floor) & (red_dom >= red_floor) & (r >= g + 5)
+    adaptive_green = (value >= 0.19) & (sat >= sat_floor * 0.72) & (green_dom >= green_floor) & (g >= b - 58)
+    adaptive_cyan = (value >= 0.22) & (sat >= sat_floor * 0.65) & (cyan_dom >= 10) & (g >= r + 6) & (b >= r - 8)
+
+    # Preserve proven V9/V10 masks as a fallback for clean screenshots.
+    fixed_red = (r > 84) & ((r - g) > 16) & ((r - b) > 3)
+    fixed_green = (g > 64) & ((g - r) > 10) & ((g - b) > -42)
+    fixed_cyan = (g > 88) & (b > 88) & (r < 185) & (((g + b) - 2 * r) > 24)
+
+    red = adaptive_red | fixed_red
+    bull = adaptive_green | adaptive_cyan | fixed_green | fixed_cyan
+    # Pixels that accidentally satisfy both are ambiguous and are discarded.
+    overlap = red & bull
+    if overlap.any():
+        red = red & ~overlap
+        bull = bull & ~overlap
+
+    meta = {
+        "sat_floor": round(sat_floor, 3),
+        "red_floor": round(red_floor, 1),
+        "green_floor": round(green_floor, 1),
+        "red_density": round(float(red.mean()), 6),
+        "bull_density": round(float(bull.mean()), 6),
+    }
+    return red, bull, meta
+
+
+def _detect_candles_in_chart(chart: np.ndarray) -> tuple[list[dict[str, Any]], float, list[str], float, float]:
+    """Detect red/green candles with mobile-safe 2D component clustering.
+
+    V9.1 fixes the V9 mobile under-count where 14+ visible Pocket Option candles
+    could be reported as 7 because the old X-axis grouping was contaminated by
+    wide coloured interface bars. No indicator values are used; geometry remains
+    visual-only body/wick estimation.
+    """
+    ch, cw, _ = chart.shape
+    quality, quality_notes = _quality_score(chart)
+
+    # V11 Adaptive Vision Lens: per-frame red/green/cyan calibration.
+    red, bull, color_meta = _adaptive_candle_color_masks(chart)
+    colored = red | bull
+
+    # Suppress only near-full-width coloured UI bands. 2D components already make
+    # normal BUY/SELL buttons harmless because their width is rejected below.
+    row_counts = colored.sum(axis=1)
+    broad_rows = row_counts > max(80, int(cw * 0.52))
+    clean_red = red.copy()
+    clean_bull = bull.copy()
+    clean_colored = colored.copy()
+    if broad_rows.any():
+        clean_red[broad_rows, :] = False
+        clean_bull[broad_rows, :] = False
+        clean_colored[broad_rows, :] = False
+
+    min_pixels = max(14, min(70, int(ch * cw * 0.00020)))
+    max_width = max(32, int(cw * 0.080))
+    max_height = max(55, int(ch * 0.50))
+    seeds: list[dict[str, Any]] = []
+
+    # Label bullish and bearish colours separately so adjacent opposite candles do
+    # not merge into one component when their anti-aliased edges touch.
+    for direction, mask in ((-1, clean_red), (1, clean_bull)):
+        for left, right, top, bottom, pixels in _connected_color_components(mask):
+            width = right - left + 1
+            height = bottom - top + 1
+            if pixels < min_pixels or width > max_width or height < 4 or height > max_height:
+                continue
+            # Reject flat coloured labels; doji/small bodies are still allowed.
+            if width > max(12, int(cw * 0.040)) and height < max(5, int(width * 0.20)):
+                continue
+            density = float(pixels / max(1, width * height))
+            if density < 0.045:
+                continue
+            seeds.append({
+                "left": int(left), "right": int(right), "top": int(top), "bottom": int(bottom),
+                "pixels": int(pixels), "dir": int(direction),
+            })
+
+    seeds.sort(key=lambda s: (s["left"] + s["right"]) / 2.0)
+
+    # Merge/replace only components centered at effectively the same X position.
+    same_x = max(3, int(cw * 0.009))
+    de_duped_seeds: list[dict[str, Any]] = []
+    for seed in seeds:
+        cx = (seed["left"] + seed["right"]) / 2.0
+        if de_duped_seeds:
+            prev = de_duped_seeds[-1]
+            pcx = (prev["left"] + prev["right"]) / 2.0
+            if abs(cx - pcx) <= same_x:
+                if seed["pixels"] > prev["pixels"]:
+                    de_duped_seeds[-1] = seed
+                continue
+        de_duped_seeds.append(seed)
+
+    candles: list[dict[str, Any]] = []
+    for seed in de_duped_seeds:
+        left, right = seed["left"], seed["right"]
+        top, bottom = seed["top"], seed["bottom"]
+        direction = int(seed["dir"])
+        width = right - left + 1
+        height = bottom - top + 1
+
+        # Expand only locally to recover a wick that may be a thin/disconnected
+        # anti-aliased line. Never search the whole column, which could capture UI.
+        xpad = max(1, min(3, width // 4))
+        ypad = max(5, min(int(ch * 0.07), int(height * 0.65)))
+        xl, xr = max(0, left - xpad), min(cw - 1, right + xpad)
+        yt, yb = max(0, top - ypad), min(ch - 1, bottom + ypad)
+        local = clean_colored[yt:yb + 1, xl:xr + 1]
+        ys, _ = np.where(local)
+        if ys.size:
+            full_top = yt + int(ys.min())
+            full_bottom = yt + int(ys.max())
+        else:
+            full_top, full_bottom = top, bottom
+
+        full_height = max(1, full_bottom - full_top + 1)
+        own_mask = clean_bull if direction > 0 else clean_red
+        body_block = own_mask[full_top:full_bottom + 1, left:right + 1]
+        row_counts_body = body_block.sum(axis=1).astype(np.int32)
+        max_row = int(row_counts_body.max()) if row_counts_body.size else 0
+        if max_row >= 2:
+            body_thr = max(2, int(math.ceil(max_row * 0.50)))
+            body_rows = np.where(row_counts_body >= body_thr)[0]
+        else:
+            body_rows = np.array([], dtype=int)
+
+        if body_rows.size:
+            body_top = full_top + int(body_rows.min())
+            body_bottom = full_top + int(body_rows.max())
+        else:
+            body_top, body_bottom = top, bottom
+
+        body_height = max(1, body_bottom - body_top + 1)
+        upper_wick = max(0, body_top - full_top)
+        lower_wick = max(0, full_bottom - body_bottom)
+        range_px = float(max(1, full_height))
+        body_ratio = float(body_height / range_px)
+        open_y = float(body_bottom if direction > 0 else body_top)
+        close_y = float(body_top if direction > 0 else body_bottom)
+
+        candles.append({
+            "x": float((left + right) / 2.0),
+            "y": float((body_top + body_bottom) / 2.0),
+            "top": int(full_top), "bottom": int(full_bottom),
+            "body_top": int(body_top), "body_bottom": int(body_bottom),
+            "body_height": float(body_height),
+            "upper_wick": float(upper_wick), "lower_wick": float(lower_wick),
+            "body_ratio": body_ratio, "open_y": open_y, "close_y": close_y,
+            "dir": direction, "pixels": int(seed["pixels"]), "range": range_px,
+        })
+
+    candles = _regular_candle_run(candles, cw)[-80:]
+    if len(candles) >= 2:
+        span = float((candles[-1]["x"] - candles[0]["x"]) / max(cw, 1))
+    else:
+        span = 0.0
+    density = float(colored.mean())
+    return candles, quality, quality_notes, max(0.0, span), density
+
+def _candidate_chart_regions(arr: np.ndarray) -> list[tuple[str, np.ndarray]]:
+    """Return desktop + mobile chart crops; the engine scores and chooses the best one."""
+    h, w, _ = arr.shape
+    portrait = h > w * 1.12
+    specs: list[tuple[str, float, float, float, float]]
+    if portrait:
+        specs = [
+            ("mobile-chart-tight", 0.01, 0.99, 0.12, 0.64),
+            ("mobile-chart-mid", 0.01, 0.99, 0.10, 0.68),
+            ("mobile-chart-core", 0.03, 0.97, 0.14, 0.70),
+            ("mobile-upper", 0.01, 0.99, 0.10, 0.72),
+            ("mobile-middle", 0.01, 0.99, 0.18, 0.84),
+            ("mobile-lower", 0.01, 0.99, 0.28, 0.96),
+            ("mobile-wide", 0.01, 0.99, 0.08, 0.94),
+            ("mobile-center", 0.05, 0.95, 0.14, 0.90),
+        ]
+    else:
+        specs = [
+            ("desktop-main", 0.035, 0.86, 0.24, 0.94),
+            ("desktop-wide", 0.02, 0.94, 0.18, 0.94),
+            ("desktop-center", 0.05, 0.90, 0.12, 0.90),
+            ("desktop-fullchart", 0.01, 0.99, 0.16, 0.96),
+        ]
+
+    out: list[tuple[str, np.ndarray]] = []
+    for name, xa, xb, ya, yb in specs:
+        x1, x2 = int(w * xa), int(w * xb)
+        y1, y2 = int(h * ya), int(h * yb)
+        if x2 - x1 >= 180 and y2 - y1 >= 140:
+            out.append((name, arr[y1:y2, x1:x2]))
+    return out
+
+def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", last_outcome: str = "", *, captured_at_close: bool = False) -> dict[str, Any]:
+    """V11: strict SK Trading Club Pattern Type 1-25 scanner.
+
+    The older V9 candlestick/chart-pattern library is intentionally removed from
+    signal decisions. This engine only evaluates the 25 user-supplied setup
+    types, visible candle body/wick geometry and the level/trend context required
+    by those setups. No RSI/EMA/MACD/Stochastic/Bollinger values are calculated.
+    """
+    try:
+        image = Image.open(io.BytesIO(raw))
+        image = ImageOps.exif_transpose(image).convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ValueError("Image could not be opened. Upload a PNG/JPG chart screenshot.") from exc
+
+    w0, h0 = image.size
+    if w0 < 240 or h0 < 180:
+        raise ValueError("Image is too small. Use a clearer chart screenshot.")
+
+    tf = str(timeframe or "1m").strip().lower()
+    market_name = str(market or "").strip()
+    previous_outcome = str(last_outcome or "").strip().upper()
+
+    max_dim = 1800.0 if h0 > w0 * 1.12 else 1600.0
+    scale = min(1.0, max_dim / max(w0, h0))
+    if scale < 1.0:
+        image = image.resize((max(1, int(w0 * scale)), max(1, int(h0 * scale))), Image.Resampling.LANCZOS)
+
+    # Keep the V9.4 AI Lens server fallback: original + one gentle colour recovery.
+    image_variants: list[tuple[str, Image.Image]] = [("raw", image)]
+    try:
+        enhanced = ImageOps.autocontrast(image, cutoff=1)
+        enhanced = ImageEnhance.Color(enhanced).enhance(1.18)
+        enhanced = ImageEnhance.Contrast(enhanced).enhance(1.07)
+        enhanced = ImageEnhance.Sharpness(enhanced).enhance(1.08)
+        image_variants.append(("ai-lens", enhanced))
+    except Exception:
+        pass
+
+    best_region = None
+    best_region_score = -1e9
+    fallback_arr = np.asarray(image, dtype=np.uint8)
+    for variant_name, variant_image in image_variants:
+        variant_arr = np.asarray(variant_image, dtype=np.uint8)
+        for crop_name, candidate in _candidate_chart_regions(variant_arr):
+            cands, q, qnotes, span, density = _detect_candles_in_chart(candidate)
+            score = min(len(cands), 60) * 3.2 + min(1.0, span / 0.55) * 34.0 + min(18.0, density * 900.0) + q * 0.16
+            if len(cands) < 6:
+                score -= 22.0
+            if variant_name == "raw":
+                score += 0.6
+            if score > best_region_score:
+                best_region_score = score
+                best_region = (f"{variant_name}:{crop_name}", candidate, cands, q, qnotes)
+
+    if best_region is None:
+        crop_name, chart = "raw:full-image", fallback_arr
+        candles, quality, quality_notes, _, _ = _detect_candles_in_chart(chart)
+    else:
+        crop_name, chart, candles, quality, quality_notes = best_region
+
+    ch, cw, _ = chart.shape
+    detected_count = len(candles)
+    warnings = list(quality_notes)
+    reasons: list[str] = []
+    library = "SK Trading Club Pattern Type 1-25"
+
+    # V11 Closed Candle Lock. A normal screenshot/live-now frame can contain a
+    # still-forming rightmost candle, so it is excluded from setup matching. A
+    # frame captured exactly at a candle boundary may include a newborn next candle;
+    # a tiny-range heuristic removes that newborn while preserving the just-closed one.
+    forming_candle_excluded = False
+    newborn_candle_excluded = False
+    observed_latest_direction = "UNKNOWN"
+    if candles:
+        observed_latest_direction = "GREEN" if candles[-1]["dir"] > 0 else "RED"
+    if len(candles) >= 2:
+        if not captured_at_close:
+            candles = candles[:-1]
+            forming_candle_excluded = True
+        elif len(candles) >= 4:
+            prior_ranges = np.array([float(c["range"]) for c in candles[-8:-1]], dtype=float)
+            prior_bodies = np.array([float(c["body_height"]) for c in candles[-8:-1]], dtype=float)
+            if prior_ranges.size and prior_bodies.size:
+                last = candles[-1]
+                tiny_newborn = (float(last["range"]) <= float(np.median(prior_ranges)) * 0.34
+                                and float(last["body_height"]) <= max(2.0, float(np.median(prior_bodies)) * 0.48))
+                if tiny_newborn:
+                    candles = candles[:-1]
+                    newborn_candle_excluded = True
+
+    count = len(candles)
+
+    def legacy_aliases(pattern: str, direction: str, score: float, signals: list[dict[str, Any]], size: int = 25) -> dict[str, Any]:
+        return {
+            "selected_strategy": pattern,
+            "strategy_direction": direction,
+            "strategy_score": score,
+            "strategy_signals": signals,
+            "strategy_library": library,
+            "strategy_library_size": size,
+        }
+
+    if count < 6:
+        warnings.append("Not enough candle structure was detected. Move closer to the chart and keep candles sharp.")
+        return {
+            "bias": "NO TRADE", "confidence": 0.0, "image_quality_score": quality,
+            "detected_candles": detected_count, "closed_candles_analyzed": count, "visual_trend": "UNREADABLE", "momentum": "PATTERN TYPE 1-25", "volatility": "NOT USED",
+            "selected_pattern": "NO TYPE 1-25 SETUP", "pattern_direction": "NONE", "pattern_score": 0.0,
+            "pattern_signals": [], "pattern_library": library, "pattern_library_size": 25,
+            "confluence_count": 0, "setup_quality": "LOW", "next_candle_color": "NONE",
+            "entry_instruction": "WAIT FOR A COMPLETE SETUP", "recovery_trade": False,
+            "latest_candle_direction": "UNKNOWN",
+            "reasons": ["Insufficient readable candle structure for Pattern Type 1-25 recognition."], "warnings": warnings,
+            "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "Type 1-25 only"},
+            "engine": "RAJA V11 · Strict SK25 + Adaptive Vision + Closed Candle Lock", "analysis_crop_mode": crop_name,
+            "timing_verified": bool(captured_at_close), "forming_candle_excluded": forming_candle_excluded, "newborn_candle_excluded": newborn_candle_excluded,
+            **legacy_aliases("NO TYPE 1-25 SETUP", "NONE", 0.0, []),
+        }
+
+    ranges = np.array([float(c["range"]) for c in candles], dtype=float)
+    bodies = np.array([float(c["body_height"]) for c in candles], dtype=float)
+    med_range = float(np.median(ranges[-min(count, 24):])) if count else 8.0
+    med_body = float(np.median(bodies[-min(count, 24):])) if count else 5.0
+    tol = max(2.0, med_range * 0.18)
+
+    def trend_before(end_idx: int, lookback: int = 7) -> float:
+        start = max(0, end_idx - lookback)
+        seq0 = candles[start:end_idx]
+        if len(seq0) < 3:
+            return 0.0
+        yv = np.array([c["y"] for c in seq0], dtype=float) / max(ch, 1)
+        xv = np.arange(len(seq0), dtype=float)
+        slope = float(np.polyfit(xv, yv, 1)[0]) if len(seq0) > 1 else 0.0
+        return float(np.clip(-slope * 18.0, -1.0, 1.0))
+
+    def seq_is(seq0: list[dict[str, Any]], dirs0: list[int]) -> bool:
+        return len(seq0) == len(dirs0) and all(int(c["dir"]) == d for c, d in zip(seq0, dirs0))
+
+    def is_normal(c: dict[str, Any]) -> bool:
+        # "Normal body" in the source is visual, not a fixed percentage. Keep
+        # this tolerant because phone anti-aliasing can make a thin wick merge
+        # into the detected body. Sequence/level rules still provide the guard.
+        bh = float(c["body_height"])
+        return float(c["body_ratio"]) >= 0.28 and bh >= max(2.0, med_body * 0.45) and bh <= med_body * 2.20
+
+    def is_small(c: dict[str, Any]) -> bool:
+        return float(c["body_ratio"]) <= 0.30 or float(c["body_height"]) <= max(2.0, med_body * 0.52)
+
+    def is_long(c: dict[str, Any]) -> bool:
+        return float(c["body_ratio"]) >= 0.66 and float(c["body_height"]) >= max(4.0, med_body * 1.28)
+
+    def is_marubozu(c: dict[str, Any]) -> bool:
+        return is_long(c) and (float(c["upper_wick"]) + float(c["lower_wick"])) <= max(3.0, float(c["body_height"]) * 0.42)
+
+    def long_lower(c: dict[str, Any]) -> bool:
+        return float(c["lower_wick"]) >= max(3.0, float(c["body_height"]) * 0.68, med_range * 0.20)
+
+    def long_upper(c: dict[str, Any]) -> bool:
+        return float(c["upper_wick"]) >= max(3.0, float(c["body_height"]) * 0.68, med_range * 0.20)
+
+    def close_breaks_above(c: dict[str, Any], level_y: float, margin: float = 0.22) -> bool:
+        return float(c["close_y"]) < float(level_y) - tol * margin
+
+    def close_breaks_below(c: dict[str, Any], level_y: float, margin: float = 0.22) -> bool:
+        return float(c["close_y"]) > float(level_y) + tol * margin
+
+    def body_inside(inner: dict[str, Any], outer: dict[str, Any], extra: float = 0.0) -> bool:
+        return float(inner["body_top"]) >= float(outer["body_top"]) - extra and float(inner["body_bottom"]) <= float(outer["body_bottom"]) + extra
+
+    def strongest_level_cluster(values: list[float], cluster_tol: float, prefer: str) -> tuple[float | None, int]:
+        """Cluster nearby visual highs/lows so S/R rules use repeated levels, not one pixel."""
+        if not values:
+            return None, 0
+        vals = sorted(float(v) for v in values)
+        clusters: list[list[float]] = []
+        for v in vals:
+            placed = False
+            for cl in clusters:
+                center = float(sum(cl) / len(cl))
+                if abs(v - center) <= cluster_tol:
+                    cl.append(v); placed = True; break
+            if not placed:
+                clusters.append([v])
+        clusters.sort(key=lambda cl: (len(cl), -abs(sum(cl) / len(cl))), reverse=True)
+        max_n = max(len(cl) for cl in clusters)
+        strongest = [cl for cl in clusters if len(cl) == max_n]
+        if prefer == "resistance":
+            chosen = min(strongest, key=lambda cl: sum(cl) / len(cl))  # smaller y = higher price
+        else:
+            chosen = max(strongest, key=lambda cl: sum(cl) / len(cl))  # larger y = lower price
+        return float(sum(chosen) / len(chosen)), len(chosen)
+
+    is_otc = "OTC" in market_name.upper()
+    is_live = "LIVE" in market_name.upper()
+    global_trend = trend_before(len(candles), min(10, count))
+    context_label = "UPTREND" if global_trend > 0.13 else "DOWNTREND" if global_trend < -0.13 else "SIDEWAYS/MIXED"
+
+    exact: list[dict[str, Any]] = []
+    near: list[dict[str, Any]] = []
+
+    def add_setup(type_no: int, direction: int, rules: list[tuple[str, bool]], setup: str, why: str,
+                  *, family: str = "Candle Sequence", recovery: bool = False, timeframe_rule: str = "ANY") -> None:
+        matched = sum(1 for _, ok in rules if ok)
+        total = max(1, len(rules))
+        pct = round(100.0 * matched / total, 1)
+        priority_map = {1:120, 2:105, 3:120, 4:115, 5:125, 6:170, 7:80, 8:80, 9:145, 10:145, 11:160, 12:165, 13:175, 14:150, 15:170, 16:75, 17:75, 18:155, 19:155, 20:145, 21:145, 22:155, 23:155, 24:180, 25:175}
+        item = {
+            "name": f"Pattern Type {type_no}",
+            "priority": priority_map.get(type_no, 100),
+            "pattern_type": type_no,
+            "direction": "UP" if direction > 0 else "DOWN",
+            "next_candle": "GREEN" if direction > 0 else "RED",
+            "score": pct,
+            "why": why,
+            "setup": setup,
+            "family": family,
+            "rules_matched": matched,
+            "rules_total": total,
+            "rules": [{"name": name, "ok": bool(ok)} for name, ok in rules],
+            "recovery_trade": bool(recovery),
+            "timeframe_rule": timeframe_rule,
+        }
+        if matched == total:
+            exact.append(item)
+        elif pct >= 50.0:
+            near.append(item)
+
+    # TYPE 1 - OTC 9-candle sequence: 8 same-colour setup candles -> next same colour.
+    if count >= 8:
+        last8 = candles[-8:]
+        add_setup(1, 1, [("OTC market", is_otc), ("8 back-to-back GREEN candles", all(c["dir"] > 0 for c in last8))],
+                  "8 GREEN candles in OTC", "After 8 consecutive green setup candles, the strategy targets the next candle GREEN.", timeframe_rule="OTC ONLY")
+        add_setup(1, -1, [("OTC market", is_otc), ("8 back-to-back RED candles", all(c["dir"] < 0 for c in last8))],
+                  "8 RED candles in OTC", "After 8 consecutive red setup candles, the strategy targets the next candle RED.", timeframe_rule="OTC ONLY")
+
+    # TYPE 2 - 2 green + first red at respected resistance -> next red.
+    if count >= 3:
+        a, b, c = candles[-3:]
+        resistance_touch = abs(float(a["top"]) - float(b["top"])) <= tol * 1.55
+        reversal = c["dir"] < 0 and float(c["close_y"]) > float(b["open_y"]) - tol * 0.25
+        add_setup(2, -1, [("GREEN, GREEN, RED setup", seq_is([a,b,c],[1,1,-1])), ("Recent highs respect one resistance area", resistance_touch), ("First RED shows reversal", reversal)],
+                  "2 GREEN + first RED at resistance", "Resistance is respected and the first red reversal candle is present; the strategy targets the following candle RED.", family="Resistance")
+
+    # TYPE 3 - sideways G-R-G; 3rd green lower wick breaks down -> next red.
+    if count >= 3:
+        a, b, c = candles[-3:]
+        wick_break_down = c["dir"] > 0 and float(c["bottom"]) > max(float(a["bottom"]), float(b["bottom"])) + tol * 0.20 and long_lower(c)
+        add_setup(3, -1, [("GREEN, RED, GREEN setup", seq_is([a,b,c],[1,-1,1])), ("3rd GREEN wick breaks below prior lows", wick_break_down), ("Sideways/mixed context", abs(global_trend) < 0.60)],
+                  "GREEN - RED - GREEN with downside wick break", "The third green candle sweeps below the prior lows; the strategy targets the next candle RED.", family="Sideways")
+
+    # TYPE 4 - RED long tail then GREEN; next green.
+    if count >= 2:
+        a, b = candles[-2:]
+        tail_vs_head = float(a["lower_wick"]) > max(float(b["upper_wick"]) * 1.12, med_range * 0.18)
+        add_setup(4, 1, [("RED then GREEN", seq_is([a,b],[-1,1])), ("1st RED tail is long", long_lower(a)), ("RED tail longer than GREEN head", tail_vs_head)],
+                  "RED long-tail + GREEN", "The first red candle has the required long tail relative to the green candle head; the strategy targets the next candle GREEN.")
+
+    # TYPE 5 - R,R with long tails; 2nd red head does not break 1st; then G -> next R.
+    if count >= 3:
+        a, b, c = candles[-3:]
+        no_head_break = float(b["top"]) >= float(a["top"]) - tol * 0.35
+        add_setup(5, -1, [("RED, RED, GREEN setup", seq_is([a,b,c],[-1,-1,1])), ("First two RED tails are long", long_lower(a) and long_lower(b)), ("2nd RED head does not break 1st RED", no_head_break), ("Sideways/mixed context", abs(global_trend) < 0.68)],
+                  "2 long-tail RED + GREEN", "The two red candles keep the required wick/level structure and a green setup candle follows; the strategy targets the next candle RED.", family="Sideways")
+
+    # TYPE 6 - recovery sequence only after a recorded loss.
+    if count >= 3:
+        a, b, c = candles[-3:]
+        add_setup(6, -1, [("Previous trade marked LOSS", previous_outcome == "LOSS"), ("RED, GREEN, RED setup", seq_is([a,b,c],[-1,1,-1]))],
+                  "Recovery: RED - GREEN - RED", "This setup is enabled only after the previous trade is recorded as a loss; the strategy targets the next candle RED.", family="Recovery", recovery=True, timeframe_rule="AFTER LOSS ONLY")
+
+    # TYPE 7 - R,G,G normal -> next red.
+    if count >= 3:
+        a, b, c = candles[-3:]
+        add_setup(7, -1, [("RED, GREEN, GREEN setup", seq_is([a,b,c],[-1,1,1])), ("Two GREEN candles have normal bodies", is_normal(b) and is_normal(c))],
+                  "RED + 2 normal GREEN", "After one red and two back-to-back normal-body green candles, the strategy targets the next candle RED.")
+
+    # TYPE 8 - G,R,R normal -> next green.
+    if count >= 3:
+        a, b, c = candles[-3:]
+        add_setup(8, 1, [("GREEN, RED, RED setup", seq_is([a,b,c],[1,-1,-1])), ("Two RED candles have normal bodies", is_normal(b) and is_normal(c))],
+                  "GREEN + 2 normal RED", "After one green and two back-to-back normal-body red candles, the strategy targets the next candle GREEN.")
+
+    # TYPE 9 - 3 green + opposite red with long tail -> next green.
+    if count >= 4:
+        a,b,c,d = candles[-4:]
+        add_setup(9, 1, [("3 GREEN + 1 RED setup", seq_is([a,b,c,d],[1,1,1,-1])), ("Opposite RED has long tail", long_lower(d))],
+                  "GREEN, GREEN, GREEN + long-tail RED", "Three green candles are followed by the required opposite red long-tail setup candle; the strategy targets the NEXT candle GREEN.")
+
+    # TYPE 10 - 3 red + opposite green with long head -> next red.
+    if count >= 4:
+        a,b,c,d = candles[-4:]
+        add_setup(10, -1, [("3 RED + 1 GREEN setup", seq_is([a,b,c,d],[-1,-1,-1,1])), ("Opposite GREEN has long head", long_upper(d))],
+                  "RED, RED, RED + long-head GREEN", "Three red candles are followed by the required opposite green long-head setup candle; the strategy targets the NEXT candle RED.")
+
+    # TYPE 11 - 30s only: 3 normal red + green that does not break prior 3 -> next green.
+    if count >= 4:
+        a,b,c,d = candles[-4:]
+        prior_high = min(float(x["top"]) for x in (a,b,c))
+        no_break = float(d["top"]) >= prior_high - tol * 0.35
+        add_setup(11, 1, [("30-second timeframe", tf == "30s"), ("RED, RED, RED, GREEN setup", seq_is([a,b,c,d],[-1,-1,-1,1])), ("First 3 RED candles have normal bodies", all(is_normal(x) for x in (a,b,c))), ("GREEN does not break previous 3 RED highs", no_break)],
+                  "3 normal RED + contained GREEN", "On a 30-second chart, the green setup candle stays within the previous red structure; the strategy targets the next 30-second candle GREEN.", timeframe_rule="30S ONLY")
+
+    # TYPE 12 - 2m only: RR + GG contained under horizontal resistance -> next red.
+    if count >= 4:
+        a,b,c,d = candles[-4:]
+        resistance = min(float(a["top"]), float(b["top"]))
+        greens_contained = max(float(c["top"]), float(d["top"])) >= resistance - tol * 0.45 and float(c["top"]) >= resistance - tol * 0.45 and float(d["top"]) >= resistance - tol * 0.45
+        close_near = abs(float(d["close_y"]) - resistance) <= max(tol * 2.8, med_range * 0.65)
+        add_setup(12, -1, [("2-minute timeframe", tf == "2m"), ("RED, RED, GREEN, GREEN setup", seq_is([a,b,c,d],[-1,-1,1,1])), ("Normal body candles", all(is_normal(x) for x in (a,b,c,d))), ("GREEN candles do not break first RED resistance", greens_contained), ("Last GREEN stays near horizontal level", close_near)],
+                  "2 RED + 2 GREEN below horizontal resistance", "The 2-minute setup stays below the first red resistance area; the strategy targets the next 2-minute candle RED.", family="Horizontal Level", timeframe_rule="2M ONLY")
+
+    # TYPE 13 - 2m only: several resistance/support retests, breakout -> next opposite reversal.
+    if count >= 7:
+        prior = candles[-10:-1] if count >= 10 else candles[:-1]
+        last = candles[-1]
+        resistance, res_touches = strongest_level_cluster([float(x["top"]) for x in prior], tol * 1.25, "resistance")
+        support, sup_touches = strongest_level_cluster([float(x["bottom"]) for x in prior], tol * 1.25, "support")
+        resistance = float(resistance if resistance is not None else min(x["top"] for x in prior))
+        support = float(support if support is not None else max(x["bottom"] for x in prior))
+        up_break = last["dir"] > 0 and close_breaks_above(last, resistance, 0.28)
+        dn_break = last["dir"] < 0 and close_breaks_below(last, support, 0.28)
+        add_setup(13, -1, [("2-minute timeframe", tf == "2m"), ("Resistance retested several times", res_touches >= 2), ("Latest GREEN breaks resistance", up_break)],
+                  "Repeated resistance retest + upside breakout", "After several resistance retests, the breakout candle completes the setup; the strategy targets the next 2-minute candle RED.", family="Breakout Reversal", timeframe_rule="2M ONLY")
+        add_setup(13, 1, [("2-minute timeframe", tf == "2m"), ("Support retested several times", sup_touches >= 2), ("Latest RED breaks support", dn_break)],
+                  "Repeated support retest + downside breakout", "After several support retests, the breakdown candle completes the setup; the strategy targets the next 2-minute candle GREEN.", family="Breakout Reversal", timeframe_rule="2M ONLY")
+
+    # TYPE 14 - horizontal S/R break -> same direction next candle.
+    if count >= 5:
+        prior = candles[-9:-1] if count >= 9 else candles[:-1]
+        last = candles[-1]
+        greens = [x for x in prior if x["dir"] > 0]
+        reds = [x for x in prior if x["dir"] < 0]
+        support, support_touches = strongest_level_cluster([float(x["bottom"]) for x in greens], tol * 1.25, "support")
+        resistance, resistance_touches = strongest_level_cluster([float(x["top"]) for x in reds], tol * 1.25, "resistance")
+        if support is not None and support_touches >= 2:
+            add_setup(14, -1, [("2+ GREEN candles define one support cluster", True), ("Latest candle is RED", last["dir"] < 0), ("RED closes below clustered support", close_breaks_below(last, support, 0.25))],
+                      "Clustered horizontal support breakdown", "A red candle breaks support confirmed by repeated green-candle lows; the strategy targets the next candle RED.", family="Horizontal Break")
+        if resistance is not None and resistance_touches >= 2:
+            add_setup(14, 1, [("2+ RED candles define one resistance cluster", True), ("Latest candle is GREEN", last["dir"] > 0), ("GREEN closes above clustered resistance", close_breaks_above(last, resistance, 0.25))],
+                      "Clustered horizontal resistance breakout", "A green candle breaks resistance confirmed by repeated red-candle highs; the strategy targets the next candle GREEN.", family="Horizontal Break")
+
+    # TYPE 15 - V / inverted-V breakout, then opposite-direction target.
+    if count >= 7:
+        shape = candles[-7:-1]
+        last = candles[-1]
+        yv = np.array([float(x["y"]) for x in shape], dtype=float)
+        low_i = int(np.argmax(yv))
+        high_i = int(np.argmin(yv))
+        v_shape = 1 <= low_i <= len(shape)-2 and (yv[low_i]-yv[0]) >= med_range * 0.80 and (yv[low_i]-yv[-1]) >= med_range * 0.70
+        iv_shape = 1 <= high_i <= len(shape)-2 and (yv[0]-yv[high_i]) >= med_range * 0.80 and (yv[-1]-yv[high_i]) >= med_range * 0.70
+        v_level = min(float(shape[0]["top"]), float(shape[1]["top"]))
+        iv_level = max(float(shape[0]["bottom"]), float(shape[1]["bottom"]))
+        add_setup(15, -1, [("V shape formed", v_shape), ("Latest GREEN breaks horizontal top", last["dir"] > 0 and close_breaks_above(last, v_level, 0.18))],
+                  "V pattern + upside horizontal breakout", "The V completes and breaks the horizontal line; the strategy targets the next candle in the opposite direction: RED.", family="V Reversal")
+        add_setup(15, 1, [("Inverted-V shape formed", iv_shape), ("Latest RED breaks horizontal bottom", last["dir"] < 0 and close_breaks_below(last, iv_level, 0.18))],
+                  "Inverted V + downside horizontal breakout", "The inverted V completes and breaks the horizontal line; the strategy targets the next candle in the opposite direction: GREEN.", family="V Reversal")
+
+    # TYPE 16 - 3/4 green normal + 1 red -> next green.
+    if count >= 4 and candles[-1]["dir"] < 0:
+        run = 0
+        i = count - 2
+        while i >= 0 and candles[i]["dir"] > 0 and run < 5:
+            run += 1; i -= 1
+        setup_c = candles[count-run-1:count-1] if run else []
+        add_setup(16, 1, [("3 to 4 back-to-back GREEN candles", 3 <= run <= 4), ("GREEN bodies are normal", bool(setup_c) and all(is_normal(x) for x in setup_c)), ("One opposite RED setup candle", candles[-1]["dir"] < 0)],
+                  "3-4 normal GREEN + 1 RED", "The continuation setup is complete; the strategy targets the next candle GREEN.")
+
+    # TYPE 17 - 3/4 red normal + 1 green -> next red.
+    if count >= 4 and candles[-1]["dir"] > 0:
+        run = 0
+        i = count - 2
+        while i >= 0 and candles[i]["dir"] < 0 and run < 5:
+            run += 1; i -= 1
+        setup_c = candles[count-run-1:count-1] if run else []
+        add_setup(17, -1, [("3 to 4 back-to-back RED candles", 3 <= run <= 4), ("RED bodies are normal", bool(setup_c) and all(is_normal(x) for x in setup_c)), ("One opposite GREEN setup candle", candles[-1]["dir"] > 0)],
+                  "3-4 normal RED + 1 GREEN", "The continuation setup is complete; the strategy targets the next candle RED.")
+
+    # TYPE 18 - long red marubozu + GGG + R, no resistance break -> next red.
+    if count >= 5:
+        a,b,c,d,e = candles[-5:]
+        no_res_break = all(float(x["top"]) >= float(a["top"]) - tol * 0.30 for x in (b,c,d,e))
+        add_setup(18, -1, [("Long RED marubozu first candle", a["dir"] < 0 and is_marubozu(a)), ("Then GREEN, GREEN, GREEN, RED", seq_is([b,c,d,e],[1,1,1,-1])), ("Three GREEN candles have normal bodies", all(is_normal(x) for x in (b,c,d))), ("No wick/body breaks first RED resistance", no_res_break), ("Sideways/mixed context", abs(global_trend) < 0.72)],
+                  "Long RED + 3 GREEN + RED below resistance", "The entire four-candle response stays below the first long red resistance; the strategy targets the next candle RED.", family="Sideways Level")
+
+    # TYPE 19 - long green marubozu + RRR + G, no support break -> next green.
+    if count >= 5:
+        a,b,c,d,e = candles[-5:]
+        no_sup_break = all(float(x["bottom"]) <= float(a["bottom"]) + tol * 0.30 for x in (b,c,d,e))
+        add_setup(19, 1, [("Long GREEN marubozu first candle", a["dir"] > 0 and is_marubozu(a)), ("Then RED, RED, RED, GREEN", seq_is([b,c,d,e],[-1,-1,-1,1])), ("Three RED candles have normal bodies", all(is_normal(x) for x in (b,c,d))), ("No wick/body breaks first GREEN support", no_sup_break), ("Sideways/mixed context", abs(global_trend) < 0.72)],
+                  "Long GREEN + 3 RED + GREEN above support", "The entire four-candle response stays above the first long green support; the strategy targets the next candle GREEN.", family="Sideways Level")
+
+    # TYPE 20 - downtrend: R,R,G,R where 4th red does not break previous green -> next red.
+    if count >= 4:
+        a,b,c,d = candles[-4:]
+        no_green_breakdown = float(d["bottom"]) <= float(c["bottom"]) + tol * 0.35
+        add_setup(20, -1, [("Downtrend context", global_trend < -0.10), ("RED, RED, GREEN, RED setup", seq_is([a,b,c,d],[-1,-1,1,-1])), ("First two RED candles normal", is_normal(a) and is_normal(b)), ("4th RED does not break previous GREEN low", no_green_breakdown)],
+                  "Downtrend R-R-G-R hold", "The fourth red candle holds above the prior green low; the strategy targets the next candle RED.", family="Downtrend")
+
+    # TYPE 21 - uptrend: G,G,R,G where 4th green does not break previous red -> next green.
+    if count >= 4:
+        a,b,c,d = candles[-4:]
+        no_red_breakout = float(d["top"]) >= float(c["top"]) - tol * 0.35
+        add_setup(21, 1, [("Uptrend context", global_trend > 0.10), ("GREEN, GREEN, RED, GREEN setup", seq_is([a,b,c,d],[1,1,-1,1])), ("First two GREEN candles normal", is_normal(a) and is_normal(b)), ("4th GREEN does not break previous RED high", no_red_breakout)],
+                  "Uptrend G-G-R-G hold", "The fourth green candle stays below the prior red high; the strategy targets the next candle GREEN.", family="Uptrend")
+
+    # TYPE 22 - uptrend 3-5 green + small red contained in prior green body -> next green.
+    if count >= 4 and candles[-1]["dir"] < 0:
+        last = candles[-1]
+        run = 0; i = count - 2
+        while i >= 0 and candles[i]["dir"] > 0 and run < 6:
+            run += 1; i -= 1
+        greens = candles[count-run-1:count-1] if run else []
+        prev = candles[-2]
+        add_setup(22, 1, [("Uptrend context", global_trend > 0.08), ("3 to 5 back-to-back GREEN candles", 3 <= run <= 5), ("GREEN candles normal", bool(greens) and all(is_normal(x) for x in greens)), ("Opposite RED body smaller than previous GREEN", float(last["body_height"]) < float(prev["body_height"])), ("RED body does not break previous GREEN body", float(last["body_bottom"]) <= float(prev["body_bottom"]) + tol * 0.28)],
+                  "3-5 GREEN + smaller contained RED", "The small red pullback stays within the prior green body; the strategy targets the next candle GREEN.", family="Uptrend")
+
+    # TYPE 23 - downtrend 3-5 red + small green contained in prior red body -> next red.
+    if count >= 4 and candles[-1]["dir"] > 0:
+        last = candles[-1]
+        run = 0; i = count - 2
+        while i >= 0 and candles[i]["dir"] < 0 and run < 6:
+            run += 1; i -= 1
+        reds = candles[count-run-1:count-1] if run else []
+        prev = candles[-2]
+        add_setup(23, -1, [("Downtrend context", global_trend < -0.08), ("3 to 5 back-to-back RED candles", 3 <= run <= 5), ("RED candles normal", bool(reds) and all(is_normal(x) for x in reds)), ("Opposite GREEN body smaller than previous RED", float(last["body_height"]) < float(prev["body_height"])), ("GREEN body does not break previous RED body", float(last["body_top"]) >= float(prev["body_top"]) - tol * 0.28)],
+                  "3-5 RED + smaller contained GREEN", "The small green pullback stays within the prior red body; the strategy targets the next candle RED.", family="Downtrend")
+
+    # TYPE 24 - live market sideways: G,R,R(small),G,R(smaller) -> next green, SNR respected.
+    if count >= 5:
+        a,b,c,d,e = candles[-5:]
+        snr = (float(a["top"]) + float(b["top"])) / 2.0
+        snr_respected = all(float(x["top"]) >= snr - tol * 0.40 for x in (a,b,c,d,e))
+        add_setup(24, 1, [("LIVE market", is_live), ("GREEN, RED, RED, GREEN, RED setup", seq_is([a,b,c,d,e],[1,-1,-1,1,-1])), ("First GREEN and second RED maintain SNR", abs(float(a["top"])-float(b["top"])) <= tol * 1.45), ("3rd RED is Doji/small body", is_small(c)), ("4th GREEN does not break SNR", float(d["top"]) >= snr - tol * 0.40), ("5th RED body smaller than previous GREEN", float(e["body_height"]) < float(d["body_height"])), ("No setup candle breaks SNR", snr_respected), ("Sideways/mixed context", abs(global_trend) < 0.72)],
+                  "LIVE sideways G-R-smallR-G-smallR at SNR", "All five live-market SNR conditions are present; the strategy targets the next candle GREEN.", family="Live SNR", timeframe_rule="LIVE MARKET ONLY")
+
+    # TYPE 25 - small red, normal red, long green breaks first red SNR -> next green.
+    if count >= 3:
+        a,b,c = candles[-3:]
+        snr = float(a["top"])
+        add_setup(25, 1, [("RED, RED, GREEN setup", seq_is([a,b,c],[-1,-1,1])), ("1st RED is small/Doji", is_small(a)), ("2nd RED has normal body", is_normal(b)), ("3rd GREEN is long", is_long(c)), ("Long GREEN breaks 1st RED SNR", close_breaks_above(c, snr, 0.20))],
+                  "Small RED + normal RED + long GREEN SNR breakout", "The long green candle breaks the SNR level created by the first small red candle; the strategy targets the next candle GREEN.", family="SNR Breakout")
+
+    # V11 conflict gate: an opposite exact setup is never overridden by a numeric
+    # priority. Same-direction exact setups reinforce one another; opposite exact
+    # setups produce NO TRADE until the chart resolves.
+    exact.sort(key=lambda s: (int(s.get("priority") or 0), int(s["rules_total"]), int(s["pattern_type"])), reverse=True)
+    near.sort(key=lambda s: (float(s["score"]), int(s["rules_total"])), reverse=True)
+    exact_directions = {str(x.get("direction") or "") for x in exact}
+    conflict_gate = len({x for x in exact_directions if x in {"UP", "DOWN"}}) > 1
+    best = None if conflict_gate else (exact[0] if exact else None)
+    best_near = near[0] if near else None
+
+    if conflict_gate:
+        bias = "NO TRADE"
+        next_color = "NONE"
+        selected_dir = "NONE"
+        setup_quality = "LOW"
+        selected = "CONFLICTING TYPE SETUPS"
+        match_score = 100.0
+        confidence = 0.0
+        signals_out = exact[:8]
+        conflict_names = ", ".join(f"{x['name']} {x['direction']}" for x in exact[:6])
+        reasons.append(f"Conflict Gate blocked the entry because opposite exact setups are present: {conflict_names}.")
+        reasons.append("Wait for a fresh closed candle and re-scan; V11 never chooses UP/DOWN by priority when exact setups disagree.")
+    elif best:
+        direction = str(best["direction"])
+        next_color = str(best["next_candle"])
+        bias = "UP SIGNAL" if direction == "UP" else "DOWN SIGNAL"
+        # 100% means every coded source rule for this setup matched; it is not a profit probability.
+        match_score = 100.0
+        setup_quality = "HIGH" if quality >= 72 else "MEDIUM"
+        selected = str(best["name"])
+        reasons.extend([
+            f"{selected} exact setup matched: {best['rules_matched']}/{best['rules_total']} coded rules.",
+            f"Strategy target: NEXT candle {next_color} ({direction}). Entry alert is for the next candle open after setup confirmation.",
+        ])
+        if best.get("recovery_trade"):
+            reasons.append("RECOVERY TRADE: Pattern Type 6 is active because the previous trade is recorded as LOSS.")
+        confidence = match_score
+        selected_dir = direction
+        signals_out = exact[:8]
+        if not captured_at_close:
+            # Pattern can be inspected, but a static/mid-candle frame cannot prove
+            # that the setup completed exactly at the boundary. Do not arm an entry.
+            bias = "NO TRADE"
+            next_color = "NONE"
+            confidence = 0.0
+            selected_dir = "NONE"
+            selected = f"WAIT CLOSE: {best['name']}"
+            reasons.append("Closed Candle Lock: exact setup geometry was seen, but timing was not captured at candle close. Use ONE-TAP CAMERA AUTO SCAN for the next boundary.")
+    else:
+        bias = "NO TRADE"
+        next_color = "NONE"
+        selected_dir = "NONE"
+        setup_quality = "LOW"
+        if best_near:
+            selected = f"WATCH: {best_near['name']}"
+            match_score = float(best_near["score"])
+            reasons.append(f"No exact Type 1-25 setup yet. Closest is {best_near['name']} with {best_near['rules_matched']}/{best_near['rules_total']} rules currently visible.")
+        else:
+            selected = "NO TYPE 1-25 SETUP"
+            match_score = 0.0
+            reasons.append("No exact Pattern Type 1-25 setup is complete on the newest readable candles.")
+        reasons.append("No directional entry is armed until every required rule for one strategy setup is present.")
+        confidence = match_score
+        signals_out = near[:8]
+
+    latest_dir = "GREEN" if candles and candles[-1]["dir"] > 0 else "RED" if candles else "UNKNOWN"
+
+    # Strategy Proof: normalized candle geometry for the newest closed candles.
+    candle_debug: list[dict[str, Any]] = []
+    debug_seq = candles[-10:]
+    for i, c in enumerate(debug_seq, start=max(1, count - len(debug_seq) + 1)):
+        rng = max(1.0, float(c.get("range") or 1.0))
+        body_pct = round(float(c.get("body_height") or 0.0) / rng * 100.0, 1)
+        upper_pct = round(float(c.get("upper_wick") or 0.0) / rng * 100.0, 1)
+        lower_pct = round(float(c.get("lower_wick") or 0.0) / rng * 100.0, 1)
+        body_class = "SMALL" if is_small(c) else "LONG" if is_long(c) else "NORMAL" if is_normal(c) else "OTHER"
+        candle_debug.append({
+            "n": i, "color": "GREEN" if c["dir"] > 0 else "RED",
+            "body_pct": body_pct, "upper_wick_pct": upper_pct, "lower_wick_pct": lower_pct,
+            "body_class": body_class,
+        })
+
+    if quality < 65:
+        warnings.append("Image is usable, but a sharper screenshot/photo will improve wick/body and SNR-level measurement.")
+    warnings.append("Setup Match measures coded rule agreement only; it is not a guaranteed win probability.")
+
+    result = {
+        "bias": bias,
+        "confidence": round(float(confidence), 1),
+        "setup_match": round(float(match_score), 1),
+        "image_quality_score": quality,
+        "detected_candles": detected_count,
+        "closed_candles_analyzed": count,
+        "visual_trend": context_label,
+        "momentum": "PATTERN TYPE 1-25 ONLY",
+        "volatility": "NOT USED",
+        "selected_pattern": selected,
+        "pattern_type": int(best.get("pattern_type") or 0) if best else 0,
+        "pattern_direction": selected_dir,
+        "pattern_score": round(float(match_score), 1),
+        "setup_rules": list(best.get("rules") or []) if best else list((best_near or {}).get("rules") or []),
+        "pattern_signals": signals_out,
+        "pattern_library": library,
+        "pattern_library_size": 25,
+        "confluence_count": len(exact) if (best and not conflict_gate) else 0,
+        "setup_quality": setup_quality,
+        "conflict_gate": bool(conflict_gate),
+        "timing_verified": bool(captured_at_close),
+        "forming_candle_excluded": bool(forming_candle_excluded),
+        "newborn_candle_excluded": bool(newborn_candle_excluded),
+        "observed_latest_candle_direction": observed_latest_direction,
+        "candle_debug": candle_debug,
+        "next_candle_color": next_color,
+        "entry_instruction": "NEXT CANDLE OPEN" if (best and captured_at_close and not conflict_gate) else "WAIT FOR VERIFIED CANDLE CLOSE" if best else "WAIT FOR EXACT SETUP",
+        "recovery_trade": bool(best and best.get("recovery_trade")),
+        "recovery_candidate": bool(any(int(x.get("pattern_type") or 0) == 6 for x in near)),
+        "latest_candle_direction": latest_dir,
+        "last_outcome_used": previous_outcome or "NONE",
+        "reasons": reasons[:10],
+        "warnings": warnings[:7],
+        "pattern_status": {
+            "Mode": "Pattern Type 1-25 only",
+            "Indicators": "OFF - signal engine uses only the supplied Pattern Type 1-25 rules",
+            "Context": f"Visual candle context: {context_label}",
+            "Candle geometry": f"{count} closed candles analysed / {detected_count} visible structures",
+            "Closed Candle Lock": "VERIFIED AT CLOSE" if captured_at_close else "FORMING CANDLE EXCLUDED - ENTRY NOT ARMED",
+            "Conflict Gate": "BLOCK" if conflict_gate else "PASS",
+            "Timeframe rules": "Type 11=30s; Type 12/13=2m; Type 1=OTC; Type 24=Live market",
+        },
+        "engine": "RAJA V11 · Strict SK25 + Adaptive Vision + Closed Candle Lock + Conflict Gate",
+        "analysis_crop_mode": crop_name,
+    }
+    result.update(legacy_aliases(selected, selected_dir, round(float(match_score), 1), signals_out, 25))
+    return result
+
+MIN_SIGNAL_CANDLES = max(10, min(30, int(os.environ.get("RAJA_SCANNER_MIN_SIGNAL_CANDLES", "14"))))
+MIN_SIGNAL_IMAGE_QUALITY = max(45.0, min(90.0, float(os.environ.get("RAJA_SCANNER_MIN_IMAGE_QUALITY", "65"))))
+
+def _rotate_image_bytes(raw: bytes, angle: int) -> bytes:
+    """Rotate the uploaded visual frame for mobile/sideways-photo rescue."""
+    image = Image.open(io.BytesIO(raw))
+    image = ImageOps.exif_transpose(image).convert("RGB")
+    rotated = image.rotate(angle, expand=True)
+    out = io.BytesIO()
+    rotated.save(out, format="JPEG", quality=94, optimize=True)
+    return out.getvalue()
+
+
+def _analysis_candidate_score(result: dict[str, Any]) -> float:
+    candles = float(result.get("detected_candles") or 0)
+    quality = float(result.get("image_quality_score") or 0)
+    strategy = float(result.get("pattern_score") or result.get("strategy_score") or 0)
+    readable = 0.0 if str(result.get("visual_trend") or "").upper() == "UNREADABLE" else 40.0
+    # Candle count dominates because a sharp photo of the wrong/rotated region can still have a high quality score.
+    return candles * 12.0 + quality * 0.6 + strategy * 0.25 + readable
+
+
+def analyze_chart_image_mobile_safe(raw: bytes, timeframe: str = "1m", market: str = "", last_outcome: str = "", *, captured_at_close: bool = False) -> dict[str, Any]:
+    """Analyze the frame, rescue sideways mobile photos, then apply a strict signal-quality gate."""
+    candidates: list[tuple[int, dict[str, Any]]] = []
+    base = analyze_chart_image(raw, timeframe=timeframe, market=market, last_outcome=last_outcome, captured_at_close=captured_at_close)
+    candidates.append((0, base))
+
+    base_candles = int(base.get("detected_candles") or 0)
+    base_trend = str(base.get("visual_trend") or "").upper()
+    # Only spend extra CPU when the original frame is suspicious/too sparse.
+    if base_candles < max(MIN_SIGNAL_CANDLES + 4, 18) or base_trend == "UNREADABLE":
+        for angle in (90, 270):
+            try:
+                candidates.append((angle, analyze_chart_image(_rotate_image_bytes(raw, angle), timeframe=timeframe, market=market, last_outcome=last_outcome, captured_at_close=captured_at_close)))
+            except Exception:
+                pass
+        # 180° is less common, so try it only for a very poor original read.
+        if base_candles < 8:
+            try:
+                candidates.append((180, analyze_chart_image(_rotate_image_bytes(raw, 180), timeframe=timeframe, market=market, last_outcome=last_outcome, captured_at_close=captured_at_close)))
+            except Exception:
+                pass
+
+    angle, best = max(candidates, key=lambda item: _analysis_candidate_score(item[1]))
+    best = dict(best)
+    best["auto_rotation_degrees"] = int(angle)
+
+    candles = int(best.get("detected_candles") or 0)
+    quality = float(best.get("image_quality_score") or 0)
+    trend = str(best.get("visual_trend") or "").upper()
+    reasons: list[str] = []
+    if candles < MIN_SIGNAL_CANDLES:
+        reasons.append(f"Only {candles} candles were read; at least {MIN_SIGNAL_CANDLES} clear candles are required for an UP/DOWN signal.")
+    if quality < MIN_SIGNAL_IMAGE_QUALITY:
+        reasons.append(f"Image quality {quality:.0f}/100 is below the signal threshold {MIN_SIGNAL_IMAGE_QUALITY:.0f}/100.")
+    if trend == "UNREADABLE":
+        reasons.append("The chart structure is unreadable.")
+
+    rescan_required = bool(reasons)
+    best["rescan_required"] = rescan_required
+    best["scan_gate"] = "RESCAN" if rescan_required else "PASS"
+    best["scan_gate_reason"] = " ".join(reasons) if reasons else "Frame has enough readable candles and image quality."
+
+    if rescan_required:
+        # Never emit directional trading guidance from a poor/mobile-misaligned frame.
+        best["raw_bias_before_scan_gate"] = best.get("bias")
+        best["bias"] = "NO TRADE"
+        best["confidence"] = 0.0
+        best["selected_strategy"] = "RESCAN REQUIRED"
+        best["selected_pattern"] = "RESCAN REQUIRED"
+        best["strategy_direction"] = "NONE"
+        best["pattern_direction"] = "NONE"
+        best["strategy_score"] = 0.0
+        best["pattern_score"] = 0.0
+        best["setup_match"] = 0.0
+        best["next_candle_color"] = "NONE"
+        best["entry_instruction"] = "RESCAN FIRST"
+        best["recovery_trade"] = False
+        best["confluence_count"] = 0
+        best["setup_quality"] = "LOW"
+        warnings = list(best.get("warnings") or [])
+        warnings.insert(0, "Scan Gate blocked UP/DOWN: retake a straight, focused chart photo with more visible candles.")
+        best["warnings"] = warnings[:6]
+    elif angle:
+        notes = list(best.get("warnings") or [])
+        notes.append(f"Mobile orientation rescue: chart was auto-rotated {angle}° before analysis.")
+        best["warnings"] = notes[:6]
+
+    return best
+
+
+@app.route("/chart-scanner")
+def chart_scanner_page():
+    return send_from_directory(str(BASE_DIR), "chart_scanner.html")
+
+
+@app.route("/chart-scan", methods=["POST"])
+def chart_scan_api():
+    auth_data = {
+        "key": request.form.get("key"), "user": request.form.get("user"),
+        "device": request.form.get("device"), "session_token": request.form.get("session_token"),
+    }
+    auth, error = _auth_session(auth_data)
+    if error: return error
+    upload=request.files.get("image")
+    if not upload: return jsonify({"status":"error","message":"Camera photo or screenshot is required."}),400
+    raw=upload.read(RAJA_CHART_SCAN_MAX_UPLOAD+1)
+    if len(raw)>RAJA_CHART_SCAN_MAX_UPLOAD: return jsonify({"status":"error","message":"Image is too large."}),413
+    broker=str(request.form.get("broker") or "Quotex").strip()[:60]
+    market=str(request.form.get("market") or "ForexLive").strip()[:40]
+    pair=str(request.form.get("pair") or "").strip()[:120]
+    timeframe=str(request.form.get("timeframe") or "1m").strip().lower()[:20]
+    if timeframe not in {"30s","1m","2m","5m","10m","15m","30m"}:
+        return jsonify({"status":"error","message":"Unsupported timeframe."}),400
+    captured=str(request.form.get("captured_at_close") or "").lower() in {"1","true","yes","on"}
+    last_outcome=_last_strategy_outcome(auth.get("user"))
+    try:
+        result=analyze_chart_image_mobile_safe(raw,timeframe=timeframe,market=market,last_outcome=last_outcome,captured_at_close=captured)
+    except (ValueError,UnidentifiedImageError) as exc:
+        return jsonify({"status":"error","message":str(exc)}),400
+    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":int(time.time()),"engine":"RAJA V28 · VISUAL SK25","pattern_library":"SK Pattern Type 1-25"})
+    return jsonify({"status":"success","result":result})
+
+
 @app.route("/side-auto-signals", methods=["POST"])
 def side_auto_signals():
     """3-minute left-rail feed. Returns ranked 1m and 5m candidates without changing the HUD."""
@@ -5510,25 +5672,6 @@ def side_auto_signals():
             seen.add(pair)
     if not pairs:
         return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
-
-    # Same Forex news protection as the main scanner. The side rail must never bypass it.
-    news_lock = evaluate_news_safety_lock(pairs, market)
-    if news_lock:
-        return jsonify({
-            "status": "success",
-            "signals": {"1m": [], "5m": []},
-            "news_safety_lock": news_lock,
-            "generated_at": int(time.time()),
-            "interval_seconds": 180,
-            "diagnostics": {
-                "total_pairs": len(pairs),
-                "completed_pairs": len(pairs),
-                "timed_out_pairs_count": 0,
-                "candidates_1m": 0,
-                "candidates_5m": 0,
-                "scan_mode": opts["mode"],
-            },
-        })
 
     results_by_pair = {}
     timed_out_pairs = []
@@ -5567,7 +5710,6 @@ def side_auto_signals():
             key=lambda item: (
                 float(item.get("rank_score") or 0.0),
                 float(item.get("score") or 0.0),
-                float(item.get("stability") or 0.0),
             ),
             reverse=True,
         )
@@ -5620,26 +5762,7 @@ def scan_batch():
     if not pairs:
         return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
 
-    news_lock = evaluate_news_safety_lock(pairs, market)
-    if news_lock:
-        results = [news_locked_no_signal(pair, news_lock) for pair in pairs]
-        diagnostics = {
-            "total_pairs": len(results), "completed_pairs": len(results),
-            "timed_out_pairs": [], "timed_out_pairs_count": 0,
-            "partial_response": False, "data_available": 0, "data_unavailable": len(results),
-            "signals_found": 0, "elapsed_seconds": 0,
-            "batch_deadline_seconds": BATCH_SCAN_DEADLINE_SECONDS,
-            "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
-            "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
-            "batch_workers": 0, "scan_mode": opts["mode"],
-            "news_safety_lock": news_lock,
-        }
-        _append_scan_event(auth["user"], market, "AUTO", opts["mode"], False)
-        return jsonify({
-            "status": "success", "data": results, "diagnostics": diagnostics,
-            "cache_hit": False, "news_safety_lock": news_lock,
-        })
-
+    # Strategy-only mode: news is informational; exact SK25 rules are never overridden by an indicator/news gate.
     options_key = (opts["mode"], opts["min_tf"], opts["min_agreement"], opts["min_score"], opts["vol_min"], opts["vol_max"])
     # Accuracy V24 includes user-specific pair/expiry history, so cached qualified
     # results must never cross user boundaries. Quotex bridge data is user-specific too.
@@ -5694,7 +5817,7 @@ def scan_batch():
             bridge_meta = {row["pair"]: row for row in bridge_rows}
             compute_pairs = []
             source_label = "Pocket Option Browser Bridge" if broker_key in {"pocketoption", "pocket_option", "pocket"} else "Quotex Browser Bridge"
-            required_bridge_candles = _bridge_required_base_candles(opts.get("min_tf"))
+            required_bridge_candles = _sk25_required_base_candles(selected_expiry)
             for pair in pairs:
                 meta = bridge_meta.get(pair)
                 mode_ready = bool(
@@ -5708,7 +5831,7 @@ def scan_batch():
                 if meta:
                     reason = (
                         f"{source_label} cache is warming for {pair}: {int(meta.get('candle_count') or 0)}/{required_bridge_candles} "
-                        f"exact 1m candles needed for {opts.get('mode')} {opts.get('min_tf')}-of-6 mode; "
+                        f"exact 1m candles needed for {selected_expiry or '1m'} SK25 closed-candle mode; "
                         f"stream_fresh={bool(meta.get('stream_fresh'))}, market_fresh={bool(meta.get('market_fresh'))}."
                     )
                     data_age = meta.get("market_age_seconds")
@@ -5733,7 +5856,7 @@ def scan_batch():
 
         workers = min(BATCH_SCAN_WORKERS, len(compute_pairs)) if compute_pairs else 0
         pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch") if workers else None
-        future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry, opts, auth["user"], broker): pair for pair in compute_pairs} if pool else {}
+        future_map = {pool.submit(calculate_live_strategy_signal, pair, selected_expiry, opts, auth["user"], broker): pair for pair in compute_pairs} if pool else {}
         done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS) if future_map else (set(), set())
         for future in done:
             pair = future_map[future]
@@ -5774,7 +5897,7 @@ def scan_batch():
             "bridge_ready_pairs_count": len(compute_pairs) if broker_otc_batch and not native_ready else None,
             "bridge_skipped_pairs": bridge_skipped_pairs,
             "bridge_skipped_pairs_count": len(bridge_skipped_pairs),
-            "bridge_mode_required_candles": (_bridge_required_base_candles(opts.get("min_tf")) if broker_otc_batch and not native_ready else None),
+            "bridge_mode_required_candles": (_sk25_required_base_candles(selected_expiry) if broker_otc_batch and not native_ready else None),
             "scan_mode": opts["mode"],
         }
         payload = {"data": results, "diagnostics": diagnostics}
@@ -5811,13 +5934,8 @@ def scan_markets():
         return jsonify({"status": "error", "message": f"Unsupported pair: {selected_pair}",
                         "data": no_signal_result(selected_pair, "Pair is not configured for this broker/market.")}), 400
 
-    news_lock = evaluate_news_safety_lock([selected_pair], market)
-    if news_lock:
-        result = news_locked_no_signal(selected_pair, news_lock)
-        _append_scan_event(auth["user"], market, selected_pair, opts["mode"], False)
-        return jsonify({"status": "success", "data": result, "news_safety_lock": news_lock})
-
-    result = calculate_live_indicators(selected_pair, selected_expiry, opts, auth["user"], broker)
+    # Pattern-only mode: exact closed-candle pattern decides the signal.
+    result = calculate_live_strategy_signal(selected_pair, selected_expiry, opts, auth["user"], broker)
     if market_result_is_countable(result):
         _append_scan_event(
             auth["user"],
@@ -5905,18 +6023,18 @@ def telegram_license_info(key, user_ref):
 def telegram_scan_pair(pair, selected_expiry):
     # Telegram service in this project is Quotex-oriented. Passing the broker
     # prevents OTC scans from ever falling through to a reference feed.
-    return calculate_live_indicators(str(pair), str(selected_expiry), broker="Quotex")
+    return calculate_live_strategy_signal(str(pair), str(selected_expiry), broker="Quotex")
 
 
 def telegram_scan_auto(pairs, selected_expiry):
-    """Run the same strict multi-TF analysis for a Telegram Auto Best Pair scan."""
+    """Run the same strict SK25 strategy-only analysis for Telegram Auto Best Pair."""
     pairs = [str(p).strip() for p in (pairs or []) if str(p).strip() in YAHOO_SYMBOLS][:40]
     if not pairs:
         return {"best": None, "diagnostics": {"total_pairs": 0, "data_available": 0}}
 
     workers = min(BATCH_SCAN_WORKERS, len(pairs))
     pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-tg-scan")
-    future_map = {pool.submit(calculate_live_indicators, pair, selected_expiry, None, None, "Quotex"): pair for pair in pairs}
+    future_map = {pool.submit(calculate_live_strategy_signal, pair, selected_expiry, None, None, "Quotex"): pair for pair in pairs}
     done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS)
     results = []
     for future in done:
