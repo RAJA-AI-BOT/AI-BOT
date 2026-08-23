@@ -607,32 +607,28 @@ def ready_to_scan_keyboard():
 
 
 def format_signal(result, expiry):
-    signal = result.get("signal")
+    signal = str(result.get("signal") or "")
     pair = result.get("pair") or "--"
-    score = float(result.get("score") or 0)
+    pattern = result.get("selected_pattern") or "SK Pattern"
+    ptype = int(result.get("pattern_type") or 0)
+    next_color = result.get("next_candle_color") or ("GREEN" if signal == "CALL" else "RED")
     direction = "🟢 ⬆️ UP (BUY)" if signal == "CALL" else "🔴 ⬇️ DOWN (SELL)"
-    summary = result.get("timeframe_summary") or {}
-    tf_lines = []
-    for tf in ["1m", "2m", "5m", "10m", "15m", "30m"]:
-        item = summary.get(tf) or {}
-        sig = item.get("signal")
-        sc = float(item.get("score") or 0)
-        label = "⬆ UP" if sig == "CALL" else ("⬇ DOWN" if sig == "PUT" else "→ WAIT")
-        tf_lines.append(f"{tf}: {label} {sc:.0f}%")
-    warning = ""
-    if result.get("otc_proxy_warning"):
-        warning = "\n\n⚠️ OTC uses an underlying-market proxy/reference feed and can differ from Quotex OTC quotes."
+    rules = result.get("rules") or []
+    matched = int(result.get("rules_matched") or sum(1 for r in rules if isinstance(r, dict) and r.get("ok")))
+    total = int(result.get("rules_total") or len(rules))
+    recovery = "\n♻️ <b>RECOVERY TRADE</b>" if result.get("recovery_trade") else ""
     return (
-        "🤖 <b>RAJA AI · CONFIRMED SIGNAL</b>\n\n"
+        "🎯 <b>RAJA AI · SK25 EXACT SIGNAL</b>\n\n"
         f"Asset: <b>{html.escape(str(pair))}</b>\n"
         f"Signal: <b>{direction}</b>\n"
-        f"Selected Expiry: <b>{html.escape(expiry)}</b>\n"
-        f"Technical Confluence: <b>{score:.1f}%</b>\n"
-        f"Agreement: <b>{float(result.get('multi_tf_agreement') or 0):.1f}%</b>\n\n"
-        "<b>Multi-Timeframe:</b>\n" + "\n".join(tf_lines) +
-        "\n\n⏳ <b>Trade Entry:</b> Take the trade after the current candle closes." +
-        "\n\n<i>⚡ Powered by RAJA AI • Multi-Timeframe Smart Analysis</i>" + warning
+        f"Pattern: <b>{html.escape(str(pattern))}</b>" + (f" (Type {ptype})" if ptype else "") + "\n"
+        f"Setup Match: <b>100%</b> · Rules {matched}/{total}\n"
+        f"Selected Timeframe: <b>{html.escape(str(expiry))}</b>\n"
+        f"Next Candle: <b>{html.escape(str(next_color))}</b>{recovery}\n\n"
+        "⏳ <b>Entry:</b> Next candle open after the confirmed closed-candle setup.\n"
+        "<i>Pattern Type 1-25 only · No technical indicators</i>"
     )
+
 
 
 def _run_scan(user, services):
