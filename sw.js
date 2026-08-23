@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v27-native-broker-otc';
+const CACHE_VERSION = 'raja-ai-pwa-v28-sk25-strategy-only';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -21,6 +21,7 @@ const API_PREFIXES = [
   '/scan-batch',
   '/batch-scan',
   '/side-auto-signals',
+  '/chart-scan',
   '/market-news',
   '/otc-fallback-config',
   '/forex-otc-fallback-data',
@@ -32,93 +33,157 @@ const API_PREFIXES = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     self.skipWaiting();
+
     const cache = await caches.open(ASSET_CACHE);
-    await Promise.allSettled(STATIC_ASSETS.map(async url => {
-      const response = await fetch(url, { cache: 'reload' });
-      if (response && response.ok) await cache.put(url, response.clone());
-    }));
+
+    await Promise.allSettled(
+      STATIC_ASSETS.map(async url => {
+        const response = await fetch(url, { cache: 'reload' });
+
+        if (response && response.ok) {
+          await cache.put(url, response.clone());
+        }
+      })
+    );
   })());
 });
 
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
-    const keep = new Set([SHELL_CACHE, ASSET_CACHE]);
+    const keep = new Set([
+      SHELL_CACHE,
+      ASSET_CACHE
+    ]);
+
     const keys = await caches.keys();
-    await Promise.all(keys.map(key => {
-      if (/^raja-ai-pwa-/i.test(key) && !keep.has(key)) return caches.delete(key);
-      return Promise.resolve(false);
-    }));
+
+    await Promise.all(
+      keys.map(key =>
+        /^raja-ai-pwa-/i.test(key) && !keep.has(key)
+          ? caches.delete(key)
+          : Promise.resolve(false)
+      )
+    );
+
     await self.clients.claim();
   })());
 });
 
 self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (
+    event.data &&
+    event.data.type === 'SKIP_WAITING'
+  ) {
+    self.skipWaiting();
+  }
 });
 
 function isApiPath(pathname) {
-  return API_PREFIXES.some(prefix => pathname === prefix || pathname.startsWith(prefix));
+  return API_PREFIXES.some(
+    prefix =>
+      pathname === prefix ||
+      pathname.startsWith(prefix)
+  );
 }
 
 function offlineJson() {
-  return new Response(JSON.stringify({
-    status: 'error',
-    offline: true,
-    message: 'RAJA AI backend is waking or temporarily offline.'
-  }), {
-    status: 503,
-    headers: { 'Content-Type': 'application/json' }
-  });
+  return new Response(
+    JSON.stringify({
+      status: 'error',
+      offline: true,
+      message: 'RAJA AI backend is waking or temporarily offline.'
+    }),
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    }
+  );
 }
 
 async function networkFirstNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
+
   try {
-    const response = await fetch(request, { cache: 'no-store' });
-    if (response && response.ok) await cache.put('/', response.clone());
+    const response = await fetch(request, {
+      cache: 'no-store'
+    });
+
+    if (response && response.ok) {
+      await cache.put(
+        request.url.includes('/chart-scanner')
+          ? '/chart-scanner'
+          : '/',
+        response.clone()
+      );
+    }
+
     return response;
   } catch (_) {
-    return (await cache.match('/')) || Response.error();
+    return (
+      await cache.match(
+        request.url.includes('/chart-scanner')
+          ? '/chart-scanner'
+          : '/'
+      )
+    ) || Response.error();
   }
 }
 
 async function networkFirstAsset(request) {
   const cache = await caches.open(ASSET_CACHE);
+
   try {
-    const response = await fetch(request, { cache: 'no-store' });
-    if (response && response.ok) await cache.put(request, response.clone());
+    const response = await fetch(request, {
+      cache: 'no-store'
+    });
+
+    if (response && response.ok) {
+      await cache.put(
+        request,
+        response.clone()
+      );
+    }
+
     return response;
   } catch (_) {
-    return (await cache.match(request)) || Response.error();
+    return (
+      await cache.match(request)
+    ) || Response.error();
   }
 }
 
 self.addEventListener('fetch', event => {
   const request = event.request;
-  if (request.method !== 'GET') return;
+
+  if (request.method !== 'GET') {
+    return;
+  }
 
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin) return;
+
+  if (url.origin !== self.location.origin) {
+    return;
+  }
 
   if (request.mode === 'navigate') {
-    event.respondWith(networkFirstNavigation(request));
+    event.respondWith(
+      networkFirstNavigation(request)
+    );
     return;
   }
 
   if (isApiPath(url.pathname)) {
-    event.respondWith(fetch(request, { cache: 'no-store' }).catch(offlineJson));
+    event.respondWith(
+      fetch(request, {
+        cache: 'no-store'
+      }).catch(offlineJson)
+    );
     return;
   }
 
-  if (
-    url.pathname === '/sw.js' ||
-    url.pathname === '/manifest.json' ||
-    /^\/raja-ai-icon-/.test(url.pathname) ||
-    url.pathname === '/raja-splash-logo.png'
-  ) {
-    event.respondWith(networkFirstAsset(request));
-    return;
-  }
-
-  event.respondWith(networkFirstAsset(request));
+  event.respondWith(
+    networkFirstAsset(request)
+  );
 });
