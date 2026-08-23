@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "RAJA AI PREMIUM",
-  "short_name": "RAJA AI",
-  "description": "RAJA AI Premium multi-timeframe market intelligence app",
+  "name": "RAJA AI \u00b7 SK25 STRATEGY ONLY",
+  "short_name": "RAJA AI SK25",
+  "description": "RAJA AI strategy-only app using SK Pattern Type 1-25 on closed candles, with full-market live batch scanning and a separate camera/screenshot chart scanner.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
