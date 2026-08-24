@@ -165,7 +165,7 @@ function startEntryGuide(x){
   const bias=String(x.bias||'').toUpperCase();
   if(!(bias.startsWith('UP')||bias.startsWith('DOWN'))||!x.entry_epoch){entry.style.display='none';return;}
   entry.style.display='block';
-  const entryMs=Number(x.entry_epoch)*1000,grace=Math.max(1,Number(x.entry_window_seconds||20))*1000,dir=entryDirection(x),tf=tfHuman();
+  const entryMs=Number(x.entry_epoch)*1000,grace=Math.max(1,Number(x.entry_window_seconds||30))*1000,dir=entryDirection(x),tf=tfHuman();
   const tick=()=>{
     const now=Date.now(),delta=now-entryMs;
     if(delta<0){
