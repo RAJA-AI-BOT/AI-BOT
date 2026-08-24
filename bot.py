@@ -380,6 +380,7 @@ def _compute_app_build_id():
         BASE_DIR / "index.html",
         BASE_DIR / "sw.js",
         BASE_DIR / "manifest.json",
+        BASE_DIR / "chart_scanner.html",
         BASE_DIR / "raja-ai-icon-192.png",
         BASE_DIR / "raja-ai-icon-512.png",
         BASE_DIR / "raja-ai-icon-192-v2.png",
@@ -3440,7 +3441,7 @@ def pwa_splash_logo():
 def disable_html_cache(response):
     # Fresh app shell/update metadata must never get pinned by Safari/Chrome HTTP cache.
     # User data/localStorage is untouched; only network cache policy is controlled here.
-    no_store_paths = {"/", "/index.html", "/sw.js", "/app-version"}
+    no_store_paths = {"/", "/index.html", "/chart-scanner", "/sw.js", "/app-version"}
     if request.path in no_store_paths or request.path.endswith(".html"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
@@ -5607,7 +5608,11 @@ def analyze_chart_image_mobile_safe(raw: bytes, timeframe: str = "1m", market: s
 
 @app.route("/chart-scanner")
 def chart_scanner_page():
-    return send_from_directory(str(BASE_DIR), "chart_scanner.html")
+    response = send_from_directory(str(BASE_DIR), "chart_scanner.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/chart-scan", methods=["POST"])
@@ -5629,13 +5634,36 @@ def chart_scan_api():
     if timeframe not in {"30s","1m","2m","5m","10m","15m","30m"}:
         return jsonify({"status":"error","message":"Unsupported timeframe."}),400
     captured=str(request.form.get("captured_at_close") or "").lower() in {"1","true","yes","on"}
+    try:
+        captured_at_epoch_ms = int(float(request.form.get("captured_at_epoch_ms") or 0))
+    except Exception:
+        captured_at_epoch_ms = 0
     last_outcome=_last_strategy_outcome(auth.get("user"))
     try:
         result=analyze_chart_image_mobile_safe(raw,timeframe=timeframe,market=market,last_outcome=last_outcome,captured_at_close=captured)
     except (ValueError,UnidentifiedImageError) as exc:
         return jsonify({"status":"error","message":str(exc)}),400
-    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":int(time.time()),"engine":"RAJA V28 · VISUAL SK25","pattern_library":"SK Pattern Type 1-25"})
-    return jsonify({"status":"success","result":result})
+    now_epoch = int(time.time())
+    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"SK Pattern Type 1-25"})
+
+    # V29 explicit entry timing for One-Tap Close Camera. The browser supplies the
+    # exact candle boundary it armed; server validates it is reasonably recent.
+    if captured and str(result.get("bias") or "").upper().startswith(("UP", "DOWN")) and not result.get("rescan_required"):
+        duration_seconds = {"30s":30,"1m":60,"2m":120,"5m":300,"10m":600,"15m":900,"30m":1800}.get(timeframe, 60)
+        capture_epoch = int(captured_at_epoch_ms / 1000) if captured_at_epoch_ms > 0 else 0
+        if not capture_epoch or abs(now_epoch - capture_epoch) > max(180, duration_seconds):
+            capture_epoch = (now_epoch // duration_seconds) * duration_seconds
+        entry_window_seconds = {"30s":10,"1m":20,"2m":25,"5m":45,"10m":60,"15m":60,"30m":60}.get(timeframe, 20)
+        result.update({
+            "entry_epoch": capture_epoch,
+            "entry_window_seconds": entry_window_seconds,
+            "entry_timing_mode": "target_candle_open",
+            "entry_instruction": "TAKE TRADE NOW" if now_epoch <= capture_epoch + entry_window_seconds else "ENTRY WINDOW PASSED — DO NOT ENTER THIS CANDLE",
+            "seconds_since_entry_open": max(0, now_epoch - capture_epoch),
+            "seconds_left_in_entry_window": max(0, capture_epoch + entry_window_seconds - now_epoch),
+        })
+
+    return jsonify({"status":"success","result":result,"server_epoch":now_epoch})
 
 
 @app.route("/side-auto-signals", methods=["POST"])
