@@ -3703,7 +3703,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "4-of-6 Strong + Regime + History + Entry Guard",
+        "confirmation_mode": "SK25 STRICT · SELECTED TIMEFRAME ONLY",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -4294,7 +4294,31 @@ def track_signal():
         return jsonify({"status": "success", "auto_tracking": False,
                         "message": "15s/30s outcome tracking is disabled because the configured candle feed is 1-minute."})
     now = int(time.time()); duration = AUTO_TRACK_EXPIRIES[expiry]
-    entry_epoch = ((now // duration) + 1) * duration; expiry_epoch = entry_epoch + duration
+    try:
+        closed_candle_epoch = int(float(data.get("closed_candle_epoch") or 0))
+    except Exception:
+        closed_candle_epoch = 0
+
+    # STRICT NEXT-CANDLE ENTRY:
+    # The setup predicts only the candle immediately after its latest CLOSED
+    # setup candle. Never roll a delayed signal forward to a later candle.
+    entry_epoch = (closed_candle_epoch + duration) if closed_candle_epoch else ((now // duration) + 1) * duration
+    expiry_epoch = entry_epoch + duration
+    entry_grace_seconds = max(2, min(15, int(os.environ.get("RAJA_ENTRY_GRACE_SECONDS", "4"))))
+
+    if closed_candle_epoch and now > entry_epoch + entry_grace_seconds:
+        return jsonify({
+            "status": "success",
+            "auto_tracking": False,
+            "missed_entry": True,
+            "entry_epoch": entry_epoch,
+            "expiry_epoch": expiry_epoch,
+            "message": (
+                f"Signal expired for entry. It belonged to the {expiry} candle "
+                f"opening at epoch {entry_epoch}; do not move it to a later candle."
+            ),
+        })
+
     signal_id = "sig_" + secrets.token_hex(8)
     item = {
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
@@ -4311,7 +4335,7 @@ def track_signal():
         "next_candle_color": str(data.get("next_candle_color") or ""),
         "setup_match": float(data.get("setup_match") or score or 0),
         "rules": data.get("rules") or [], "recovery_trade": bool(data.get("recovery_trade")),
-        "closed_candle_epoch": data.get("closed_candle_epoch"),
+        "closed_candle_epoch": closed_candle_epoch or data.get("closed_candle_epoch"),
         "snapshot": data.get("snapshot") or {}, "market": data.get("market"),
         "broker": str(data.get("broker") or ""),
     }
@@ -4319,7 +4343,7 @@ def track_signal():
         items = load_signals(); items.insert(0, item); save_signals(items[:2000])
     return jsonify({"status": "success", "auto_tracking": True, "signal_id": signal_id,
                     "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
-                    "message": f"Signal registered. Enter on the next {expiry} candle open."})
+                    "message": f"Signal registered for the exact next {expiry} candle after the closed setup candle."})
 
 
 @app.route("/signals/result", methods=["POST"])
