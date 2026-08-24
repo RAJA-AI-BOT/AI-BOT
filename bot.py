@@ -4304,7 +4304,14 @@ def track_signal():
     # setup candle. Never roll a delayed signal forward to a later candle.
     entry_epoch = (closed_candle_epoch + duration) if closed_candle_epoch else ((now // duration) + 1) * duration
     expiry_epoch = entry_epoch + duration
-    entry_grace_seconds = max(2, min(15, int(os.environ.get("RAJA_ENTRY_GRACE_SECONDS", "4"))))
+    # V36: keep the signal bound to the SAME target candle, but allow enough
+    # time for normal API/batch latency. Default = first half of the candle,
+    # capped at 45s. An explicit RAJA_ENTRY_GRACE_SECONDS env var can override.
+    default_entry_grace = max(10, min(45, int(duration * 0.50)))
+    try:
+        entry_grace_seconds = max(5, min(90, int(os.environ.get("RAJA_ENTRY_GRACE_SECONDS", str(default_entry_grace)))))
+    except Exception:
+        entry_grace_seconds = default_entry_grace
 
     if closed_candle_epoch and now > entry_epoch + entry_grace_seconds:
         return jsonify({
@@ -4313,6 +4320,12 @@ def track_signal():
             "missed_entry": True,
             "entry_epoch": entry_epoch,
             "expiry_epoch": expiry_epoch,
+            "entry_grace_seconds": entry_grace_seconds,
+            "server_epoch": now,
+            "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else entry_epoch - duration),
+            "setup_candle_close_epoch": entry_epoch,
+            "target_candle_open_epoch": entry_epoch,
+            "target_candle_close_epoch": expiry_epoch,
             "message": (
                 f"Signal expired for entry. It belonged to the {expiry} candle "
                 f"opening at epoch {entry_epoch}; do not move it to a later candle."
@@ -4323,7 +4336,10 @@ def track_signal():
     item = {
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
         "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
+        "expiry_epoch": expiry_epoch, "entry_grace_seconds": entry_grace_seconds,
+        "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else entry_epoch - duration),
+        "setup_candle_close_epoch": entry_epoch, "target_candle_open_epoch": entry_epoch,
+        "target_candle_close_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
         "status": "PENDING", "result_source": "pending",
         "source": str(data.get("source") or "Yahoo Finance"),
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
@@ -4343,6 +4359,10 @@ def track_signal():
         items = load_signals(); items.insert(0, item); save_signals(items[:2000])
     return jsonify({"status": "success", "auto_tracking": True, "signal_id": signal_id,
                     "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
+                    "entry_grace_seconds": entry_grace_seconds, "server_epoch": now,
+                    "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else entry_epoch - duration),
+                    "setup_candle_close_epoch": entry_epoch,
+                    "target_candle_open_epoch": entry_epoch, "target_candle_close_epoch": expiry_epoch,
                     "message": f"Signal registered for the exact next {expiry} candle after the closed setup candle."})
 
 
@@ -5677,7 +5697,7 @@ def chart_scan_api():
         capture_epoch = int(captured_at_epoch_ms / 1000) if captured_at_epoch_ms > 0 else 0
         if not capture_epoch or abs(now_epoch - capture_epoch) > max(180, duration_seconds):
             capture_epoch = (now_epoch // duration_seconds) * duration_seconds
-        entry_window_seconds = {"30s":10,"1m":20,"2m":25,"5m":45,"10m":60,"15m":60,"30m":60}.get(timeframe, 20)
+        entry_window_seconds = {"30s":10,"1m":30,"2m":45,"5m":45,"10m":60,"15m":60,"30m":60}.get(timeframe, 30)
         result.update({
             "entry_epoch": capture_epoch,
             "entry_window_seconds": entry_window_seconds,
