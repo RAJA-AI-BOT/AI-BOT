@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v31-searchable-pairs';
+const CACHE_VERSION = 'raja-ai-pwa-v35-strategy-type-ui';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
