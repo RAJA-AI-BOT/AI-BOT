@@ -1,6 +1,6 @@
 {
   "id": "/",
-  "name": "RAJA AI \u00b7 SK25 STRATEGY ONLY",
+  "name": "RAJA AI · SK25 STRATEGY ONLY",
   "short_name": "RAJA AI SK25",
   "description": "RAJA AI strategy-only app using SK Pattern Type 1-25 on closed candles, with full-market live batch scanning and a separate camera/screenshot chart scanner.",
   "start_url": "/",
@@ -11,17 +11,7 @@
   "lang": "en",
   "prefer_related_applications": false,
   "icons": [
-    {
-      "src": "/raja-ai-icon-192-v3.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/raja-ai-icon-512-v3.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    {"src":"/raja-ai-icon-192-v3.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"/raja-ai-icon-512-v3.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
   ]
 }
