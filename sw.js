@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v28-sk25-strategy-only';
+const CACHE_VERSION = 'raja-ai-pwa-v29-vip-entry-camera-fix';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -105,6 +105,10 @@ function offlineJson() {
 async function networkFirstNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
 
+  const shellKey = request.url.includes('/chart-scanner')
+    ? '/chart-scanner'
+    : '/';
+
   try {
     const response = await fetch(request, {
       cache: 'no-store'
@@ -112,9 +116,7 @@ async function networkFirstNavigation(request) {
 
     if (response && response.ok) {
       await cache.put(
-        request.url.includes('/chart-scanner')
-          ? '/chart-scanner'
-          : '/',
+        shellKey,
         response.clone()
       );
     }
@@ -122,11 +124,7 @@ async function networkFirstNavigation(request) {
     return response;
   } catch (_) {
     return (
-      await cache.match(
-        request.url.includes('/chart-scanner')
-          ? '/chart-scanner'
-          : '/'
-      )
+      await cache.match(shellKey)
     ) || Response.error();
   }
 }
