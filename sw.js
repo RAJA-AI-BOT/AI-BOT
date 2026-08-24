@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v29-vip-entry-camera-fix';
+const CACHE_VERSION = 'raja-ai-pwa-v31-searchable-pairs';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -38,10 +38,15 @@ self.addEventListener('install', event => {
 
     await Promise.allSettled(
       STATIC_ASSETS.map(async url => {
-        const response = await fetch(url, { cache: 'reload' });
+        const response = await fetch(url, {
+          cache: 'reload'
+        });
 
         if (response && response.ok) {
-          await cache.put(url, response.clone());
+          await cache.put(
+            url,
+            response.clone()
+          );
         }
       })
     );
