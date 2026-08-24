@@ -9403,6 +9403,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             const ENTRY_GRACE_MS = 4000;
 
+            function waitWords(totalSeconds) {
+                const sec = Math.max(0, Math.ceil(Number(totalSeconds) || 0));
+                const min = Math.floor(sec / 60);
+                return `${min} MIN ${sec % 60} SEC`;
+            }
+
+            function localEntryClock(epochMs) {
+                try { return new Date(epochMs).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'}); }
+                catch (_) { return '--:--:--'; }
+            }
+
             function activeTradeDirectionLabel() {
                 const raw = String(activePremiumSignal?.dir || activePremiumSignal?.signal || '').toUpperCase();
                 if (raw.includes('CALL') || raw.includes('UP')) return 'UP / CALL';
@@ -9436,8 +9447,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     if (deltaMs < 0) {
                         const waitSeconds = Math.max(0, Math.ceil((-deltaMs) / 1000));
                         updateTimerDisplay(waitSeconds);
-                        candleStatus.innerText = `NEXT ${tfLabel} CANDLE ENTRY:`;
-                        tradeAlert.innerText = `⏳ PLACE TRADE IN ${waitSeconds} SECOND${waitSeconds === 1 ? '' : 'S'} — ENTER ON NEXT CANDLE OPEN · ${directionLabel}`;
+                        candleStatus.innerText = `TRADE CANDLE: NEXT ${tfLabel} CANDLE · OPENS AT ${localEntryClock(activeSignalEntryEpochMs)}`;
+                        tradeAlert.innerText = `⏳ WAIT ${waitWords(waitSeconds)} — THEN PLACE ${directionLabel} IMMEDIATELY AT CANDLE OPEN`;
                         tradeAlert.style.display = 'block';
                         tradeAlert.style.color = '#60efff';
                         setEntryState(`WAIT ${waitSeconds}s`);
@@ -9445,17 +9456,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     } else if (deltaMs <= ENTRY_GRACE_MS) {
                         const leftSeconds = Math.max(0, Math.ceil((ENTRY_GRACE_MS - deltaMs) / 1000));
                         updateTimerDisplay(leftSeconds);
-                        candleStatus.innerText = `TARGET ${tfLabel} CANDLE IS OPEN:`;
-                        tradeAlert.innerText = `✅ TAKE TRADE NOW — ${directionLabel} · ${leftSeconds}s ENTRY WINDOW LEFT`;
+                        candleStatus.innerText = `TRADE CANDLE: CURRENT ${tfLabel} CANDLE · OPENED AT ${localEntryClock(activeSignalEntryEpochMs)}`;
+                        tradeAlert.innerText = `✅ TAKE ${directionLabel} NOW — ${waitWords(leftSeconds)} ENTRY WINDOW LEFT`;
                         tradeAlert.style.display = 'block';
                         tradeAlert.style.color = '#00ff87';
                         setEntryState('TRADE NOW');
                         if (typeof v23EntryOpenOnce === 'function') v23EntryOpenOnce(activeTrackedSignalId || activeSignalEntryEpochMs || tfLabel);
                         if (typeof v23SetLifecycle === 'function') v23SetLifecycle('entry');
                     } else {
+                        const ageSeconds = Math.max(0, Math.ceil(deltaMs / 1000));
                         updateTimerDisplay(secondsToClose);
-                        candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — ENTRY WINDOW PASSED:`;
-                        tradeAlert.innerText = `⛔ ENTRY WINDOW PASSED — DO NOT ENTER THIS CANDLE · WAIT FOR A FRESH SIGNAL`;
+                        candleStatus.innerText = `MISSED TARGET ${tfLabel} CANDLE · OPENED ${waitWords(ageSeconds)} AGO`;
+                        tradeAlert.innerText = `⛔ DO NOT TRADE THIS OLD SIGNAL · NEXT POSSIBLE FRESH ${tfLabel} CANDLE IN ${waitWords(secondsToClose)} — ONLY ENTER IF A NEW SIGNAL IS CONFIRMED`; 
                         tradeAlert.style.display = 'block';
                         tradeAlert.style.color = '#f6c85f';
                         setEntryState('PASSED');
@@ -9464,8 +9476,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     }
                 } else {
                     updateTimerDisplay(secondsToClose);
-                    candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — WAIT FOR CLOSE:`;
-                    tradeAlert.innerText = `WAITING FOR A CONFIRMED ENTRY TIME`;
+                    candleStatus.innerText = `NO TRADE ENTRY YET · NEXT ${tfLabel} CANDLE IN ${waitWords(secondsToClose)}`;
+                    tradeAlert.innerText = `WAIT ${waitWords(secondsToClose)} FOR THE NEXT CANDLE BOUNDARY — DO NOT TRADE UNLESS A FRESH SIGNAL IS CONFIRMED`; 
                     tradeAlert.style.display = 'block';
                     tradeAlert.style.color = '#ccefff';
                     setEntryState('WAIT');
