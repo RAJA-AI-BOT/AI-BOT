@@ -5988,6 +5988,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 #signalView #candleTimer{font-size:26px!important;font-weight:1000!important}
 @media(max-width:820px){body.raja-mobile-result #signalView #candleStatusText{font-size:8.4px!important}body.raja-mobile-result #signalView #tradeAlert{font-size:8.8px!important;line-height:1.35!important}}
 </style>
+
+<style id="raja-v31-pair-search-css">
+/* V31 searchable pair selectors */
+.pair-search-wrap{position:relative;display:flex;align-items:center;margin:0 0 7px}.pair-search-input{width:100%;min-height:42px;padding:10px 38px 10px 34px;border:1px solid rgba(96,239,255,.34);border-radius:10px;background:#050d1a;color:#fff;font-size:12px;font-weight:750;outline:none}.pair-search-input:focus{border-color:#60efff;box-shadow:0 0 0 2px rgba(96,239,255,.12)}.pair-search-input::placeholder{color:#71859b;font-weight:650}.pair-search-icon{position:absolute;left:11px;z-index:2;color:#60efff;font-size:17px;font-weight:900;pointer-events:none}.pair-search-clear{position:absolute;right:6px;width:30px;height:30px;border:0;border-radius:8px;background:rgba(96,239,255,.10);color:#bdefff;font-size:12px;font-weight:900;cursor:pointer}.pair-search-clear:active{transform:scale(.94)}.pair-search-count{font-size:9px;color:#8fa6bc;margin:-2px 0 6px;min-height:13px}.pair-search-field select{margin-top:0}.pair-search-empty{color:#ffca67!important}
+</style>
 </head>
 <body>
 
@@ -6813,7 +6818,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field"><label>3. SELECT PAIR / ASSET</label><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: 5-of-6, stronger agreement and higher score threshold.</div></div>
+                                <div class="config-field pair-search-field"><label>3. SELECT PAIR / ASSET</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearchInput" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — e.g. EUR/USD, BTC, OTC" aria-label="Search pair or asset"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Type above to filter the pair list</div><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI AUTO SCAN MODE</div><div class="mode-buttons"><button class="mode-btn active" data-mode="SAFE" onclick="setScanMode('SAFE')">🛡 SAFE</button><button class="mode-btn" data-mode="BALANCED" onclick="setScanMode('BALANCED')">⚖ BALANCED</button><button class="mode-btn" data-mode="AGGRESSIVE" onclick="setScanMode('AGGRESSIVE')">⚡ AGGRESSIVE</button><button class="mode-btn" data-mode="CUSTOM" onclick="setScanMode('CUSTOM')">⚙ CUSTOM</button></div><div id="modeDescription" class="mode-copy">Safe: 5-of-6, stronger agreement and higher score threshold.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button><button class="utility-btn" type="button" onclick="location.href='/chart-scanner'">📷 Chart Scanner</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
@@ -9338,24 +9343,91 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             updateSelectedTargetContext();
         }
 
-        function updatePairs() {
-            let brokerEl = document.getElementById('brokerSelect');
-            let marketEl = document.getElementById('marketType');
-            let pairSelect = document.getElementById('pairSelect');
-            if(!brokerEl || !marketEl || !pairSelect) return;
-            let broker = brokerEl.value;
-            let market = marketEl.value;
-            premiumMarketSnapshot = []; localStorage.removeItem('raja_market_snapshot_v15'); renderPremiumMarketSnapshot();
-            pairSelect.innerHTML = ""; 
-            if (brokerData[broker] && brokerData[broker][market]) {
-                brokerData[broker][market].forEach(pair => {
-                    let option = document.createElement("option");
-                    option.value = pair;
-                    option.innerText = pair;
-                    pairSelect.appendChild(option);
-                });
+        function currentPairUniverse() {
+            const brokerEl = document.getElementById('brokerSelect');
+            const marketEl = document.getElementById('marketType');
+            if (!brokerEl || !marketEl) return [];
+            const rows = brokerData?.[brokerEl.value]?.[marketEl.value];
+            return Array.isArray(rows) ? rows.slice() : [];
+        }
+
+        function renderFilteredPairs(query = '', preferredValue = '') {
+            const pairSelect = document.getElementById('pairSelect');
+            const countEl = document.getElementById('pairSearchCount');
+            if (!pairSelect) return;
+            const allPairs = currentPairUniverse();
+            const needle = String(query || '').trim().toLowerCase();
+            const compactNeedle = needle.replace(/[^a-z0-9]/g, '');
+            const filtered = allPairs.filter(pair => {
+                if (!needle) return true;
+                const text = String(pair || '').toLowerCase();
+                const compact = text.replace(/[^a-z0-9]/g, '');
+                return text.includes(needle) || (compactNeedle && compact.includes(compactNeedle));
+            });
+
+            pairSelect.innerHTML = '';
+            if (!filtered.length) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No matching pair — change search';
+                option.disabled = true;
+                option.selected = true;
+                pairSelect.appendChild(option);
+                if (countEl) {
+                    countEl.textContent = `0 matches for “${String(query || '').trim()}”`;
+                    countEl.classList.add('pair-search-empty');
+                }
+                syncTargetPairDisplay();
+                return;
+            }
+
+            filtered.forEach(pair => {
+                const option = document.createElement('option');
+                option.value = pair;
+                option.textContent = pair;
+                pairSelect.appendChild(option);
+            });
+            if (preferredValue && filtered.includes(preferredValue)) pairSelect.value = preferredValue;
+            else pairSelect.selectedIndex = 0;
+            if (countEl) {
+                countEl.textContent = needle ? `${filtered.length} matching pair${filtered.length === 1 ? '' : 's'} · ${allPairs.length} total` : `${allPairs.length} pairs available · search above`;
+                countEl.classList.remove('pair-search-empty');
             }
             syncTargetPairDisplay();
+        }
+
+        function updatePairs() {
+            const pairSelect = document.getElementById('pairSelect');
+            if (!pairSelect) return;
+            premiumMarketSnapshot = []; localStorage.removeItem('raja_market_snapshot_v15'); renderPremiumMarketSnapshot();
+            const search = document.getElementById('pairSearchInput');
+            if (search) search.value = '';
+            renderFilteredPairs('', '');
+        }
+
+        function initPairSearch() {
+            const search = document.getElementById('pairSearchInput');
+            const clear = document.getElementById('pairSearchClear');
+            const pairSelect = document.getElementById('pairSelect');
+            if (!search || !pairSelect || search.dataset.bound === '1') return;
+            search.dataset.bound = '1';
+            search.addEventListener('input', () => renderFilteredPairs(search.value, pairSelect.value));
+            search.addEventListener('search', () => renderFilteredPairs(search.value, pairSelect.value));
+            search.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    if (pairSelect.options.length && !pairSelect.options[0].disabled) {
+                        pairSelect.selectedIndex = 0;
+                        syncTargetPairDisplay();
+                        pairSelect.focus();
+                    }
+                }
+            });
+            if (clear) clear.addEventListener('click', () => {
+                search.value = '';
+                renderFilteredPairs('', pairSelect.value);
+                search.focus();
+            });
         }
 
         function getExpirySeconds(expiryStr) {
@@ -15088,5 +15160,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 })();
 </script>
 
+
+<script id="raja-v31-pair-search-boot">
+document.addEventListener('DOMContentLoaded', function(){
+  try { initPairSearch(); renderFilteredPairs(document.getElementById('pairSearchInput')?.value || '', document.getElementById('pairSelect')?.value || ''); } catch (_) {}
+});
+</script>
 </body>
 </html>
