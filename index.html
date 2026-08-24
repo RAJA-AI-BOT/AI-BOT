@@ -6124,7 +6124,45 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 pointer-events: none;
             }
         }
-    </style>
+    
+
+        /* ===== V37 · Concept #2 neon arrow signal card ===== */
+        #signalView .premium-signal-result{--sig:#00ff87;--sig2:#60efff;overflow:visible!important;background:linear-gradient(180deg,#03101d 0%,#020a13 100%)!important;border:1px solid rgba(96,239,255,.35)!important;box-shadow:0 0 28px color-mix(in srgb,var(--sig) 16%,transparent),inset 0 0 36px rgba(0,180,255,.05)!important}
+        #signalView .premium-signal-result.signal-live-sell{--sig:#ff334f;--sig2:#ff6a7c}
+        #signalView .psr-topline{margin-bottom:9px!important}
+        #signalView .v37-signal-hero{position:relative;isolation:isolate;overflow:hidden;border-radius:16px;border:1px solid color-mix(in srgb,var(--sig) 60%,#1b5670);background:radial-gradient(circle at 50% 34%,color-mix(in srgb,var(--sig) 16%,transparent),transparent 32%),linear-gradient(180deg,rgba(4,18,34,.98),rgba(2,8,17,.99));padding:44px 18px 14px;min-height:410px;box-shadow:inset 0 0 40px color-mix(in srgb,var(--sig) 9%,transparent),0 0 24px rgba(0,211,255,.14)}
+        #signalView .v37-market-grid{position:absolute;inset:0;z-index:-4;opacity:.33;background-image:linear-gradient(rgba(67,180,220,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(67,180,220,.08) 1px,transparent 1px);background-size:26px 26px;mask-image:linear-gradient(to bottom,#000,transparent 82%)}
+        #signalView .v37-signal-hero::before{content:"";position:absolute;inset:16% 3% 24%;z-index:-3;background:linear-gradient(145deg,transparent 0 15%,color-mix(in srgb,var(--sig) 55%,transparent) 15.3% 15.8%,transparent 16.1% 42%,color-mix(in srgb,var(--sig2) 35%,transparent) 42.3% 42.8%,transparent 43.1%);filter:drop-shadow(0 0 7px color-mix(in srgb,var(--sig) 55%,transparent));opacity:.6;transform:skewY(-4deg)}
+        #signalView .v37-live-ribbon{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:5;min-width:185px;padding:7px 26px;text-align:center;font-size:10px;font-weight:950;letter-spacing:1px;color:#fff;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--sig) 22%,#05111f),transparent);border-top:1px solid color-mix(in srgb,var(--sig) 55%,transparent);border-bottom:1px solid color-mix(in srgb,var(--sig) 35%,transparent);text-shadow:0 0 12px var(--sig)}
+        #signalView .v37-live-ribbon span{color:var(--sig);animation:v37Dot 1.15s ease-in-out infinite}
+        #signalView .v37-direction-badge{position:relative;width:min(600px,84%);min-height:210px;margin:30px auto 18px;display:flex;flex-direction:column;justify-content:center;align-items:center;clip-path:polygon(8% 0,92% 0,100% 50%,92% 100%,8% 100%,0 50%);background:linear-gradient(135deg,color-mix(in srgb,var(--sig) 14%,#090f18),color-mix(in srgb,var(--sig) 36%,#120b12),color-mix(in srgb,var(--sig) 12%,#06101b));border:2px solid var(--sig);box-shadow:0 0 22px var(--sig),0 0 58px color-mix(in srgb,var(--sig) 40%,transparent),inset 0 0 32px color-mix(in srgb,var(--sig) 24%,transparent);animation:v37SignalPulse 1.55s ease-in-out infinite}
+        #signalView .v37-direction-badge::before{content:"";position:absolute;inset:8px;clip-path:inherit;border:1px solid color-mix(in srgb,var(--sig) 60%,transparent);background:radial-gradient(circle at 50% 45%,color-mix(in srgb,var(--sig) 19%,transparent),transparent 62%);pointer-events:none}
+        #signalView .v37-direction-badge #resModalDirection{position:relative;z-index:2;margin:0!important;font-size:clamp(56px,10vw,92px)!important;line-height:.95!important;font-weight:1000!important;letter-spacing:1px;color:#fff!important;text-shadow:0 0 7px #fff,0 0 18px var(--sig),0 0 36px var(--sig)!important}
+        #signalView .v37-signal-action{position:relative;z-index:2;margin-top:13px;font-size:clamp(18px,3.5vw,30px);font-weight:950;letter-spacing:1.3px;color:color-mix(in srgb,var(--sig) 70%,#fff);text-shadow:0 0 14px var(--sig)}
+        #signalView .v37-down-mark{position:absolute;bottom:12px;color:var(--sig);font-size:18px;filter:drop-shadow(0 0 7px var(--sig));animation:v37ArrowBob 1s ease-in-out infinite}
+        #signalView .signal-live-buy .v37-down-mark{transform:rotate(180deg)}
+        #signalView .v37-arrow-chevron{position:absolute;top:140px;z-index:1;font-size:72px;line-height:1;color:color-mix(in srgb,var(--sig) 80%,#fff);text-shadow:0 0 15px var(--sig),0 0 34px var(--sig);opacity:.78;animation:v37Chevron 1.35s ease-in-out infinite}
+        #signalView .v37-arrow-left{left:4%}.v37-arrow-right{right:4%}
+        #signalView .v37-signal-facts{display:grid;grid-template-columns:1fr .75fr 1.25fr;gap:8px;position:relative;z-index:4}
+        #signalView .v37-fact{min-height:73px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px;border:1px solid rgba(96,239,255,.28);border-radius:10px;background:linear-gradient(180deg,rgba(6,26,42,.92),rgba(3,13,24,.96));box-shadow:inset 0 0 18px rgba(0,188,255,.05)}
+        #signalView .v37-fact span{font-size:7.5px;font-weight:950;letter-spacing:.7px;color:#60efff}
+        #signalView .v37-fact strong{margin-top:4px;font-size:18px;color:#fff;text-align:center;line-height:1.08}
+        #signalView .v37-fact small{margin-top:4px;font-size:6.5px;color:#7fa2b9;text-align:center;max-width:100%}
+        #signalView #signalEntryWindow{margin:9px 0 10px!important;border:1px solid color-mix(in srgb,var(--sig) 55%,rgba(96,239,255,.4))!important;background:linear-gradient(90deg,rgba(4,26,37,.98),color-mix(in srgb,var(--sig) 9%,#04111d),rgba(4,24,35,.98))!important;box-shadow:0 0 22px color-mix(in srgb,var(--sig) 13%,transparent),inset 0 0 18px rgba(96,239,255,.06)!important}
+        #signalView #candleStatusText{font-size:12px!important;font-weight:1000!important;color:#fff!important;letter-spacing:.3px}
+        #signalView #candleTimer{font-size:34px!important;line-height:1!important;color:#60efff!important;text-shadow:0 0 15px #00d9ff!important}
+        #signalView #tradeAlert{font-size:9px!important;font-weight:950!important;color:var(--sig)!important}
+        #signalView #currentCandleClockText{color:#fff!important} #signalView #setupCandleClockText{color:#8fb9cc!important}
+        #signalView .signal-strategy-banner{display:none!important}
+        @keyframes v37SignalPulse{0%,100%{filter:brightness(.92);box-shadow:0 0 18px var(--sig),0 0 42px color-mix(in srgb,var(--sig) 30%,transparent),inset 0 0 26px color-mix(in srgb,var(--sig) 18%,transparent)}50%{filter:brightness(1.16);box-shadow:0 0 30px var(--sig),0 0 76px color-mix(in srgb,var(--sig) 50%,transparent),inset 0 0 42px color-mix(in srgb,var(--sig) 28%,transparent)}}
+        @keyframes v37Dot{50%{opacity:.25;transform:scale(.7)}}
+        @keyframes v37ArrowBob{50%{transform:translateY(5px)}}
+        .signal-live-buy .v37-down-mark{animation:v37ArrowBobBuy 1s ease-in-out infinite!important}@keyframes v37ArrowBobBuy{0%,100%{transform:rotate(180deg) translateY(0)}50%{transform:rotate(180deg) translateY(5px)}}
+        @keyframes v37Chevron{50%{opacity:.28;transform:scale(.88)}}
+        #signalView .v37-market-candles{position:absolute;bottom:90px;display:flex;align-items:flex-end;gap:5px;height:85px;opacity:.38;z-index:-1}.v37-market-candles-left{left:4%}.v37-market-candles-right{right:4%}.v37-market-candles i{display:block;width:7px;background:var(--sig);box-shadow:0 0 8px var(--sig)}.v37-market-candles i:nth-child(1){height:24%}.v37-market-candles i:nth-child(2){height:49%}.v37-market-candles i:nth-child(3){height:33%}.v37-market-candles i:nth-child(4){height:71%}.v37-market-candles i:nth-child(5){height:52%}.v37-market-candles i:nth-child(6){height:86%}.v37-market-candles i:nth-child(7){height:64%}
+        @media(max-width:700px){#signalView .v37-signal-hero{min-height:355px;padding:39px 8px 10px}#signalView .v37-direction-badge{width:76%;min-height:175px;margin:28px auto 15px}#signalView .v37-direction-badge #resModalDirection{font-size:58px!important}#signalView .v37-signal-action{font-size:19px}.v37-arrow-chevron{font-size:50px!important;top:125px!important}#signalView .v37-signal-facts{grid-template-columns:1fr 1fr 1.25fr;gap:5px}#signalView .v37-fact{min-height:64px;padding:6px 4px}#signalView .v37-fact strong{font-size:13px}#signalView .v37-fact small{font-size:5.6px}#signalView #candleTimer{font-size:30px!important}}
+        @media(prefers-reduced-motion:reduce){#signalView .v37-direction-badge,#signalView .v37-live-ribbon span,#signalView .v37-arrow-chevron,#signalView .v37-down-mark{animation:none!important}}
+</style>
 
 </head>
 <body>
@@ -6572,53 +6610,34 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                         <div class="psr-shared">👥 SHARED MULTI-USER SCAN</div>
                                     </div>
 
-                                    <div class="psr-hero">
-                                        <div class="psr-grid"></div>
-                                        <svg class="psr-market-lines" viewBox="0 0 1200 360" preserveAspectRatio="none" aria-hidden="true">
-                                            <defs>
-                                                <linearGradient id="psrBuyGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00ff87" stop-opacity="0"/><stop offset=".18" stop-color="#00ff87"/><stop offset=".55" stop-color="#60efff"/><stop offset="1" stop-color="#00ff87"/></linearGradient>
-                                                <linearGradient id="psrBlueGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#60efff" stop-opacity="0"/><stop offset=".35" stop-color="#1aa7ff"/><stop offset="1" stop-color="#60efff" stop-opacity=".2"/></linearGradient>
-                                            </defs>
-                                            <path class="psr-line psr-line-a" d="M0 236 C70 174,120 224,185 154 S300 218,370 145 S490 208,555 116 S680 204,748 137 S880 188,948 103 S1080 171,1200 64" fill="none" stroke="url(#psrBuyGrad)" stroke-width="3"/>
-                                            <path class="psr-line psr-line-b" d="M0 280 C100 246,145 270,230 214 S360 257,432 198 S575 235,640 176 S790 232,850 166 S1010 205,1200 128" fill="none" stroke="url(#psrBlueGrad)" stroke-width="2"/>
-                                        </svg>
-                                        <div class="psr-volume-bars" aria-hidden="true">
-                                            <i style="--h:24%"></i><i style="--h:42%"></i><i style="--h:30%"></i><i style="--h:54%"></i><i style="--h:36%"></i><i style="--h:66%"></i><i style="--h:48%"></i><i style="--h:76%"></i><i style="--h:55%"></i><i style="--h:88%"></i><i style="--h:62%"></i><i style="--h:72%"></i><i style="--h:50%"></i><i style="--h:82%"></i><i style="--h:58%"></i><i style="--h:92%"></i><i style="--h:64%"></i><i style="--h:78%"></i><i style="--h:44%"></i><i style="--h:69%"></i><i style="--h:53%"></i><i style="--h:84%"></i><i style="--h:60%"></i><i style="--h:73%"></i><i style="--h:49%"></i><i style="--h:88%"></i><i style="--h:57%"></i><i style="--h:80%"></i>
+                                    <div class="v37-signal-hero" id="v37SignalHero">
+                                        <div class="v37-market-grid" aria-hidden="true"></div>
+                                        <div class="v37-market-candles v37-market-candles-left" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                                        <div class="v37-market-candles v37-market-candles-right" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+                                        <div class="v37-live-ribbon"><span>●</span> LIVE SIGNAL</div>
+                                        <div class="v37-arrow-chevron v37-arrow-left" aria-hidden="true">‹‹</div>
+                                        <div class="v37-arrow-chevron v37-arrow-right" aria-hidden="true">››</div>
+
+                                        <div class="v37-direction-badge">
+                                            <div id="resModalDirection" class="signal-direction dir-up">UP</div>
+                                            <div id="v37SignalAction" class="v37-signal-action">BUY SIGNAL</div>
+                                            <div class="v37-down-mark" aria-hidden="true">▼</div>
                                         </div>
 
-                                        <div class="psr-live-chip psr-live-left"><span></span> LIVE MARKET DATA</div>
-                                        <div class="psr-live-chip psr-live-right"><span></span> SCAN ACTIVE</div>
-
-                                        <div class="psr-orb-stage">
-                                            <div class="psr-orbit psr-orbit-1"></div>
-                                            <div class="psr-orbit psr-orbit-2"></div>
-                                            <div class="psr-orbit psr-orbit-3"></div>
-                                            <div class="psr-energy-orb">
-                                                <div class="psr-orb-sparks"></div>
-                                                <div class="psr-orb-content">
-                                                    <div class="psr-confirmed">EXACT SK25 SIGNAL</div>
-                                                    <div id="resModalAsset" class="psr-asset">EUR/USD</div>
-                                                    <div class="psr-subasset">Closed-candle SK25 setup</div>
-                                                    <div id="resModalDirection" class="signal-direction dir-up">⬆ UP (BUY)</div>
-                                                    <div class="psr-confidence-label">CONFIDENCE</div>
-                                                    <span id="signalConfidenceValue" class="psr-confidence-value">--</span>
-                                                    <div class="psr-strength">VERY STRONG</div>
-                                                </div>
-                                            </div>
-                                            <div class="psr-floor psr-floor-1"></div>
-                                            <div class="psr-floor psr-floor-2"></div>
-                                            <div class="psr-floor psr-floor-3"></div>
-                                            <div class="psr-selected-expiry"><span>SELECTED EXPIRY</span><strong id="selectedExpiryHeroValue">1m</strong></div>
+                                        <div class="v37-signal-facts">
+                                            <div class="v37-fact"><span>ASSET PAIR</span><strong id="resModalAsset">EUR/USD</strong></div>
+                                            <div class="v37-fact"><span>EXPIRY TIME</span><strong id="selectedExpiryHeroValue">1m</strong></div>
+                                            <div class="v37-fact"><span>STRATEGY</span><strong id="signalStrategyType">PATTERN TYPE --</strong><small id="signalStrategyName">Waiting for exact setup</small></div>
                                         </div>
-
-                                    </div>
-
-                                    <div id="signalStrategyBanner" class="signal-strategy-banner">
-                                        <span>ACTIVE STRATEGY</span>
-                                        <strong id="signalStrategyType">PATTERN TYPE --</strong>
-                                        <small id="signalStrategyName">Waiting for an exact Pattern Type 1-25 setup</small>
                                     </div>
                                     <div id="resModalMeta" class="signal-meta psr-meta">SK25 STRICT · Exact setup only · Selected Timeframe: 1m</div>
+                                    <div class="signal-entry-window" id="signalEntryWindow">
+                                        <div id="currentCandleClockText" style="font-size:9px;font-weight:950;color:#fff;margin-bottom:4px;line-height:1.35;">CURRENT 1M CANDLE: --:--:-- → --:--:--</div>
+                                        <div id="setupCandleClockText" style="font-size:8.5px;font-weight:850;color:#8fb5c8;margin-bottom:5px;line-height:1.35;">SETUP / TARGET CANDLE: waiting for signal</div>
+                                        <div class="signal-entry-status" id="candleStatusText">WAITING FOR EXACT SK25 SIGNAL</div>
+                                        <div id="candleTimer" class="signal-entry-timer">00:00</div>
+                                        <div id="tradeAlert" class="signal-entry-alert">NO TRADE YET · WAIT FOR A FRESH EXACT SETUP</div>
+                                    </div>
                                     <div class="v31-signal-scorebar">
                                         <div class="v31-grade-card">
                                             <span>SIGNAL GRADE</span>
@@ -6666,12 +6685,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                     <div class="v23-result-freshness">
                                         <span>● DATA FRESHNESS</span>
                                         <b id="v23ResultFreshness">Awaiting signal snapshot</b>
-                                    </div>
-
-                                    <div class="signal-entry-window" id="signalEntryWindow">
-                                        <div class="signal-entry-status" id="candleStatusText">CURRENT 1M CANDLE — WAIT FOR CLOSE</div>
-                                        <div id="candleTimer" class="signal-entry-timer">00:31</div>
-                                        <div id="tradeAlert" class="signal-entry-alert">⏳ WAIT FOR CANDLE CLOSE</div>
                                     </div>
 <section class="ai-explain-card" id="aiExplainCard">
                                         <div class="intel-title-row"><div class="intel-title">✦ PATTERN PROOF · WHY THIS SIGNAL</div><div class="intel-caption">Based only on SK Pattern Type 1-25 closed-candle rules</div></div>
@@ -7056,6 +7069,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         let replayPlaybackTimer = null;
         let soundEnabled = true;
         let activeSignalEntryEpochMs = null;
+        let activeSignalEntryGraceMs = null;
         let activeTrackedSignalId = null;
         let backendTrackedHistory = [];
         const rajaStoredScanMode = String(localStorage.getItem('raja_scan_mode') || 'BALANCED').toUpperCase();
@@ -9617,14 +9631,22 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             });
         }
 
+        function rajaEntryGraceMsForExpiry(expiry) {
+            const seconds = Math.max(1, getExpirySeconds(expiry));
+            // Keep the signal on the SAME target candle. The practical entry
+            // window is the first half of that candle, capped at 45 seconds.
+            // This prevents normal API/batch latency from turning every fresh
+            // signal into an instant "MISSED" while still never rolling it to
+            // a later candle.
+            return Math.max(10000, Math.min(45000, Math.floor(seconds * 1000 * 0.50)));
+        }
+
         function startTimer() {
             clearInterval(timerInterval);
             if (!document.getElementById('candleTimer') || !document.getElementById('candleStatusText') || !document.getElementById('tradeAlert')) {
                 timerInterval = null;
                 return;
             }
-
-            const ENTRY_GRACE_MS = 4000;
 
             function waitWords(totalSeconds) {
                 const sec = Math.max(0, Math.ceil(Number(totalSeconds) || 0));
@@ -9651,59 +9673,85 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             function tickEntryTimer() {
                 const nowMs = Date.now();
-                const nowSec = Math.floor(nowMs / 1000);
                 const candleSeconds = Math.max(1, getExpirySeconds(selectedExpiry));
-                const secIntoSelectedCandle = nowSec % candleSeconds;
-                const secondsToClose = secIntoSelectedCandle === 0
-                    ? candleSeconds
-                    : candleSeconds - secIntoSelectedCandle;
+                const candleMs = candleSeconds * 1000;
+                const currentStartMs = Math.floor(nowMs / candleMs) * candleMs;
+                const currentEndMs = currentStartMs + candleMs;
+                const currentCloseLeft = Math.max(0, Math.ceil((currentEndMs - nowMs) / 1000));
                 const tfLabel = selectedExpiry.toUpperCase();
                 const tradeAlert = document.getElementById('tradeAlert');
                 const candleStatus = document.getElementById('candleStatusText');
+                const currentClock = document.getElementById('currentCandleClockText');
+                const setupClock = document.getElementById('setupCandleClockText');
 
                 if (!tradeAlert || !candleStatus) return;
 
+                if (currentClock) {
+                    currentClock.innerText = `CURRENT ${tfLabel} CANDLE: ${localEntryClock(currentStartMs)} → ${localEntryClock(currentEndMs)} · CLOSES IN ${waitWords(currentCloseLeft)}`;
+                }
+
                 if (activeSignalEntryEpochMs) {
-                    const deltaMs = nowMs - activeSignalEntryEpochMs;
+                    const entryMs = Number(activeSignalEntryEpochMs);
+                    const targetEndMs = entryMs + candleMs;
+                    const setupStartMs = entryMs - candleMs;
+                    const deltaMs = nowMs - entryMs;
                     const directionLabel = activeTradeDirectionLabel();
+                    const entryGraceMs = Math.max(1000, Number(activeSignalEntryGraceMs || rajaEntryGraceMsForExpiry(selectedExpiry)));
+
+                    if (setupClock) {
+                        setupClock.innerText = `SETUP CANDLE: ${localEntryClock(setupStartMs)} → ${localEntryClock(entryMs)} · TRADE CANDLE: ${localEntryClock(entryMs)} → ${localEntryClock(targetEndMs)}`;
+                    }
 
                     if (deltaMs < 0) {
                         const waitSeconds = Math.max(0, Math.ceil((-deltaMs) / 1000));
                         updateTimerDisplay(waitSeconds);
-                        candleStatus.innerText = `TRADE ON: NEXT ${tfLabel} CANDLE · OPENS ${localEntryClock(activeSignalEntryEpochMs)}`;
-                        tradeAlert.innerText = `DIRECTION ${directionLabel} · WAIT ${waitWords(waitSeconds)} · WHEN TIMER REACHES 00:00, ENTER IMMEDIATELY`;
+                        candleStatus.innerText = `TRADE ON: NEXT ${tfLabel} CANDLE · OPENS ${localEntryClock(entryMs)}`;
+                        tradeAlert.innerText = `DIRECTION ${directionLabel} · WAIT ${waitWords(waitSeconds)} · WHEN TIMER = 00:00, ENTER ON THAT CANDLE`;
                         tradeAlert.style.display = 'block';
                         tradeAlert.style.color = '#60efff';
                         setEntryState(`WAIT ${waitSeconds}s`);
                         if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
-                    } else if (deltaMs <= ENTRY_GRACE_MS) {
-                        const leftSeconds = Math.max(0, Math.ceil((ENTRY_GRACE_MS - deltaMs) / 1000));
+                    } else if (nowMs < targetEndMs && deltaMs <= entryGraceMs) {
+                        const leftSeconds = Math.max(0, Math.ceil((entryGraceMs - deltaMs) / 1000));
+                        const targetCloseLeft = Math.max(0, Math.ceil((targetEndMs - nowMs) / 1000));
                         updateTimerDisplay(leftSeconds);
-                        candleStatus.innerText = `TRADE NOW · CURRENT ${tfLabel} CANDLE OPENED ${localEntryClock(activeSignalEntryEpochMs)}`;
-                        tradeAlert.innerText = `✅ ENTER ${directionLabel} NOW · ${leftSeconds} SEC ENTRY WINDOW LEFT`;
+                        candleStatus.innerText = `✅ TRADE NOW · CURRENT TARGET ${tfLabel} CANDLE OPENED ${localEntryClock(entryMs)}`;
+                        tradeAlert.innerText = `ENTER ${directionLabel} NOW · ${waitWords(leftSeconds)} ENTRY WINDOW LEFT · TARGET CANDLE CLOSES IN ${waitWords(targetCloseLeft)}`;
                         tradeAlert.style.display = 'block';
                         tradeAlert.style.color = '#00ff87';
                         setEntryState('TRADE NOW');
-                        if (typeof v23EntryOpenOnce === 'function') v23EntryOpenOnce(activeTrackedSignalId || activeSignalEntryEpochMs || tfLabel);
+                        if (typeof v23EntryOpenOnce === 'function') v23EntryOpenOnce(activeTrackedSignalId || entryMs || tfLabel);
                         if (typeof v23SetLifecycle === 'function') v23SetLifecycle('entry');
-                    } else {
+                    } else if (nowMs < targetEndMs) {
                         const ageSeconds = Math.max(0, Math.ceil(deltaMs / 1000));
-                        updateTimerDisplay(0);
-                        candleStatus.innerText = `⛔ DO NOT TRADE · THIS ${directionLabel} SIGNAL WAS FOR ${tfLabel} CANDLE AT ${localEntryClock(activeSignalEntryEpochMs)}`;
-                        tradeAlert.innerText = `SIGNAL EXPIRED · TARGET CANDLE OPENED ${waitWords(ageSeconds)} AGO · RUN A FRESH SCAN FOR A NEW ENTRY`;
+                        const targetCloseLeft = Math.max(0, Math.ceil((targetEndMs - nowMs) / 1000));
+                        updateTimerDisplay(targetCloseLeft);
+                        candleStatus.innerText = `⚠️ TARGET ${tfLabel} CANDLE IS STILL RUNNING · OPENED ${localEntryClock(entryMs)}`;
+                        tradeAlert.innerText = `ENTRY WINDOW PASSED ${waitWords(ageSeconds)} AFTER OPEN · DO NOT CHASE THIS SIGNAL · TARGET CANDLE CLOSES IN ${waitWords(targetCloseLeft)}`;
                         tradeAlert.style.display = 'block';
                         tradeAlert.style.color = '#f6c85f';
-                        setEntryState('MISSED');
+                        setEntryState('LATE');
                         if (typeof v23SetLifecycle === 'function') v23SetLifecycle('tracking');
-                        if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('MISSED ENTRY','verify');
+                        if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('LATE ENTRY','verify');
+                    } else {
+                        const ageSeconds = Math.max(0, Math.ceil((nowMs - targetEndMs) / 1000));
+                        updateTimerDisplay(0);
+                        candleStatus.innerText = `⛔ SIGNAL EXPIRED · TARGET ${tfLabel} CANDLE ENDED ${localEntryClock(targetEndMs)}`;
+                        tradeAlert.innerText = `THIS ${directionLabel} SIGNAL BELONGED ONLY TO ${localEntryClock(entryMs)} → ${localEntryClock(targetEndMs)} · ENDED ${waitWords(ageSeconds)} AGO · RUN A FRESH SCAN`;
+                        tradeAlert.style.display = 'block';
+                        tradeAlert.style.color = '#f6c85f';
+                        setEntryState('EXPIRED');
+                        if (typeof v23SetLifecycle === 'function') v23SetLifecycle('tracking');
+                        if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('EXPIRED','verify');
                     }
                 } else {
-                    updateTimerDisplay(0);
-                    candleStatus.innerText = `⛔ NO VERIFIED TRADE CANDLE`;
-                    tradeAlert.innerText = `DO NOT ENTER THIS DIRECTION YET · RUN A FRESH SCAN NEAR CANDLE CLOSE TO GET AN EXACT ENTRY CANDLE`;
+                    updateTimerDisplay(currentCloseLeft);
+                    if (setupClock) setupClock.innerText = `SETUP / TARGET CANDLE: waiting for a fresh exact Pattern Type 1-25 signal`;
+                    candleStatus.innerText = `NO ACTIVE SIGNAL · CURRENT ${tfLabel} CANDLE CLOSES ${localEntryClock(currentEndMs)}`;
+                    tradeAlert.innerText = `WAIT ${waitWords(currentCloseLeft)} FOR THIS CANDLE TO CLOSE · THEN THE NEXT FRESH EXACT SETUP CAN DEFINE A TRADE CANDLE`;
                     tradeAlert.style.display = 'block';
                     tradeAlert.style.color = '#f6c85f';
-                    setEntryState('NO ENTRY');
+                    setEntryState('WAIT');
                 }
             }
 
@@ -10530,14 +10578,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 targetPairBox.className = "selected-pair-box pair-glow-buy";
                 targetPairDisplay.style.color = "#00ff87";
                 resDir.className = "signal-direction dir-up";
-                resDir.innerHTML = `⬆ UP (BUY) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resDir.textContent = 'UP'; const v37Action=document.getElementById('v37SignalAction'); if(v37Action) v37Action.textContent='BUY SIGNAL';
                 resMeta.innerHTML = `CALL 🔺 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · TARGET NEXT ${selectedExpiry.toUpperCase()} CANDLE`;
             } else {
                 hudBox.className = "ai-hud-box glow-sell";
                 targetPairBox.className = "selected-pair-box pair-glow-sell";
                 targetPairDisplay.style.color = "#ff3366";
                 resDir.className = "signal-direction dir-down";
-                resDir.innerHTML = `⬇ DOWN (SELL) <span class="signal-expiry-badge">${selectedExpiry} EXPIRY</span>`;
+                resDir.textContent = 'DOWN'; const v37Action=document.getElementById('v37SignalAction'); if(v37Action) v37Action.textContent='SELL SIGNAL';
                 resMeta.innerHTML = `PUT 🔻 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · TARGET NEXT ${selectedExpiry.toUpperCase()} CANDLE`;
             }
             notifyRajaSignal(signalData, isBuy, confluenceString);
@@ -15316,6 +15364,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     // A Pattern Type signal belongs ONLY to the candle immediately after the
     // latest closed setup candle. Never move an old setup to a later candle.
     activeSignalEntryEpochMs = closedEpochMs > 0 ? closedEpochMs + durationMs : null;
+    activeSignalEntryGraceMs = (typeof rajaEntryGraceMsForExpiry === 'function') ? rajaEntryGraceMsForExpiry(expiry) : Math.max(10000, Math.min(45000, Math.floor(durationMs * 0.50)));
     activeTrackedSignalId = null;
     if (typeof startTimer==='function') startTimer();
 
@@ -15331,6 +15380,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
       const result=await response.json().catch(()=>null);
       if(response.ok&&result&&result.status==='success'){
         if(Number(result.entry_epoch||0)>0) activeSignalEntryEpochMs=Number(result.entry_epoch)*1000;
+        if(Number(result.entry_grace_seconds||0)>0) activeSignalEntryGraceMs=Number(result.entry_grace_seconds)*1000;
         if(result.auto_tracking){
           activeTrackedSignalId=result.signal_id||null;
           if(typeof v24SetOutcomeBadge==='function')v24SetOutcomeBadge('WAITING ENTRY','pending');
@@ -15360,7 +15410,7 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 <script id="raja-v32-entry-rule-note">
-window.RAJA_ENTRY_TIMING_VERSION='V32_STRICT_NEXT_CANDLE';
+window.RAJA_ENTRY_TIMING_VERSION='V36_LIVE_CANDLE_CLOCK';
 </script>
 </body>
 </html>
