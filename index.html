@@ -5977,6 +5977,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
     </style>
 
+
+<style id="raja-v29-vip-entry-guidance">
+/* V29: requested minimal left branding + clearer live entry instructions. */
+.side-panel .brand.brand-vip-only{justify-content:flex-start!important;padding:2px 8px 14px!important;min-height:42px!important}
+.side-panel .brand.brand-vip-only .vip-only-pill{font-size:13px!important;line-height:1!important;font-weight:1000!important;letter-spacing:1.1px!important;padding:8px 12px!important;border-radius:9px!important;color:#00ff9a!important;background:rgba(0,255,154,.08)!important;border:1px solid rgba(0,255,154,.46)!important;box-shadow:0 0 18px rgba(0,255,154,.10)!important}
+#signalView #signalEntryWindow{border-color:rgba(96,239,255,.30)!important;background:linear-gradient(135deg,rgba(3,16,29,.98),rgba(2,10,19,.98))!important}
+#signalView #candleStatusText{font-size:9px!important;font-weight:900!important;letter-spacing:.3px!important;color:#d8f5ff!important}
+#signalView #tradeAlert{font-size:10px!important;font-weight:950!important;letter-spacing:.15px!important;line-height:1.35!important}
+#signalView #candleTimer{font-size:26px!important;font-weight:1000!important}
+@media(max-width:820px){body.raja-mobile-result #signalView #candleStatusText{font-size:8.4px!important}body.raja-mobile-result #signalView #tradeAlert{font-size:8.8px!important;line-height:1.35!important}}
+</style>
 </head>
 <body>
 
@@ -6171,7 +6182,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             <div class="app-shell">
                 <aside class="side-panel">
-                    <div class="brand"><span class="brand-mark">♛</span><span>RAJA AI · SK25 STRATEGY</span><span class="vip-pill">VIP</span></div>
+                    <div class="brand brand-vip-only" aria-label="VIP"><span class="vip-pill vip-only-pill">VIP</span></div>
                     <div class="nav-list">
                         <button class="nav-item active" data-section="dashboard" onclick="showDefaultView()">▦ Dashboard</button>
                         <button class="nav-item" data-section="scan" onclick="showDefaultView()">◉ AI Market Scan</button>
@@ -9385,11 +9396,23 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         function startTimer() {
             clearInterval(timerInterval);
-            // V12: entry-window/countdown UI was intentionally removed from the dashboard.
-            // Signal tracking still runs in the backend; do not start a hidden browser timer.
             if (!document.getElementById('candleTimer') || !document.getElementById('candleStatusText') || !document.getElementById('tradeAlert')) {
                 timerInterval = null;
                 return;
+            }
+
+            const ENTRY_GRACE_MS = 4000;
+
+            function activeTradeDirectionLabel() {
+                const raw = String(activePremiumSignal?.dir || activePremiumSignal?.signal || '').toUpperCase();
+                if (raw.includes('CALL') || raw.includes('UP')) return 'UP / CALL';
+                if (raw.includes('PUT') || raw.includes('DOWN')) return 'DOWN / PUT';
+                return 'SIGNAL';
+            }
+
+            function setEntryState(text) {
+                const el = document.getElementById('v31EntryState');
+                if (el) el.innerText = text;
             }
 
             function tickEntryTimer() {
@@ -9401,9 +9424,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     ? candleSeconds
                     : candleSeconds - secIntoSelectedCandle;
                 const tfLabel = selectedExpiry.toUpperCase();
-
-                updateTimerDisplay(secondsToClose);
-
                 const tradeAlert = document.getElementById('tradeAlert');
                 const candleStatus = document.getElementById('candleStatusText');
 
@@ -9411,30 +9431,44 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                 if (activeSignalEntryEpochMs) {
                     const deltaMs = nowMs - activeSignalEntryEpochMs;
+                    const directionLabel = activeTradeDirectionLabel();
 
                     if (deltaMs < 0) {
-                        candleStatus.innerText = `SIGNAL CONFIRMED — WAIT FOR CURRENT ${tfLabel} CANDLE TO CLOSE:`;
-                        tradeAlert.innerText = `⏳ WAIT — ENTER ON NEXT ${tfLabel} CANDLE OPEN`;
-                        tradeAlert.style.display = "block";
-                        tradeAlert.style.color = "#60efff";
-                    } else if (deltaMs <= 4000) {
-                        candleStatus.innerText = `NEW ${tfLabel} CANDLE OPENED:`;
-                        tradeAlert.innerText = `✅ ENTER NOW — NEW ${tfLabel} CANDLE`;
-                        tradeAlert.style.display = "block";
-                        tradeAlert.style.color = "#00ff87";
+                        const waitSeconds = Math.max(0, Math.ceil((-deltaMs) / 1000));
+                        updateTimerDisplay(waitSeconds);
+                        candleStatus.innerText = `NEXT ${tfLabel} CANDLE ENTRY:`;
+                        tradeAlert.innerText = `⏳ PLACE TRADE IN ${waitSeconds} SECOND${waitSeconds === 1 ? '' : 'S'} — ENTER ON NEXT CANDLE OPEN · ${directionLabel}`;
+                        tradeAlert.style.display = 'block';
+                        tradeAlert.style.color = '#60efff';
+                        setEntryState(`WAIT ${waitSeconds}s`);
+                        if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
+                    } else if (deltaMs <= ENTRY_GRACE_MS) {
+                        const leftSeconds = Math.max(0, Math.ceil((ENTRY_GRACE_MS - deltaMs) / 1000));
+                        updateTimerDisplay(leftSeconds);
+                        candleStatus.innerText = `TARGET ${tfLabel} CANDLE IS OPEN:`;
+                        tradeAlert.innerText = `✅ TAKE TRADE NOW — ${directionLabel} · ${leftSeconds}s ENTRY WINDOW LEFT`;
+                        tradeAlert.style.display = 'block';
+                        tradeAlert.style.color = '#00ff87';
+                        setEntryState('TRADE NOW');
                         if (typeof v23EntryOpenOnce === 'function') v23EntryOpenOnce(activeTrackedSignalId || activeSignalEntryEpochMs || tfLabel);
                         if (typeof v23SetLifecycle === 'function') v23SetLifecycle('entry');
                     } else {
-                        candleStatus.innerText = "ENTRY WINDOW CLOSED — MODEL OUTCOME TRACKING:";
-                        tradeAlert.innerText = "◆ TRACKING SIGNAL RESULT";
-                        tradeAlert.style.display = "block";
-                        tradeAlert.style.color = "#60efff";
+                        updateTimerDisplay(secondsToClose);
+                        candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — ENTRY WINDOW PASSED:`;
+                        tradeAlert.innerText = `⛔ ENTRY WINDOW PASSED — DO NOT ENTER THIS CANDLE · WAIT FOR A FRESH SIGNAL`;
+                        tradeAlert.style.display = 'block';
+                        tradeAlert.style.color = '#f6c85f';
+                        setEntryState('PASSED');
                         if (typeof v23SetLifecycle === 'function') v23SetLifecycle('tracking');
                         if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('TRACKING','pending');
                     }
                 } else {
+                    updateTimerDisplay(secondsToClose);
                     candleStatus.innerText = `CURRENT ${tfLabel} CANDLE — WAIT FOR CLOSE:`;
-                    tradeAlert.style.display = "none";
+                    tradeAlert.innerText = `WAITING FOR A CONFIRMED ENTRY TIME`;
+                    tradeAlert.style.display = 'block';
+                    tradeAlert.style.color = '#ccefff';
+                    setEntryState('WAIT');
                 }
             }
 
