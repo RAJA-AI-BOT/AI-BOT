@@ -6,7 +6,8 @@
 <meta name="theme-color" content="#050b16">
 <title>RAJA AI · Chart Scanner SK25</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#10234a,#050913 42%,#010308);color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:14px}.app{max-width:520px;margin:auto}.card{background:rgba(8,15,30,.96);border:1px solid rgba(96,239,255,.25);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 12px 36px rgba(0,0,0,.25)}h1{font-size:19px;margin:0}p{font-size:11px;color:#9fb3c8;line-height:1.45}.tag{display:inline-block;border:1px solid rgba(0,255,135,.3);color:#8dffc4;border-radius:999px;padding:5px 8px;font-size:9px;font-weight:800;margin:5px 4px 0 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:block;font-size:9px;color:#60efff;font-weight:800;margin:8px 0 4px}select,input{width:100%;padding:10px;border-radius:9px;border:1px solid rgba(96,239,255,.22);background:#040812;color:#fff}.btn{width:100%;border:0;border-radius:11px;padding:12px 10px;font-weight:900;color:#02100a;background:linear-gradient(135deg,#00ff87,#60efff);cursor:pointer}.btn:disabled{opacity:.55;cursor:not-allowed}.btn.alt{background:#101c31;color:#c8f7ff;border:1px solid rgba(96,239,255,.24)}.stage{display:none;margin-top:10px;border-radius:13px;overflow:hidden;background:#000;position:relative;aspect-ratio:9/16;max-height:66vh;touch-action:manipulation}.stage video{width:100%;height:100%;object-fit:cover;display:block}.timer{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.78);border:1px solid #60efff;border-radius:999px;padding:7px 12px;font-weight:900;color:#60efff;z-index:3}.hint{position:absolute;bottom:10px;left:10px;right:10px;text-align:center;background:rgba(0,0,0,.72);border-radius:10px;padding:8px;font-size:9px;z-index:3}.focus-ring{position:absolute;width:62px;height:62px;border:2px solid #60efff;border-radius:50%;transform:translate(-50%,-50%) scale(.7);opacity:0;pointer-events:none;z-index:4;box-shadow:0 0 18px rgba(96,239,255,.45)}.focus-ring.show{animation:focusPulse .7s ease}@keyframes focusPulse{0%{opacity:0;transform:translate(-50%,-50%) scale(1.35)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(.7)}}.preview{margin-top:9px}.preview img{max-width:100%;border-radius:10px;border:1px solid rgba(96,239,255,.18)}.result{display:none}.hero{text-align:center;padding:16px;border-radius:13px;background:#030712}.hero.up{border:1px solid #00ff87}.hero.down{border:1px solid #ff426a}.hero.no{border:1px solid #f6c85f}.big{font-size:25px;font-weight:1000}.meta{font-size:11px;color:#c9d7e8;margin-top:6px;line-height:1.45}.entry{margin-top:10px;padding:12px;border-radius:11px;background:#07111f;border:1px solid rgba(96,239,255,.2);text-align:center}.entry strong{display:block;font-size:16px;line-height:1.25}.entry small{display:block;margin-top:5px;color:#9fb3c8;font-size:10px}.entry.go{border-color:rgba(0,255,135,.45)}.entry.go strong{color:#00ff87}.entry.wait{border-color:rgba(96,239,255,.4)}.entry.wait strong{color:#60efff}.entry.stop{border-color:rgba(246,200,95,.45)}.entry.stop strong{color:#f6c85f}.rules{font-size:10px;line-height:1.55;color:#cdd8e5;padding-left:18px}.status{font-size:10px;color:#f6c85f;margin-top:8px;min-height:16px}.back{display:inline-block;color:#60efff;text-decoration:none;font-size:11px;font-weight:800;margin-bottom:10px}.camera-state{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.state-chip{font-size:8px;font-weight:900;border:1px solid rgba(96,239,255,.2);border-radius:999px;padding:4px 7px;color:#9fb3c8}.state-chip.live{color:#8dffc4;border-color:rgba(0,255,135,.35)}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#10234a,#050913 42%,#010308);color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:14px}.app{max-width:520px;margin:auto}.card{background:rgba(8,15,30,.96);border:1px solid rgba(96,239,255,.25);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 12px 36px rgba(0,0,0,.25)}h1{font-size:19px;margin:0}p{font-size:11px;color:#9fb3c8;line-height:1.45}.tag{display:inline-block;border:1px solid rgba(0,255,135,.3);color:#8dffc4;border-radius:999px;padding:5px 8px;font-size:9px;font-weight:800;margin:5px 4px 0 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:block;font-size:9px;color:#60efff;font-weight:800;margin:8px 0 4px}select,input{width:100%;padding:10px;border-radius:9px;border:1px solid rgba(96,239,255,.22);background:#040812;color:#fff}.btn{width:100%;border:0;border-radius:11px;padding:12px 10px;font-weight:900;color:#02100a;background:linear-gradient(135deg,#00ff87,#60efff);cursor:pointer}.btn:disabled{opacity:.55;cursor:not-allowed}.btn.alt{background:#101c31;color:#c8f7ff;border:1px solid rgba(96,239,255,.24)}.stage{display:none;margin-top:10px;border-radius:13px;overflow:hidden;background:#000;position:relative;aspect-ratio:9/16;max-height:66vh;touch-action:manipulation}.stage video{width:100%;height:100%;object-fit:cover;display:block}.timer{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.78);border:1px solid #60efff;border-radius:999px;padding:7px 12px;font-weight:900;color:#60efff;z-index:3}.hint{position:absolute;bottom:10px;left:10px;right:10px;text-align:center;background:rgba(0,0,0,.72);border-radius:10px;padding:8px;font-size:9px;z-index:3}.focus-ring{position:absolute;width:62px;height:62px;border:2px solid #60efff;border-radius:50%;transform:translate(-50%,-50%) scale(.7);opacity:0;pointer-events:none;z-index:4;box-shadow:0 0 18px rgba(96,239,255,.45)}.focus-ring.show{animation:focusPulse .7s ease}@keyframes focusPulse{0%{opacity:0;transform:translate(-50%,-50%) scale(1.35)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(.7)}}.preview{margin-top:9px}.preview img{max-width:100%;border-radius:10px;border:1px solid rgba(96,239,255,.18)}.result{display:none}.hero{text-align:center;padding:16px;border-radius:13px;background:#030712}.hero.up{border:1px solid #00ff87}.hero.down{border:1px solid #ff426a}.hero.no{border:1px solid #f6c85f}.big{font-size:25px;font-weight:1000}.meta{font-size:11px;color:#c9d7e8;margin-top:6px;line-height:1.45}.entry{margin-top:10px;padding:12px;border-radius:11px;background:#07111f;border:1px solid rgba(96,239,255,.2);text-align:center}.entry strong{display:block;font-size:16px;line-height:1.25}.entry small{display:block;margin-top:6px;color:#c9d7e8;font-size:10px;line-height:1.45}.entry-kicker{font-size:9px;font-weight:950;letter-spacing:.7px;color:#8aa3b8;margin-bottom:6px}.entry-time{font-size:12px;font-weight:950;color:#fff;margin-top:7px;line-height:1.4}.why-box{margin-top:10px;padding:11px;border-radius:11px;background:#050d19;border:1px solid rgba(96,239,255,.18)}.why-box strong{display:block;color:#60efff;font-size:10px;letter-spacing:.5px;margin-bottom:5px}.why-box div{font-size:10px;color:#cdd8e5;line-height:1.5}.back-main{display:flex!important;align-items:center;justify-content:center;text-decoration:none;margin-top:12px;background:#101c31!important;color:#c8f7ff!important;border:1px solid rgba(96,239,255,.28)!important}.entry.go{border-color:rgba(0,255,135,.45)}.entry.go strong{color:#00ff87}.entry.wait{border-color:rgba(96,239,255,.4)}.entry.wait strong{color:#60efff}.entry.stop{border-color:rgba(246,200,95,.45)}.entry.stop strong{color:#f6c85f}.rules{font-size:10px;line-height:1.55;color:#cdd8e5;padding-left:18px}.status{font-size:10px;color:#f6c85f;margin-top:8px;min-height:16px}.back{display:inline-block;color:#60efff;text-decoration:none;font-size:11px;font-weight:800;margin-bottom:10px}.camera-state{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.state-chip{font-size:8px;font-weight:900;border:1px solid rgba(96,239,255,.2);border-radius:999px;padding:4px 7px;color:#9fb3c8}.state-chip.live{color:#8dffc4;border-color:rgba(0,255,135,.35)}
+.pair-search-wrap{position:relative;display:flex;align-items:center;margin-bottom:6px}.pair-search-input{width:100%;padding:10px 37px 10px 33px;border-radius:9px;border:1px solid rgba(96,239,255,.32);background:#040812;color:#fff;outline:none}.pair-search-input:focus{border-color:#60efff;box-shadow:0 0 0 2px rgba(96,239,255,.10)}.pair-search-input::placeholder{color:#6f8499}.pair-search-icon{position:absolute;left:10px;color:#60efff;font-size:16px;font-weight:900;pointer-events:none}.pair-search-clear{position:absolute;right:5px;width:29px;height:29px;border:0;border-radius:7px;background:#101c31;color:#c8f7ff;font-weight:900}.pair-search-count{font-size:9px;color:#8fa6bc;margin:-1px 0 6px;min-height:12px}.pair-search-count.empty{color:#f6c85f}
 </style>
 </head>
 <body>
@@ -23,7 +24,7 @@
       <div><label>Broker</label><select id="broker"><option>Quotex</option><option>Pocket Option</option></select></div>
       <div><label>Market</label><select id="market"></select></div>
     </div>
-    <label>Pair</label><select id="pair"></select>
+    <label>Pair</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearch" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — EUR/USD, BTC, OTC" aria-label="Search chart scanner pair"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Search or choose a pair below</div><select id="pair"></select>
     <label>Timeframe</label>
     <select id="tf"><option value="30s">30s</option><option value="1m" selected>1m</option><option value="2m">2m</option><option value="5m">5m</option><option value="10m">10m</option><option value="15m">15m</option><option value="30m">30m</option></select>
 
@@ -50,8 +51,15 @@
       <div id="big" class="big">NO TRADE</div>
       <div id="meta" class="meta"></div>
     </div>
-    <div id="entry" class="entry stop" style="display:none"><strong id="entryMain"></strong><small id="entrySub"></small></div>
+    <div id="entry" class="entry stop" style="display:none">
+      <div class="entry-kicker">TRADE ENTRY INSTRUCTION</div>
+      <strong id="entryMain"></strong>
+      <div id="entryTime" class="entry-time"></div>
+      <small id="entrySub"></small>
+    </div>
+    <div id="whyBox" class="why-box" style="display:none"><strong>WHY THIS SIGNAL?</strong><div id="whyText"></div></div>
     <ul id="rules" class="rules"></ul>
+    <a class="btn alt back-main" href="/">← BACK TO RAJA AI BOT</a>
   </div>
 </div>
 <script>
@@ -77,8 +85,14 @@ let stream=null, armTimer=null, activeTrack=null, armedBoundaryMs=0, entryTimer=
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function auth(){const key=localStorage.getItem('raja_active_key')||'';return{key,user:localStorage.getItem('raja_active_user')||'',device:localStorage.getItem('raja_device_uid')||'',session_token:key?(localStorage.getItem('raja_token_'+key)||''):''};}
 function setStatus(text,state=''){ $('status').textContent=text; const chip=$('scanState'); chip.textContent='SCAN: '+(state||text).toUpperCase().slice(0,28); chip.classList.toggle('live',!!state&&state!=='ready'); }
-function refresh(){const b=$('broker').value,m=$('market'),p=$('pair'),markets=Object.keys(DATA[b]||{});const keep=m.value;m.innerHTML=markets.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(markets.includes(keep))m.value=keep;m.onchange=()=>{p.innerHTML=(DATA[b][m.value]||[]).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('')};m.onchange();}
+function chartPairUniverse(){const b=$('broker').value,m=$('market').value;const rows=DATA[b]?.[m];return Array.isArray(rows)?rows.slice():[];}
+function filterChartPairs(query='',preferred=''){const p=$('pair'),count=$('pairSearchCount');if(!p)return;const all=chartPairUniverse(),needle=String(query||'').trim().toLowerCase(),compactNeedle=needle.replace(/[^a-z0-9]/g,'');const rows=all.filter(x=>{if(!needle)return true;const t=String(x).toLowerCase(),compact=t.replace(/[^a-z0-9]/g,'');return t.includes(needle)||(compactNeedle&&compact.includes(compactNeedle));});p.innerHTML='';if(!rows.length){const o=document.createElement('option');o.value='';o.textContent='No matching pair';o.disabled=true;o.selected=true;p.appendChild(o);if(count){count.textContent=`0 matches for “${String(query||'').trim()}”`;count.classList.add('empty');}return;}rows.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;p.appendChild(o);});if(preferred&&rows.includes(preferred))p.value=preferred;else p.selectedIndex=0;if(count){count.textContent=needle?`${rows.length} matching pair${rows.length===1?'':'s'} · ${all.length} total`:`${all.length} pairs available · search above`;count.classList.remove('empty');}}
+function refresh(){const b=$('broker').value,m=$('market'),markets=Object.keys(DATA[b]||{});const keep=m.value;m.innerHTML=markets.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(markets.includes(keep))m.value=keep;m.onchange=()=>{const search=$('pairSearch');if(search)search.value='';filterChartPairs('', '')};m.onchange();}
 $('broker').onchange=refresh; refresh();
+$('pairSearch').addEventListener('input',()=>filterChartPairs($('pairSearch').value,$('pair').value));
+$('pairSearch').addEventListener('search',()=>filterChartPairs($('pairSearch').value,$('pair').value));
+$('pairSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const p=$('pair');if(p.options.length&&!p.options[0].disabled){p.selectedIndex=0;p.focus();}}});
+$('pairSearchClear').addEventListener('click',()=>{$('pairSearch').value='';filterChartPairs('', $('pair').value);$('pairSearch').focus();});
 
 function span(){return {'30s':30,'1m':60,'2m':120,'5m':300,'10m':600,'15m':900,'30m':1800}[$('tf').value]||60;}
 function boundary(){const s=Math.floor(Date.now()/1000),n=span();return (s+(n-s%n))*1000;}
@@ -136,27 +150,57 @@ async function send(blob,captured,captureEpochMs=0){
 }
 
 function entryDirection(x){const b=String(x.bias||'').toUpperCase();return b.startsWith('UP')?'UP / CALL':b.startsWith('DOWN')?'DOWN / PUT':'SIGNAL';}
+function tfHuman(){const tf=$('tf').value;return {'30s':'30-SECOND','1m':'1-MINUTE','2m':'2-MINUTE','5m':'5-MINUTE','10m':'10-MINUTE','15m':'15-MINUTE','30m':'30-MINUTE'}[tf]||tf.toUpperCase();}
+function humanDuration(seconds){seconds=Math.max(0,Math.ceil(Number(seconds)||0));const m=Math.floor(seconds/60),s=seconds%60;return `${m} MIN ${s} SEC`;}
+function entryClock(epochMs){try{return new Date(epochMs).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}catch(_){return '--:--:--';}}
+function nextFreshBoundaryMs(){return boundary();}
 function startEntryGuide(x){
   if(entryTimer){clearInterval(entryTimer);entryTimer=null;}
-  const entry=$('entry'),main=$('entryMain'),sub=$('entrySub');
+  const entry=$('entry'),main=$('entryMain'),timeLine=$('entryTime'),sub=$('entrySub');
   const bias=String(x.bias||'').toUpperCase();
   if(!(bias.startsWith('UP')||bias.startsWith('DOWN'))||!x.entry_epoch){entry.style.display='none';return;}
   entry.style.display='block';
-  const entryMs=Number(x.entry_epoch)*1000,grace=Math.max(1,Number(x.entry_window_seconds||20))*1000,dir=entryDirection(x),tf=$('tf').value.toUpperCase();
+  const entryMs=Number(x.entry_epoch)*1000,grace=Math.max(1,Number(x.entry_window_seconds||20))*1000,dir=entryDirection(x),tf=tfHuman();
   const tick=()=>{
     const now=Date.now(),delta=now-entryMs;
-    if(delta<0){const sec=Math.ceil(-delta/1000);entry.className='entry wait';main.textContent=`PLACE TRADE IN ${sec} SECOND${sec===1?'':'S'}`;sub.textContent=`Enter ${dir} when the next ${tf} candle opens.`;return true;}
-    if(delta<=grace){const left=Math.max(0,Math.ceil((grace-delta)/1000));entry.className='entry go';main.textContent='TAKE TRADE NOW';sub.textContent=`${dir} · target ${tf} candle is open · ${left}s entry window left.`;return true;}
-    entry.className='entry stop';main.textContent='ENTRY WINDOW PASSED — DO NOT ENTER';sub.textContent='Wait for a fresh verified setup instead of entering late into this candle.';return false;
+    if(delta<0){
+      const sec=Math.ceil(-delta/1000);
+      entry.className='entry wait';
+      main.textContent=`WAIT ${humanDuration(sec)} — THEN PLACE ${dir}`;
+      timeLine.textContent=`TRADE CANDLE: NEXT ${tf} CANDLE · OPENS AT ${entryClock(entryMs)}`;
+      sub.textContent=`When the countdown reaches 00:00, place ${dir} immediately at the OPEN of that candle. Do not enter early.`;
+      return;
+    }
+    if(delta<=grace){
+      const left=Math.max(0,Math.ceil((grace-delta)/1000));
+      entry.className='entry go';
+      main.textContent=`TAKE ${dir} NOW`;
+      timeLine.textContent=`TRADE CANDLE: CURRENT ${tf} CANDLE · OPENED AT ${entryClock(entryMs)}`;
+      sub.textContent=`Enter immediately. ${humanDuration(left)} remains in the allowed entry window. Do not wait for the middle of the candle.`;
+      return;
+    }
+    const age=Math.ceil(delta/1000),freshMs=nextFreshBoundaryMs(),freshSec=Math.max(0,Math.ceil((freshMs-now)/1000));
+    entry.className='entry stop';
+    main.textContent='MISSED SIGNAL — DO NOT TRADE';
+    timeLine.textContent=`TARGET ${tf} CANDLE OPENED ${humanDuration(age)} AGO · ${entryClock(entryMs)}`;
+    sub.textContent=`This signal was only for that candle open. NEXT POSSIBLE FRESH SCAN IN ${humanDuration(freshSec)}. Trade only if the new scan confirms a fresh signal.`;
   };
-  if(tick())entryTimer=setInterval(()=>{if(!tick()&&entryTimer){clearInterval(entryTimer);entryTimer=null;}},250);
+  tick();
+  entryTimer=setInterval(tick,250);
 }
 
 function render(x){
-  $('result').style.display='block';const bias=String(x.bias||'NO TRADE'),up=bias.startsWith('UP'),down=bias.startsWith('DOWN'),hero=$('hero');hero.className='hero '+(up?'up':down?'down':'no');
-  $('big').textContent=up?'⬆ UP SIGNAL':down?'⬇ DOWN SIGNAL':(x.rescan_required?'📷 RESCAN REQUIRED':'⏸ NO TRADE');
-  $('meta').innerHTML=`${esc($('pair').value)} · ${esc($('tf').value.toUpperCase())} · ${esc(x.selected_pattern||'No exact setup')} · NEXT ${esc(x.next_candle_color||'--')}${x.recovery_trade?' · RECOVERY TRADE':''}`;
-  const rules=(x.setup_rules||x.rules||[]);$('rules').innerHTML=rules.map(r=>`<li>${r.ok?'✓':'✕'} ${esc(r.name||'Rule')}</li>`).join('');
+  $('result').style.display='block';
+  const bias=String(x.bias||'NO TRADE'),up=bias.startsWith('UP'),down=bias.startsWith('DOWN'),hero=$('hero');
+  hero.className='hero '+(up?'up':down?'down':'no');
+  $('big').textContent=up?'⬆ UP / CALL SIGNAL':down?'⬇ DOWN / PUT SIGNAL':(x.rescan_required?'📷 RESCAN REQUIRED':'⏸ NO TRADE');
+  const direction=up?'UP / CALL':down?'DOWN / PUT':'NO ENTRY';
+  $('meta').innerHTML=`PAIR: <b>${esc($('pair').value)}</b> · TIMEFRAME: <b>${esc(tfHuman())}</b><br>SIGNAL: <b>${esc(direction)}</b> · PATTERN: <b>${esc(x.selected_pattern||'No exact setup')}</b> · TARGET: <b>NEXT ${esc(x.next_candle_color||'--')} CANDLE</b>`;
+  const reasons=Array.isArray(x.reasons)?x.reasons.filter(Boolean):[];
+  const why=$('whyBox'),whyText=$('whyText');
+  if(reasons.length){why.style.display='block';whyText.textContent=reasons.slice(0,3).join(' ');}else{why.style.display='none';whyText.textContent='';}
+  const rules=(x.setup_rules||x.rules||[]);
+  $('rules').innerHTML=rules.length?`<li style="list-style:none;margin-left:-18px;color:#60efff;font-weight:900">MATCHED PATTERN RULES</li>`+rules.map(r=>`<li>${r.ok?'✓':'✕'} ${esc(r.name||'Rule')}</li>`).join(''):'';
   startEntryGuide(x);
   $('result').scrollIntoView({behavior:'smooth',block:'nearest'});
 }
@@ -174,9 +218,9 @@ $('camera').onclick=async()=>{
     $('video').srcObject=stream;$('stage').style.display='block';await $('video').play().catch(()=>{});
     const track=stream.getVideoTracks()[0];await configureFocus(track);
     armedBoundaryMs=boundary();
-    setStatus('Camera armed. Waiting for current candle to close...','waiting');
+    setStatus(`Camera armed. Next ${tfHuman()} candle opens in ${humanDuration((armedBoundaryMs-Date.now())/1000)}. If a valid setup is found, that opening candle is the trade candle.`,'waiting');
     $('timer').textContent=clock(armedBoundaryMs-Date.now());
-    armTimer=setInterval(()=>{const left=armedBoundaryMs-Date.now();$('timer').textContent=clock(left);if(left<=0){clearInterval(armTimer);armTimer=null;captureClose(armedBoundaryMs);}},100);
+    armTimer=setInterval(()=>{const left=armedBoundaryMs-Date.now();$('timer').textContent=clock(left);$('status').textContent=`WAIT ${humanDuration(left/1000)} · scanning for a trade on the NEXT ${tfHuman()} candle`;if(left<=0){clearInterval(armTimer);armTimer=null;captureClose(armedBoundaryMs);}},250);
   }catch(e){stopCamera();setStatus('Camera preview unavailable — opening phone camera.','fallback');$('legacyCamera').click();}
 };
 
