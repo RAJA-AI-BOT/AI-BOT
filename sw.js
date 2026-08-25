@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v37-neon-signal-2';
+const CACHE_VERSION = 'raja-ai-pwa-v38-prep-entry-scroll';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
