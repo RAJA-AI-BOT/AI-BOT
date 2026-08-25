@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v39-raja24-strategies';
+const CACHE_VERSION = 'raja-ai-pwa-v40-live-screen-scanner';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -109,9 +109,13 @@ function offlineJson() {
 async function networkFirstNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
 
-  const shellKey = request.url.includes('/chart-scanner')
-    ? '/chart-scanner'
-    : '/';
+  let shellKey = '/';
+
+  if (request.url.includes('/live-scanner')) {
+    shellKey = '/live-scanner';
+  } else if (request.url.includes('/chart-scanner')) {
+    shellKey = '/chart-scanner';
+  }
 
   try {
     const response = await fetch(request, {
