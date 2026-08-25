@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v38-prep-entry-scroll';
+const CACHE_VERSION = 'raja-ai-pwa-v39-raja24-strategies';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -33,7 +33,6 @@ const API_PREFIXES = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     self.skipWaiting();
-
     const cache = await caches.open(ASSET_CACHE);
 
     await Promise.allSettled(
