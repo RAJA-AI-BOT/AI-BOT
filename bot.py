@@ -2714,9 +2714,49 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_SK25_STRATEGY_ONLY_V28"
-SK25_PATTERN_LIBRARY_SIZE = 25
+SK25_ENGINE_VERSION = "RAJA_24_SELECTED_STRATEGIES_V39"
+SK25_PATTERN_LIBRARY_SIZE = 24
 SK25_LIVE_MIN_CANDLES = 10
+
+# V39 production strategy set: 14 proven/selected RAJA rules + 5 PDF setups + 5 premium price-action setups.
+# Old skipped rules stay in source for backward compatibility/history, but add()/add_setup() ignore them.
+RAJA_ACTIVE_STRATEGY_IDS = frozenset({
+    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25,
+    26, 27, 28, 29, 30,
+    31, 32, 33, 34, 35,
+})
+RAJA_STRATEGY_NAMES = {
+    2: "RAJA Type 2 · Resistance Reversal",
+    4: "RAJA Type 4 · Long-Wick Rejection",
+    9: "RAJA Type 9 · Bull Continuation",
+    10: "RAJA Type 10 · Bear Continuation",
+    12: "RAJA Type 12 · 2m Resistance Hold",
+    14: "RAJA Type 14 · Horizontal Break",
+    18: "RAJA Type 18 · Sideways Resistance Hold",
+    19: "RAJA Type 19 · Sideways Support Hold",
+    20: "RAJA Type 20 · Downtrend Hold",
+    21: "RAJA Type 21 · Uptrend Hold",
+    22: "RAJA Type 22 · Uptrend Contained Pullback",
+    23: "RAJA Type 23 · Downtrend Contained Pullback",
+    24: "RAJA Type 24 · Live S/R Sequence",
+    25: "RAJA Type 25 · S/R Breakout",
+    26: "PDF Setup 1 · Trend S/R Breakout",
+    27: "PDF Setup 4 · Breakout Engulf Retest",
+    28: "PDF Setup 6 · Four-Candle S/R Hold",
+    29: "PDF Setup 11 · 50% Wick Sweep",
+    30: "PDF Setup 13 · Engulf + Open-Level Hold",
+    31: "Premium · S/R Breakout Retest Confirmation",
+    32: "Premium · Liquidity Sweep Reversal",
+    33: "Premium · Trend Pullback Continuation",
+    34: "Premium · Failed Breakout Reversal",
+    35: "Premium · Engulfing at Key S/R",
+}
+RAJA_STRATEGY_PRIORITIES = {
+    2:105, 4:115, 9:145, 10:145, 12:165, 14:150,
+    18:155, 19:155, 20:145, 21:145, 22:155, 23:155, 24:180, 25:175,
+    26:188, 27:202, 28:205, 29:192, 30:198,
+    31:210, 32:206, 33:204, 34:207, 35:200,
+}
 
 
 def _f(value, default=0.0):
@@ -2786,7 +2826,7 @@ def _sk25_level_clusters(values, tolerance, min_touches=2):
 
 
 def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
-    """Evaluate only the supplied SK Pattern Type 1-25 rules on CLOSED OHLC candles."""
+    """Evaluate the V39 selected 24 closed-candle strategies."""
     tf = str(timeframe or "1m").strip().lower()
     market_name = str(market or "LIVE").upper()
     previous_outcome = str(last_outcome or "").strip().upper()
@@ -2798,7 +2838,7 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     if count < SK25_LIVE_MIN_CANDLES:
         return {
             "signal":"NO SIGNAL", "score":0.0, "pattern_type":0,
-            "selected_pattern":"NO TYPE 1-25 SETUP", "pattern_direction":"NONE",
+            "selected_pattern":"NO ACTIVE STRATEGY SETUP", "pattern_direction":"NONE",
             "next_candle_color":"NONE", "setup_match":0.0,
             "rules":[], "pattern_signals":[], "conflict_gate":False,
             "reason":f"Only {count} closed candles are available; need at least {SK25_LIVE_MIN_CANDLES} for strict strategy scanning.",
@@ -2831,13 +2871,14 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
         return inner["body_top"] <= outer["body_top"]+extra and inner["body_bottom"] >= outer["body_bottom"]-extra
 
     exact=[]; near=[]
-    priority={1:120,2:105,3:120,4:115,5:125,6:170,7:80,8:80,9:145,10:145,11:160,12:165,13:175,14:150,15:170,16:75,17:75,18:155,19:155,20:145,21:145,22:155,23:155,24:180,25:175}
     def add(tno, direction, rules, setup, why, family="Candle Sequence", recovery=False, tf_rule="ANY"):
+        if int(tno) not in RAJA_ACTIVE_STRATEGY_IDS:
+            return
         matched=sum(1 for _,ok in rules if bool(ok)); total=max(1,len(rules)); pct=round(100.0*matched/total,1)
         item={
-            "name":f"Pattern Type {tno}", "pattern_type":tno, "direction":"UP" if direction>0 else "DOWN",
+            "name":RAJA_STRATEGY_NAMES.get(int(tno), f"RAJA Strategy {tno}"), "pattern_type":tno, "direction":"UP" if direction>0 else "DOWN",
             "signal":"CALL" if direction>0 else "PUT", "next_candle":"GREEN" if direction>0 else "RED",
-            "score":pct, "priority":priority.get(tno,100), "setup":setup, "why":why, "family":family,
+            "score":pct, "priority":RAJA_STRATEGY_PRIORITIES.get(int(tno),100), "setup":setup, "why":why, "family":family,
             "rules_matched":matched, "rules_total":total,
             "rules":[{"name":name,"ok":bool(ok)} for name,ok in rules],
             "recovery_trade":bool(recovery), "timeframe_rule":tf_rule,
@@ -2966,6 +3007,125 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     a,b,c=candles[-3:]
     add(25,1,[("RED, RED, GREEN setup",seq_is([a,b,c],[-1,-1,1])),("1st RED small/Doji",small(a)),("2nd RED normal",normal(b)),("3rd GREEN long",long_body(c)),("Long GREEN closes above 1st RED resistance",c["close"]>a["high"]+tol*0.15)],"Small RED + normal RED + long GREEN breakout","Next candle GREEN.","S/R Breakout")
 
+    # =========================================================
+    # V39 NEW SELECTED STRATEGIES
+    # IDs 26-30 = selected PDF setups. IDs 31-35 = premium price-action rules.
+    # All use only CLOSED OHLC candles and exact rule matching.
+    # =========================================================
+    def trend_before_setup(setup_len, lookback):
+        base = candles[:-setup_len] if setup_len and len(candles) > setup_len else candles
+        return _sk25_trend(base, lookback)
+
+    def touch_price(c, level, margin=0.35):
+        return c["low"] <= level + tol*margin and c["high"] >= level - tol*margin
+
+    def bullish_engulf(curr, prev, extra=0.15):
+        return curr["dir"] > 0 and body_inside(prev, curr, tol*extra)
+
+    def bearish_engulf(curr, prev, extra=0.15):
+        return curr["dir"] < 0 and body_inside(prev, curr, tol*extra)
+
+    def prior_resistance(setup_len, lookback=14):
+        prior = candles[max(0, count-setup_len-lookback):count-setup_len]
+        return max((x["high"] for x in prior), default=None)
+
+    def prior_support(setup_len, lookback=14):
+        prior = candles[max(0, count-setup_len-lookback):count-setup_len]
+        return min((x["low"] for x in prior), default=None)
+
+    # PDF SETUP 1 — trend + S/R touch by opposite candle + breakout close.
+    if count >= 8:
+        a,b = candles[-2:]
+        res = prior_resistance(2); sup = prior_support(2)
+        big_t = trend_before_setup(2, 12); small_t = trend_before_setup(2, 5)
+        if res is not None:
+            add(26,1,[("Big trend UP",big_t>0.04),("Small trend UP",small_t>0.04),("RED opposite candle",a["dir"]<0),("RED touches resistance/SNR",touch_price(a,res,0.75)),("RED closes at/below SNR",a["close"]<=res+tol*0.18),("GREEN breakout candle",b["dir"]>0 and normal(b)),("GREEN closes above SNR",b["close"]>res+tol*0.18)],"PDF S1 bullish S/R breakout","Trend-aligned opposite candle tests S/R, then a closed green candle breaks above it.","PDF · Trend Breakout")
+        if sup is not None:
+            add(26,-1,[("Big trend DOWN",big_t<-0.04),("Small trend DOWN",small_t<-0.04),("GREEN opposite candle",a["dir"]>0),("GREEN touches support/SNR",touch_price(a,sup,0.75)),("GREEN closes at/above SNR",a["close"]>=sup-tol*0.18),("RED breakout candle",b["dir"]<0 and normal(b)),("RED closes below SNR",b["close"]<sup-tol*0.18)],"PDF S1 bearish S/R breakout","Trend-aligned opposite candle tests S/R, then a closed red candle breaks below it.","PDF · Trend Breakout")
+
+    # PDF SETUP 4 — breakout, continuation, opposite engulf/retest that still holds the broken level.
+    if count >= 9:
+        a,b,c = candles[-3:]
+        res = prior_resistance(3); sup = prior_support(3)
+        big_t = trend_before_setup(3, 12); small_t = trend_before_setup(3, 5)
+        if res is not None:
+            add(27,1,[("Big trend UP",big_t>0.04),("Small trend UP",small_t>0.04),("Candle 1 GREEN breaks S/R",a["dir"]>0 and a["close"]>res+tol*0.15),("Candle 2 GREEN continuation",b["dir"]>0 and normal(b)),("Candle 3 RED engulfs candle 2",bearish_engulf(c,b,0.20)),("Candle 3 retests broken S/R",touch_price(c,res,0.45)),("Candle 3 closes above S/R",c["close"]>res-tol*0.05)],"PDF S4 bullish breakout-engulf-retest","Broken resistance is retested by an opposite engulfing candle but remains support.","PDF · Breakout Retest")
+        if sup is not None:
+            add(27,-1,[("Big trend DOWN",big_t<-0.04),("Small trend DOWN",small_t<-0.04),("Candle 1 RED breaks S/R",a["dir"]<0 and a["close"]<sup-tol*0.15),("Candle 2 RED continuation",b["dir"]<0 and normal(b)),("Candle 3 GREEN engulfs candle 2",bullish_engulf(c,b,0.20)),("Candle 3 retests broken S/R",touch_price(c,sup,0.45)),("Candle 3 closes below S/R",c["close"]<sup+tol*0.05)],"PDF S4 bearish breakout-engulf-retest","Broken support is retested by an opposite engulfing candle but remains resistance.","PDF · Breakout Retest")
+
+    # PDF SETUP 6 — four-candle S/R hold after engulfing impulse.
+    if count >= 10:
+        a,b,c,d = candles[-4:]
+        big_t = trend_before_setup(4, 12); small_t = trend_before_setup(4, 5)
+        wick_both = b["upper_wick"]>=max(tol*0.18,b["body"]*0.16) and b["lower_wick"]>=max(tol*0.18,b["body"]*0.16)
+        if a["dir"] < 0:
+            level = a["body_top"]
+            add(28,1,[("Big trend UP",big_t>0.02),("Small trend UP",small_t>0.02),("Candle 1 normal RED",a["dir"]<0 and normal(a)),("Candle 2 small RED with two wicks",b["dir"]<0 and small(b) and wick_both),("Candle 3 GREEN covers candle 1",bullish_engulf(c,a,0.22) and c["close"]>level+tol*0.08),("Candle 4 small RED",d["dir"]<0 and small(d)),("Candle 4 touches candle-1 S/R",touch_price(d,level,0.40)),("Candle 4 closes above S/R",d["close"]>level-tol*0.05)],"PDF S6 bullish four-candle S/R hold","Engulfing recovery clears candle 1 and a small pullback holds its S/R level.","PDF · Four Candle Hold")
+        if a["dir"] > 0:
+            level = a["body_bottom"]
+            add(28,-1,[("Big trend DOWN",big_t<-0.02),("Small trend DOWN",small_t<-0.02),("Candle 1 normal GREEN",a["dir"]>0 and normal(a)),("Candle 2 small GREEN with two wicks",b["dir"]>0 and small(b) and wick_both),("Candle 3 RED covers candle 1",bearish_engulf(c,a,0.22) and c["close"]<level-tol*0.08),("Candle 4 small GREEN",d["dir"]>0 and small(d)),("Candle 4 touches candle-1 S/R",touch_price(d,level,0.40)),("Candle 4 closes below S/R",d["close"]<level+tol*0.05)],"PDF S6 bearish four-candle S/R hold","Engulfing drop clears candle 1 and a small pullback holds its S/R level.","PDF · Four Candle Hold")
+
+    # PDF SETUP 11 — second candle sweeps the first wick and closes around 50% of candle-1 body.
+    if count >= 2:
+        a,b = candles[-2:]
+        mid = (a["body_top"] + a["body_bottom"]) / 2.0
+        mid_ok = abs(b["close"]-mid) <= max(a["body"]*0.28, tol*0.50)
+        add(29,1,[("Candle 1 normal GREEN",a["dir"]>0 and normal(a)),("Candle 2 RED",b["dir"]<0),("Candle 2 wick sweeps candle-1 low",b["low"]<a["low"]-tol*0.10 and long_lower(b)),("Candle 2 close near 50% of candle-1 body",mid_ok and b["close"]>a["body_bottom"]-tol*0.10)],"PDF S11 bullish 50% wick sweep","A red candle sweeps the prior green low but rejects back near the 50% body area.","PDF · Wick Sweep")
+        add(29,-1,[("Candle 1 normal RED",a["dir"]<0 and normal(a)),("Candle 2 GREEN",b["dir"]>0),("Candle 2 wick sweeps candle-1 high",b["high"]>a["high"]+tol*0.10 and long_upper(b)),("Candle 2 close near 50% of candle-1 body",mid_ok and b["close"]<a["body_top"]+tol*0.10)],"PDF S11 bearish 50% wick sweep","A green candle sweeps the prior red high but rejects back near the 50% body area.","PDF · Wick Sweep")
+
+    # PDF SETUP 13 — candle 2 fully engulfs candle 1; candle 3 holds candle-1 opening level.
+    if count >= 3:
+        a,b,c = candles[-3:]
+        if a["dir"] < 0:
+            level = a["open"]
+            add(30,1,[("Candle 1 RED",a["dir"]<0),("Candle 2 GREEN totally engulfs candle 1",bullish_engulf(b,a,0.18)),("Candle 3 RED",c["dir"]<0),("Candle 3 does not break candle-1 open",c["low"]>=level-tol*0.22 and c["close"]>=level-tol*0.06)],"PDF S13 bullish engulf + open-level hold","Bullish engulfing impulse is followed by a red candle that holds the first candle opening level.","PDF · Engulf Hold")
+        if a["dir"] > 0:
+            level = a["open"]
+            add(30,-1,[("Candle 1 GREEN",a["dir"]>0),("Candle 2 RED totally engulfs candle 1",bearish_engulf(b,a,0.18)),("Candle 3 GREEN",c["dir"]>0),("Candle 3 does not break candle-1 open",c["high"]<=level+tol*0.22 and c["close"]<=level+tol*0.06)],"PDF S13 bearish engulf + open-level hold","Bearish engulfing impulse is followed by a green candle that holds the first candle opening level.","PDF · Engulf Hold")
+
+    # PREMIUM 1 — S/R breakout + retest + fresh same-direction confirmation.
+    if count >= 9:
+        a,b,c = candles[-3:]
+        res = prior_resistance(3); sup = prior_support(3)
+        if res is not None:
+            add(31,1,[("GREEN breakout closes above resistance",a["dir"]>0 and a["close"]>res+tol*0.15),("RED retest candle",b["dir"]<0 and touch_price(b,res,0.45)),("Retest closes above broken resistance",b["close"]>res-tol*0.04),("GREEN confirmation",c["dir"]>0 and normal(c)),("Confirmation closes above retest",c["close"]>b["body_top"]+tol*0.04)],"S/R breakout-retest-confirmation CALL","A closed breakout is retested and then confirmed by a new bullish candle.","Premium · Breakout Retest")
+        if sup is not None:
+            add(31,-1,[("RED breakout closes below support",a["dir"]<0 and a["close"]<sup-tol*0.15),("GREEN retest candle",b["dir"]>0 and touch_price(b,sup,0.45)),("Retest closes below broken support",b["close"]<sup+tol*0.04),("RED confirmation",c["dir"]<0 and normal(c)),("Confirmation closes below retest",c["close"]<b["body_bottom"]-tol*0.04)],"S/R breakout-retest-confirmation PUT","A closed breakdown is retested and then confirmed by a new bearish candle.","Premium · Breakout Retest")
+
+    # PREMIUM 2 — liquidity sweep/wick rejection + confirmation candle.
+    if count >= 8:
+        a,b = candles[-2:]
+        res = prior_resistance(2); sup = prior_support(2)
+        if sup is not None:
+            add(32,1,[("Sweep candle trades below prior support",a["low"]<sup-tol*0.12),("Sweep closes back above support",a["close"]>sup+tol*0.04),("Long lower rejection wick",long_lower(a)),("GREEN confirmation candle",b["dir"]>0 and normal(b)),("Confirmation closes above sweep body",b["close"]>a["body_top"]+tol*0.04)],"Liquidity sweep bullish reversal","Prior support is swept by wick, reclaimed on close, then confirmed bullish.","Premium · Liquidity Sweep")
+        if res is not None:
+            add(32,-1,[("Sweep candle trades above prior resistance",a["high"]>res+tol*0.12),("Sweep closes back below resistance",a["close"]<res-tol*0.04),("Long upper rejection wick",long_upper(a)),("RED confirmation candle",b["dir"]<0 and normal(b)),("Confirmation closes below sweep body",b["close"]<a["body_bottom"]-tol*0.04)],"Liquidity sweep bearish reversal","Prior resistance is swept by wick, reclaimed on close, then confirmed bearish.","Premium · Liquidity Sweep")
+
+    # PREMIUM 3 — trend-aligned two-candle pullback followed by continuation impulse.
+    if count >= 9:
+        a,b,c = candles[-3:]
+        big_t = trend_before_setup(3, 12); small_t = trend_before_setup(3, 6)
+        add(33,1,[("Big trend UP",big_t>0.05),("Small trend UP",small_t>0.03),("Two RED pullback candles",seq_is([a,b],[-1,-1])),("Pullback candles not oversized",a["body"]<=med_body*1.45 and b["body"]<=med_body*1.45),("GREEN continuation candle",c["dir"]>0 and c["body_ratio"]>=0.45 and c["body"]>=med_body*0.85),("Continuation clears pullback highs",c["close"]>max(a["high"],b["high"])+tol*0.04)],"Trend pullback continuation CALL","Two controlled red pullback candles are followed by a trend-aligned bullish continuation close.","Premium · Trend Pullback")
+        add(33,-1,[("Big trend DOWN",big_t<-0.05),("Small trend DOWN",small_t<-0.03),("Two GREEN pullback candles",seq_is([a,b],[1,1])),("Pullback candles not oversized",a["body"]<=med_body*1.45 and b["body"]<=med_body*1.45),("RED continuation candle",c["dir"]<0 and c["body_ratio"]>=0.45 and c["body"]>=med_body*0.85),("Continuation clears pullback lows",c["close"]<min(a["low"],b["low"])-tol*0.04)],"Trend pullback continuation PUT","Two controlled green pullback candles are followed by a trend-aligned bearish continuation close.","Premium · Trend Pullback")
+
+    # PREMIUM 4 — failed breakout: close outside level, immediate reclaim, then reversal confirmation.
+    if count >= 9:
+        a,b,c = candles[-3:]
+        res = prior_resistance(3); sup = prior_support(3)
+        if sup is not None:
+            add(34,1,[("RED closes below support",a["dir"]<0 and a["close"]<sup-tol*0.12),("GREEN reclaims support",b["dir"]>0 and b["close"]>sup+tol*0.04),("GREEN confirmation candle",c["dir"]>0 and normal(c)),("Confirmation extends above reclaim",c["close"]>b["close"]+max(tol*0.04,med_body*0.08))],"Failed breakdown bullish reversal","A breakdown closes below support, immediately fails, and receives bullish confirmation.","Premium · Failed Breakout")
+        if res is not None:
+            add(34,-1,[("GREEN closes above resistance",a["dir"]>0 and a["close"]>res+tol*0.12),("RED falls back below resistance",b["dir"]<0 and b["close"]<res-tol*0.04),("RED confirmation candle",c["dir"]<0 and normal(c)),("Confirmation extends below reclaim",c["close"]<b["close"]-max(tol*0.04,med_body*0.08))],"Failed breakout bearish reversal","A breakout closes above resistance, immediately fails, and receives bearish confirmation.","Premium · Failed Breakout")
+
+    # PREMIUM 5 — engulfing only at a real recent support/resistance level.
+    if count >= 8:
+        a,b = candles[-2:]
+        res = prior_resistance(2); sup = prior_support(2)
+        if sup is not None:
+            add(35,1,[("RED setup candle at support",a["dir"]<0 and touch_price(a,sup,0.55)),("GREEN bullish engulfing",bullish_engulf(b,a,0.18)),("Engulf closes above support",b["close"]>sup+tol*0.04)],"Bullish engulfing at key support","A true body engulf occurs at recent support and closes back above the level.","Premium · Engulfing S/R")
+        if res is not None:
+            add(35,-1,[("GREEN setup candle at resistance",a["dir"]>0 and touch_price(a,res,0.55)),("RED bearish engulfing",bearish_engulf(b,a,0.18)),("Engulf closes below resistance",b["close"]<res-tol*0.04)],"Bearish engulfing at key resistance","A true body engulf occurs at recent resistance and closes back below the level.","Premium · Engulfing S/R")
+
     exact.sort(key=lambda x:(int(x["priority"]),int(x["rules_total"]),int(x["pattern_type"])),reverse=True)
     near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"])),reverse=True)
     directions={x["direction"] for x in exact}
@@ -2976,19 +3136,19 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
 
     if conflict:
         return {
-            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"CONFLICTING TYPE 1-25 SETUPS",
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"CONFLICTING ACTIVE STRATEGIES",
             "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":0.0,
             "rules":[],"pattern_signals":exact[:8],"conflict_gate":True,
-            "reason":"NO TRADE · CONFLICTING SETUPS: exact UP and DOWN Pattern Type rules are both present on the same closed-candle snapshot.",
+            "reason":"NO TRADE · CONFLICTING SETUPS: exact UP and DOWN active strategy rules are both present on the same closed-candle snapshot.",
             "closed_candle_epoch":closed_epoch,
         }
     if not best:
         watch=f" Closest: {closest['name']} {closest['rules_matched']}/{closest['rules_total']} rules." if closest else ""
         return {
-            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO TYPE 1-25 SETUP",
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO ACTIVE STRATEGY SETUP",
             "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":float(closest["score"]) if closest else 0.0,
             "rules":list(closest.get("rules") or []) if closest else [],"pattern_signals":near[:8],"conflict_gate":False,
-            "reason":"No exact Pattern Type 1-25 setup is complete on the latest CLOSED candles."+watch,
+            "reason":"No exact active strategy setup is complete on the latest CLOSED candles."+watch,
             "closed_candle_epoch":closed_epoch,
         }
 
@@ -3024,14 +3184,14 @@ def batch_results_are_countable(results):
 def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, source_info=None):
     source_info=source_info or _market_source_info(pair,symbol)
     return {
-        "pair":pair,"score":0.0,"signal":"NO SIGNAL","reason":str(reason or "No exact Pattern Type 1-25 setup."),
-        "pattern_type":0,"selected_pattern":"NO TYPE 1-25 SETUP","pattern_direction":"NONE","next_candle_color":"NONE",
+        "pair":pair,"score":0.0,"signal":"NO SIGNAL","reason":str(reason or "No exact active strategy setup."),
+        "pattern_type":0,"selected_pattern":"NO ACTIVE STRATEGY SETUP","pattern_direction":"NONE","next_candle_color":"NONE",
         "setup_match":0.0,"rules":[],"pattern_signals":[],"conflict_gate":False,"recovery_trade":False,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
         "timeframe_summary":timeframes or {},"timeframes_scanned":[],"no_trade":True,
-        "no_trade_reason":str(reason or "No exact Pattern Type 1-25 setup."),"quality_gate":"PATTERN_ONLY",
+        "no_trade_reason":str(reason or "No exact active strategy setup."),"quality_gate":"PATTERN_ONLY",
         "engine":SK25_ENGINE_VERSION,
     }
 
@@ -3115,11 +3275,11 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
         "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if strategy.get("signal") in {"CALL","PUT"} else [],
         "opposing_timeframes":[],"multi_tf_agreement":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
-        "confirmation_mode":"SK25 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "confirmation_mode":"RAJA 24 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
-        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"SK Pattern Type 1-25","pattern_library_size":25,
+        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 24 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
         "closed_candle_verified":True,"forming_candle_excluded":True,
         "movement_info":movement,"volatility_pct":movement["percent"],"market_stability_score":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
         "market_risk_level":"INFO ONLY","market_regime":strategy.get("selected_pattern") or "NO SETUP",
@@ -3441,7 +3601,7 @@ def pwa_splash_logo():
 def disable_html_cache(response):
     # Fresh app shell/update metadata must never get pinned by Safari/Chrome HTTP cache.
     # User data/localStorage is untouched; only network cache policy is controlled here.
-    no_store_paths = {"/", "/index.html", "/chart-scanner", "/sw.js", "/app-version"}
+    no_store_paths = {"/", "/index.html", "/chart-scanner", "/live-scanner", "/sw.js", "/app-version"}
     if request.path in no_store_paths or request.path.endswith(".html"):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
@@ -4977,12 +5137,11 @@ def _candidate_chart_regions(arr: np.ndarray) -> list[tuple[str, np.ndarray]]:
     return out
 
 def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", last_outcome: str = "", *, captured_at_close: bool = False) -> dict[str, Any]:
-    """V11: strict SK Trading Club Pattern Type 1-25 scanner.
+    """V39: selected 24-strategy closed-candle chart scanner.
 
-    The older V9 candlestick/chart-pattern library is intentionally removed from
-    signal decisions. This engine only evaluates the 25 user-supplied setup
-    types, visible candle body/wick geometry and the level/trend context required
-    by those setups. No RSI/EMA/MACD/Stochastic/Bollinger values are calculated.
+    The engine evaluates the selected 14 RAJA rules, 5 PDF setups and 5 premium
+    price-action setups using visible candle body/wick geometry plus S/R/trend context.
+    No RSI/EMA/MACD/Stochastic/Bollinger values are used for directional signals.
     """
     try:
         image = Image.open(io.BytesIO(raw))
@@ -5040,7 +5199,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
     detected_count = len(candles)
     warnings = list(quality_notes)
     reasons: list[str] = []
-    library = "SK Trading Club Pattern Type 1-25"
+    library = "RAJA Selected 24 Strategy Library"
 
     # V11 Closed Candle Lock. A normal screenshot/live-now frame can contain a
     # still-forming rightmost candle, so it is excluded from setup matching. A
@@ -5068,7 +5227,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
 
     count = len(candles)
 
-    def legacy_aliases(pattern: str, direction: str, score: float, signals: list[dict[str, Any]], size: int = 25) -> dict[str, Any]:
+    def legacy_aliases(pattern: str, direction: str, score: float, signals: list[dict[str, Any]], size: int = SK25_PATTERN_LIBRARY_SIZE) -> dict[str, Any]:
         return {
             "selected_strategy": pattern,
             "strategy_direction": direction,
@@ -5082,17 +5241,17 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         warnings.append("Not enough candle structure was detected. Move closer to the chart and keep candles sharp.")
         return {
             "bias": "NO TRADE", "confidence": 0.0, "image_quality_score": quality,
-            "detected_candles": detected_count, "closed_candles_analyzed": count, "visual_trend": "UNREADABLE", "momentum": "PATTERN TYPE 1-25", "volatility": "NOT USED",
-            "selected_pattern": "NO TYPE 1-25 SETUP", "pattern_direction": "NONE", "pattern_score": 0.0,
-            "pattern_signals": [], "pattern_library": library, "pattern_library_size": 25,
+            "detected_candles": detected_count, "closed_candles_analyzed": count, "visual_trend": "UNREADABLE", "momentum": "24 SELECTED STRATEGIES", "volatility": "NOT USED",
+            "selected_pattern": "NO ACTIVE STRATEGY SETUP", "pattern_direction": "NONE", "pattern_score": 0.0,
+            "pattern_signals": [], "pattern_library": library, "pattern_library_size": SK25_PATTERN_LIBRARY_SIZE,
             "confluence_count": 0, "setup_quality": "LOW", "next_candle_color": "NONE",
             "entry_instruction": "WAIT FOR A COMPLETE SETUP", "recovery_trade": False,
             "latest_candle_direction": "UNKNOWN",
-            "reasons": ["Insufficient readable candle structure for Pattern Type 1-25 recognition."], "warnings": warnings,
-            "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "Type 1-25 only"},
+            "reasons": ["Insufficient readable candle structure for 24-strategy recognition."], "warnings": warnings,
+            "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "24 selected strategies"},
             "engine": "RAJA V11 · Strict SK25 + Adaptive Vision + Closed Candle Lock", "analysis_crop_mode": crop_name,
             "timing_verified": bool(captured_at_close), "forming_candle_excluded": forming_candle_excluded, "newborn_candle_excluded": newborn_candle_excluded,
-            **legacy_aliases("NO TYPE 1-25 SETUP", "NONE", 0.0, []),
+            **legacy_aliases("NO ACTIVE STRATEGY SETUP", "NONE", 0.0, []),
         }
 
     ranges = np.array([float(c["range"]) for c in candles], dtype=float)
@@ -5178,13 +5337,14 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
 
     def add_setup(type_no: int, direction: int, rules: list[tuple[str, bool]], setup: str, why: str,
                   *, family: str = "Candle Sequence", recovery: bool = False, timeframe_rule: str = "ANY") -> None:
+        if int(type_no) not in RAJA_ACTIVE_STRATEGY_IDS:
+            return
         matched = sum(1 for _, ok in rules if ok)
         total = max(1, len(rules))
         pct = round(100.0 * matched / total, 1)
-        priority_map = {1:120, 2:105, 3:120, 4:115, 5:125, 6:170, 7:80, 8:80, 9:145, 10:145, 11:160, 12:165, 13:175, 14:150, 15:170, 16:75, 17:75, 18:155, 19:155, 20:145, 21:145, 22:155, 23:155, 24:180, 25:175}
         item = {
-            "name": f"Pattern Type {type_no}",
-            "priority": priority_map.get(type_no, 100),
+            "name": RAJA_STRATEGY_NAMES.get(int(type_no), f"RAJA Strategy {type_no}"),
+            "priority": RAJA_STRATEGY_PRIORITIES.get(int(type_no), 100),
             "pattern_type": type_no,
             "direction": "UP" if direction > 0 else "DOWN",
             "next_candle": "GREEN" if direction > 0 else "RED",
@@ -5418,6 +5578,94 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         add_setup(25, 1, [("RED, RED, GREEN setup", seq_is([a,b,c],[-1,-1,1])), ("1st RED is small/Doji", is_small(a)), ("2nd RED has normal body", is_normal(b)), ("3rd GREEN is long", is_long(c)), ("Long GREEN breaks 1st RED SNR", close_breaks_above(c, snr, 0.20))],
                   "Small RED + normal RED + long GREEN SNR breakout", "The long green candle breaks the SNR level created by the first small red candle; the strategy targets the next candle GREEN.", family="SNR Breakout")
 
+    # V39 visual equivalents of the 10 new selected strategies.
+    def vtrend_before_setup(setup_len: int, lookback: int) -> float:
+        return trend_before(max(0, count-setup_len), lookback)
+
+    def vtouch(c, level_y, margin=0.42):
+        return float(c["top"]) <= float(level_y)+tol*margin and float(c["bottom"]) >= float(level_y)-tol*margin
+
+    def vprior_res(setup_len: int, lookback: int = 14):
+        seq0 = candles[max(0,count-setup_len-lookback):count-setup_len]
+        return min((float(x["top"]) for x in seq0), default=None)
+
+    def vprior_sup(setup_len: int, lookback: int = 14):
+        seq0 = candles[max(0,count-setup_len-lookback):count-setup_len]
+        return max((float(x["bottom"]) for x in seq0), default=None)
+
+    def vbull_engulf(curr, prev, extra=0.18):
+        return curr["dir"]>0 and body_inside(prev,curr,tol*extra)
+
+    def vbear_engulf(curr, prev, extra=0.18):
+        return curr["dir"]<0 and body_inside(prev,curr,tol*extra)
+
+    if count >= 8:
+        a,b=candles[-2:]; res=vprior_res(2); sup=vprior_sup(2); big=vtrend_before_setup(2,12); smallt=vtrend_before_setup(2,5)
+        if res is not None:
+            add_setup(26,1,[("Big trend UP",big>0.04),("Small trend UP",smallt>0.04),("RED opposite candle",a["dir"]<0),("RED touches S/R",vtouch(a,res,0.75)),("GREEN breakout closes above S/R",b["dir"]>0 and is_normal(b) and close_breaks_above(b,res,0.18))],"PDF S1 bullish S/R breakout","Trend-aligned S/R test followed by a bullish breakout close.",family="PDF · Trend Breakout")
+        if sup is not None:
+            add_setup(26,-1,[("Big trend DOWN",big<-0.04),("Small trend DOWN",smallt<-0.04),("GREEN opposite candle",a["dir"]>0),("GREEN touches S/R",vtouch(a,sup,0.75)),("RED breakout closes below S/R",b["dir"]<0 and is_normal(b) and close_breaks_below(b,sup,0.18))],"PDF S1 bearish S/R breakout","Trend-aligned S/R test followed by a bearish breakdown close.",family="PDF · Trend Breakout")
+
+    if count >= 9:
+        a,b,c=candles[-3:]; res=vprior_res(3); sup=vprior_sup(3); big=vtrend_before_setup(3,12); smallt=vtrend_before_setup(3,5)
+        if res is not None:
+            add_setup(27,1,[("Big trend UP",big>0.04),("Small trend UP",smallt>0.04),("Candle 1 GREEN breaks S/R",a["dir"]>0 and close_breaks_above(a,res,0.15)),("Candle 2 GREEN continuation",b["dir"]>0 and is_normal(b)),("Candle 3 RED engulfs candle 2",vbear_engulf(c,b,0.20)),("Candle 3 retests S/R",vtouch(c,res,0.45)),("Candle 3 closes above S/R",float(c["close_y"])<res+tol*0.05)],"PDF S4 bullish breakout-engulf-retest","Opposite engulfing retest holds the broken resistance as support.",family="PDF · Breakout Retest")
+        if sup is not None:
+            add_setup(27,-1,[("Big trend DOWN",big<-0.04),("Small trend DOWN",smallt<-0.04),("Candle 1 RED breaks S/R",a["dir"]<0 and close_breaks_below(a,sup,0.15)),("Candle 2 RED continuation",b["dir"]<0 and is_normal(b)),("Candle 3 GREEN engulfs candle 2",vbull_engulf(c,b,0.20)),("Candle 3 retests S/R",vtouch(c,sup,0.45)),("Candle 3 closes below S/R",float(c["close_y"])>sup-tol*0.05)],"PDF S4 bearish breakout-engulf-retest","Opposite engulfing retest holds the broken support as resistance.",family="PDF · Breakout Retest")
+
+    if count >= 10:
+        a,b,c,d=candles[-4:]; big=vtrend_before_setup(4,12); smallt=vtrend_before_setup(4,5)
+        wick_both=float(b["upper_wick"])>=max(2.0,float(b["body_height"])*0.16) and float(b["lower_wick"])>=max(2.0,float(b["body_height"])*0.16)
+        if a["dir"]<0:
+            level=float(a["top"]); add_setup(28,1,[("Big trend UP",big>0.02),("Small trend UP",smallt>0.02),("Candle 1 normal RED",is_normal(a)),("Candle 2 small RED with wicks",b["dir"]<0 and is_small(b) and wick_both),("Candle 3 GREEN covers candle 1",vbull_engulf(c,a,0.22) and close_breaks_above(c,level,0.05)),("Candle 4 small RED",d["dir"]<0 and is_small(d)),("Candle 4 retests level",vtouch(d,level,0.40)),("Candle 4 closes above level",float(d["close_y"])<level+tol*0.05)],"PDF S6 bullish four-candle hold","Engulfing impulse plus small retest holds candle-1 S/R.",family="PDF · Four Candle Hold")
+        if a["dir"]>0:
+            level=float(a["bottom"]); add_setup(28,-1,[("Big trend DOWN",big<-0.02),("Small trend DOWN",smallt<-0.02),("Candle 1 normal GREEN",is_normal(a)),("Candle 2 small GREEN with wicks",b["dir"]>0 and is_small(b) and wick_both),("Candle 3 RED covers candle 1",vbear_engulf(c,a,0.22) and close_breaks_below(c,level,0.05)),("Candle 4 small GREEN",d["dir"]>0 and is_small(d)),("Candle 4 retests level",vtouch(d,level,0.40)),("Candle 4 closes below level",float(d["close_y"])>level-tol*0.05)],"PDF S6 bearish four-candle hold","Engulfing impulse plus small retest holds candle-1 S/R.",family="PDF · Four Candle Hold")
+
+    if count >= 2:
+        a,b=candles[-2:]; mid=(float(a["body_top"])+float(a["body_bottom"]))/2.0; mid_ok=abs(float(b["close_y"])-mid)<=max(float(a["body_height"])*0.28,tol*0.50)
+        add_setup(29,1,[("Candle 1 normal GREEN",a["dir"]>0 and is_normal(a)),("Candle 2 RED",b["dir"]<0),("Candle 2 sweeps candle-1 low",float(b["bottom"])>float(a["bottom"])+tol*0.10 and long_lower(b)),("Close near 50% body",mid_ok)],"PDF S11 bullish 50% wick sweep","Low sweep rejects back near candle-1 midpoint.",family="PDF · Wick Sweep")
+        add_setup(29,-1,[("Candle 1 normal RED",a["dir"]<0 and is_normal(a)),("Candle 2 GREEN",b["dir"]>0),("Candle 2 sweeps candle-1 high",float(b["top"])<float(a["top"])-tol*0.10 and long_upper(b)),("Close near 50% body",mid_ok)],"PDF S11 bearish 50% wick sweep","High sweep rejects back near candle-1 midpoint.",family="PDF · Wick Sweep")
+
+    if count >= 3:
+        a,b,c=candles[-3:]
+        if a["dir"]<0:
+            level=float(a["open_y"]); add_setup(30,1,[("Candle 1 RED",True),("Candle 2 GREEN engulfs candle 1",vbull_engulf(b,a,0.18)),("Candle 3 RED",c["dir"]<0),("Candle 3 holds candle-1 open",float(c["bottom"])<=level+tol*0.22 and float(c["close_y"])<=level+tol*0.06)],"PDF S13 bullish engulf + open-level hold","Bullish engulfing is followed by a red hold above candle-1 open.",family="PDF · Engulf Hold")
+        if a["dir"]>0:
+            level=float(a["open_y"]); add_setup(30,-1,[("Candle 1 GREEN",True),("Candle 2 RED engulfs candle 1",vbear_engulf(b,a,0.18)),("Candle 3 GREEN",c["dir"]>0),("Candle 3 holds candle-1 open",float(c["top"])>=level-tol*0.22 and float(c["close_y"])>=level-tol*0.06)],"PDF S13 bearish engulf + open-level hold","Bearish engulfing is followed by a green hold below candle-1 open.",family="PDF · Engulf Hold")
+
+    if count >= 9:
+        a,b,c=candles[-3:]; res=vprior_res(3); sup=vprior_sup(3)
+        if res is not None:
+            add_setup(31,1,[("GREEN breakout",a["dir"]>0 and close_breaks_above(a,res,0.15)),("RED retest",b["dir"]<0 and vtouch(b,res,0.45)),("Retest holds above",float(b["close_y"])<res+tol*0.04),("GREEN confirmation",c["dir"]>0 and is_normal(c)),("Confirmation extends",float(c["close_y"])<float(b["body_top"])-tol*0.04)],"S/R breakout-retest-confirmation CALL","Breakout, retest and fresh bullish confirmation.",family="Premium · Breakout Retest")
+        if sup is not None:
+            add_setup(31,-1,[("RED breakdown",a["dir"]<0 and close_breaks_below(a,sup,0.15)),("GREEN retest",b["dir"]>0 and vtouch(b,sup,0.45)),("Retest holds below",float(b["close_y"])>sup-tol*0.04),("RED confirmation",c["dir"]<0 and is_normal(c)),("Confirmation extends",float(c["close_y"])>float(b["body_bottom"])+tol*0.04)],"S/R breakout-retest-confirmation PUT","Breakdown, retest and fresh bearish confirmation.",family="Premium · Breakout Retest")
+
+    if count >= 8:
+        a,b=candles[-2:]; res=vprior_res(2); sup=vprior_sup(2)
+        if sup is not None:
+            add_setup(32,1,[("Sweep below prior support",float(a["bottom"])>sup+tol*0.12),("Sweep closes back above support",float(a["close_y"])<sup-tol*0.04),("Long lower wick",long_lower(a)),("GREEN confirmation",b["dir"]>0 and is_normal(b)),("Confirmation clears sweep body",float(b["close_y"])<float(a["body_top"])-tol*0.04)],"Liquidity sweep bullish reversal","Support sweep is reclaimed and confirmed bullish.",family="Premium · Liquidity Sweep")
+        if res is not None:
+            add_setup(32,-1,[("Sweep above prior resistance",float(a["top"])<res-tol*0.12),("Sweep closes back below resistance",float(a["close_y"])>res+tol*0.04),("Long upper wick",long_upper(a)),("RED confirmation",b["dir"]<0 and is_normal(b)),("Confirmation clears sweep body",float(b["close_y"])>float(a["body_bottom"])+tol*0.04)],"Liquidity sweep bearish reversal","Resistance sweep is reclaimed and confirmed bearish.",family="Premium · Liquidity Sweep")
+
+    if count >= 9:
+        a,b,c=candles[-3:]; big=vtrend_before_setup(3,12); smallt=vtrend_before_setup(3,6)
+        add_setup(33,1,[("Big trend UP",big>0.05),("Small trend UP",smallt>0.03),("Two RED pullback candles",seq_is([a,b],[-1,-1])),("Pullback not oversized",float(a["body_height"])<=med_body*1.45 and float(b["body_height"])<=med_body*1.45),("GREEN continuation",c["dir"]>0 and float(c["body_ratio"])>=0.45),("Continuation clears pullback highs",float(c["close_y"])<min(float(a["top"]),float(b["top"]))-tol*0.04)],"Trend pullback continuation CALL","Controlled pullback followed by bullish continuation.",family="Premium · Trend Pullback")
+        add_setup(33,-1,[("Big trend DOWN",big<-0.05),("Small trend DOWN",smallt<-0.03),("Two GREEN pullback candles",seq_is([a,b],[1,1])),("Pullback not oversized",float(a["body_height"])<=med_body*1.45 and float(b["body_height"])<=med_body*1.45),("RED continuation",c["dir"]<0 and float(c["body_ratio"])>=0.45),("Continuation clears pullback lows",float(c["close_y"])>max(float(a["bottom"]),float(b["bottom"]))+tol*0.04)],"Trend pullback continuation PUT","Controlled pullback followed by bearish continuation.",family="Premium · Trend Pullback")
+
+    if count >= 9:
+        a,b,c=candles[-3:]; res=vprior_res(3); sup=vprior_sup(3)
+        if sup is not None:
+            add_setup(34,1,[("RED closes below support",a["dir"]<0 and close_breaks_below(a,sup,0.12)),("GREEN reclaims support",b["dir"]>0 and float(b["close_y"])<sup-tol*0.04),("GREEN confirmation",c["dir"]>0 and is_normal(c)),("Confirmation extends",float(c["close_y"])<float(b["close_y"])-tol*0.04)],"Failed breakdown bullish reversal","Breakdown fails, level is reclaimed, bullish confirmation follows.",family="Premium · Failed Breakout")
+        if res is not None:
+            add_setup(34,-1,[("GREEN closes above resistance",a["dir"]>0 and close_breaks_above(a,res,0.12)),("RED falls back below resistance",b["dir"]<0 and float(b["close_y"])>res+tol*0.04),("RED confirmation",c["dir"]<0 and is_normal(c)),("Confirmation extends",float(c["close_y"])>float(b["close_y"])+tol*0.04)],"Failed breakout bearish reversal","Breakout fails, level is lost, bearish confirmation follows.",family="Premium · Failed Breakout")
+
+    if count >= 8:
+        a,b=candles[-2:]; res=vprior_res(2); sup=vprior_sup(2)
+        if sup is not None:
+            add_setup(35,1,[("RED setup at support",a["dir"]<0 and vtouch(a,sup,0.55)),("GREEN bullish engulfing",vbull_engulf(b,a,0.18)),("Engulf closes above support",float(b["close_y"])<sup-tol*0.04)],"Bullish engulfing at key support","Engulfing occurs at support, not in the middle of the range.",family="Premium · Engulfing S/R")
+        if res is not None:
+            add_setup(35,-1,[("GREEN setup at resistance",a["dir"]>0 and vtouch(a,res,0.55)),("RED bearish engulfing",vbear_engulf(b,a,0.18)),("Engulf closes below resistance",float(b["close_y"])>res+tol*0.04)],"Bearish engulfing at key resistance","Engulfing occurs at resistance, not in the middle of the range.",family="Premium · Engulfing S/R")
+
     # V11 conflict gate: an opposite exact setup is never overridden by a numeric
     # priority. Same-direction exact setups reinforce one another; opposite exact
     # setups produce NO TRADE until the chart resolves.
@@ -5433,7 +5681,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         next_color = "NONE"
         selected_dir = "NONE"
         setup_quality = "LOW"
-        selected = "CONFLICTING TYPE SETUPS"
+        selected = "CONFLICTING ACTIVE STRATEGIES"
         match_score = 100.0
         confidence = 0.0
         signals_out = exact[:8]
@@ -5474,11 +5722,11 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         if best_near:
             selected = f"WATCH: {best_near['name']}"
             match_score = float(best_near["score"])
-            reasons.append(f"No exact Type 1-25 setup yet. Closest is {best_near['name']} with {best_near['rules_matched']}/{best_near['rules_total']} rules currently visible.")
+            reasons.append(f"No exact active strategy setup yet. Closest is {best_near['name']} with {best_near['rules_matched']}/{best_near['rules_total']} rules currently visible.")
         else:
-            selected = "NO TYPE 1-25 SETUP"
+            selected = "NO ACTIVE STRATEGY SETUP"
             match_score = 0.0
-            reasons.append("No exact Pattern Type 1-25 setup is complete on the newest readable candles.")
+            reasons.append("No exact active strategy setup is complete on the newest readable candles.")
         reasons.append("No directional entry is armed until every required rule for one strategy setup is present.")
         confidence = match_score
         signals_out = near[:8]
@@ -5521,7 +5769,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "setup_rules": list(best.get("rules") or []) if best else list((best_near or {}).get("rules") or []),
         "pattern_signals": signals_out,
         "pattern_library": library,
-        "pattern_library_size": 25,
+        "pattern_library_size": SK25_PATTERN_LIBRARY_SIZE,
         "confluence_count": len(exact) if (best and not conflict_gate) else 0,
         "setup_quality": setup_quality,
         "conflict_gate": bool(conflict_gate),
@@ -5539,8 +5787,8 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "reasons": reasons[:10],
         "warnings": warnings[:7],
         "pattern_status": {
-            "Mode": "Pattern Type 1-25 only",
-            "Indicators": "OFF - signal engine uses only the supplied Pattern Type 1-25 rules",
+            "Mode": "RAJA 24 selected strategies",
+            "Indicators": "OFF - signal engine uses only the selected closed-candle strategy rules",
             "Context": f"Visual candle context: {context_label}",
             "Candle geometry": f"{count} closed candles analysed / {detected_count} visible structures",
             "Closed Candle Lock": "VERIFIED AT CLOSE" if captured_at_close else "FORMING CANDLE EXCLUDED - ENTRY NOT ARMED",
@@ -5645,6 +5893,15 @@ def analyze_chart_image_mobile_safe(raw: bytes, timeframe: str = "1m", market: s
     return best
 
 
+@app.route("/live-scanner")
+def live_scanner_page():
+    response = send_from_directory(str(BASE_DIR), "live_scanner.html")
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 @app.route("/chart-scanner")
 def chart_scanner_page():
     response = send_from_directory(str(BASE_DIR), "chart_scanner.html")
@@ -5683,7 +5940,7 @@ def chart_scan_api():
     except (ValueError,UnidentifiedImageError) as exc:
         return jsonify({"status":"error","message":str(exc)}),400
     now_epoch = int(time.time())
-    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"SK Pattern Type 1-25"})
+    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 24 Strategy Library"})
 
     # V29 explicit entry timing for One-Tap Close Camera. The browser supplies the
     # exact candle boundary it armed; server validates it is reasonably recent.
