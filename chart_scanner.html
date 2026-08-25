@@ -1,1 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#050b16">
+<title>RAJA AI BOT · Chart Scanner</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% -10%,#10234a,#050913 42%,#010308);color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif;padding:14px}.app{max-width:520px;margin:auto}.card{background:rgba(8,15,30,.96);border:1px solid rgba(96,239,255,.25);border-radius:16px;padding:14px;margin-bottom:12px;box-shadow:0 12px 36px rgba(0,0,0,.25)}h1{font-size:19px;margin:0}p{font-size:11px;color:#9fb3c8;line-height:1.45}.tag{display:inline-block;border:1px solid rgba(0,255,135,.3);color:#8dffc4;border-radius:999px;padding:5px 8px;font-size:9px;font-weight:800;margin:5px 4px 0 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}label{display:block;font-size:9px;color:#60efff;font-weight:800;margin:8px 0 4px}select,input{width:100%;padding:10px;border-radius:9px;border:1px solid rgba(96,239,255,.22);background:#040812;color:#fff}.btn{width:100%;border:0;border-radius:11px;padding:12px 10px;font-weight:900;color:#02100a;background:linear-gradient(135deg,#00ff87,#60efff);cursor:pointer}.btn:disabled{opacity:.55;cursor:not-allowed}.btn.alt{background:#101c31;color:#c8f7ff;border:1px solid rgba(96,239,255,.24)}.stage{display:none;margin-top:10px;border-radius:13px;overflow:hidden;background:#000;position:relative;aspect-ratio:9/16;max-height:66vh;touch-action:manipulation}.stage video{width:100%;height:100%;object-fit:cover;display:block}.timer{position:absolute;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.78);border:1px solid #60efff;border-radius:999px;padding:7px 12px;font-weight:900;color:#60efff;z-index:3}.hint{position:absolute;bottom:10px;left:10px;right:10px;text-align:center;background:rgba(0,0,0,.72);border-radius:10px;padding:8px;font-size:9px;z-index:3}.focus-ring{position:absolute;width:62px;height:62px;border:2px solid #60efff;border-radius:50%;transform:translate(-50%,-50%) scale(.7);opacity:0;pointer-events:none;z-index:4;box-shadow:0 0 18px rgba(96,239,255,.45)}.focus-ring.show{animation:focusPulse .7s ease}@keyframes focusPulse{0%{opacity:0;transform:translate(-50%,-50%) scale(1.35)}25%{opacity:1}100%{opacity:0;transform:translate(-50%,-50%) scale(.7)}}.preview{margin-top:9px}.preview img{max-width:100%;border-radius:10px;border:1px solid rgba(96,239,255,.18)}.result{display:none}.hero{text-align:center;padding:16px;border-radius:13px;background:#030712}.hero.up{border:1px solid #00ff87}.hero.down{border:1px solid #ff426a}.hero.no{border:1px solid #f6c85f}.big{font-size:25px;font-weight:1000}.meta{font-size:11px;color:#c9d7e8;margin-top:6px;line-height:1.45}.strategy-type{margin-top:10px;padding:10px;border-radius:11px;border:1px solid rgba(0,255,135,.35);background:rgba(0,255,135,.06);text-align:center}.strategy-type span{display:block;color:#8aa7bb;font-size:8px;font-weight:950;letter-spacing:.8px}.strategy-type strong{display:block;margin-top:3px;color:#00ff87;font-size:18px;font-weight:1000}.strategy-type small{display:block;margin-top:3px;color:#d4e3ef;font-size:9px;line-height:1.35}.entry{margin-top:10px;padding:12px;border-radius:11px;background:#07111f;border:1px solid rgba(96,239,255,.2);text-align:center}.entry strong{display:block;font-size:16px;line-height:1.25}.entry small{display:block;margin-top:6px;color:#c9d7e8;font-size:10px;line-height:1.45}.entry-kicker{font-size:9px;font-weight:950;letter-spacing:.7px;color:#8aa3b8;margin-bottom:6px}.entry-time{font-size:12px;font-weight:950;color:#fff;margin-top:7px;line-height:1.4}.why-box{margin-top:10px;padding:11px;border-radius:11px;background:#050d19;border:1px solid rgba(96,239,255,.18)}.why-box strong{display:block;color:#60efff;font-size:10px;letter-spacing:.5px;margin-bottom:5px}.why-box div{font-size:10px;color:#cdd8e5;line-height:1.5}.back-main{display:flex!important;align-items:center;justify-content:center;text-decoration:none;margin-top:12px;background:#101c31!important;color:#c8f7ff!important;border:1px solid rgba(96,239,255,.28)!important}.entry.go{border-color:rgba(0,255,135,.45)}.entry.go strong{color:#00ff87}.entry.wait{border-color:rgba(96,239,255,.4)}.entry.wait strong{color:#60efff}.entry.stop{border-color:rgba(246,200,95,.45)}.entry.stop strong{color:#f6c85f}.rules{font-size:10px;line-height:1.55;color:#cdd8e5;padding-left:18px}.status{font-size:10px;color:#f6c85f;margin-top:8px;min-height:16px}.back{display:inline-block;color:#60efff;text-decoration:none;font-size:11px;font-weight:800;margin-bottom:10px}.camera-state{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.state-chip{font-size:8px;font-weight:900;border:1px solid rgba(96,239,255,.2);border-radius:999px;padding:4px 7px;color:#9fb3c8}.state-chip.live{color:#8dffc4;border-color:rgba(0,255,135,.35)}
+.pair-search-wrap{position:relative;display:flex;align-items:center;margin-bottom:6px}.pair-search-input{width:100%;padding:10px 37px 10px 33px;border-radius:9px;border:1px solid rgba(96,239,255,.32);background:#040812;color:#fff;outline:none}.pair-search-input:focus{border-color:#60efff;box-shadow:0 0 0 2px rgba(96,239,255,.10)}.pair-search-input::placeholder{color:#6f8499}.pair-search-icon{position:absolute;left:10px;color:#60efff;font-size:16px;font-weight:900;pointer-events:none}.pair-search-clear{position:absolute;right:5px;width:29px;height:29px;border:0;border-radius:7px;background:#101c31;color:#c8f7ff;font-weight:900}.pair-search-count{font-size:9px;color:#8fa6bc;margin:-1px 0 6px;min-height:12px}.pair-search-count.empty{color:#f6c85f}
+</style>
+</head>
+<body>
+<div class="app">
+  <a class="back" href="/">← RAJA AI HOME</a>
+  <div class="card">
+    <h1>📷 RAJA AI BOT Chart Scanner</h1>
+    <p>RAJA 24 selected strategies. One-Tap Close Camera focuses the chart, waits for the selected candle boundary, captures automatically, then starts the scan automatically.</p>
+    <span class="tag">24 STRATEGIES</span><span class="tag">CLOSED CANDLE LOCK</span><span class="tag">AUTO SCAN</span>
+  </div>
 
+  <div class="card">
+    <div class="grid">
+      <div><label>Broker</label><select id="broker"><option>Quotex</option><option>Pocket Option</option></select></div>
+      <div><label>Market</label><select id="market"></select></div>
+    </div>
+    <label>Pair</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearch" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — EUR/USD, BTC, OTC" aria-label="Search chart scanner pair"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Search or choose a pair below</div><select id="pair"></select>
+    <label>Timeframe</label>
+    <select id="tf"><option value="30s">30s</option><option value="1m" selected>1m</option><option value="2m">2m</option><option value="5m">5m</option><option value="10m">10m</option><option value="15m">15m</option><option value="30m">30m</option></select>
+
+    <div class="grid" style="margin-top:10px">
+      <button class="btn" id="camera">⚡ ONE-TAP CLOSE CAMERA</button>
+      <button class="btn alt" id="shot">🖼 SCREENSHOT</button>
+    </div>
+    <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+    <input id="legacyCamera" type="file" accept="image/*" capture="environment" hidden>
+
+    <div id="stage" class="stage" aria-label="Camera preview. Tap chart area to focus.">
+      <video id="video" autoplay playsinline muted></video>
+      <div id="focusRing" class="focus-ring"></div>
+      <div id="timer" class="timer">--:--</div>
+      <div class="hint">Tap the chart to focus. Auto capture happens at the next candle boundary.</div>
+    </div>
+    <div class="camera-state"><span id="focusState" class="state-chip">AUTOFOCUS: --</span><span id="scanState" class="state-chip">SCAN: READY</span></div>
+    <div id="status" class="status">Ready.</div>
+    <div id="preview" class="preview"></div>
+  </div>
+
+  <div id="result" class="card result">
+    <div id="hero" class="hero no">
+      <div id="big" class="big">NO TRADE</div>
+      <div id="meta" class="meta"></div>
+    </div>
+    <div id="strategyTypeBox" class="strategy-type">
+      <span>STRATEGY TYPE</span>
+      <strong id="strategyTypeText">PATTERN TYPE --</strong>
+      <small id="strategyTypeName">Waiting for an exact selected-strategy setup</small>
+    </div>
+    <div id="entry" class="entry stop" style="display:none">
+      <div class="entry-kicker">TRADE ENTRY INSTRUCTION</div>
+      <strong id="entryMain"></strong>
+      <div id="entryTime" class="entry-time"></div>
+      <small id="entrySub"></small>
+    </div>
+    <div id="whyBox" class="why-box" style="display:none"><strong>WHY THIS SIGNAL?</strong><div id="whyText"></div></div>
+    <ul id="rules" class="rules"></ul>
+    <a class="btn alt back-main" href="/">← BACK TO RAJA AI BOT</a>
+  </div>
+</div>
+<script>
+const DATA={
+  Quotex:{
+    CryptoLive:['BTC-USD','ETH-USD','SOL-USD','LTC-USD','XRP-USD','ADA-USD','DOGE-USD'],
+    CryptoOTC:['Zcash (OTC)','Chainlink (OTC)','Bitcoin (OTC)','Binance Coin (OTC)','Ethereum (OTC)','Bitcoin Cash (OTC)','Cosmos (OTC)','Ethereum Classic (OTC)','Axie Infinity (OTC)','Trump (OTC)','Dash (OTC)','Solana (OTC)','Toncoin (OTC)','Litecoin (OTC)','Avalanche (OTC)','Polkadot (OTC)','Ripple (OTC)'],
+    ForexLive:['EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','USD/CHF','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','AUD/JPY','EUR/AUD','GBP/AUD','CAD/JPY','EUR/CAD','GBP/CAD','NZD/JPY','AUD/NZD','EUR/CHF','GBP/CHF','XAUUSD'],
+    ForexOTC:['USD/BRL (OTC)','NZD/CHF (OTC)','NZD/JPY (OTC)','USD/COP (OTC)','USD/MXN (OTC)','AUD/NZD (OTC)','USD/BDT (OTC)','USD/DZD (OTC)','USD/NGN (OTC)','USD/PHP (OTC)','USD/PKR (OTC)','USD/ZAR (OTC)','USD/INR (OTC)','USD/EGP (OTC)','USD/IDR (OTC)','USD/ARS (OTC)','GBP/NZD (OTC)','EUR/NZD (OTC)','NZD/USD (OTC)','NZD/CAD (OTC)','CAD/CHF (OTC)']
+  },
+  'Pocket Option':{
+    CryptoLive:['BTC-USD','ETH-USD','SOL-USD','LTC-USD','XRP-USD','ADA-USD','DOGE-USD'],
+    CryptoOTC:['BNB (OTC)','Polkadot (OTC)','Ethereum (OTC)','Toncoin (OTC)','Cardano (OTC)','Polygon (OTC)','TRON (OTC)','Avalanche (OTC)','Bitcoin (OTC)','Bitcoin ETF (OTC)','Solana (OTC)','Chainlink (OTC)','Litecoin (OTC)','Dogecoin (OTC)'],
+    ForexLive:['EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','USD/CHF','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY','AUD/JPY','EUR/AUD','GBP/AUD','CAD/JPY','EUR/CAD','GBP/CAD','NZD/JPY','AUD/NZD','EUR/CHF','GBP/CHF','XAUUSD'],
+    ForexOTC:['EUR/USD (OTC)','GBP/USD (OTC)','USD/JPY (OTC)','AUD/USD (OTC)','USD/CAD (OTC)','USD/CHF (OTC)','EUR/JPY (OTC)','GBP/JPY (OTC)','AUD/JPY (OTC)','CAD/JPY (OTC)','EUR/CHF (OTC)','EUR/GBP (OTC)','AUD/CAD (OTC)','AUD/CHF (OTC)','CAD/CHF (OTC)','NZD/JPY (OTC)','AUD/NZD (OTC)','EUR/NZD (OTC)','GBP/AUD (OTC)','CHF/JPY (OTC)','USD/MXN (OTC)','USD/BRL (OTC)','USD/INR (OTC)','USD/SGD (OTC)','USD/CNH (OTC)','USD/IDR (OTC)','USD/PHP (OTC)','USD/MYR (OTC)','USD/COP (OTC)','EUR/TRY (OTC)'],
+    StocksOTC:['Apple (OTC)','American Express (OTC)','Boeing Company (OTC)','Cisco (OTC)','Facebook Inc (OTC)','Intel (OTC)','Johnson & Johnson (OTC)',"McDonald's (OTC)",'Microsoft (OTC)','Pfizer Inc (OTC)','Tesla (OTC)','ExxonMobil (OTC)','Advanced Micro Devices (OTC)']
+  }
+};
+
+const $=id=>document.getElementById(id);
+let stream=null, armTimer=null, activeTrack=null, armedBoundaryMs=0, entryTimer=null, busy=false;
+
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function auth(){const key=localStorage.getItem('raja_active_key')||'';return{key,user:localStorage.getItem('raja_active_user')||'',device:localStorage.getItem('raja_device_uid')||'',session_token:key?(localStorage.getItem('raja_token_'+key)||''):''};}
+function setStatus(text,state=''){ $('status').textContent=text; const chip=$('scanState'); chip.textContent='SCAN: '+(state||text).toUpperCase().slice(0,28); chip.classList.toggle('live',!!state&&state!=='ready'); }
+function chartPairUniverse(){const b=$('broker').value,m=$('market').value;const rows=DATA[b]?.[m];return Array.isArray(rows)?rows.slice():[];}
+function filterChartPairs(query='',preferred=''){const p=$('pair'),count=$('pairSearchCount');if(!p)return;const all=chartPairUniverse(),needle=String(query||'').trim().toLowerCase(),compactNeedle=needle.replace(/[^a-z0-9]/g,'');const rows=all.filter(x=>{if(!needle)return true;const t=String(x).toLowerCase(),compact=t.replace(/[^a-z0-9]/g,'');return t.includes(needle)||(compactNeedle&&compact.includes(compactNeedle));});p.innerHTML='';if(!rows.length){const o=document.createElement('option');o.value='';o.textContent='No matching pair';o.disabled=true;o.selected=true;p.appendChild(o);if(count){count.textContent=`0 matches for “${String(query||'').trim()}”`;count.classList.add('empty');}return;}rows.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;p.appendChild(o);});if(preferred&&rows.includes(preferred))p.value=preferred;else p.selectedIndex=0;if(count){count.textContent=needle?`${rows.length} matching pair${rows.length===1?'':'s'} · ${all.length} total`:`${all.length} pairs available · search above`;count.classList.remove('empty');}}
+function refresh(){const b=$('broker').value,m=$('market'),markets=Object.keys(DATA[b]||{});const keep=m.value;m.innerHTML=markets.map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');if(markets.includes(keep))m.value=keep;m.onchange=()=>{const search=$('pairSearch');if(search)search.value='';filterChartPairs('', '')};m.onchange();}
+$('broker').onchange=refresh; refresh();
+$('pairSearch').addEventListener('input',()=>filterChartPairs($('pairSearch').value,$('pair').value));
+$('pairSearch').addEventListener('search',()=>filterChartPairs($('pairSearch').value,$('pair').value));
+$('pairSearch').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const p=$('pair');if(p.options.length&&!p.options[0].disabled){p.selectedIndex=0;p.focus();}}});
+$('pairSearchClear').addEventListener('click',()=>{$('pairSearch').value='';filterChartPairs('', $('pair').value);$('pairSearch').focus();});
+
+function span(){return {'30s':30,'1m':60,'2m':120,'5m':300,'10m':600,'15m':900,'30m':1800}[$('tf').value]||60;}
+function boundary(){const s=Math.floor(Date.now()/1000),n=span();return (s+(n-s%n))*1000;}
+function clock(ms){const s=Math.max(0,Math.ceil(ms/1000));return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+function stopCamera(){if(armTimer){clearInterval(armTimer);armTimer=null;}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}activeTrack=null;$('stage').style.display='none';}
+function showPreview(blob){try{const u=URL.createObjectURL(blob);$('preview').innerHTML=`<img src="${u}" alt="Captured chart preview">`;setTimeout(()=>URL.revokeObjectURL(u),60000);}catch(_){}}
+
+async function configureFocus(track){
+  if(!track)return;
+  activeTrack=track;
+  let enabled=false;
+  try{
+    const caps=track.getCapabilities?track.getCapabilities():{};
+    const modes=Array.isArray(caps.focusMode)?caps.focusMode:[];
+    if(modes.includes('continuous')){await track.applyConstraints({advanced:[{focusMode:'continuous'}]});enabled=true;}
+    else if(modes.includes('single-shot')){await track.applyConstraints({advanced:[{focusMode:'single-shot'}]});enabled=true;}
+  }catch(_){ }
+  $('focusState').textContent=enabled?'AUTOFOCUS: ON':'AUTOFOCUS: DEVICE';
+  $('focusState').classList.toggle('live',enabled);
+}
+
+async function tapFocus(ev){
+  if(!activeTrack)return;
+  const stage=$('stage'),ring=$('focusRing'),rect=stage.getBoundingClientRect();
+  const x=Math.max(0,Math.min(rect.width,ev.clientX-rect.left)),y=Math.max(0,Math.min(rect.height,ev.clientY-rect.top));
+  ring.style.left=x+'px';ring.style.top=y+'px';ring.classList.remove('show');void ring.offsetWidth;ring.classList.add('show');
+  setStatus('Focusing on tapped chart area...','focusing');
+  let focused=false;
+  try{
+    const caps=activeTrack.getCapabilities?activeTrack.getCapabilities():{};
+    const advanced={};
+    const modes=Array.isArray(caps.focusMode)?caps.focusMode:[];
+    if(modes.includes('single-shot'))advanced.focusMode='single-shot';
+    if('pointsOfInterest' in caps){advanced.pointsOfInterest=[{x:Math.round((x/Math.max(1,rect.width))*1000),y:Math.round((y/Math.max(1,rect.height))*1000)}];}
+    if(Object.keys(advanced).length){await activeTrack.applyConstraints({advanced:[advanced]});focused=true;}
+  }catch(_){ }
+  if(!focused){try{const caps=activeTrack.getCapabilities?activeTrack.getCapabilities():{};if((caps.focusMode||[]).includes('continuous')){await activeTrack.applyConstraints({advanced:[{focusMode:'continuous'}]});focused=true;}}catch(_){}}
+  setTimeout(()=>setStatus('Camera armed. Waiting for candle close...','waiting'),450);
+}
+$('stage').addEventListener('pointerup',tapFocus);
+
+async function send(blob,captured,captureEpochMs=0){
+  if(busy)return;
+  const a=auth();
+  if(!a.key||!a.user||!a.device||!a.session_token){setStatus('Login to RAJA AI first, then reopen Chart Scanner.','login required');return;}
+  busy=true;$('camera').disabled=true;$('shot').disabled=true;
+  const fd=new FormData();
+  fd.append('image',blob,'raja-chart.jpg');fd.append('broker',$('broker').value);fd.append('market',$('market').value);fd.append('pair',$('pair').value);fd.append('timeframe',$('tf').value);fd.append('captured_at_close',captured?'1':'0');fd.append('captured_at_epoch_ms',String(captureEpochMs||0));Object.entries(a).forEach(([k,v])=>fd.append(k,v));
+  setStatus(captured?'Captured. Auto scan started...':'Screenshot uploaded. Auto scan started...','analysing');
+  try{
+    const r=await fetch('/chart-scan',{method:'POST',body:fd,cache:'no-store'});const j=await r.json();if(!r.ok||j.status!=='success')throw new Error(j.message||'Scan failed');render(j.result);
+    setStatus('Signal analysis ready.','ready');
+  }catch(e){setStatus('❌ '+e.message,'error');}
+  finally{busy=false;$('camera').disabled=false;$('shot').disabled=false;}
+}
+
+function entryDirection(x){const b=String(x.bias||'').toUpperCase();return b.startsWith('UP')?'UP / CALL':b.startsWith('DOWN')?'DOWN / PUT':'SIGNAL';}
+function tfHuman(){const tf=$('tf').value;return {'30s':'30-SECOND','1m':'1-MINUTE','2m':'2-MINUTE','5m':'5-MINUTE','10m':'10-MINUTE','15m':'15-MINUTE','30m':'30-MINUTE'}[tf]||tf.toUpperCase();}
+function humanDuration(seconds){seconds=Math.max(0,Math.ceil(Number(seconds)||0));const m=Math.floor(seconds/60),s=seconds%60;return `${m} MIN ${s} SEC`;}
+function entryClock(epochMs){try{return new Date(epochMs).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}catch(_){return '--:--:--';}}
+function nextFreshBoundaryMs(){return boundary();}
+function startEntryGuide(x){
+  if(entryTimer){clearInterval(entryTimer);entryTimer=null;}
+  const entry=$('entry'),main=$('entryMain'),timeLine=$('entryTime'),sub=$('entrySub');
+  const bias=String(x.bias||'').toUpperCase();
+  if(!(bias.startsWith('UP')||bias.startsWith('DOWN'))||!x.entry_epoch){entry.style.display='none';return;}
+  entry.style.display='block';
+  const entryMs=Number(x.entry_epoch)*1000,grace=Math.max(1,Number(x.entry_window_seconds||30))*1000,dir=entryDirection(x),tf=tfHuman();
+  const tick=()=>{
+    const now=Date.now(),delta=now-entryMs;
+    if(delta<0){
+      const sec=Math.ceil(-delta/1000);
+      entry.className='entry wait';
+      main.textContent=`WAIT ${humanDuration(sec)} — THEN PLACE ${dir}`;
+      timeLine.textContent=`TRADE CANDLE: NEXT ${tf} CANDLE · OPENS AT ${entryClock(entryMs)}`;
+      sub.textContent=`When the countdown reaches 00:00, place ${dir} immediately at the OPEN of that candle. Do not enter early.`;
+      return;
+    }
+    if(delta<=grace){
+      const left=Math.max(0,Math.ceil((grace-delta)/1000));
+      entry.className='entry go';
+      main.textContent=`TAKE ${dir} NOW`;
+      timeLine.textContent=`TRADE CANDLE: CURRENT ${tf} CANDLE · OPENED AT ${entryClock(entryMs)}`;
+      sub.textContent=`Enter immediately. ${humanDuration(left)} remains in the allowed entry window. Do not wait for the middle of the candle.`;
+      return;
+    }
+    const age=Math.ceil(delta/1000),freshMs=nextFreshBoundaryMs(),freshSec=Math.max(0,Math.ceil((freshMs-now)/1000));
+    entry.className='entry stop';
+    main.textContent='MISSED SIGNAL — DO NOT TRADE';
+    timeLine.textContent=`TARGET ${tf} CANDLE OPENED ${humanDuration(age)} AGO · ${entryClock(entryMs)}`;
+    sub.textContent=`This signal was only for that candle open. NEXT POSSIBLE FRESH SCAN IN ${humanDuration(freshSec)}. Trade only if the new scan confirms a fresh signal.`;
+  };
+  tick();
+  entryTimer=setInterval(tick,250);
+}
+
+function render(x){
+  $('result').style.display='block';
+  const bias=String(x.bias||'NO TRADE'),up=bias.startsWith('UP'),down=bias.startsWith('DOWN'),hero=$('hero');
+  hero.className='hero '+(up?'up':down?'down':'no');
+  $('big').textContent=up?'⬆ UP / CALL SIGNAL':down?'⬇ DOWN / PUT SIGNAL':(x.rescan_required?'📷 RESCAN REQUIRED':'⏸ NO TRADE');
+  const direction=up?'UP / CALL':down?'DOWN / PUT':'NO ENTRY';
+  const ptype=Number(x.pattern_type||0);
+  const patternLabel=ptype>0?`PATTERN TYPE ${ptype}`:'NO EXACT PATTERN';
+  $('strategyTypeText').textContent=patternLabel;
+  $('strategyTypeName').textContent=x.selected_pattern||'No exact selected-strategy setup';
+  $('meta').innerHTML=`PAIR: <b>${esc($('pair').value)}</b> · TIMEFRAME: <b>${esc(tfHuman())}</b><br>SIGNAL: <b>${esc(direction)}</b> · TARGET: <b>NEXT ${esc(x.next_candle_color||'--')} CANDLE</b>`;
+  const reasons=Array.isArray(x.reasons)?x.reasons.filter(Boolean):[];
+  const why=$('whyBox'),whyText=$('whyText');
+  if(reasons.length){why.style.display='block';whyText.textContent=reasons.slice(0,3).join(' ');}else{why.style.display='none';whyText.textContent='';}
+  const rules=(x.setup_rules||x.rules||[]);
+  $('rules').innerHTML=rules.length?`<li style="list-style:none;margin-left:-18px;color:#60efff;font-weight:900">MATCHED PATTERN RULES</li>`+rules.map(r=>`<li>${r.ok?'✓':'✕'} ${esc(r.name||'Rule')}</li>`).join(''):'';
+  startEntryGuide(x);
+  $('result').scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+$('shot').onclick=()=>{if(!busy)$('file').click();};
+$('file').onchange=e=>{const f=e.target.files[0];if(f){showPreview(f);send(f,false,0);}e.target.value='';};
+
+$('camera').onclick=async()=>{
+  if(busy)return;
+  if(!navigator.mediaDevices?.getUserMedia){setStatus('Opening phone camera. Native autofocus will be used.','camera');$('legacyCamera').click();return;}
+  stopCamera();
+  try{
+    setStatus('Opening rear camera and enabling autofocus...','camera');
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false});
+    $('video').srcObject=stream;$('stage').style.display='block';await $('video').play().catch(()=>{});
+    const track=stream.getVideoTracks()[0];await configureFocus(track);
+    armedBoundaryMs=boundary();
+    setStatus(`Camera armed. Next ${tfHuman()} candle opens in ${humanDuration((armedBoundaryMs-Date.now())/1000)}. If a valid setup is found, that opening candle is the trade candle.`,'waiting');
+    $('timer').textContent=clock(armedBoundaryMs-Date.now());
+    armTimer=setInterval(()=>{const left=armedBoundaryMs-Date.now();$('timer').textContent=clock(left);$('status').textContent=`WAIT ${humanDuration(left/1000)} · scanning for a trade on the NEXT ${tfHuman()} candle`;if(left<=0){clearInterval(armTimer);armTimer=null;captureClose(armedBoundaryMs);}},250);
+  }catch(e){stopCamera();setStatus('Camera preview unavailable — opening phone camera.','fallback');$('legacyCamera').click();}
+};
+
+$('legacyCamera').onchange=e=>{const f=e.target.files[0];if(f){showPreview(f);setStatus('Photo selected. Auto scan started...','analysing');send(f,false,0);}e.target.value='';};
+
+function captureClose(boundaryMs){
+  const v=$('video');
+  if(!v.videoWidth||!v.videoHeight){setStatus('Camera is not ready. Try again.','error');stopCamera();return;}
+  setStatus('Candle closed. Capturing chart...','capturing');
+  const c=document.createElement('canvas');c.width=v.videoWidth;c.height=v.videoHeight;const ctx=c.getContext('2d',{alpha:false});ctx.drawImage(v,0,0,c.width,c.height);
+  c.toBlob(blob=>{stopCamera();if(blob){showPreview(blob);send(blob,true,boundaryMs||Date.now());}else setStatus('Capture failed. Try again.','error');},'image/jpeg',.95);
+}
+</script>
+</body>
+</html>
