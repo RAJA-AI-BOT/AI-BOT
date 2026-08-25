@@ -4299,53 +4299,45 @@ def track_signal():
     except Exception:
         closed_candle_epoch = 0
 
-    # STRICT NEXT-CANDLE ENTRY:
-    # The setup predicts only the candle immediately after its latest CLOSED
-    # setup candle. Never roll a delayed signal forward to a later candle.
-    entry_epoch = (closed_candle_epoch + duration) if closed_candle_epoch else ((now // duration) + 1) * duration
+    # V38 PREP-ENTRY MODE:
+    # Give the trader a real countdown instead of returning an already-expired
+    # entry. The signal is scheduled on the next timeframe-aligned candle that
+    # still provides at least RAJA_MIN_ENTRY_NOTICE_SECONDS of preparation.
+    # Outcome tracking uses this same scheduled entry, so UI and backend stay aligned.
+    original_target_entry_epoch = (closed_candle_epoch + duration) if closed_candle_epoch else ((now // duration) + 1) * duration
+    try:
+        min_entry_notice_seconds = max(10, min(30, int(os.environ.get("RAJA_MIN_ENTRY_NOTICE_SECONDS", "10"))))
+    except Exception:
+        min_entry_notice_seconds = 10
+
+    earliest_entry_epoch = now + min_entry_notice_seconds
+    notice_aligned_entry_epoch = ((earliest_entry_epoch + duration - 1) // duration) * duration
+    entry_epoch = max(original_target_entry_epoch, notice_aligned_entry_epoch)
     expiry_epoch = entry_epoch + duration
-    # V36: keep the signal bound to the SAME target candle, but allow enough
-    # time for normal API/batch latency. Default = first half of the candle,
-    # capped at 45s. An explicit RAJA_ENTRY_GRACE_SECONDS env var can override.
+
+    # Keep a small post-open grace as a safety fallback for device/browser latency.
     default_entry_grace = max(10, min(45, int(duration * 0.50)))
     try:
         entry_grace_seconds = max(5, min(90, int(os.environ.get("RAJA_ENTRY_GRACE_SECONDS", str(default_entry_grace)))))
     except Exception:
         entry_grace_seconds = default_entry_grace
 
-    if closed_candle_epoch and now > entry_epoch + entry_grace_seconds:
-        return jsonify({
-            "status": "success",
-            "auto_tracking": False,
-            "missed_entry": True,
-            "entry_epoch": entry_epoch,
-            "expiry_epoch": expiry_epoch,
-            "entry_grace_seconds": entry_grace_seconds,
-            "server_epoch": now,
-            "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else entry_epoch - duration),
-            "setup_candle_close_epoch": entry_epoch,
-            "target_candle_open_epoch": entry_epoch,
-            "target_candle_close_epoch": expiry_epoch,
-            "message": (
-                f"Signal expired for entry. It belonged to the {expiry} candle "
-                f"opening at epoch {entry_epoch}; do not move it to a later candle."
-            ),
-        })
-
     signal_id = "sig_" + secrets.token_hex(8)
     item = {
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
         "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
         "expiry_epoch": expiry_epoch, "entry_grace_seconds": entry_grace_seconds,
-        "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else entry_epoch - duration),
-        "setup_candle_close_epoch": entry_epoch, "target_candle_open_epoch": entry_epoch,
+        "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else original_target_entry_epoch - duration),
+        "setup_candle_close_epoch": original_target_entry_epoch, "target_candle_open_epoch": entry_epoch,
         "target_candle_close_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
         "status": "PENDING", "result_source": "pending",
+        "original_target_entry_epoch": original_target_entry_epoch,
+        "entry_notice_seconds": max(0, entry_epoch - now),
         "source": str(data.get("source") or "Yahoo Finance"),
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
         "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
-        "scan_mode": "SK25_STRICT", "volatility_pct": data.get("volatility_pct"),
+        "scan_mode": "SK25_STRICT", "entry_timing_mode": "PREP_ENTRY", "volatility_pct": data.get("volatility_pct"),
         "pattern_type": int(data.get("pattern_type") or 0),
         "selected_pattern": str(data.get("selected_pattern") or ""),
         "next_candle_color": str(data.get("next_candle_color") or ""),
@@ -4360,10 +4352,13 @@ def track_signal():
     return jsonify({"status": "success", "auto_tracking": True, "signal_id": signal_id,
                     "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
                     "entry_grace_seconds": entry_grace_seconds, "server_epoch": now,
-                    "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else entry_epoch - duration),
-                    "setup_candle_close_epoch": entry_epoch,
+                    "entry_notice_seconds": max(0, entry_epoch - now),
+                    "entry_timing_mode": "PREP_ENTRY",
+                    "original_target_entry_epoch": original_target_entry_epoch,
+                    "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else original_target_entry_epoch - duration),
+                    "setup_candle_close_epoch": original_target_entry_epoch,
                     "target_candle_open_epoch": entry_epoch, "target_candle_close_epoch": expiry_epoch,
-                    "message": f"Signal registered for the exact next {expiry} candle after the closed setup candle."})
+                    "message": f"Signal ready. Prepare now and enter on the scheduled {expiry} candle after the countdown."})
 
 
 @app.route("/signals/result", methods=["POST"])
