@@ -2714,16 +2714,16 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_24_SELECTED_STRATEGIES_V39"
-SK25_PATTERN_LIBRARY_SIZE = 24
+SK25_ENGINE_VERSION = "RAJA_14_SELECTED_STRATEGIES_TEMP_TEST"
+SK25_PATTERN_LIBRARY_SIZE = 14
 SK25_LIVE_MIN_CANDLES = 10
 
-# V39 production strategy set: 14 proven/selected RAJA rules + 5 PDF setups + 5 premium price-action setups.
+# TEMP TEST: only the original 14 selected RAJA rules are active; IDs 26-35 remain in source but are ignored.
 # Old skipped rules stay in source for backward compatibility/history, but add()/add_setup() ignore them.
 RAJA_ACTIVE_STRATEGY_IDS = frozenset({
+    # TEMP TEST: original 14 selected RAJA strategies only.
+    # PDF/Premium strategies 26-35 are temporarily disabled, not deleted.
     2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25,
-    26, 27, 28, 29, 30,
-    31, 32, 33, 34, 35,
 })
 RAJA_STRATEGY_NAMES = {
     2: "RAJA Type 2 · Resistance Reversal",
@@ -3279,7 +3279,7 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
-        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 24 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
+        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 14 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
         "closed_candle_verified":True,"forming_candle_excluded":True,
         "movement_info":movement,"volatility_pct":movement["percent"],"market_stability_score":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
         "market_risk_level":"INFO ONLY","market_regime":strategy.get("selected_pattern") or "NO SETUP",
@@ -5137,7 +5137,7 @@ def _candidate_chart_regions(arr: np.ndarray) -> list[tuple[str, np.ndarray]]:
     return out
 
 def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", last_outcome: str = "", *, captured_at_close: bool = False) -> dict[str, Any]:
-    """V39: selected 24-strategy closed-candle chart scanner.
+    """TEMP TEST: selected 14-strategy closed-candle chart scanner.
 
     The engine evaluates the selected 14 RAJA rules, 5 PDF setups and 5 premium
     price-action setups using visible candle body/wick geometry plus S/R/trend context.
@@ -5199,7 +5199,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
     detected_count = len(candles)
     warnings = list(quality_notes)
     reasons: list[str] = []
-    library = "RAJA Selected 24 Strategy Library"
+    library = "RAJA Selected 14 Strategy Library"
 
     # V11 Closed Candle Lock. A normal screenshot/live-now frame can contain a
     # still-forming rightmost candle, so it is excluded from setup matching. A
@@ -5241,14 +5241,14 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         warnings.append("Not enough candle structure was detected. Move closer to the chart and keep candles sharp.")
         return {
             "bias": "NO TRADE", "confidence": 0.0, "image_quality_score": quality,
-            "detected_candles": detected_count, "closed_candles_analyzed": count, "visual_trend": "UNREADABLE", "momentum": "24 SELECTED STRATEGIES", "volatility": "NOT USED",
+            "detected_candles": detected_count, "closed_candles_analyzed": count, "visual_trend": "UNREADABLE", "momentum": "14 SELECTED STRATEGIES", "volatility": "NOT USED",
             "selected_pattern": "NO ACTIVE STRATEGY SETUP", "pattern_direction": "NONE", "pattern_score": 0.0,
             "pattern_signals": [], "pattern_library": library, "pattern_library_size": SK25_PATTERN_LIBRARY_SIZE,
             "confluence_count": 0, "setup_quality": "LOW", "next_candle_color": "NONE",
             "entry_instruction": "WAIT FOR A COMPLETE SETUP", "recovery_trade": False,
             "latest_candle_direction": "UNKNOWN",
-            "reasons": ["Insufficient readable candle structure for 24-strategy recognition."], "warnings": warnings,
-            "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "24 selected strategies"},
+            "reasons": ["Insufficient readable candle structure for 14-strategy recognition."], "warnings": warnings,
+            "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "14 selected strategies"},
             "engine": "RAJA V11 · Strict SK25 + Adaptive Vision + Closed Candle Lock", "analysis_crop_mode": crop_name,
             "timing_verified": bool(captured_at_close), "forming_candle_excluded": forming_candle_excluded, "newborn_candle_excluded": newborn_candle_excluded,
             **legacy_aliases("NO ACTIVE STRATEGY SETUP", "NONE", 0.0, []),
@@ -5787,7 +5787,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "reasons": reasons[:10],
         "warnings": warnings[:7],
         "pattern_status": {
-            "Mode": "RAJA 24 selected strategies",
+            "Mode": "RAJA 14 selected strategies",
             "Indicators": "OFF - signal engine uses only the selected closed-candle strategy rules",
             "Context": f"Visual candle context: {context_label}",
             "Candle geometry": f"{count} closed candles analysed / {detected_count} visible structures",
@@ -5940,7 +5940,7 @@ def chart_scan_api():
     except (ValueError,UnidentifiedImageError) as exc:
         return jsonify({"status":"error","message":str(exc)}),400
     now_epoch = int(time.time())
-    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 24 Strategy Library"})
+    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 14 Strategy Library"})
 
     # V29 explicit entry timing for One-Tap Close Camera. The browser supplies the
     # exact candle boundary it armed; server validates it is reasonably recent.
