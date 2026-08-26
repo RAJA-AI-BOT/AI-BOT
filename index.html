@@ -6377,8 +6377,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     <div class="engine-mini">
                         <div>AI Engine Status <strong>LIVE</strong></div>
                         <div>Engine: SK25 Strict · RAJA 14 Active</div>
-                        <div id="rajaEngineSourceText">Source: LIVE reference · Yahoo → Twelve Data (not broker exact)</div>
-                        <div>Side Auto Signals: <strong>3 min</strong></div>
+                        <div id="rajaEngineSourceText">Source: AUTO · Direct OTC Safe reference / exact bridge optional</div>
+                        <div>Side Auto Signals: <strong>1 min · candle aligned</strong></div>
                     </div>
                     <button id="rajaFullscreenDesktopBtn" class="raja-fullscreen-inline raja-sidebar-fullscreen" type="button"
                             onclick="toggleRajaFullscreen()" title="Open dashboard in full screen"
@@ -6391,7 +6391,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         <div class="raja-side-auto-head">
                             <div>
                                 <strong>AUTO SCAN SIGNALS</strong>
-                                <small>Every 3 Minutes</small>
+                                <small>Every 1 Minute · Candle Close</small>
                             </div>
                             <span id="rajaSideAutoLiveBadge" class="raja-side-auto-live">LIVE</span>
                         </div>
@@ -6905,7 +6905,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                     </div>
                                 </div>
 
-                                <div class="inline-list-box"><div class="inline-item"><span>Signal Engine:</span><span style="color:#00ff87;">RAJA 14 SELECTED STRATEGIES ✔</span></div><div class="inline-item"><span>Closed Candle Lock:</span><span id="settingsModeStatus" style="color:#00ff87;">STRICT ✔</span></div><div class="inline-item"><span>Auto Signals:</span><span style="color:#00ff87;">3 Minutes · Left Panel Only ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Exact broker feed required</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                                <div class="inline-list-box"><div class="inline-item"><span>Signal Engine:</span><span style="color:#00ff87;">RAJA 14 SELECTED STRATEGIES ✔</span></div><div class="inline-item"><span>Closed Candle Lock:</span><span id="settingsModeStatus" style="color:#00ff87;">STRICT ✔</span></div><div class="inline-item"><span>Auto Signals:</span><span style="color:#00ff87;">1 Minute · Candle-Aligned ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Exact broker feed required</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             </div>
                             <div id="newsInlineView" class="inline-content-view">
                                 <div class="inline-title">📰 Live Economic News / Calendar</div>
@@ -6940,7 +6940,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
                     <div class="status-grid">
                         <section class="scan-summary-card"><div id="targetPairBoxContainer" class="selected-pair-box"><div class="selected-pair-head"><span class="selected-pair-label">SELECTED TARGET PAIR</span><div class="selected-pair-badges"><span id="selectedBrokerBadge" class="target-context-badge broker-badge">⚡ QUOTEX</span><span id="selectedMarketBadge" class="target-context-badge market-badge">📈 CRYPTO LIVE</span></div></div><span id="targetPairDisplay" class="selected-pair-name">NZD/CAD (OTC)</span><div class="metric-note">✓ All-pairs RAJA 14 strategy scanner</div></div></section>
-                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>Selected TF</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>Exact Rules</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="rajaBaseFeedLabel">Yahoo/Twelve Data REF 1m</strong></div><div class="snapshot-cell"><small>Auto Signals</small><strong>3 min</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
+                        <section class="scan-summary-card"><div class="card-label">CURRENT MARKET SNAPSHOT</div><div class="snapshot-grid"><div class="snapshot-cell"><small>Analysis</small><strong>Selected TF</strong></div><div class="snapshot-cell"><small>Confirmation</small><strong>Exact Rules</strong></div><div class="snapshot-cell"><small>Protection</small><strong>Active</strong></div><div class="snapshot-cell"><small>Base Feed</small><strong id="rajaBaseFeedLabel">Yahoo/Twelve Data REF 1m</strong></div><div class="snapshot-cell"><small>Auto Signals</small><strong>1 min · aligned</strong></div><div class="snapshot-cell"><small>Signal Mode</small><strong>Strict</strong></div></div></section>
                     </div>
 
                     <section class="upgrade-card" id="dailyPerformancePanel">
@@ -6969,7 +6969,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field pair-search-field"><label>3. SELECT PAIR / ASSET</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearchInput" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — e.g. EUR/USD, BTC, OTC" aria-label="Search pair or asset"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Type above to filter the pair list</div><div class="pair-search-count" style="color:#6f91a8;margin:2px 0 6px;">PAIR LIST · swipe inside the list to see more pairs</div><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI STRATEGY MODE</div><div class="strict-mode-lock">🔒 RAJA 14 STRICT MODE</div><div id="modeDescription" class="mode-copy">14 selected strategies · selected timeframe only · every coded rule must match · exact next-candle entry only; missed candle = NO TRADE.</div></div>
+                                <div class="config-field pair-search-field"><label>3. SELECT PAIR / ASSET</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearchInput" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — e.g. EUR/USD, BTC, OTC" aria-label="Search pair or asset"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Type above to filter the pair list</div><div class="pair-search-count" style="color:#6f91a8;margin:2px 0 6px;">PAIR LIST · swipe inside the list to see more pairs</div><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI STRATEGY MODE</div><div class="strict-mode-lock">🔒 RAJA 14 STRICT MODE</div><div id="modeDescription" class="mode-copy">14 selected strategies · selected timeframe only · every coded rule must match · exact next-candle entry only. OTC Direct Safe Mode works without a bridge; exact bridge is optional.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button><button class="utility-btn" type="button" onclick="location.href='/live-scanner'">🎥 Live Scanner</button><button class="utility-btn" type="button" onclick="location.href='/chart-scanner'">📷 Chart Scanner</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
@@ -7140,7 +7140,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             scanMode = 'SK25_STRICT';
             localStorage.setItem('raja_scan_mode', scanMode);
             const desc = document.getElementById('modeDescription');
-            if (desc) desc.innerText = '14 selected strategies · selected timeframe only · every coded rule for the setup must match.';
+            if (desc) desc.innerText = '14 selected strategies · selected timeframe only · every coded rule must match · OTC Direct Safe Mode works without a bridge; exact bridge is optional.';
             const status = document.getElementById('settingsModeStatus');
             if (status) status.innerText = 'SK25 STRICT ✔';
         }
@@ -7773,7 +7773,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
 
-        const AUTO_RESCAN_INTERVAL_MS = 3 * 60 * 1000;
+        const AUTO_RESCAN_INTERVAL_MS = 60 * 1000;
         let autoRescanEnabled = localStorage.getItem('raja_auto_rescan_enabled') !== 'false';
         let autoRescanTimeout = null;
         let autoRescanTicker = null;
@@ -7958,7 +7958,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const tf = rajaSideSignalActiveTf === '5m' ? '5m' : '1m';
             const rows = Array.isArray(rajaSideSignalHistory[tf]) ? rajaSideSignalHistory[tf] : [];
             if (!rows.length) {
-                list.innerHTML = `<div class="raja-side-signal-empty"><strong>WAITING FOR NEXT DIRECTION</strong><br>No active ${tf.toUpperCase()} signal right now.<br>Auto Scan checks again every 3 minutes.</div>`;
+                list.innerHTML = `<div class="raja-side-signal-empty"><strong>WAITING FOR NEXT DIRECTION</strong><br>No active ${tf.toUpperCase()} signal right now.<br>Auto Scan checks again after each 1-minute candle closes.</div>`;
                 return;
             }
             list.innerHTML = rows.map(item => {
@@ -8148,6 +8148,15 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             updateAutoRescanUI();
         }
 
+        function rajaNextMinuteBoundaryDelayMs() {
+            const now = Date.now();
+            const step = 60 * 1000;
+            // Run shortly after the minute boundary so the just-closed 1m candle
+            // is available, while staying inside the exact-next-candle entry window.
+            const nextBoundary = (Math.floor(now / step) + 1) * step + 1200;
+            return Math.max(1000, nextBoundary - now);
+        }
+
         function armAutoRescan(delayMs) {
             clearAutoRescanSchedule(false);
             if (!autoRescanEnabled || !isUserVerified) return;
@@ -8165,13 +8174,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     return;
                 }
                 await runSideAutoSignalScan();
-                if (autoRescanEnabled && isUserVerified) armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
+                if (autoRescanEnabled && isUserVerified) armAutoRescan(rajaNextMinuteBoundaryDelayMs());
             }, delay);
         }
 
         function scheduleAutoRescan() {
             if (!autoRescanEnabled || !isUserVerified) return;
-            armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
+            armAutoRescan(rajaNextMinuteBoundaryDelayMs());
         }
 
         function restoreAutoRescanSchedule() {
@@ -8179,14 +8188,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 updateAutoRescanUI();
                 return;
             }
-            const saved = Number(localStorage.getItem('raja_next_auto_rescan_at') || 0);
-            if (saved > Date.now()) {
-                armAutoRescan(Math.min(saved - Date.now(), AUTO_RESCAN_INTERVAL_MS));
-            } else {
-                nextAutoRescanAt = 0;
-                localStorage.removeItem('raja_next_auto_rescan_at');
-                armAutoRescan(1500);
-            }
+            // V44: discard legacy arbitrary 3-minute timers and align the next
+            // automatic check to the next freshly closed 1-minute candle.
+            nextAutoRescanAt = 0;
+            localStorage.removeItem('raja_next_auto_rescan_at');
+            armAutoRescan(rajaNextMinuteBoundaryDelayMs());
         }
 
         function toggleAutoRescan() {
@@ -8196,7 +8202,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 clearAutoRescanSchedule(true);
                 try { if (rajaSideAutoScanController) rajaSideAutoScanController.abort(); } catch (_) {}
             } else if (isUserVerified) {
-                armAutoRescan(800);
+                armAutoRescan(rajaNextMinuteBoundaryDelayMs());
             } else {
                 updateAutoRescanUI();
             }
@@ -9816,8 +9822,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 marketRegimeReason:data.market_regime_reason||'', pairTimeframePerformance:data.pair_timeframe_performance||{},
                 effectiveMinScore:Number(data.effective_min_score||0), lateEntry:data.late_entry||{},
                 chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[], scanMode:data.scan_mode||scanMode,
-                scanThresholds:data.scan_thresholds||{}, source:data.source||((/\(OTC\)/i.test(String(data.pair||document.getElementById('pairSelect')?.value||'')) && /Quotex|Pocket/i.test(String(document.getElementById('brokerSelect')?.value||'')))?'Broker feed unavailable':'Yahoo Finance'), sourceMode:data.source_mode||'',
-                providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used)
+                scanThresholds:data.scan_thresholds||{}, source:data.source||((/\(OTC\)/i.test(String(data.pair||document.getElementById('pairSelect')?.value||'')) && /Quotex|Pocket/i.test(String(document.getElementById('brokerSelect')?.value||'')))?'Direct OTC reference':'Yahoo Finance'), sourceMode:data.source_mode||'',
+                providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used),
+                directOtc:Boolean(data.direct_otc), directOtcSafeMode:Boolean(data.direct_otc_safe_mode),
+                directOtcReferenceScore:Number(data.direct_otc_reference_score||0), directOtcPairTier:data.direct_otc_pair_tier||'',
+                directOtcAssessment:data.direct_otc_assessment||{}, referenceWarning:data.reference_warning||''
             };
         }
 
@@ -10009,7 +10018,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (consoleEl) consoleEl.innerHTML = '<div class="live-scan-row rejected">■ Scan stopped by user. Ready for a fresh scan.</div>';
             renderPrimaryView();
             if (typeof syncV32StopControls === 'function') syncV32StopControls();
-            if (autoRescanEnabled && isUserVerified) armAutoRescan(AUTO_RESCAN_INTERVAL_MS);
+            if (autoRescanEnabled && isUserVerified) armAutoRescan(rajaNextMinuteBoundaryDelayMs());
         }
 
         function stopRajaScan() {
@@ -10375,16 +10384,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         const selectedBrokerNow = String(document.getElementById('brokerSelect')?.value || '');
                         const brokerOtcNow = /OTC/i.test(selectedMarketNow) && (selectedBrokerNow === 'Quotex' || selectedBrokerNow === 'PocketOption');
                         if (total > 0 && dataOk === 0) {
-                            titleEl.innerText = brokerOtcNow ? '⚠️ BROKER OTC DATA UNAVAILABLE' : '⚠️ LIVE MARKET DATA TEMPORARILY UNAVAILABLE';
+                            titleEl.innerText = brokerOtcNow ? '⚠️ DIRECT OTC REFERENCE DATA UNAVAILABLE' : '⚠️ LIVE MARKET DATA TEMPORARILY UNAVAILABLE';
                             if (brokerOtcNow) {
                                 const bridgeSkipped = Number(scanDiagnostics.bridge_skipped_pairs_count || 0);
                                 const bridgeReady = Number(scanDiagnostics.bridge_ready_pairs_count || 0);
                                 const need = Number(scanDiagnostics.bridge_mode_required_candles || 0);
                                 const warmingRows = Array.isArray(rawResults) ? rawResults.filter(row => row && row.scan_skip_reason === 'bridge_cache_warming') : [];
                                 const bestDepth = warmingRows.reduce((m,row) => Math.max(m, Number(row?.bridge_cache?.candle_count || 0)), 0);
-                                descEl.innerText = bridgeSkipped > 0
-                                    ? `Exact broker bridge is connected, but the selected ${scanMode} mode cache is still warming. ${bridgeReady}/${total} pairs are analysis-ready${need ? `; ${need} exact 1m candles are required per ready pair` : ''}${bestDepth ? ` (best cache now ${bestDepth})` : ''}. Cached candles are reused automatically; if exact bridge data is not ready, the labelled OTC reference fallback remains available.`
-                                    : `0/${total} pairs returned exact broker candles. Keep the broker bridge connected and stream the required OTC pair(s). The labelled OTC reference fallback remains available while the exact bridge warms.`;
+                                descEl.innerText = `0/${total} pairs returned fresh public reference candles for Direct OTC Safe Mode. No bridge is required. Wait for the Yahoo/Twelve Data 1m feed to refresh, or choose another OTC pair/market.${bridgeSkipped > 0 ? ` Optional exact bridge cache: ${bridgeReady}/${total} ready${need ? ` · need ${need}×1m` : ''}${bestDepth ? ` · best ${bestDepth}` : ''}.` : ''}`;
                             } else {
                                 descEl.innerText = `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
                             }
@@ -10392,7 +10399,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
                             const unavailableOnly = Math.max(0, dataBad - skippedSlow);
-                            const feedCopy = brokerOtcNow ? 'Exact broker data / labelled OTC reference backup' : 'Live reference data';
+                            const feedCopy = brokerOtcNow ? 'Direct OTC Safe reference data (exact bridge optional)' : 'Live reference data';
                             descEl.innerText = `${feedCopy} loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
                         }
                     } else {
@@ -10608,14 +10615,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 targetPairDisplay.style.color = "#00ff87";
                 resDir.className = "signal-direction dir-up";
                 resDir.textContent = 'UP'; const v37Action=document.getElementById('v37SignalAction'); if(v37Action) v37Action.textContent='BUY SIGNAL';
-                resMeta.innerHTML = `CALL 🔺 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY${String(signalData.sourceMode||'').toLowerCase().includes('reference') ? ' · ⚠ REFERENCE OTC' : ''}`;
+                resMeta.innerHTML = `CALL 🔺 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY${signalData.directOtc ? ` · DIRECT OTC SAFE ${Number(signalData.directOtcReferenceScore||0).toFixed(0)}/100 · ⚠ REF` : (String(signalData.sourceMode||'').toLowerCase().includes('reference') ? ' · ⚠ REFERENCE' : '')}`;
             } else {
                 hudBox.className = "ai-hud-box glow-sell";
                 targetPairBox.className = "selected-pair-box pair-glow-sell";
                 targetPairDisplay.style.color = "#ff3366";
                 resDir.className = "signal-direction dir-down";
                 resDir.textContent = 'DOWN'; const v37Action=document.getElementById('v37SignalAction'); if(v37Action) v37Action.textContent='SELL SIGNAL';
-                resMeta.innerHTML = `PUT 🔻 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY${String(signalData.sourceMode||'').toLowerCase().includes('reference') ? ' · ⚠ REFERENCE OTC' : ''}`;
+                resMeta.innerHTML = `PUT 🔻 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY${signalData.directOtc ? ` · DIRECT OTC SAFE ${Number(signalData.directOtcReferenceScore||0).toFixed(0)}/100 · ⚠ REF` : (String(signalData.sourceMode||'').toLowerCase().includes('reference') ? ' · ⚠ REFERENCE' : '')}`;
             }
             notifyRajaSignal(signalData, isBuy, confluenceString);
             updateStabilityUI(signalData);
@@ -14242,7 +14249,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     !(typeof scanSessionState !== 'undefined' && scanSessionState.running) &&
                     !(typeof rajaScanStartPending !== 'undefined' && rajaScanStartPending)
                 ) {
-                    try { await runSideAutoSignalScan(); if (autoRescanEnabled) armAutoRescan(AUTO_RESCAN_INTERVAL_MS); } catch (_) {}
+                    try { await runSideAutoSignalScan(); if (autoRescanEnabled) armAutoRescan(rajaNextMinuteBoundaryDelayMs()); } catch (_) {}
                 }
             }, 500);
         }
@@ -15236,8 +15243,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 btn.textContent = `🟡 ${short} BRIDGE · DATA WAIT`;
                 btn.title = `${broker} extension is connected, but exact market candles are still warming${pair ? ' · ' + pair : ''}${need ? ' · need ' + need + ' more 1m candle(s)' : ''}${parserState ? ' · ' + parserState : ''}. Reference fallback remains available.`;
             } else {
-                btn.textContent = '🔗 CONNECT BROKER BRIDGE';
-                btn.title = `Pair RAJA Broker Bridge v2.2+, reload the ${broker} OTC tab once, then keep the pair open. Reference fallback remains available while exact data warms.`;
+                btn.textContent = '🔗 OPTIONAL EXACT BRIDGE';
+                btn.title = `Bridge is optional. RAJA Direct OTC Safe Mode can scan without it using labelled public reference candles. Connect only if you want exact ${broker} browser candles.`;
             }
         }
         const base = document.getElementById('rajaBaseFeedLabel');
@@ -15245,7 +15252,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (isBrokerOtcScreen()) {
                 if (dataStreaming) base.textContent = `${broker} Exact Bridge 1m`;
                 else if (bridgeConnected) base.textContent = `${broker} Bridge Warming · REF Backup`;
-                else base.textContent = 'OTC REF Backup · Exact Bridge Optional';
+                else base.textContent = 'DIRECT OTC SAFE · REF 1m';
             } else {
                 base.textContent = 'Yahoo/Twelve Data REF 1m';
             }
@@ -15307,7 +15314,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         btn.id = 'rajaBrokerBridgeBtn';
         btn.type = 'button';
         btn.className = 'utility-btn';
-        btn.textContent = '🔗 CONNECT BROKER BRIDGE';
+        btn.textContent = '🔗 OPTIONAL EXACT BRIDGE';
+        btn.title = 'Optional: Direct OTC Safe Mode works without a bridge. Connect for exact broker browser candles when available.';
         btn.addEventListener('click', createBridgePairCode);
         grid.appendChild(btn);
         refreshBridgeStatus();
@@ -15435,7 +15443,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     set('explainExpiry',`NEXT ${s.nextCandleColor||'--'}`); set('explainExpirySub',`${s.selectedExpiry||window.selectedExpiry||'--'} exact next-candle entry only`);
     set('explainVolatility',String(s?.movementInfo?.label||'INFO ONLY')); set('explainVolatilitySub',`Raw candle movement ${Number(s?.volatilityPct||0).toFixed(4)}% · not a signal filter`);
     const ruleText=(s.rules||[]).filter(x=>x&&x.ok).map(x=>'✓ '+x.name).join(' · ');
-    const refWarn=String(s.sourceMode||'').toLowerCase().includes('reference') ? ` ⚠ REFERENCE OTC: ${s.referenceWarning||'Exact broker candle unavailable; underlying/reference candles can differ from broker OTC.'}` : '';
+    const refWarn=String(s.sourceMode||'').toLowerCase().includes('reference') ? ` ⚠ REFERENCE OTC: ${s.referenceWarning||'Direct OTC Safe Mode is using public underlying/reference candles; they can differ from broker OTC.'}` : '';
     set('aiExplanationSummary',`${s.recoveryTrade?'RECOVERY TRADE · ':''}${s.selectedPattern||'SK25'} exact rule setup. ${ruleText || s.reason || ''}${refWarn}`);
     const ids={v31TechnicalScore:(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'),v31AgreementScore:`TYPE ${s.patternType||'--'}`,v31MarketQuality:'CLOSED ✓',v31EntryState:'EXACT NEXT',v23WinnerScore:(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'),v23WinnerAgreement:`TYPE ${s.patternType||'--'}`,v23WinnerStability:'CLOSED ✓',v23WinnerLead:`${s.rulesMatched||0}/${s.rulesTotal||0}`};
     Object.entries(ids).forEach(([id,v])=>set(id,v));
@@ -15458,7 +15466,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     // V41 EXACT NEXT-CANDLE LOCK: this setup belongs only to the immediately
     // following candle. Never move it to a later candle for a nicer countdown.
     const nowMs=Date.now();
-    const graceMs=5000;
+    const graceMs=8000;
     const originalTargetMs=closedEpochMs>0 ? closedEpochMs+durationMs : 0;
     activeSignalSetupEpochMs=closedEpochMs>0 ? closedEpochMs : null;
     activeSignalEntryEpochMs=originalTargetMs||null;
@@ -15520,7 +15528,8 @@ document.addEventListener('DOMContentLoaded', function(){
 });
 </script>
 <script id="raja-v32-entry-rule-note">
-window.RAJA_ENTRY_TIMING_VERSION='V41_EXACT_NEXT_CANDLE_LOCK';
+window.RAJA_ENTRY_TIMING_VERSION='V44_1M_BOUNDARY_EXACT_NEXT';
+window.RAJA_DIRECT_OTC_VERSION='V45_DIRECT_OTC_SAFE_NO_BRIDGE';
 </script>
 
 <style id="raja-v38-mobile-settings-scroll-fix">
