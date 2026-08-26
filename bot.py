@@ -35,6 +35,21 @@ except Exception as _native_feed_import_error:
             "pocket_option": {"configured": False, "connected": False, "last_error": f"native feed import failed: {_err}"},
         }
 
+# V45 Direct OTC Safe Mode: bridge/native feed is optional. When exact broker
+# candles are unavailable, the bot may use a conservative public underlying
+# reference feed. The signal is always labelled REFERENCE OTC and never claimed
+# to be an exact Quotex/Pocket Option candle.
+try:
+    from direct_otc_feed import assess_direct_otc_reference, DIRECT_OTC_VERSION
+except Exception as _direct_otc_import_error:
+    DIRECT_OTC_VERSION = "UNAVAILABLE"
+    def assess_direct_otc_reference(*_args, **_kwargs):
+        return {
+            "allowed": False, "score": 0.0, "mode": DIRECT_OTC_VERSION,
+            "reason": f"Direct OTC safety module unavailable: {type(_direct_otc_import_error).__name__}: {_direct_otc_import_error}",
+            "warnings": [], "pair_tier": "UNAVAILABLE",
+        }
+
 # Lazy-load yfinance only when a market scan actually starts.
 # This keeps the Flask/Gunicorn web shell lighter during Render cold boot.
 _yf_module = None
@@ -423,6 +438,7 @@ def _compute_app_build_id():
     digest = hashlib.sha256()
     build_files = [
         Path(__file__).resolve(),
+        BASE_DIR / "direct_otc_feed.py",
         BASE_DIR / "index.html",
         BASE_DIR / "sw.js",
         BASE_DIR / "manifest.json",
@@ -472,6 +488,9 @@ RAJA_STRICT_BROKER_OTC = str(os.environ.get("RAJA_STRICT_BROKER_OTC", "1")).stri
 # with a clearly-labelled underlying/reference feed. Exact broker data always has priority.
 # Set RAJA_OTC_REFERENCE_SIGNAL_FALLBACK=0 to restore exact-only blocking.
 RAJA_OTC_REFERENCE_SIGNAL_FALLBACK = str(os.environ.get("RAJA_OTC_REFERENCE_SIGNAL_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
+# V45: no bridge is required for OTC reference signals. Set to 0 only if an
+# operator intentionally wants exact-broker-only behaviour.
+RAJA_DIRECT_OTC_ENABLED = str(os.environ.get("RAJA_DIRECT_OTC_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
 QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "2500"))))
@@ -1031,7 +1050,7 @@ AUTO_TRACK_EXPIRIES = {
 # Exact next-candle execution lock. A setup predicts only the immediately following
 # candle; it must never be silently shifted to a later candle. A tiny grace is
 # allowed only for network/browser latency at the candle open.
-RAJA_NEXT_CANDLE_GRACE_SECONDS = max(0, min(10, int(os.environ.get("RAJA_NEXT_CANDLE_GRACE_SECONDS", "5"))))
+RAJA_NEXT_CANDLE_GRACE_SECONDS = max(0, min(10, int(os.environ.get("RAJA_NEXT_CANDLE_GRACE_SECONDS", "8"))))
 RAJA_MIN_LIVE_QUALITY_SCORE = max(55.0, min(90.0, float(os.environ.get("RAJA_MIN_LIVE_QUALITY_SCORE", "68"))))
 
 
@@ -2988,7 +3007,7 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_V43_14_STRATEGIES_BRIDGE_FIRST"
+SK25_ENGINE_VERSION = "RAJA_V45_14_STRATEGIES_DIRECT_OTC_SAFE"
 SK25_PATTERN_LIBRARY_SIZE = 14
 SK25_LIVE_MIN_CANDLES = 10
 
@@ -3157,8 +3176,15 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
             "rules":[{"name":name,"ok":bool(ok)} for name,ok in rules],
             "recovery_trade":bool(recovery), "timeframe_rule":tf_rule,
         }
+        tf_rule_u = str(tf_rule or "ANY").upper()
+        context_ok = not (
+            ("2M ONLY" in tf_rule_u and tf != "2m") or
+            ("30S ONLY" in tf_rule_u and tf != "30s") or
+            ("OTC ONLY" in tf_rule_u and not is_otc) or
+            (("LIVE ONLY" in tf_rule_u or "LIVE MARKET ONLY" in tf_rule_u) and not is_live)
+        )
         if matched==total: exact.append(item)
-        elif pct>=60: near.append(item)
+        elif pct>=60 and context_ok: near.append(item)
 
     # Type 1 — OTC: 8 same-colour closed candles -> next same colour.
     last8=candles[-8:]
@@ -3542,12 +3568,53 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
     strategy=analyze_sk25_ohlc(tf_df,tf,market_name,last_outcome)
     movement=_movement_info(tf_df)
     raw_signal = strategy.get("signal") in {"CALL","PUT"}
+
+    # V45 DIRECT OTC SAFE MODE.  If no exact bridge/native candle exists, the
+    # reference signal must pass an additional feed-quality/regime sanity layer.
+    # This keeps the bot usable without a bridge while avoiding the false claim
+    # that public underlying candles are identical to broker OTC candles.
+    direct_otc_assessment = {}
+    reference_otc = bool(
+        broker_otc and str(source_info.get("source_mode") or "").lower() == "broker_otc_reference_fallback"
+    )
+    if raw_signal and reference_otc:
+        if not RAJA_DIRECT_OTC_ENABLED:
+            direct_otc_assessment = {
+                "allowed": False, "score": 0.0, "mode": DIRECT_OTC_VERSION,
+                "reason": "Direct OTC Safe Mode is disabled by server configuration.",
+                "warnings": [], "pair_tier": "DISABLED",
+            }
+        else:
+            direct_otc_assessment = assess_direct_otc_reference(
+                base_df, pair, strategy.get("signal"), strategy.get("pattern_type"), tf, data_age
+            )
+        if not bool(direct_otc_assessment.get("allowed")):
+            blocked = dict(strategy)
+            why = str(direct_otc_assessment.get("reason") or "Direct OTC reference safety gate blocked this setup.")
+            blocked.update({
+                "signal":"NO SIGNAL", "score":0.0, "no_trade":True,
+                "quality_gate":"DIRECT_OTC_BLOCKED",
+                "reason":f"NO TRADE · {why}", "no_trade_reason":why,
+            })
+            strategy = blocked
+            raw_signal = False
+
     quality_profile = build_live_quality_profile(bridge_user, pair, tf, strategy) if raw_signal else {
         "quality_score":0.0,"minimum_quality_score":RAJA_MIN_LIVE_QUALITY_SCORE,
         "pair_timeframe_performance":pair_timeframe_performance(bridge_user,pair,tf),
         "strategy_timeframe_performance":strategy_timeframe_performance(bridge_user,strategy.get("pattern_type"),tf),
         "blocked":False,"blocked_reason":"",
     }
+    if raw_signal and reference_otc and direct_otc_assessment:
+        # Blend, do not replace, the existing strategy/pair history quality.  The
+        # direct-feed score mostly measures reference-feed cleanliness, not win odds.
+        live_q = float(quality_profile.get("quality_score") or 0.0)
+        ref_q = float(direct_otc_assessment.get("score") or 0.0)
+        blended_q = max(0.0, min(100.0, live_q * 0.72 + ref_q * 0.28))
+        quality_profile["quality_score"] = round(blended_q, 2)
+        quality_profile["direct_otc_reference_score"] = round(ref_q, 2)
+        quality_profile["direct_otc_mode"] = direct_otc_assessment.get("mode") or DIRECT_OTC_VERSION
+
     execution = next_candle_execution_window(strategy.get("closed_candle_epoch"), TIMEFRAMES[tf] * 60) if raw_signal else {
         "entry_eligible":False,"missed_entry":False,"target_entry_epoch":0,"target_exit_epoch":0,
         "seconds_to_entry":0,"seconds_since_entry":0,"entry_grace_seconds":RAJA_NEXT_CANDLE_GRACE_SECONDS,"reason":"",
@@ -3599,6 +3666,14 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "entry_grace_seconds":int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS),
         "late_entry":{"eligible":bool(execution.get("entry_eligible")),"seconds_since_open":int(execution.get("seconds_since_entry") or 0),"seconds_to_open":int(execution.get("seconds_to_entry") or 0)},
         "no_trade":not signal_ok,"quality_gate":"PASSED" if signal_ok else (result.get("quality_gate") or "PATTERN_ONLY"),
+        "direct_otc": bool(reference_otc),
+        "direct_otc_safe_mode": bool(reference_otc and RAJA_DIRECT_OTC_ENABLED),
+        "direct_otc_assessment": direct_otc_assessment or {},
+        "direct_otc_reference_score": float((direct_otc_assessment or {}).get("score") or 0.0),
+        "direct_otc_pair_tier": str((direct_otc_assessment or {}).get("pair_tier") or ""),
+        "reference_warning": source_info.get("reference_warning") or (
+            "REFERENCE OTC · This is an underlying/public reference signal, not an exact broker OTC candle." if reference_otc else ""
+        ),
     })
     if result["no_trade"]: result["no_trade_reason"]=result.get("no_trade_reason") or result.get("reason")
     return result
@@ -3945,15 +4020,15 @@ def otc_fallback_config():
     po_native = dict(native.get("pocket_option") or {})
     qx_native_ready = bool(qx_native.get("configured") and qx_native.get("connected"))
     po_native_ready = bool(po_native.get("configured") and po_native.get("connected"))
-    direct_ready = bool((bridge_connected and pairs_with_data > 0) or qx_native_ready)
+    direct_ready = bool(RAJA_DIRECT_OTC_ENABLED or (bridge_connected and pairs_with_data > 0) or qx_native_ready)
     if bridge_connected and pairs_with_data > 0:
-        message = "Quotex Browser Bridge exact feed is streaming. This is the primary OTC source in V43."
+        message = "Exact Quotex Browser Bridge is streaming. Direct OTC Safe reference mode remains available as backup."
     elif qx_native_ready:
-        message = "Browser Bridge is waiting; optional Quotex native WebSocket is connected."
+        message = "Optional Quotex native WebSocket is connected. Direct OTC Safe reference mode is also enabled."
     elif bridge_connected:
-        message = "RAJA Broker Bridge extension is connected; keep the Quotex OTC pair open while exact candles warm."
+        message = "Bridge is connected and warming. RAJA Direct OTC Safe Mode can scan meanwhile without waiting for exact candles."
     else:
-        message = "Pair RAJA Broker Bridge v2.2+ and reload the Quotex OTC tab once. Labelled reference fallback remains available while exact data is unavailable."
+        message = "RAJA Direct OTC Safe Mode is active — no bridge is required. Optional exact bridge can be connected later."
     return jsonify({
         "status": "success",
         "data": {
@@ -3971,7 +4046,10 @@ def otc_fallback_config():
             "bridge_required_for_quotex_otc": False,
             "bridge_is_backup": False,
             "reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
-            "strict_broker_otc": True,
+            "direct_otc_safe_mode": bool(RAJA_DIRECT_OTC_ENABLED),
+            "direct_otc_version": DIRECT_OTC_VERSION,
+            "bridge_optional_for_otc": True,
+            "strict_broker_otc": False,
             "message": message,
         },
     })
@@ -4214,7 +4292,9 @@ def health():
         "quotex_reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
         "legacy_reference_fallback_env": RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK,
         "strict_broker_otc": RAJA_STRICT_BROKER_OTC,
-        "broker_otc_source_priority": ["browser_bridge", "native_websocket", "yahoo_twelve_reference_fallback", "no_data"],
+        "direct_otc_safe_mode": bool(RAJA_DIRECT_OTC_ENABLED),
+        "direct_otc_version": DIRECT_OTC_VERSION,
+        "broker_otc_source_priority": ["browser_bridge_optional", "native_websocket_optional", "direct_otc_safe_reference", "no_data"],
         "otc_reference_signal_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
         "native_broker_feeds": native_feed_status(),
         "base_interval": "1m",
@@ -4847,6 +4927,8 @@ def track_signal():
         "entry_notice_seconds": max(0, entry_epoch - now),
         "source": str(data.get("source") or "Yahoo Finance"),
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
+        "direct_otc": bool(data.get("direct_otc") or str(data.get("source_mode") or "").lower() == "broker_otc_reference_fallback"),
+        "reference_warning": str(data.get("reference_warning") or ""),
         "exclude_from_performance": bool("(OTC)" in pair and ("reference" in str(data.get("source_mode") or "").casefold() or "proxy" in str(data.get("source_mode") or "").casefold())),
         "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
@@ -5716,9 +5798,16 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
             "recovery_trade": bool(recovery),
             "timeframe_rule": timeframe_rule,
         }
+        tf_rule_u = str(timeframe_rule or "ANY").upper()
+        context_ok = not (
+            ("2M ONLY" in tf_rule_u and tf != "2m") or
+            ("30S ONLY" in tf_rule_u and tf != "30s") or
+            ("OTC ONLY" in tf_rule_u and not is_otc) or
+            (("LIVE ONLY" in tf_rule_u or "LIVE MARKET ONLY" in tf_rule_u) and not is_live)
+        )
         if matched == total:
             exact.append(item)
-        elif pct >= 50.0:
+        elif pct >= 50.0 and context_ok:
             near.append(item)
 
     # TYPE 1 - OTC 9-candle sequence: 8 same-colour setup candles -> next same colour.
