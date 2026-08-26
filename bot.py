@@ -11,6 +11,7 @@ import hashlib
 import base64
 import threading
 import queue
+import re
 from pathlib import Path
 from typing import Any
 
@@ -210,6 +211,51 @@ YAHOO_SYMBOLS = {
     "ExxonMobil (OTC)": "XOM",
     "Advanced Micro Devices (OTC)": "AMD",
 }
+
+# V43 bridge pair normalization. Broker pages/wires may send AUDCAD_otc, AUDCAD,
+# EURUSD-OTC, etc. Server-side normalization prevents a harmless naming difference
+# from dropping exact broker ticks/candles.
+def _bridge_pair_alias_key(value):
+    text = str(value or "").upper().replace("(OTC)", "OTC")
+    text = re.sub(r"OTC", "", text)
+    return re.sub(r"[^A-Z0-9]", "", text)
+
+
+BRIDGE_PAIR_ALIASES = {}
+for _configured_pair in YAHOO_SYMBOLS:
+    if "(OTC)" not in _configured_pair.upper():
+        continue
+    _key = _bridge_pair_alias_key(_configured_pair)
+    if _key:
+        BRIDGE_PAIR_ALIASES.setdefault(_key, _configured_pair)
+
+BRIDGE_PAIR_ALIASES.update({
+    "BTC": "Bitcoin (OTC)", "BITCOIN": "Bitcoin (OTC)",
+    "ETH": "Ethereum (OTC)", "ETHEREUM": "Ethereum (OTC)",
+    "BCH": "Bitcoin Cash (OTC)", "BITCOINCASH": "Bitcoin Cash (OTC)",
+    "BNB": "BNB (OTC)", "ZEC": "Zcash (OTC)", "LINK": "Chainlink (OTC)",
+    "ATOM": "Cosmos (OTC)", "ETC": "Ethereum Classic (OTC)", "AXS": "Axie Infinity (OTC)",
+    "DASH": "Dash (OTC)", "SOL": "Solana (OTC)", "LTC": "Litecoin (OTC)",
+    "AVAX": "Avalanche (OTC)", "DOT": "Polkadot (OTC)", "XRP": "Ripple (OTC)",
+    "ADA": "Cardano (OTC)", "MATIC": "Polygon (OTC)", "TRX": "TRON (OTC)",
+    "DOGE": "Dogecoin (OTC)", "AAPL": "Apple (OTC)", "AXP": "American Express (OTC)",
+    "BA": "Boeing Company (OTC)", "CSCO": "Cisco (OTC)", "META": "Facebook Inc (OTC)",
+    "FB": "Facebook Inc (OTC)", "INTC": "Intel (OTC)", "JNJ": "Johnson & Johnson (OTC)",
+    "MCD": "McDonald's (OTC)", "MSFT": "Microsoft (OTC)", "PFE": "Pfizer Inc (OTC)",
+    "TSLA": "Tesla (OTC)", "XOM": "ExxonMobil (OTC)", "AMD": "Advanced Micro Devices (OTC)",
+})
+
+
+def normalize_bridge_pair_name(value):
+    raw = str(value or "").strip()
+    if raw in YAHOO_SYMBOLS and "(OTC)" in raw.upper():
+        return raw
+    pair = BRIDGE_PAIR_ALIASES.get(_bridge_pair_alias_key(raw), "")
+    if pair in YAHOO_SYMBOLS and "(OTC)" in pair.upper():
+        return pair
+    return ""
+
+
 # Twelve Data LIVE BACKUP symbols. These are underlying/reference instruments,
 # never exact Quotex/Pocket Option OTC candles.
 TWELVE_DATA_SYMBOLS = {
@@ -422,15 +468,27 @@ RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRI
 # Yahoo/Twelve Data reference feed may be used instead of hard-blocking the whole bot.
 RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK = str(os.environ.get("RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
 RAJA_STRICT_BROKER_OTC = str(os.environ.get("RAJA_STRICT_BROKER_OTC", "1")).strip().lower() not in {"0", "false", "no", "off"}
+# V42: if exact Quotex/Pocket Option OTC candles are unavailable, keep the bot usable
+# with a clearly-labelled underlying/reference feed. Exact broker data always has priority.
+# Set RAJA_OTC_REFERENCE_SIGNAL_FALLBACK=0 to restore exact-only blocking.
+RAJA_OTC_REFERENCE_SIGNAL_FALLBACK = str(os.environ.get("RAJA_OTC_REFERENCE_SIGNAL_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
 QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "2500"))))
-_QUOTEX_BRIDGE_SECRET_TEXT = (os.environ.get("RAJA_QUOTEX_BRIDGE_SECRET") or ADMIN_PASSWORD or "").strip()
+# V43: keep pairing tokens valid across Railway restarts/redeploys whenever the
+# project already has any persistent secret (explicit bridge secret, admin password,
+# or DATABASE_URL). A random secret is used only for unconfigured/local testing.
+_QUOTEX_BRIDGE_SECRET_TEXT = (
+    os.environ.get("RAJA_QUOTEX_BRIDGE_SECRET")
+    or ADMIN_PASSWORD
+    or os.environ.get("DATABASE_URL")
+    or os.environ.get("RAJA_DATABASE_URL")
+    or ""
+).strip()
+QUOTEX_BRIDGE_SECRET_PERSISTENT = bool(_QUOTEX_BRIDGE_SECRET_TEXT)
 if _QUOTEX_BRIDGE_SECRET_TEXT:
-    QUOTEX_BRIDGE_SECRET = hashlib.sha256(_QUOTEX_BRIDGE_SECRET_TEXT.encode("utf-8")).digest()
+    QUOTEX_BRIDGE_SECRET = hashlib.sha256(("raja-broker-bridge-v43|" + _QUOTEX_BRIDGE_SECRET_TEXT).encode("utf-8")).digest()
 else:
-    # Functional fallback for local/testing. Set RAJA_QUOTEX_BRIDGE_SECRET in Railway
-    # so paired extensions remain valid across server restarts/deployments.
     QUOTEX_BRIDGE_SECRET = secrets.token_bytes(32)
 
 quotex_bridge_pair_codes = {}
@@ -452,9 +510,9 @@ pocket_bridge_data_lock = threading.RLock()
 # EUR/JPY cache look current.  Auto Scan also uses this metadata to skip
 # unavailable broker pairs immediately instead of spending the shared batch
 # deadline on pairs that have no exact candles yet.
-BROKER_BRIDGE_PAIR_FRESH_SECONDS = max(5.0, min(60.0, float(os.environ.get("RAJA_BRIDGE_PAIR_FRESH_SECONDS", "20"))))
+BROKER_BRIDGE_PAIR_FRESH_SECONDS = max(8.0, min(90.0, float(os.environ.get("RAJA_BRIDGE_PAIR_FRESH_SECONDS", "30"))))
 BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS = max(60.0, min(float(MAX_SOURCE_CANDLE_AGE_SECONDS), float(os.environ.get("RAJA_BRIDGE_MARKET_MAX_AGE_SECONDS", "180"))))
-BROKER_BRIDGE_SCAN_MIN_CANDLES = max(30, min(300, int(os.environ.get("RAJA_BRIDGE_SCAN_MIN_CANDLES", "61"))))
+BROKER_BRIDGE_SCAN_MIN_CANDLES = max(10, min(15, int(os.environ.get("RAJA_BRIDGE_SCAN_MIN_CANDLES", "15"))))
 quotex_bridge_pair_seen = {}
 pocket_bridge_pair_seen = {}
 
@@ -579,7 +637,7 @@ def _bridge_upsert_tick(user, pair, price, epoch=None):
     return True
 
 
-def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=None):
+def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=None, *, mark_pair_fresh=True, extra=None):
     user = normalize_user_id(user)
     now = time.time()
     with quotex_bridge_data_lock:
@@ -593,12 +651,17 @@ def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=N
         if pair:
             clean_pair = str(pair)[:120]
             current["pair"] = clean_pair
-            quotex_bridge_pair_seen[_quotex_bridge_pair_key(user, clean_pair)] = now
+            if mark_pair_fresh:
+                quotex_bridge_pair_seen[_quotex_bridge_pair_key(user, clean_pair)] = now
         if price is not None:
             try: current["price"] = float(price)
             except Exception: pass
         if source_page:
             current["source_page"] = str(source_page)[:300]
+        if isinstance(extra, dict):
+            for k, v in extra.items():
+                if k in {"parser_state", "client_version", "raw_socket_seen", "parsed_market_seen", "detected_pair", "tab_host", "transport"}:
+                    current[k] = v
         quotex_bridge_status[user] = current
 
 
@@ -651,6 +714,11 @@ def _get_quotex_bridge_status(user, pair=None):
                 and pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
                 and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
             )
+            status["data_streaming"] = bool(
+                pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
+                and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
+            )
+            status["warmup_needed_candles"] = max(0, BROKER_BRIDGE_SCAN_MIN_CANDLES - len(rows))
         else:
             status["pairs_with_data"] = sum(1 for (u, _p), book in quotex_bridge_candles.items() if u == user and book)
     last_seen = float(status.get("last_seen") or 0.0)
@@ -763,7 +831,7 @@ def _pocket_bridge_upsert_tick(user, pair, price, epoch=None):
     return True
 
 
-def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=None):
+def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=None, *, mark_pair_fresh=True, extra=None):
     user = normalize_user_id(user)
     now = time.time()
     with pocket_bridge_data_lock:
@@ -777,7 +845,8 @@ def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=N
         if pair:
             clean_pair = str(pair)[:120]
             current["pair"] = clean_pair
-            pocket_bridge_pair_seen[_pocket_bridge_pair_key(user, clean_pair)] = now
+            if mark_pair_fresh:
+                pocket_bridge_pair_seen[_pocket_bridge_pair_key(user, clean_pair)] = now
         if price is not None:
             try:
                 current["price"] = float(price)
@@ -785,6 +854,10 @@ def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=N
                 pass
         if source_page:
             current["source_page"] = str(source_page)[:300]
+        if isinstance(extra, dict):
+            for k, v in extra.items():
+                if k in {"parser_state", "client_version", "raw_socket_seen", "parsed_market_seen", "detected_pair", "tab_host", "transport"}:
+                    current[k] = v
         pocket_bridge_status[user] = current
 
 
@@ -808,6 +881,11 @@ def _get_pocket_bridge_status(user, pair=None):
                 and pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
                 and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
             )
+            status["data_streaming"] = bool(
+                pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
+                and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
+            )
+            status["warmup_needed_candles"] = max(0, BROKER_BRIDGE_SCAN_MIN_CANDLES - len(rows))
         else:
             status["pairs_with_data"] = sum(1 for (u, _p), book in pocket_bridge_candles.items() if u == user and book)
     last_seen = float(status.get("last_seen") or 0.0)
@@ -1842,9 +1920,11 @@ def dataframe_epoch_rows(df):
 
 
 def resolve_tracked_signal(item):
-    """Resolve a due signal from the same market source used for the scan."""
+    """Resolve a due signal from the same source class used for the scan."""
     pair = str(item.get("pair") or "")
     is_otc = "(OTC)" in pair
+    source_mode_text = str(item.get("source_mode") or "").casefold()
+    is_reference_otc = bool(is_otc and ("reference" in source_mode_text or "proxy" in source_mode_text))
     if pair not in YAHOO_SYMBOLS and not is_otc:
         return False
 
@@ -1852,36 +1932,55 @@ def resolve_tracked_signal(item):
     resolved_source = None
     source_info = {}
 
-    if is_otc:
+    if is_reference_otc:
+        # A V42 reference-OTC signal is resolved from a reference feed too. This
+        # result is explicitly marked REFERENCE and is not treated as exact broker P/L.
+        data, _age, _symbol, source_info = get_market_data(pair, bridge_user=None, broker=None)
+        if data is not None and not getattr(data, "empty", True):
+            resolved_source = str((source_info or {}).get("source") or "Reference feed") + " · OTC Reference Result"
+        else:
+            item["result_wait_reason"] = "Reference OTC result candles are not available yet."
+            return False
+    elif is_otc:
         broker = str(item.get("broker") or "").strip()
         if not broker:
             src = str(item.get("source") or "").casefold()
             broker = "PocketOption" if "pocket" in src else "Quotex"
+        broker_key = broker.casefold().replace(" ", "")
 
-        if callable(get_native_broker_market_data):
+        if item.get("user"):
+            # V43: resolve exact OTC from the same browser-bridge class first.
+            try:
+                if broker_key in {"pocketoption", "pocket_option", "pocket"}:
+                    bridge_df, _bridge_age, _bridge_symbol, bridge_info = get_pocket_bridge_market_data(item.get("user"), pair)
+                    bridge_label = "Pocket Option Bridge"
+                else:
+                    bridge_df, _bridge_age, _bridge_symbol, bridge_info = get_quotex_bridge_market_data(item.get("user"), pair)
+                    bridge_label = "Quotex Bridge"
+            except Exception as exc:
+                bridge_df = None
+                bridge_info = {"unavailable_reason": f"Bridge result feed error: {type(exc).__name__}: {exc}"}
+            if bridge_df is not None and not bridge_df.empty:
+                data = bridge_df
+                source_info = bridge_info or {}
+                resolved_source = bridge_label
+
+        if (data is None or getattr(data, "empty", True)) and callable(get_native_broker_market_data):
             try:
                 data, _age, _symbol, source_info = get_native_broker_market_data(broker, pair)
             except Exception as exc:
                 source_info = {"unavailable_reason": f"Native result feed error: {type(exc).__name__}: {exc}"}
                 data = None
-        if data is not None and not getattr(data, "empty", True):
-            resolved_source = str((source_info or {}).get("source") or "Broker Native WebSocket")
-        elif str(broker).casefold().replace(" ", "") == "quotex" and item.get("user"):
-            # Exact broker bridge fallback for outcome resolution too.
-            bridge_df, _bridge_age, _bridge_symbol, bridge_info = get_quotex_bridge_market_data(item.get("user"), pair)
-            if bridge_df is not None and not bridge_df.empty:
-                data = bridge_df
-                source_info = bridge_info or {}
-                resolved_source = "Quotex Bridge"
+            if data is not None and not getattr(data, "empty", True):
+                resolved_source = str((source_info or {}).get("source") or "Broker Native WebSocket")
 
-        # Never calculate OTC WIN/LOSS from Yahoo/Twelve Data in strict mode.
         if data is None or getattr(data, "empty", True):
             item["result_wait_reason"] = (source_info or {}).get("unavailable_reason") or "Exact broker OTC result candles are not available yet."
             return False
     else:
         yahoo_symbol = YAHOO_SYMBOLS.get(pair)
         preferred_source = str(item.get("source") or "Yahoo Finance")
-        if preferred_source == "Twelve Data" and TWELVE_DATA_ENABLED:
+        if preferred_source.startswith("Twelve Data") and TWELVE_DATA_ENABLED:
             data, _ = get_twelve_data_market_data(pair, force=True)
             if data is not None and not data.empty:
                 resolved_source = "Twelve Data"
@@ -1942,9 +2041,16 @@ def resolve_tracked_signal(item):
             item["yahoo_result"] = result
         elif resolved_source == "Twelve Data":
             item["backup_result"] = result
+    elif is_reference_otc:
+        item["reference_result"] = result
+        item["reference_otc_result"] = result
+        item["exact_broker_result"] = False
+        item["result_is_reference_only"] = True
+        item["exclude_from_performance"] = True
     else:
         item["exact_broker_result"] = True
     return True
+
 
 def tracked_signal_phase(item, now=None):
     """Return the live lifecycle phase used by the browser Signal Flow UI."""
@@ -2647,30 +2753,53 @@ def _market_source_info(pair, yahoo_symbol, source="Yahoo Finance", provider_sym
 
 def get_market_data(pair, bridge_user=None, broker=None):
     """
-    Source policy:
-      * Broker OTC: broker-native websocket -> browser bridge backup -> NO DATA.
-      * Non-OTC/live markets: existing Yahoo -> Twelve Data reference chain.
+    V43 source policy:
+      * Broker OTC: exact browser bridge -> optional native websocket -> labelled reference fallback.
+      * Non-OTC/live markets: Yahoo -> Twelve Data reference chain.
 
-    Yahoo/Twelve Data are never used as Quotex/Pocket Option OTC candles.
+    The OTC reference fallback is deliberately labelled and never presented as an
+    exact Quotex/Pocket Option candle. Set RAJA_OTC_REFERENCE_SIGNAL_FALLBACK=0
+    to force exact-only OTC behaviour.
     """
-    # Broker-native OTC must not depend on a Yahoo proxy mapping existing.
-    # Resolve Yahoo only after the native/bridge OTC path has been considered.
     yahoo_symbol = YAHOO_SYMBOLS.get(pair)
-
     broker_name = str(broker or "").strip().casefold().replace(" ", "")
     is_otc = "(otc)" in str(pair).casefold()
     is_quotex = broker_name == "quotex"
     is_pocket = broker_name in {"pocketoption", "pocket_option", "pocket"}
+    bridge_fallback_info = None
 
-    # Exact OTC feed always tries the broker-native websocket first. This path
-    # runs on Railway and therefore does not depend on the Chrome bridge/tab.
+    # V43 exact source order: Browser Bridge first. It is the direct feed from the
+    # user's logged-in broker tab and must not wait on an optional Railway-native
+    # connector. Native feed is second exact source; labelled reference is last.
     if is_otc and (is_quotex or is_pocket):
+        native_df = native_age = native_symbol = None
         native_info = {}
+        bridge_info = {}
+
+        if bridge_user:
+            try:
+                if is_quotex:
+                    bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
+                else:
+                    bridge_df, bridge_age, bridge_symbol, bridge_info = get_pocket_bridge_market_data(bridge_user, pair)
+            except Exception as exc:
+                bridge_df, bridge_age, bridge_symbol = None, None, None
+                bridge_info = {"unavailable_reason": f"Browser bridge error: {type(exc).__name__}: {exc}"}
+            if bridge_df is not None and not bridge_df.empty:
+                bridge_info = dict(bridge_info or {})
+                bridge_info.update({
+                    "source": "Pocket Option Browser Bridge" if is_pocket else "Quotex Browser Bridge",
+                    "source_mode": "broker_otc_exact",
+                    "exact_broker_feed": True,
+                    "fallback_used": "browser_bridge",
+                    "reference_fallback_used": False,
+                })
+                return bridge_df, bridge_age, bridge_symbol or pair, bridge_info
+
         if callable(get_native_broker_market_data):
             try:
                 native_df, native_age, native_symbol, native_info = get_native_broker_market_data(broker, pair)
             except Exception as exc:
-                native_df, native_age, native_symbol = None, None, None
                 native_info = {
                     "source": "Broker Native WebSocket",
                     "source_mode": "broker_native_websocket",
@@ -2678,51 +2807,71 @@ def get_market_data(pair, bridge_user=None, broker=None):
                     "unavailable_reason": f"Native broker feed error: {type(exc).__name__}: {exc}",
                 }
             if native_df is not None and not native_df.empty:
+                native_info = dict(native_info or {})
+                native_info.setdefault("source", "Pocket Option Native WebSocket" if is_pocket else "Quotex Native WebSocket")
+                native_info.update({
+                    "source_mode": "broker_otc_exact",
+                    "exact_broker_feed": True,
+                    "fallback_used": "native_websocket",
+                    "reference_fallback_used": False,
+                })
                 return native_df, native_age, native_symbol or pair, native_info
 
-        # Local browser bridge is an exact-broker fallback for BOTH brokers.
-        # It reads the already logged-in broker tab and never needs Railway to
-        # authenticate to the broker directly.
-        if bridge_user:
-            if is_quotex:
-                bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
-            else:
-                bridge_df, bridge_age, bridge_symbol, bridge_info = get_pocket_bridge_market_data(bridge_user, pair)
-            if bridge_df is not None and not bridge_df.empty:
-                bridge_info = dict(bridge_info or {})
-                bridge_info.update({
-                    "exact_broker_feed": True,
-                    "native_primary_failed": True,
-                    "fallback_used": "browser_bridge",
-                })
-                return bridge_df, bridge_age, bridge_symbol or native_symbol or pair, bridge_info
+        bridge_reason = (bridge_info or {}).get("unavailable_reason") or (
+            "Pocket Option Browser Bridge is not streaming this pair." if is_pocket
+            else "Quotex Browser Bridge is not streaming this pair."
+        )
+        native_reason = (native_info or {}).get("unavailable_reason") or "Optional Railway native feed has no fresh data."
+        reason = f"{bridge_reason} {native_reason}"
 
-        reason = (native_info or {}).get("unavailable_reason") or "Broker-native OTC websocket has no fresh data."
-        if is_quotex:
-            reason += " Quotex browser bridge is also not streaming this pair."
+        # V42: do not freeze the whole OTC market when exact broker streaming is absent.
+        # Continue into the Yahoo/Twelve reference chain when a proxy symbol exists.
+        if RAJA_OTC_REFERENCE_SIGNAL_FALLBACK and yahoo_symbol:
+            bridge_fallback_info = {
+                "exact_broker_feed": False,
+                "reference_fallback_used": True,
+                "reference_fallback_reason": reason,
+                "broker": "Pocket Option" if is_pocket else "Quotex",
+            }
         else:
-            reason += " Pocket Option browser bridge is also not streaming this pair."
-        blocked_info = dict(native_info or {})
-        blocked_info.update({
-            "source": blocked_info.get("source") or ("Quotex Native WebSocket" if is_quotex else "Pocket Option Native WebSocket"),
-            "source_mode": "broker_native_required",
-            "exact_broker_feed": False,
-            "reference_fallback_blocked": True,
-            "unavailable_reason": reason,
-        })
-        # Exact broker OTC is the core V27 rule. RAJA_STRICT_BROKER_OTC defaults
-        # on; even when legacy reference-fallback variables exist, broker OTC
-        # does not silently become Yahoo/Twelve Data.
-        return None, None, native_symbol or yahoo_symbol or pair, blocked_info
+            blocked_info = dict(native_info or {})
+            blocked_info.update({
+                "source": blocked_info.get("source") or ("Pocket Option Native WebSocket" if is_pocket else "Quotex Native WebSocket"),
+                "source_mode": "broker_native_required",
+                "exact_broker_feed": False,
+                "reference_fallback_blocked": True,
+                "unavailable_reason": reason,
+            })
+            return None, None, native_symbol or yahoo_symbol or pair, blocked_info
 
-    # Live/non-OTC path remains the original Yahoo -> Twelve Data chain.
     if not yahoo_symbol:
-        return None, None, None, _market_source_info(pair, None)
-
-    bridge_fallback_info = None
+        missing = _market_source_info(pair, None)
+        if bridge_fallback_info:
+            missing.update({
+                "source_mode": "broker_otc_reference_unavailable",
+                "exact_broker_feed": False,
+                "reference_fallback_used": True,
+                "unavailable_reason": "Exact broker OTC data is unavailable and no reference symbol is configured for this pair.",
+            })
+        return None, None, None, missing
 
     def _with_bridge_fallback(info):
-        return dict(info or {})
+        merged = dict(info or {})
+        if bridge_fallback_info:
+            provider = str(merged.get("source") or "Reference feed")
+            broker_label = str(bridge_fallback_info.get("broker") or "Broker")
+            merged.update({
+                "source": f"{provider} · OTC Reference",
+                "reference_provider": provider,
+                "source_mode": "broker_otc_reference_fallback",
+                "exact_broker_feed": False,
+                "reference_fallback_used": True,
+                "backup_used": True,
+                "broker": broker_label,
+                "reference_warning": f"{broker_label} exact OTC candles are unavailable; signal uses {provider} underlying/reference candles and can differ from broker OTC.",
+                "bridge_unavailable_reason": bridge_fallback_info.get("reference_fallback_reason") or "Exact broker feed unavailable.",
+            })
+        return merged
 
     yahoo_data = None
     yahoo_age = None
@@ -2783,8 +2932,10 @@ def get_market_data(pair, bridge_user=None, broker=None):
         return data.copy(), age, yahoo_symbol, source_info
 
     missing_info = _with_bridge_fallback(_market_source_info(pair, yahoo_symbol))
-    if bridge_fallback_info and not missing_info.get("unavailable_reason"):
-        missing_info["unavailable_reason"] = bridge_fallback_info.get("bridge_unavailable_reason") or "No fresh bridge/reference market data is available."
+    if bridge_fallback_info:
+        missing_info["unavailable_reason"] = (
+            "Exact broker OTC feed is unavailable and the Yahoo/Twelve reference feed also has no fresh candles for this pair."
+        )
     return None, None, yahoo_symbol, missing_info
 
 
@@ -2837,7 +2988,7 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_14_SELECTED_STRATEGIES_TEMP_TEST"
+SK25_ENGINE_VERSION = "RAJA_V43_14_STRATEGIES_BRIDGE_FIRST"
 SK25_PATTERN_LIBRARY_SIZE = 14
 SK25_LIVE_MIN_CANDLES = 10
 
@@ -3313,6 +3464,8 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, 
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
+        "exact_broker_feed":bool(source_info.get("exact_broker_feed")),"reference_fallback_used":bool(source_info.get("reference_fallback_used")),
+        "reference_warning":str(source_info.get("reference_warning") or ""),"reference_provider":source_info.get("reference_provider"),
         "timeframe_summary":timeframes or {},"timeframes_scanned":[],"no_trade":True,
         "no_trade_reason":str(reason or "No exact active strategy setup."),"quality_gate":"PATTERN_ONLY",
         "engine":SK25_ENGINE_VERSION,
@@ -3473,6 +3626,8 @@ def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=N
             "next_candle_color":row.get("next_candle_color"),"rules":row.get("rules") or [],"recovery_trade":bool(row.get("recovery_trade")),
             "closed_candle_epoch":row.get("closed_candle_epoch"),"data_age_seconds":row.get("data_age"),
             "source":row.get("source"),"source_mode":row.get("source_mode"),"yahoo_symbol":row.get("yahoo_symbol"),
+            "exact_broker_feed":bool(row.get("exact_broker_feed")),"reference_fallback_used":bool(row.get("reference_fallback_used")),
+            "reference_warning":row.get("reference_warning") or "",
         })
     return out
 
@@ -3790,15 +3945,15 @@ def otc_fallback_config():
     po_native = dict(native.get("pocket_option") or {})
     qx_native_ready = bool(qx_native.get("configured") and qx_native.get("connected"))
     po_native_ready = bool(po_native.get("configured") and po_native.get("connected"))
-    direct_ready = bool(qx_native_ready or (bridge_connected and pairs_with_data > 0))
-    if qx_native_ready:
-        message = "Quotex native WebSocket is connected. Browser bridge is optional backup."
-    elif bridge_connected and pairs_with_data > 0:
-        message = "Quotex native feed is unavailable; exact browser bridge backup is streaming."
-    elif qx_native.get("configured"):
-        message = "Quotex native feed is configured but not connected yet. Bridge may be used as backup."
+    direct_ready = bool((bridge_connected and pairs_with_data > 0) or qx_native_ready)
+    if bridge_connected and pairs_with_data > 0:
+        message = "Quotex Browser Bridge exact feed is streaming. This is the primary OTC source in V43."
+    elif qx_native_ready:
+        message = "Browser Bridge is waiting; optional Quotex native WebSocket is connected."
+    elif bridge_connected:
+        message = "RAJA Broker Bridge extension is connected; keep the Quotex OTC pair open while exact candles warm."
     else:
-        message = "Configure Quotex native session/credentials for bridge-independent OTC data."
+        message = "Pair RAJA Broker Bridge v2.2+ and reload the Quotex OTC tab once. Labelled reference fallback remains available while exact data is unavailable."
     return jsonify({
         "status": "success",
         "data": {
@@ -3808,14 +3963,14 @@ def otc_fallback_config():
             "companion_connected": bridge_connected or bool(companion_url),
             "companion_url": companion_url,
             "direct_scan_available": direct_ready,
-            "native_primary": True,
+            "native_primary": False,
             "native_feeds": native,
             "quotex_native_ready": qx_native_ready,
             "pocket_native_ready": po_native_ready,
             "bridge": bridge,
             "bridge_required_for_quotex_otc": False,
-            "bridge_is_backup": True,
-            "reference_fallback_enabled": False,
+            "bridge_is_backup": False,
+            "reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
             "strict_broker_otc": True,
             "message": message,
         },
@@ -3888,9 +4043,7 @@ def quotex_bridge_status_route():
     auth, error = _auth_session(data)
     if error:
         return error
-    pair = str(data.get("pair") or "").strip()
-    if pair and pair not in YAHOO_SYMBOLS:
-        pair = ""
+    pair = normalize_bridge_pair_name(data.get("pair"))
     broker = str(data.get("broker") or ("Quotex" if request.path.startswith("/quotex-bridge/") else "Quotex")).strip().casefold().replace(" ", "")
     if broker in {"pocketoption", "pocket_option", "pocket"}:
         status = _get_pocket_bridge_status(auth["user"], pair or None)
@@ -3908,8 +4061,8 @@ def quotex_bridge_tick():
     bridge_auth = _validate_quotex_bridge_token(token)
     if not bridge_auth:
         return jsonify({"status": "error", "message": "Bridge token is invalid or expired. Pair the extension again."}), 401
-    pair = str(data.get("pair") or "").strip()
-    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
+    pair = normalize_bridge_pair_name(data.get("pair"))
+    if not pair:
         return jsonify({"status": "error", "message": "Unsupported or non-OTC bridge pair."}), 400
 
     broker = str(data.get("broker") or ("Quotex" if request.path.startswith("/quotex-bridge/") else "")).strip().casefold().replace(" ", "")
@@ -3954,6 +4107,44 @@ def quotex_bridge_tick():
         status = _get_quotex_bridge_status(bridge_auth["user"], pair)
         status.setdefault("broker", "Quotex")
     return jsonify({"status": "success", "data": {"accepted": accepted, **status}})
+
+
+@app.route("/broker-bridge/heartbeat", methods=["POST"])
+def broker_bridge_heartbeat_route():
+    """Extension/tab heartbeat; does NOT mark broker market data as fresh."""
+    data = request.get_json(silent=True) or {}
+    token = request.headers.get("X-RAJA-Bridge-Token") or data.get("bridge_token")
+    bridge_auth = _validate_quotex_bridge_token(token)
+    if not bridge_auth:
+        return jsonify({"status": "error", "message": "Bridge token is invalid or expired. Pair the extension again."}), 401
+
+    broker = str(data.get("broker") or "").strip()
+    broker_key = broker.casefold().replace(" ", "")
+    is_pocket = broker_key in {"pocketoption", "pocket_option", "pocket"}
+    if not is_pocket and broker_key not in {"quotex", ""}:
+        return jsonify({"status": "error", "message": "Unsupported broker bridge."}), 400
+
+    pair = normalize_bridge_pair_name(data.get("pair"))
+    extra = {
+        "parser_state": str(data.get("parser_state") or "")[:80],
+        "client_version": str(data.get("client_version") or "")[:40],
+        "raw_socket_seen": bool(data.get("raw_socket_seen")),
+        "parsed_market_seen": bool(data.get("parsed_market_seen")),
+        "detected_pair": str(pair or data.get("pair") or "")[:120],
+        "tab_host": str(data.get("tab_host") or "")[:160],
+        "transport": str(data.get("transport") or "")[:80],
+    }
+    if is_pocket:
+        _set_pocket_bridge_status(bridge_auth["user"], bridge_auth["device"], pair=pair or None,
+                                  source_page=data.get("source_page"), mark_pair_fresh=False, extra=extra)
+        status = _get_pocket_bridge_status(bridge_auth["user"], pair or None)
+    else:
+        _set_quotex_bridge_status(bridge_auth["user"], bridge_auth["device"], pair=pair or None,
+                                  source_page=data.get("source_page"), mark_pair_fresh=False, extra=extra)
+        status = _get_quotex_bridge_status(bridge_auth["user"], pair or None)
+        status.setdefault("broker", "Quotex")
+    status["extension_alive"] = bool(status.get("connected"))
+    return jsonify({"status": "success", "data": status})
 
 
 @app.route("/broker-bridge/ready-pairs", methods=["POST"])
@@ -4017,12 +4208,14 @@ def health():
         "broker_bridge_pair_fresh_seconds": BROKER_BRIDGE_PAIR_FRESH_SECONDS,
         "broker_bridge_market_max_age_seconds": BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS,
         "broker_bridge_scan_min_candles": BROKER_BRIDGE_SCAN_MIN_CANDLES,
+        "bridge_token_secret_persistent": QUOTEX_BRIDGE_SECRET_PERSISTENT,
         "quotex_bridge_required_for_otc": False,
         "legacy_bridge_required_env": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
-        "quotex_reference_fallback_enabled": False,
+        "quotex_reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
         "legacy_reference_fallback_env": RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK,
         "strict_broker_otc": RAJA_STRICT_BROKER_OTC,
-        "broker_otc_source_priority": ["native_websocket", "browser_bridge", "no_data"],
+        "broker_otc_source_priority": ["browser_bridge", "native_websocket", "yahoo_twelve_reference_fallback", "no_data"],
+        "otc_reference_signal_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
         "native_broker_feeds": native_feed_status(),
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
@@ -4654,6 +4847,7 @@ def track_signal():
         "entry_notice_seconds": max(0, entry_epoch - now),
         "source": str(data.get("source") or "Yahoo Finance"),
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
+        "exclude_from_performance": bool("(OTC)" in pair and ("reference" in str(data.get("source_mode") or "").casefold() or "proxy" in str(data.get("source_mode") or "").casefold())),
         "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
         "scan_mode": "SK25_STRICT", "entry_timing_mode": "EXACT_NEXT_CANDLE", "volatility_pct": data.get("volatility_pct"),
@@ -6284,7 +6478,7 @@ def scan_batch():
         results_by_pair, timed_out_pairs = {}, []
         batch_started = time.time()
 
-        # V29 fast exact-OTC path: if the unofficial native connector is disabled
+        # V42 exact-first OTC path: when reference fallback is disabled and native is unavailable
         # (the recommended bridge-only setup), do not create workers for broker
         # pairs that the paired browser is not currently streaming.  This removes
         # the apparent "stuck on one pair" behaviour and makes the response time
@@ -6300,7 +6494,7 @@ def scan_batch():
         except Exception:
             native_ready = False
 
-        if broker_otc_batch and not native_ready:
+        if broker_otc_batch and not native_ready and not RAJA_OTC_REFERENCE_SIGNAL_FALLBACK:
             bridge_rows = _broker_bridge_ready_pairs(auth["user"], broker, pairs)
             bridge_meta = {row["pair"]: row for row in bridge_rows}
             compute_pairs = []
@@ -6382,10 +6576,11 @@ def scan_batch():
             "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
             "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
             "batch_workers": workers,
-            "bridge_ready_pairs_count": len(compute_pairs) if broker_otc_batch and not native_ready else None,
+            "bridge_ready_pairs_count": len(compute_pairs) if broker_otc_batch and not native_ready and not RAJA_OTC_REFERENCE_SIGNAL_FALLBACK else None,
             "bridge_skipped_pairs": bridge_skipped_pairs,
             "bridge_skipped_pairs_count": len(bridge_skipped_pairs),
-            "bridge_mode_required_candles": (_sk25_required_base_candles(selected_expiry) if broker_otc_batch and not native_ready else None),
+            "bridge_mode_required_candles": (_sk25_required_base_candles(selected_expiry) if broker_otc_batch and not native_ready and not RAJA_OTC_REFERENCE_SIGNAL_FALLBACK else None),
+            "otc_reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
             "scan_mode": opts["mode"],
         }
         payload = {"data": results, "diagnostics": diagnostics}
