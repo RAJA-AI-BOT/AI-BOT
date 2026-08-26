@@ -3019,16 +3019,16 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_V45_14_STRATEGIES_DIRECT_OTC_SAFE"
-SK25_PATTERN_LIBRARY_SIZE = 14
+SK25_ENGINE_VERSION = "RAJA_V47_15_STRATEGIES_TYPE36_PULLBACK_REJECTION"
+SK25_PATTERN_LIBRARY_SIZE = 15
 SK25_LIVE_MIN_CANDLES = 10
 
-# TEMP TEST: only the original 14 selected RAJA rules are active; IDs 26-35 remain in source but are ignored.
-# Old skipped rules stay in source for backward compatibility/history, but add()/add_setup() ignore them.
+# V47: original 14 selected RAJA rules remain unchanged and Type 36 is added for demo testing.
+# IDs 26-35 remain in source but stay disabled; add()/add_setup() ignore them.
 RAJA_ACTIVE_STRATEGY_IDS = frozenset({
-    # TEMP TEST: original 14 selected RAJA strategies only.
-    # PDF/Premium strategies 26-35 are temporarily disabled, not deleted.
-    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25,
+    # Original 14 selected RAJA strategies + V47 Type 36 demo strategy.
+    # PDF/Premium strategies 26-35 remain disabled, not deleted.
+    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25, 36,
 })
 RAJA_STRATEGY_NAMES = {
     2: "RAJA Type 2 · Resistance Reversal",
@@ -3055,12 +3055,14 @@ RAJA_STRATEGY_NAMES = {
     33: "Premium · Trend Pullback Continuation",
     34: "Premium · Failed Breakout Reversal",
     35: "Premium · Engulfing at Key S/R",
+    36: "RAJA Type 36 · Trend Pullback Rejection",
 }
 RAJA_STRATEGY_PRIORITIES = {
     2:105, 4:115, 9:145, 10:145, 12:165, 14:150,
     18:155, 19:155, 20:145, 21:145, 22:155, 23:155, 24:180, 25:175,
     26:188, 27:202, 28:205, 29:192, 30:198,
     31:210, 32:206, 33:204, 34:207, 35:200,
+    36:185,
 }
 
 
@@ -3131,7 +3133,7 @@ def _sk25_level_clusters(values, tolerance, min_touches=2):
 
 
 def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
-    """Evaluate the selected RAJA 14 closed-candle strategies."""
+    """Evaluate the selected RAJA 15 closed-candle strategies (original 14 + Type 36)."""
     tf = str(timeframe or "1m").strip().lower()
     market_name = str(market or "LIVE").upper()
     previous_outcome = str(last_outcome or "").strip().upper()
@@ -3438,6 +3440,58 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
         if res is not None:
             add(35,-1,[("GREEN setup candle at resistance",a["dir"]>0 and touch_price(a,res,0.55)),("RED bearish engulfing",bearish_engulf(b,a,0.18)),("Engulf closes below resistance",b["close"]<res-tol*0.04)],"Bearish engulfing at key resistance","A true body engulf occurs at recent resistance and closes back below the level.","Premium · Engulfing S/R")
 
+    # V47 TYPE 36 — Trend Pullback Rejection.
+    # Price-action only: trend + two controlled opposite candles + wick rejection + midpoint reclaim.
+    # Designed for 1m/5m. OTC/reference mode requires an extra-clean rejection.
+    if count >= 12 and tf in {"1m", "5m"}:
+        a,b,c = candles[-3:]
+        big_t = trend_before_setup(3, 12)
+        small_t = trend_before_setup(3, 6)
+        pre = candles[max(0, count-11):count-3]
+        recent4 = pre[-4:] if pre else []
+        support_zone = max((x["low"] for x in recent4), default=None)
+        resistance_zone = min((x["high"] for x in recent4), default=None)
+        pullback_body_ok = a["body"] <= med_body*1.50 and b["body"] <= med_body*1.50
+        reject_not_spike = c["body"] <= med_body*1.85 and c["range"] <= med_range*2.20
+
+        if support_zone is not None:
+            midpoint_b = (b["open"] + b["close"]) / 2.0
+            support_test = min(a["low"], b["low"], c["low"]) <= support_zone + med_range*0.55
+            support_hold = min(a["close"], b["close"], c["close"]) >= support_zone - med_range*0.38
+            otc_clean = (not is_otc) or (c["lower_wick"] >= max(c["body"]*0.85, med_range*0.22) and c["close"] >= b["body_top"]-tol*0.10)
+            add(36,1,[
+                ("1m or 5m timeframe", tf in {"1m","5m"}),
+                ("Big trend UP", big_t > 0.045),
+                ("Small trend UP", small_t > 0.020),
+                ("Two RED pullback candles", seq_is([a,b],[-1,-1])),
+                ("Pullback candles not oversized", pullback_body_ok),
+                ("Pullback tests and holds rising support zone", support_test and support_hold),
+                ("GREEN rejection candle with long lower wick", c["dir"]>0 and long_lower(c)),
+                ("Rejection body normal", normal(c)),
+                ("GREEN rejection closes above previous RED body midpoint", c["close"] > midpoint_b + tol*0.02),
+                ("Rejection not oversized", reject_not_spike),
+                ("OTC extra-clean rejection / LIVE exempt", otc_clean),
+            ],"Trend pullback rejection CALL","Uptrend stays intact through a controlled two-red pullback, then a bullish lower-wick rejection reclaims the prior red body midpoint. Target is the NEXT candle GREEN.","RAJA · Trend Pullback Rejection",False,"1M/5M ONLY")
+
+        if resistance_zone is not None:
+            midpoint_b = (b["open"] + b["close"]) / 2.0
+            resistance_test = max(a["high"], b["high"], c["high"]) >= resistance_zone - med_range*0.55
+            resistance_hold = max(a["close"], b["close"], c["close"]) <= resistance_zone + med_range*0.38
+            otc_clean = (not is_otc) or (c["upper_wick"] >= max(c["body"]*0.85, med_range*0.22) and c["close"] <= b["body_bottom"]+tol*0.10)
+            add(36,-1,[
+                ("1m or 5m timeframe", tf in {"1m","5m"}),
+                ("Big trend DOWN", big_t < -0.045),
+                ("Small trend DOWN", small_t < -0.020),
+                ("Two GREEN pullback candles", seq_is([a,b],[1,1])),
+                ("Pullback candles not oversized", pullback_body_ok),
+                ("Pullback tests and holds falling resistance zone", resistance_test and resistance_hold),
+                ("RED rejection candle with long upper wick", c["dir"]<0 and long_upper(c)),
+                ("Rejection body normal", normal(c)),
+                ("RED rejection closes below previous GREEN body midpoint", c["close"] < midpoint_b - tol*0.02),
+                ("Rejection not oversized", reject_not_spike),
+                ("OTC extra-clean rejection / LIVE exempt", otc_clean),
+            ],"Trend pullback rejection PUT","Downtrend stays intact through a controlled two-green pullback, then a bearish upper-wick rejection loses the prior green body midpoint. Target is the NEXT candle RED.","RAJA · Trend Pullback Rejection",False,"1M/5M ONLY")
+
     exact.sort(key=lambda x:(int(x["priority"]),int(x["rules_total"]),int(x["pattern_type"])),reverse=True)
     near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"]),int(x["priority"])),reverse=True)
     directions={x["direction"] for x in exact}
@@ -3499,10 +3553,10 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     if not best:
         watch=f" Closest: {closest['name']} {closest['rules_matched']}/{closest['rules_total']} rules." if closest else ""
         return {
-            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO QUALIFIED RAJA 14 SETUP",
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO QUALIFIED RAJA 15 SETUP",
             "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":float(closest["score"]) if closest else 0.0,
             "rules":list(closest.get("rules") or []) if closest else [],"pattern_signals":near[:8],"conflict_gate":False,
-            "reason":"No exact or Smart Confirm RAJA 14 setup is complete on the latest CLOSED candles."+watch,
+            "reason":"No exact or Smart Confirm RAJA 15 setup is complete on the latest CLOSED candles."+watch,
             "closed_candle_epoch":closed_epoch,
         }
 
@@ -3704,11 +3758,11 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
         "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if signal_ok else [],
         "opposing_timeframes":[],"multi_tf_agreement":100.0 if signal_ok else 0.0,
-        "confirmation_mode":("RAJA 14 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 14 STRICT · SELECTED TIMEFRAME ONLY"),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "confirmation_mode":("RAJA 15 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 15 STRICT · SELECTED TIMEFRAME ONLY"),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
-        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 14 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
+        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 15 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
         "closed_candle_verified":True,"forming_candle_excluded":True,
         "movement_info":movement,"volatility_pct":movement["percent"],
         "market_stability_score":float(quality_profile.get("quality_score") or 0.0),
@@ -3744,7 +3798,7 @@ SIDE_AUTO_SIGNAL_DEADLINE_SECONDS = max(20.0, min(75.0, float(os.environ.get("RA
 
 
 def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=None, broker=None):
-    """Background feed uses exact RAJA 14 first, then V46 Smart Confirm (1m and 5m)."""
+    """Background feed uses exact RAJA 15 first, then V46 Smart Confirm (1m and 5m)."""
     out=[]
     for tf in ("1m","5m"):
         row=calculate_live_strategy_signal(pair,tf,scan_options,bridge_user,broker)
@@ -4360,7 +4414,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "RAJA 14 · EXACT + SMART CONFIRM · SELECTED TIMEFRAME ONLY",
+        "confirmation_mode": "RAJA 15 · EXACT + SMART CONFIRM · SELECTED TIMEFRAME ONLY",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -5699,7 +5753,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
     detected_count = len(candles)
     warnings = list(quality_notes)
     reasons: list[str] = []
-    library = "RAJA Selected 14 Strategy Library"
+    library = "RAJA Selected 15 Strategy Library"
 
     # V11 Closed Candle Lock. A normal screenshot/live-now frame can contain a
     # still-forming rightmost candle, so it is excluded from setup matching. A
@@ -6173,6 +6227,42 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         if res is not None:
             add_setup(35,-1,[("GREEN setup at resistance",a["dir"]>0 and vtouch(a,res,0.55)),("RED bearish engulfing",vbear_engulf(b,a,0.18)),("Engulf closes below resistance",float(b["close_y"])>res+tol*0.04)],"Bearish engulfing at key resistance","Engulfing occurs at resistance, not in the middle of the range.",family="Premium · Engulfing S/R")
 
+    # V47 visual equivalent — Type 36 Trend Pullback Rejection.
+    if count >= 12 and tf in {"1m", "5m"}:
+        a,b,c=candles[-3:]
+        big=vtrend_before_setup(3,12); smallt=vtrend_before_setup(3,6)
+        pre=candles[max(0,count-11):count-3]; recent4=pre[-4:] if pre else []
+        support_zone=min((float(x["bottom"]) for x in recent4), default=None)
+        resistance_zone=max((float(x["top"]) for x in recent4), default=None)
+        pullback_ok=float(a["body_height"])<=med_body*1.50 and float(b["body_height"])<=med_body*1.50
+        reject_not_spike=float(c["body_height"])<=med_body*1.85 and float(c["range"])<=med_range*2.20
+        if support_zone is not None:
+            midpoint=(float(b["open_y"])+float(b["close_y"]))/2.0
+            support_test=max(float(a["bottom"]),float(b["bottom"]),float(c["bottom"]))>=support_zone-med_range*0.55
+            support_hold=max(float(a["close_y"]),float(b["close_y"]),float(c["close_y"]))<=support_zone+med_range*0.38
+            otc_clean=(not is_otc) or (float(c["lower_wick"])>=max(float(c["body_height"])*0.85,med_range*0.22) and float(c["close_y"])<=float(b["body_top"])+tol*0.10)
+            add_setup(36,1,[
+                ("1m or 5m timeframe",True),("Big trend UP",big>0.045),("Small trend UP",smallt>0.020),
+                ("Two RED pullback candles",seq_is([a,b],[-1,-1])),("Pullback candles not oversized",pullback_ok),
+                ("Pullback tests and holds rising support zone",support_test and support_hold),
+                ("GREEN rejection candle with long lower wick",c["dir"]>0 and long_lower(c)),
+                ("Rejection body normal",is_normal(c)),("GREEN rejection closes above previous RED body midpoint",float(c["close_y"])<midpoint-tol*0.02),
+                ("Rejection not oversized",reject_not_spike),("OTC extra-clean rejection / LIVE exempt",otc_clean),
+            ],"Trend pullback rejection CALL","Controlled two-red pullback rejects from rising support; target is the NEXT candle GREEN.",family="RAJA · Trend Pullback Rejection",timeframe_rule="1M/5M ONLY")
+        if resistance_zone is not None:
+            midpoint=(float(b["open_y"])+float(b["close_y"]))/2.0
+            resistance_test=min(float(a["top"]),float(b["top"]),float(c["top"]))<=resistance_zone+med_range*0.55
+            resistance_hold=min(float(a["close_y"]),float(b["close_y"]),float(c["close_y"]))>=resistance_zone-med_range*0.38
+            otc_clean=(not is_otc) or (float(c["upper_wick"])>=max(float(c["body_height"])*0.85,med_range*0.22) and float(c["close_y"])>=float(b["body_bottom"])-tol*0.10)
+            add_setup(36,-1,[
+                ("1m or 5m timeframe",True),("Big trend DOWN",big<-0.045),("Small trend DOWN",smallt<-0.020),
+                ("Two GREEN pullback candles",seq_is([a,b],[1,1])),("Pullback candles not oversized",pullback_ok),
+                ("Pullback tests and holds falling resistance zone",resistance_test and resistance_hold),
+                ("RED rejection candle with long upper wick",c["dir"]<0 and long_upper(c)),
+                ("Rejection body normal",is_normal(c)),("RED rejection closes below previous GREEN body midpoint",float(c["close_y"])>midpoint+tol*0.02),
+                ("Rejection not oversized",reject_not_spike),("OTC extra-clean rejection / LIVE exempt",otc_clean),
+            ],"Trend pullback rejection PUT","Controlled two-green pullback rejects from falling resistance; target is the NEXT candle RED.",family="RAJA · Trend Pullback Rejection",timeframe_rule="1M/5M ONLY")
+
     # V11 conflict gate: an opposite exact setup is never overridden by a numeric
     # priority. Same-direction exact setups reinforce one another; opposite exact
     # setups produce NO TRADE until the chart resolves.
@@ -6294,7 +6384,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "reasons": reasons[:10],
         "warnings": warnings[:7],
         "pattern_status": {
-            "Mode": "RAJA 14 selected strategies",
+            "Mode": "RAJA 15 selected strategies",
             "Indicators": "OFF - signal engine uses only the selected closed-candle strategy rules",
             "Context": f"Visual candle context: {context_label}",
             "Candle geometry": f"{count} closed candles analysed / {detected_count} visible structures",
@@ -6447,7 +6537,7 @@ def chart_scan_api():
     except (ValueError,UnidentifiedImageError) as exc:
         return jsonify({"status":"error","message":str(exc)}),400
     now_epoch = int(time.time())
-    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 14 Strategy Library"})
+    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 15 Strategy Library"})
 
     # V29 explicit entry timing for One-Tap Close Camera. The browser supplies the
     # exact candle boundary it armed; server validates it is reasonably recent.
