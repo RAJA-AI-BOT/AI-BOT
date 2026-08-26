@@ -1053,6 +1053,13 @@ AUTO_TRACK_EXPIRIES = {
 RAJA_NEXT_CANDLE_GRACE_SECONDS = max(0, min(10, int(os.environ.get("RAJA_NEXT_CANDLE_GRACE_SECONDS", "8"))))
 RAJA_MIN_LIVE_QUALITY_SCORE = max(55.0, min(90.0, float(os.environ.get("RAJA_MIN_LIVE_QUALITY_SCORE", "68"))))
 
+# V46 Smart Confirm: exact setups remain preferred. When no exact setup exists,
+# a near setup may surface only when exactly ONE non-structural/soft rule is missing.
+# This is deliberately not a generic 80% rule mode: sequence, breakout, S/R and
+# direction rules still have to be complete.
+RAJA_SMART_CONFIRM_ENABLED = str(os.environ.get("RAJA_SMART_CONFIRM_ENABLED", "1")).strip().lower() not in {"0","false","no","off"}
+RAJA_SMART_CONFIRM_MIN_MATCH = max(80.0, min(95.0, float(os.environ.get("RAJA_SMART_CONFIRM_MIN_MATCH", "80"))))
+
 
 def normalize_user_id(value):
     """Canonicalize Telegram/user IDs so @Name and name resolve to the same customer."""
@@ -2307,6 +2314,11 @@ def build_live_quality_profile(user, pair, expiry, strategy):
     pair_rate = float(pair_perf.get("smoothed_win_rate") or 50.0) if int(pair_perf.get("sample_size") or 0) >= 12 else 50.0
     strategy_rate = float(strategy_perf.get("smoothed_win_rate") or 50.0) if int(strategy_perf.get("sample_size") or 0) >= 8 else 50.0
     quality = 72.0 + (priority_quality - 65.0) * 0.15 + (pair_rate - 50.0) * 0.20 + (strategy_rate - 50.0) * 0.35
+    if bool(strategy.get("smart_confirm")):
+        setup_match = max(0.0, min(100.0, float(strategy.get("setup_match") or strategy.get("score") or 0.0)))
+        # Small but real penalty: exact setups still rank ahead, while high-quality
+        # 7/8 or 4/5 soft-rule setups can pass the existing 68/100 quality gate.
+        quality -= 2.0 + max(0.0, 100.0 - setup_match) * 0.12
     quality = max(0.0, min(100.0, quality))
 
     blocked_reason = ""
@@ -3427,12 +3439,54 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
             add(35,-1,[("GREEN setup candle at resistance",a["dir"]>0 and touch_price(a,res,0.55)),("RED bearish engulfing",bearish_engulf(b,a,0.18)),("Engulf closes below resistance",b["close"]<res-tol*0.04)],"Bearish engulfing at key resistance","A true body engulf occurs at recent resistance and closes back below the level.","Premium · Engulfing S/R")
 
     exact.sort(key=lambda x:(int(x["priority"]),int(x["rules_total"]),int(x["pattern_type"])),reverse=True)
-    near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"])),reverse=True)
+    near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"]),int(x["priority"])),reverse=True)
     directions={x["direction"] for x in exact}
     conflict=len(directions)>1
     best=None if conflict or not exact else exact[0]
     closest=near[0] if near else None
     closed_epoch=candles[-1]["epoch"]
+
+    # V46 Smart Confirm. Exact remains first choice. A near setup can become a
+    # signal only when ONE soft/context rule is missing; structural rules are never
+    # waived. This is meant to recover high-quality 7/8 or 4/5 opportunities without
+    # turning the engine into a loose percentage matcher.
+    def _soft_missing_rule(name):
+        n=str(name or "").strip().lower()
+        soft_phrases=(
+            "sideways/mixed context", "normal body", "normal bodies",
+            "body smaller", "is small/doji", "is doji/small",
+            "smaller than previous", "not oversized",
+        )
+        return any(p in n for p in soft_phrases)
+
+    smart_candidates=[]
+    if RAJA_SMART_CONFIRM_ENABLED and not best and not conflict:
+        for item in near:
+            missing=[r for r in (item.get("rules") or []) if not bool(r.get("ok"))]
+            if len(missing)!=1:
+                continue
+            if int(item.get("rules_total") or 0) < 4:
+                continue
+            if float(item.get("score") or 0.0) < RAJA_SMART_CONFIRM_MIN_MATCH:
+                continue
+            if not _soft_missing_rule(missing[0].get("name")):
+                continue
+            candidate=dict(item)
+            candidate["smart_confirm"]=True
+            candidate["missing_rule"]=str(missing[0].get("name") or "Soft context rule")
+            smart_candidates.append(candidate)
+        smart_candidates.sort(key=lambda x:(float(x["score"]),int(x["priority"]),int(x["rules_total"])),reverse=True)
+        smart_dirs={x["direction"] for x in smart_candidates}
+        if len(smart_dirs)==1 and smart_candidates:
+            best=smart_candidates[0]
+        elif len(smart_dirs)>1:
+            return {
+                "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"SMART CONFIRM CONFLICT",
+                "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":0.0,
+                "rules":[],"pattern_signals":smart_candidates[:8],"conflict_gate":True,
+                "reason":"NO TRADE · Opposite Smart Confirm candidates are present on the same closed-candle snapshot.",
+                "closed_candle_epoch":closed_epoch,
+            }
 
     if conflict:
         return {
@@ -3445,20 +3499,25 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     if not best:
         watch=f" Closest: {closest['name']} {closest['rules_matched']}/{closest['rules_total']} rules." if closest else ""
         return {
-            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO ACTIVE STRATEGY SETUP",
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO QUALIFIED RAJA 14 SETUP",
             "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":float(closest["score"]) if closest else 0.0,
             "rules":list(closest.get("rules") or []) if closest else [],"pattern_signals":near[:8],"conflict_gate":False,
-            "reason":"No exact active strategy setup is complete on the latest CLOSED candles."+watch,
+            "reason":"No exact or Smart Confirm RAJA 14 setup is complete on the latest CLOSED candles."+watch,
             "closed_candle_epoch":closed_epoch,
         }
 
+    smart=bool(best.get("smart_confirm"))
+    setup_match=float(best.get("score") or 100.0) if smart else 100.0
+    mode_label="SMART CONFIRM" if smart else "EXACT"
+    missing_text=f" Soft rule not required: {best.get('missing_rule')}." if smart else ""
     return {
-        "signal":best["signal"],"score":100.0,"pattern_type":best["pattern_type"],"selected_pattern":best["name"],
-        "pattern_direction":best["direction"],"next_candle_color":best["next_candle"],"setup_match":100.0,
-        "rules":best["rules"],"pattern_signals":exact[:8],"conflict_gate":False,
-        "setup":best["setup"],"reason":f"{best['name']} exact setup matched {best['rules_matched']}/{best['rules_total']} rules. NEXT candle {best['next_candle']} ({best['direction']}).",
+        "signal":best["signal"],"score":setup_match,"pattern_type":best["pattern_type"],"selected_pattern":best["name"],
+        "pattern_direction":best["direction"],"next_candle_color":best["next_candle"],"setup_match":setup_match,
+        "rules":best["rules"],"pattern_signals":smart_candidates[:8] if smart else exact[:8],"conflict_gate":False,
+        "setup":best["setup"],"reason":f"{best['name']} {mode_label} matched {best['rules_matched']}/{best['rules_total']} rules.{missing_text} NEXT candle {best['next_candle']} ({best['direction']}).",
         "family":best["family"],"recovery_trade":bool(best.get("recovery_trade")),"timeframe_rule":best.get("timeframe_rule"),
         "pattern_priority":best["priority"],"rules_matched":best["rules_matched"],"rules_total":best["rules_total"],
+        "smart_confirm":smart,"missing_rule":str(best.get("missing_rule") or ""),
         "closed_candle_epoch":closed_epoch,
     }
 
@@ -3645,7 +3704,7 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
         "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if signal_ok else [],
         "opposing_timeframes":[],"multi_tf_agreement":100.0 if signal_ok else 0.0,
-        "confirmation_mode":"RAJA 14 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "confirmation_mode":("RAJA 14 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 14 STRICT · SELECTED TIMEFRAME ONLY"),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
@@ -3665,7 +3724,8 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "entry_eligible":bool(execution.get("entry_eligible")),"missed_entry":bool(execution.get("missed_entry")),
         "entry_grace_seconds":int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS),
         "late_entry":{"eligible":bool(execution.get("entry_eligible")),"seconds_since_open":int(execution.get("seconds_since_entry") or 0),"seconds_to_open":int(execution.get("seconds_to_entry") or 0)},
-        "no_trade":not signal_ok,"quality_gate":"PASSED" if signal_ok else (result.get("quality_gate") or "PATTERN_ONLY"),
+        "no_trade":not signal_ok,"quality_gate":"SMART_CONFIRM_PASSED" if signal_ok and bool(result.get("smart_confirm")) else ("PASSED" if signal_ok else (result.get("quality_gate") or "PATTERN_ONLY")),
+        "smart_confirm":bool(result.get("smart_confirm")),"missing_rule":str(result.get("missing_rule") or ""),
         "direct_otc": bool(reference_otc),
         "direct_otc_safe_mode": bool(reference_otc and RAJA_DIRECT_OTC_ENABLED),
         "direct_otc_assessment": direct_otc_assessment or {},
@@ -3684,17 +3744,17 @@ SIDE_AUTO_SIGNAL_DEADLINE_SECONDS = max(20.0, min(75.0, float(os.environ.get("RA
 
 
 def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=None, broker=None):
-    """Background feed also uses ONLY exact SK25 rules (1m and 5m)."""
+    """Background feed uses exact RAJA 14 first, then V46 Smart Confirm (1m and 5m)."""
     out=[]
     for tf in ("1m","5m"):
         row=calculate_live_strategy_signal(pair,tf,scan_options,bridge_user,broker)
         if row.get("signal") not in {"CALL","PUT"}: continue
         out.append({
             "pair":pair,"timeframe":tf,"signal":row["signal"],"direction":"UP" if row["signal"]=="CALL" else "DOWN",
-            "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT","score":100.0,
+            "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT","score":float(row.get("setup_match") or row.get("score") or 0.0),
             "rank_score":float(row.get("deep_quality_score") or row.get("quality_score") or 0),"stability":float(row.get("market_stability_score") or 0),"risk":row.get("market_risk_level") or "--",
             "volatility_pct":row.get("volatility_pct",0),"market_regime":row.get("selected_pattern"),
-            "pattern_type":row.get("pattern_type"),"selected_pattern":row.get("selected_pattern"),"setup_match":100.0,
+            "pattern_type":row.get("pattern_type"),"selected_pattern":row.get("selected_pattern"),"setup_match":float(row.get("setup_match") or row.get("score") or 0.0),"smart_confirm":bool(row.get("smart_confirm")),"missing_rule":row.get("missing_rule") or "",
             "quality_score":row.get("quality_score",row.get("deep_quality_score",0)),
             "pair_timeframe_performance":row.get("pair_timeframe_performance") or {},
             "strategy_timeframe_performance":row.get("strategy_timeframe_performance") or {},
@@ -4300,7 +4360,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "SK25 STRICT · SELECTED TIMEFRAME ONLY",
+        "confirmation_mode": "RAJA 14 · EXACT + SMART CONFIRM · SELECTED TIMEFRAME ONLY",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
