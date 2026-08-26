@@ -6969,7 +6969,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field pair-search-field"><label>3. SELECT PAIR / ASSET</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearchInput" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — e.g. EUR/USD, BTC, OTC" aria-label="Search pair or asset"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Type above to filter the pair list</div><div class="pair-search-count" style="color:#6f91a8;margin:2px 0 6px;">PAIR LIST · swipe inside the list to see more pairs</div><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI STRATEGY MODE</div><div class="strict-mode-lock">🔒 RAJA 14 STRICT MODE</div><div id="modeDescription" class="mode-copy">14 selected strategies · selected timeframe only · every coded rule must match · exact next-candle entry only. OTC Direct Safe Mode works without a bridge; exact bridge is optional.</div></div>
+                                <div class="config-field pair-search-field"><label>3. SELECT PAIR / ASSET</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearchInput" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — e.g. EUR/USD, BTC, OTC" aria-label="Search pair or asset"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Type above to filter the pair list</div><div class="pair-search-count" style="color:#6f91a8;margin:2px 0 6px;">PAIR LIST · swipe inside the list to see more pairs</div><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI STRATEGY MODE</div><div class="strict-mode-lock">🔒 RAJA 14 SMART CONFIRM MODE</div><div id="modeDescription" class="mode-copy">14 selected strategies · selected timeframe only · every coded rule must match · exact next-candle entry only. OTC Direct Safe Mode works without a bridge; exact bridge is optional.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button><button class="utility-btn" type="button" onclick="location.href='/live-scanner'">🎥 Live Scanner</button><button class="utility-btn" type="button" onclick="location.href='/chart-scanner'">📷 Chart Scanner</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
@@ -10370,8 +10370,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             reasonBox.innerText = rajaLatestNoTradeReason || 'A relevant high-impact economic event is inside the safety window.';
                         }
                     } else if (rajaLatestNoTradeReason) {
-                        titleEl.innerText = '⛔ NO TRADE — NO EXACT ACTIVE STRATEGY';
-                        descEl.innerText = 'No complete active strategy setup was found on the latest closed candles.';
+                        titleEl.innerText = '⛔ NO TRADE — NO QUALIFIED RAJA 14 SETUP';
+                        descEl.innerText = 'No exact or Smart Confirm RAJA 14 setup was found on the latest closed candles.';
                         if (reasonBox) {
                             reasonBox.style.display = 'block';
                             reasonBox.innerText = rajaLatestNoTradeReason;
@@ -15397,20 +15397,22 @@ body:not(.raja-authenticated).raja-mobile-scanning {
   };
 
   window.normalizeBackendSignal = function(data,fallbackPair){
-    if(!data || !data.signal || data.signal==='NO SIGNAL' || Number(data.setup_match ?? data.score ?? 0) < 100) return null;
+    const setupMatch=Number(data?.setup_match ?? data?.score ?? 0);
+    const smartConfirm=Boolean(data?.smart_confirm) && setupMatch>=80;
+    if(!data || !data.signal || data.signal==='NO SIGNAL' || (setupMatch < 100 && !smartConfirm)) return null;
     const tf=String(data.timeframe || data.selected_expiry || window.selectedExpiry || '1m');
     const ptype=Number(data.pattern_type||0);
     const pat=String(data.selected_pattern|| (ptype?`Pattern Type ${ptype}`:'SK25 Pattern'));
     const rules=Array.isArray(data.rules)?data.rules:[];
     return {
-      pair:data.pair||fallbackPair, confluence:100, technicalScore:100, dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',
+      pair:data.pair||fallbackPair, confluence:setupMatch, technicalScore:setupMatch, dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)',
       reason:data.reason||'', patternType:ptype, selectedPattern:pat, setup:String(data.setup||''), rules,
       rulesMatched:Number(data.rules_matched||rules.filter(x=>x&&x.ok).length||0), rulesTotal:Number(data.rules_total||rules.length||0),
       nextCandleColor:String(data.next_candle_color||''), recoveryTrade:Boolean(data.recovery_trade), conflictGate:Boolean(data.conflict_gate),
       patternPriority:Number(data.pattern_priority||data.deep_quality_score||0), closedCandleEpoch:Number(data.closed_candle_epoch||0),
       closedCandleVerified:Boolean(data.closed_candle_verified!==false), formingCandleExcluded:Boolean(data.forming_candle_excluded!==false),
       timeframeSummary:data.timeframe_summary||{}, alignedTimeframes:[tf], opposingTimeframes:[], multiTfAgreement:100,
-      confirmationMode:'RAJA 14 STRICT · CLOSED CANDLE', marketStabilityScore:Number(data.market_stability_score||data.quality_score||0), marketRiskLevel:data.market_risk_level||'--',
+      confirmationMode:smartConfirm?'RAJA 14 SMART CONFIRM · CLOSED CANDLE':'RAJA 14 STRICT · CLOSED CANDLE', smartConfirm, missingRule:String(data.missing_rule||''), marketStabilityScore:Number(data.market_stability_score||data.quality_score||0), marketRiskLevel:data.market_risk_level||'--',
       volatilityPct:Number(data.volatility_pct||0), movementInfo:data.movement_info||{}, deepQualityScore:Number(data.deep_quality_score||data.quality_score||0),
       marketRegime:pat, marketRegimeQuality:Number(data.quality_score||data.deep_quality_score||0), pairTimeframePerformance:data.pair_timeframe_performance||{},
       strategyTimeframePerformance:data.strategy_timeframe_performance||{}, lateEntry:data.late_entry||{}, calibratedConfidence:Number(data.calibrated_confidence||0),
@@ -15438,13 +15440,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
   window.renderSignalIntelligence = function(s){
     if(!s)return; const up=String(s.dir||'').includes('CALL'); const set=(id,v)=>{const e=document.getElementById(id);if(e)e.innerText=v;};
     set('explainTrend',up?'UP':'DOWN'); set('explainTrendSub','Pattern direction from closed candles');
-    set('explainMomentum',s.selectedPattern||'SK25'); set('explainMomentumSub',`${s.rulesMatched||0}/${s.rulesTotal||0} required rules matched`);
-    set('explainAgreement','100%'); set('explainAgreementSub','Exact supplied-pattern rule match');
+    set('explainMomentum',s.selectedPattern||'SK25'); set('explainMomentumSub',`${s.rulesMatched||0}/${s.rulesTotal||0} rules matched${s.smartConfirm?' · SMART CONFIRM':''}`);
+    set('explainAgreement',Number(s.confluence||0).toFixed(1)+'%'); set('explainAgreementSub',s.smartConfirm?'Smart Confirm · one soft rule missing':'Exact supplied-pattern rule match');
     set('explainExpiry',`NEXT ${s.nextCandleColor||'--'}`); set('explainExpirySub',`${s.selectedExpiry||window.selectedExpiry||'--'} exact next-candle entry only`);
     set('explainVolatility',String(s?.movementInfo?.label||'INFO ONLY')); set('explainVolatilitySub',`Raw candle movement ${Number(s?.volatilityPct||0).toFixed(4)}% · not a signal filter`);
     const ruleText=(s.rules||[]).filter(x=>x&&x.ok).map(x=>'✓ '+x.name).join(' · ');
     const refWarn=String(s.sourceMode||'').toLowerCase().includes('reference') ? ` ⚠ REFERENCE OTC: ${s.referenceWarning||'Direct OTC Safe Mode is using public underlying/reference candles; they can differ from broker OTC.'}` : '';
-    set('aiExplanationSummary',`${s.recoveryTrade?'RECOVERY TRADE · ':''}${s.selectedPattern||'SK25'} exact rule setup. ${ruleText || s.reason || ''}${refWarn}`);
+    set('aiExplanationSummary',`${s.recoveryTrade?'RECOVERY TRADE · ':''}${s.selectedPattern||'SK25'} ${s.smartConfirm?'SMART CONFIRM':'EXACT'} setup. ${s.smartConfirm&&s.missingRule?'Soft rule not required: '+s.missingRule+'. ':''}${ruleText || s.reason || ''}${refWarn}`);
     const ids={v31TechnicalScore:(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'),v31AgreementScore:`TYPE ${s.patternType||'--'}`,v31MarketQuality:'CLOSED ✓',v31EntryState:'EXACT NEXT',v23WinnerScore:(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'),v23WinnerAgreement:`TYPE ${s.patternType||'--'}`,v23WinnerStability:'CLOSED ✓',v23WinnerLead:`${s.rulesMatched||0}/${s.rulesTotal||0}`};
     Object.entries(ids).forEach(([id,v])=>set(id,v));
   };
@@ -15452,8 +15454,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
   window.v23RenderWinnerReason = function(s){
     if(!s)return; const set=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
     const rows=(window.premiumMarketSnapshot||[]), eligible=rows.filter(x=>x.signalFound), rank=Math.max(0,eligible.findIndex(x=>x.pair===s.pair));
-    set('v23WinnerRank','#'+(rank+1)+' EXACT · '+Math.max(rows.length,1)+' SCANNED'); set('v23WinnerScore',Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'); set('v23WinnerAgreement','TYPE '+(s.patternType||'--')); set('v23WinnerStability','CLOSED ✓'); set('v23WinnerLead',(s.rulesMatched||0)+'/'+(s.rulesTotal||0));
-    const r=document.getElementById('v23WinnerReason'); if(r)r.textContent=(s.pair||'Pair')+' matched '+(s.selectedPattern||'SK25')+' exactly on closed candles. Ranking quality '+(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'learning')+' uses strategy/pair history; 100% rule match is not a win probability.';
+    set('v23WinnerRank','#'+(rank+1)+' '+(s.smartConfirm?'SMART':'EXACT')+' · '+Math.max(rows.length,1)+' SCANNED'); set('v23WinnerScore',Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'); set('v23WinnerAgreement','TYPE '+(s.patternType||'--')); set('v23WinnerStability','CLOSED ✓'); set('v23WinnerLead',(s.rulesMatched||0)+'/'+(s.rulesTotal||0));
+    const r=document.getElementById('v23WinnerReason'); if(r)r.textContent=(s.pair||'Pair')+' matched '+(s.selectedPattern||'SK25')+' '+(s.smartConfirm?'with Smart Confirm':'exactly')+' on closed candles. Ranking quality '+(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'learning')+' uses strategy/pair history; rule match is not a win probability.';
   };
 
   // Pattern fields are saved with tracked signals; no technical-indicator snapshot is sent.
@@ -15485,13 +15487,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     try{
       const auth=(typeof getAuthPayload==='function')?getAuthPayload():{};
       const response=await fetch('/track-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        pair:s.pair,signal:direction,score:100,expiry:expiry,client_id:(typeof deviceSessionId!=='undefined'?deviceSessionId:''),
+        pair:s.pair,signal:direction,score:Number(s.confluence||100),expiry:expiry,client_id:(typeof deviceSessionId!=='undefined'?deviceSessionId:''),
         timeframe_summary:s.timeframeSummary||{},chart_preview:s.chartPreview||[],source:s.source||'',source_mode:s.sourceMode||'',provider_symbol:s.providerSymbol||'',
         exact_broker_feed:Boolean(s.exactBrokerFeed),reference_fallback_used:Boolean(s.referenceFallbackUsed),reference_warning:s.referenceWarning||'',
         pattern_type:s.patternType,selected_pattern:s.selectedPattern,next_candle_color:s.nextCandleColor,rules:s.rules||[],recovery_trade:Boolean(s.recoveryTrade),
         deep_quality_score:Number(s.deepQualityScore||0),quality_score:Number(s.deepQualityScore||0),
         pair_timeframe_performance:s.pairTimeframePerformance||{},strategy_timeframe_performance:s.strategyTimeframePerformance||{},
-        closed_candle_epoch:s.closedCandleEpoch,setup_match:100,snapshot:{pattern_type:s.patternType,selected_pattern:s.selectedPattern,next_candle_color:s.nextCandleColor,rules:s.rules||[],reason:s.reason||'',quality_score:Number(s.deepQualityScore||0)},
+        closed_candle_epoch:s.closedCandleEpoch,setup_match:Number(s.confluence||100),smart_confirm:Boolean(s.smartConfirm),missing_rule:s.missingRule||'',snapshot:{pattern_type:s.patternType,selected_pattern:s.selectedPattern,next_candle_color:s.nextCandleColor,rules:s.rules||[],reason:s.reason||'',quality_score:Number(s.deepQualityScore||0),smart_confirm:Boolean(s.smartConfirm),missing_rule:s.missingRule||''},
         market:document.getElementById('marketType')?.value||'',broker:document.getElementById('brokerSelect')?.value||'',...auth
       })});
       const result=await response.json().catch(()=>null);
