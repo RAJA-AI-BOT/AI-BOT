@@ -3019,11 +3019,11 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_V47_15_STRATEGIES_TYPE36_PULLBACK_REJECTION"
+SK25_ENGINE_VERSION = "RAJA_V48_15_STRATEGIES_TYPE36_BALANCED"
 SK25_PATTERN_LIBRARY_SIZE = 15
 SK25_LIVE_MIN_CANDLES = 10
 
-# V47: original 14 selected RAJA rules remain unchanged and Type 36 is added for demo testing.
+# V48: original 14 selected RAJA rules remain unchanged; Type 36 uses balanced demo thresholds.
 # IDs 26-35 remain in source but stay disabled; add()/add_setup() ignore them.
 RAJA_ACTIVE_STRATEGY_IDS = frozenset({
     # Original 14 selected RAJA strategies + V47 Type 36 demo strategy.
@@ -3440,7 +3440,7 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
         if res is not None:
             add(35,-1,[("GREEN setup candle at resistance",a["dir"]>0 and touch_price(a,res,0.55)),("RED bearish engulfing",bearish_engulf(b,a,0.18)),("Engulf closes below resistance",b["close"]<res-tol*0.04)],"Bearish engulfing at key resistance","A true body engulf occurs at recent resistance and closes back below the level.","Premium · Engulfing S/R")
 
-    # V47 TYPE 36 — Trend Pullback Rejection.
+    # V48 TYPE 36 — Trend Pullback Rejection (balanced frequency, structural rules still hard).
     # Price-action only: trend + two controlled opposite candles + wick rejection + midpoint reclaim.
     # Designed for 1m/5m. OTC/reference mode requires an extra-clean rejection.
     if count >= 12 and tf in {"1m", "5m"}:
@@ -3456,13 +3456,13 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
 
         if support_zone is not None:
             midpoint_b = (b["open"] + b["close"]) / 2.0
-            support_test = min(a["low"], b["low"], c["low"]) <= support_zone + med_range*0.55
-            support_hold = min(a["close"], b["close"], c["close"]) >= support_zone - med_range*0.38
+            support_test = min(a["low"], b["low"], c["low"]) <= support_zone + med_range*0.65
+            support_hold = min(a["close"], b["close"], c["close"]) >= support_zone - med_range*0.45
             otc_clean = (not is_otc) or (c["lower_wick"] >= max(c["body"]*0.85, med_range*0.22) and c["close"] >= b["body_top"]-tol*0.10)
             add(36,1,[
                 ("1m or 5m timeframe", tf in {"1m","5m"}),
-                ("Big trend UP", big_t > 0.045),
-                ("Small trend UP", small_t > 0.020),
+                ("Big trend UP", big_t > 0.035),
+                ("Small trend UP", small_t > 0.015),
                 ("Two RED pullback candles", seq_is([a,b],[-1,-1])),
                 ("Pullback candles not oversized", pullback_body_ok),
                 ("Pullback tests and holds rising support zone", support_test and support_hold),
@@ -3475,13 +3475,13 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
 
         if resistance_zone is not None:
             midpoint_b = (b["open"] + b["close"]) / 2.0
-            resistance_test = max(a["high"], b["high"], c["high"]) >= resistance_zone - med_range*0.55
-            resistance_hold = max(a["close"], b["close"], c["close"]) <= resistance_zone + med_range*0.38
+            resistance_test = max(a["high"], b["high"], c["high"]) >= resistance_zone - med_range*0.65
+            resistance_hold = max(a["close"], b["close"], c["close"]) <= resistance_zone + med_range*0.45
             otc_clean = (not is_otc) or (c["upper_wick"] >= max(c["body"]*0.85, med_range*0.22) and c["close"] <= b["body_bottom"]+tol*0.10)
             add(36,-1,[
                 ("1m or 5m timeframe", tf in {"1m","5m"}),
-                ("Big trend DOWN", big_t < -0.045),
-                ("Small trend DOWN", small_t < -0.020),
+                ("Big trend DOWN", big_t < -0.035),
+                ("Small trend DOWN", small_t < -0.015),
                 ("Two GREEN pullback candles", seq_is([a,b],[1,1])),
                 ("Pullback candles not oversized", pullback_body_ok),
                 ("Pullback tests and holds falling resistance zone", resistance_test and resistance_hold),
@@ -3500,10 +3500,10 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     closest=near[0] if near else None
     closed_epoch=candles[-1]["epoch"]
 
-    # V46 Smart Confirm. Exact remains first choice. A near setup can become a
-    # signal only when ONE soft/context rule is missing; structural rules are never
-    # waived. This is meant to recover high-quality 7/8 or 4/5 opportunities without
-    # turning the engine into a loose percentage matcher.
+    # V48 Smart Confirm. Exact remains first choice. Existing strategies keep the
+    # original one-soft-rule rule. Type 36 may miss up to TWO explicitly soft quality
+    # rules (9/11 minimum); its trend, sequence, S/R, wick rejection and midpoint
+    # reclaim rules remain mandatory.
     def _soft_missing_rule(name):
         n=str(name or "").strip().lower()
         soft_phrases=(
@@ -3517,17 +3517,36 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     if RAJA_SMART_CONFIRM_ENABLED and not best and not conflict:
         for item in near:
             missing=[r for r in (item.get("rules") or []) if not bool(r.get("ok"))]
-            if len(missing)!=1:
-                continue
+            type_no=int(item.get("pattern_type") or 0)
             if int(item.get("rules_total") or 0) < 4:
                 continue
-            if float(item.get("score") or 0.0) < RAJA_SMART_CONFIRM_MIN_MATCH:
-                continue
-            if not _soft_missing_rule(missing[0].get("name")):
-                continue
+            if type_no == 36:
+                # Type 36 has 11 rules. Permit 9/11 only when BOTH missing rules are
+                # from this narrow quality-only allowlist. Structural setup logic is never waived.
+                type36_soft = {
+                    "pullback candles not oversized",
+                    "rejection body normal",
+                    "rejection not oversized",
+                    "otc extra-clean rejection / live exempt",
+                }
+                if not (1 <= len(missing) <= 2):
+                    continue
+                if float(item.get("score") or 0.0) < 81.0:
+                    continue
+                if any(str(r.get("name") or "").strip().lower() not in type36_soft for r in missing):
+                    continue
+            else:
+                if len(missing)!=1:
+                    continue
+                if float(item.get("score") or 0.0) < RAJA_SMART_CONFIRM_MIN_MATCH:
+                    continue
+                if not _soft_missing_rule(missing[0].get("name")):
+                    continue
             candidate=dict(item)
             candidate["smart_confirm"]=True
-            candidate["missing_rule"]=str(missing[0].get("name") or "Soft context rule")
+            candidate["missing_rules"]=[str(r.get("name") or "Soft context rule") for r in missing]
+            candidate["missing_rule"]=", ".join(candidate["missing_rules"])
+            candidate["smart_confirm_tier"]="TYPE36_BALANCED" if type_no == 36 and len(missing) > 1 else "STANDARD"
             smart_candidates.append(candidate)
         smart_candidates.sort(key=lambda x:(float(x["score"]),int(x["priority"]),int(x["rules_total"])),reverse=True)
         smart_dirs={x["direction"] for x in smart_candidates}
@@ -3563,7 +3582,7 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     smart=bool(best.get("smart_confirm"))
     setup_match=float(best.get("score") or 100.0) if smart else 100.0
     mode_label="SMART CONFIRM" if smart else "EXACT"
-    missing_text=f" Soft rule not required: {best.get('missing_rule')}." if smart else ""
+    missing_text=f" Soft quality rule(s) waived: {best.get('missing_rule')}." if smart else ""
     return {
         "signal":best["signal"],"score":setup_match,"pattern_type":best["pattern_type"],"selected_pattern":best["name"],
         "pattern_direction":best["direction"],"next_candle_color":best["next_candle"],"setup_match":setup_match,
@@ -3758,7 +3777,7 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
         "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if signal_ok else [],
         "opposing_timeframes":[],"multi_tf_agreement":100.0 if signal_ok else 0.0,
-        "confirmation_mode":("RAJA 15 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 15 STRICT · SELECTED TIMEFRAME ONLY"),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "confirmation_mode":("RAJA 15 SMART CONFIRM · TYPE36 BALANCED" if bool(strategy.get("smart_confirm")) and int(strategy.get("pattern_type") or 0)==36 else ("RAJA 15 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 15 STRICT · SELECTED TIMEFRAME ONLY")),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
@@ -6227,7 +6246,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         if res is not None:
             add_setup(35,-1,[("GREEN setup at resistance",a["dir"]>0 and vtouch(a,res,0.55)),("RED bearish engulfing",vbear_engulf(b,a,0.18)),("Engulf closes below resistance",float(b["close_y"])>res+tol*0.04)],"Bearish engulfing at key resistance","Engulfing occurs at resistance, not in the middle of the range.",family="Premium · Engulfing S/R")
 
-    # V47 visual equivalent — Type 36 Trend Pullback Rejection.
+    # V48 visual equivalent — Type 36 Trend Pullback Rejection.
     if count >= 12 and tf in {"1m", "5m"}:
         a,b,c=candles[-3:]
         big=vtrend_before_setup(3,12); smallt=vtrend_before_setup(3,6)
