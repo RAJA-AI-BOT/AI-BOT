@@ -6349,9 +6349,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             <div id="rajaMobileConfigBackdrop" class="raja-mobile-config-backdrop" aria-hidden="true"></div>
             <div id="rajaMobileCommandBar" class="raja-mobile-command-bar" role="region" aria-label="Quick trading controls">
                 <div id="rajaMobileCommandSummary" class="raja-mobile-command-summary">Crypto Live · Auto Pair · BALANCED · <b>1m</b></div>
-                <div class="raja-mobile-command-actions triple">
+                <div class="raja-mobile-command-actions triple raja-mobile-command-actions-v49">
                     <button id="rajaMobileHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button>
                     <button id="rajaMobileSettingsBtn" class="raja-mobile-settings-btn" type="button">🧭 MARKET SETUP</button>
+                    <button id="rajaMobileUntilSignalBtn" class="raja-mobile-auto-until-btn" type="button">♾ AUTO</button>
                     <button id="rajaMobileScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button>
                 </div>
             </div>
@@ -6976,8 +6977,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         </div>
                         <div class="v32-scan-action-row">
                         <button id="scanBtn" class="scan-btn" type="button" onclick="playClickSound(); startDeepScan(false)">▶ START AI MARKET SCAN</button>
+                        <button id="rajaUntilSignalBtn" class="raja-until-signal-btn" type="button" onclick="playClickSound(); toggleRajaUntilSignal()" title="Continuously scan the selected broker + market on each fresh candle until a qualified signal is found">♾ AUTO SCAN UNTIL SIGNAL</button>
                         <button id="stopScanBtn" class="v32-stop-scan-btn" type="button" onclick="stopRajaScan()">■ STOP SCAN</button>
                     </div>
+                    <div id="rajaUntilSignalStatus" class="raja-until-signal-status">OFF · Press AUTO SCAN UNTIL SIGNAL to scan the full selected market on each fresh candle until RAJA finds a qualified signal.</div>
                     </section>
                 </main>
 </div>
@@ -7088,6 +7091,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         let rajaVerifyInFlight = false;
         let rajaBackendWarmPromise = null;
         let rajaBackendReady = false;
+
+        // V49 · AUTO SCAN UNTIL SIGNAL
+        // This is intentionally session-only (not persisted across reloads) so an
+        // unattended browser never resumes continuous scanning unexpectedly.
+        let rajaUntilSignalEnabled = false;
+        let rajaUntilSignalTimer = null;
+        let rajaUntilSignalCycles = 0;
+        let rajaUntilSignalNextAt = 0;
 
         function getSessionToken(key = null) {
             const activeKey = key || localStorage.getItem('raja_active_key');
@@ -9991,6 +10002,197 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
         }
 
+        // =========================================================
+        // V49 · AUTO SCAN UNTIL SIGNAL
+        // - One click starts repeated FULL-MARKET scans for the currently selected
+        //   broker + market.
+        // - Re-scans only after a fresh selected-timeframe candle closes, so the
+        //   backend is not hammered with duplicate same-candle requests.
+        // - Stops automatically the moment displaySignalResult() receives a valid
+        //   fresh RAJA signal.
+        // - Existing background Side Auto Signals setting is paused only while this
+        //   foreground loop is active, then restored without changing the user's ON/OFF choice.
+        // =========================================================
+        function clearRajaUntilSignalTimer() {
+            if (rajaUntilSignalTimer) clearTimeout(rajaUntilSignalTimer);
+            rajaUntilSignalTimer = null;
+            rajaUntilSignalNextAt = 0;
+        }
+
+        function rajaUntilSignalFreshCandleDelayMs() {
+            let seconds = 60;
+            try {
+                seconds = Math.max(60, Number(getExpirySeconds(selectedExpiry) || 60));
+            } catch (_) {
+                seconds = 60;
+            }
+            const step = seconds * 1000;
+            const now = Date.now();
+            // Small provider-settle buffer after the boundary lets Yahoo/Twelve Data
+            // publish the just-closed candle while remaining early in the next candle.
+            const nextBoundary = (Math.floor(now / step) + 1) * step + 1400;
+            return Math.max(1200, nextBoundary - now);
+        }
+
+        function rajaFormatUntilDelay(ms) {
+            const s = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
+            if (s < 60) return `${s}s`;
+            const m = Math.floor(s / 60);
+            const r = s % 60;
+            return r ? `${m}m ${r}s` : `${m}m`;
+        }
+
+        function updateRajaUntilSignalUI(message = '') {
+            const btn = document.getElementById('rajaUntilSignalBtn');
+            const mobile = document.getElementById('rajaMobileUntilSignalBtn');
+            const status = document.getElementById('rajaUntilSignalStatus');
+            const active = Boolean(rajaUntilSignalEnabled);
+            const waiting = active && rajaUntilSignalNextAt > Date.now();
+            const remaining = waiting ? rajaUntilSignalNextAt - Date.now() : 0;
+
+            if (btn) {
+                btn.classList.toggle('active', active);
+                btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+                btn.innerText = active
+                    ? (scanSessionState.running || rajaScanStartPending
+                        ? `♾ AUTO SEARCHING · CYCLE ${Math.max(1, rajaUntilSignalCycles)}`
+                        : `♾ AUTO ON · NEXT ${waiting ? rajaFormatUntilDelay(remaining) : 'NOW'}`)
+                    : '♾ AUTO SCAN UNTIL SIGNAL';
+            }
+            if (mobile) {
+                mobile.classList.toggle('active', active);
+                mobile.setAttribute('aria-pressed', active ? 'true' : 'false');
+                mobile.textContent = active ? (waiting ? `♾ ${rajaFormatUntilDelay(remaining)}` : '♾ SEARCH') : '♾ AUTO';
+            }
+            if (status) {
+                status.classList.toggle('active', active);
+                if (message) status.textContent = message;
+                else if (active) status.textContent = `ON · Full-market cycle ${Math.max(1, rajaUntilSignalCycles)} · scanning continues on each fresh ${selectedExpiry} candle until a qualified signal is found.`;
+                else status.textContent = 'OFF · Press AUTO SCAN UNTIL SIGNAL to scan the full selected market on each fresh candle until RAJA finds a qualified signal.';
+            }
+        }
+
+        function restoreBackgroundAutoAfterUntilSignal() {
+            setTimeout(() => {
+                try {
+                    if (autoRescanEnabled && isUserVerified && !rajaUntilSignalEnabled && !scanSessionState.running && !rajaScanStartPending) {
+                        armAutoRescan(rajaNextMinuteBoundaryDelayMs());
+                    }
+                } catch (_) {}
+            }, 700);
+        }
+
+        function stopRajaUntilSignal(reason = 'Auto scan stopped.', signalFound = false) {
+            const wasActive = rajaUntilSignalEnabled;
+            rajaUntilSignalEnabled = false;
+            clearRajaUntilSignalTimer();
+            if (wasActive) {
+                updateRajaUntilSignalUI(signalFound ? `✅ SIGNAL FOUND · ${reason} · Auto scan stopped.` : `■ ${reason}`);
+                restoreBackgroundAutoAfterUntilSignal();
+            } else {
+                updateRajaUntilSignalUI();
+            }
+        }
+
+        function scheduleRajaUntilSignalNextCycle() {
+            if (!rajaUntilSignalEnabled) return;
+            clearRajaUntilSignalTimer();
+            const delay = rajaUntilSignalFreshCandleDelayMs();
+            rajaUntilSignalNextAt = Date.now() + delay;
+            updateRajaUntilSignalUI(`♾ AUTO ON · Cycle ${rajaUntilSignalCycles} returned NO SIGNAL · next full-market scan after fresh ${selectedExpiry} candle in ${rajaFormatUntilDelay(delay)}.`);
+            rajaUntilSignalTimer = setTimeout(() => {
+                rajaUntilSignalTimer = null;
+                rajaUntilSignalNextAt = 0;
+                void runRajaUntilSignalCycle();
+            }, delay);
+        }
+
+        async function runRajaUntilSignalCycle() {
+            if (!rajaUntilSignalEnabled) return;
+            if (!isUserVerified) {
+                stopRajaUntilSignal('VIP session is not verified.');
+                return;
+            }
+            if (!navigator.onLine) {
+                stopRajaUntilSignal('Internet connection is offline.');
+                return;
+            }
+            if (typeof guardReached === 'function' && guardReached()) {
+                stopRajaUntilSignal('Daily Stop Guard reached.');
+                return;
+            }
+            if (rajaScanStartPending || scanSessionState.running) {
+                clearRajaUntilSignalTimer();
+                rajaUntilSignalNextAt = Date.now() + 1200;
+                updateRajaUntilSignalUI('♾ AUTO ON · waiting for the current scan to finish...');
+                rajaUntilSignalTimer = setTimeout(() => {
+                    rajaUntilSignalTimer = null;
+                    rajaUntilSignalNextAt = 0;
+                    void runRajaUntilSignalCycle();
+                }, 1200);
+                return;
+            }
+
+            clearRajaUntilSignalTimer();
+            rajaUntilSignalCycles += 1;
+            updateRajaUntilSignalUI(`♾ AUTO SEARCHING · Cycle ${rajaUntilSignalCycles} · full selected market · stops automatically on first qualified signal.`);
+
+            // Pause the normal side-auto timer during this foreground cycle, but
+            // preserve autoRescanEnabled so it can be restored after this mode stops.
+            try { clearAutoRescanSchedule(true); } catch (_) {}
+            try { if (rajaSideAutoScanController) rajaSideAutoScanController.abort(); } catch (_) {}
+
+            try {
+                // forceFullMarket=true scans every configured pair in the selected
+                // broker + market regardless of the pair dropdown's current value.
+                await startDeepScan(true, true);
+            } catch (error) {
+                console.warn('RAJA until-signal cycle:', error);
+            }
+
+            // startDeepScan renders its final signal/no-signal view on a short timer.
+            // Give displaySignalResult() time to stop this loop before scheduling again.
+            await new Promise(resolve => setTimeout(resolve, 650));
+            if (!rajaUntilSignalEnabled) return;
+            if (typeof guardReached === 'function' && guardReached()) {
+                stopRajaUntilSignal('Daily Stop Guard reached.');
+                return;
+            }
+            scheduleRajaUntilSignalNextCycle();
+        }
+
+        function toggleRajaUntilSignal() {
+            if (rajaUntilSignalEnabled) {
+                stopRajaUntilSignal('AUTO SCAN UNTIL SIGNAL stopped by user.');
+                if (scanSessionState.running || rajaScanStartPending) {
+                    try { stopRajaScan(); } catch (_) {}
+                }
+                return;
+            }
+            if (!isUserVerified) {
+                alert('Verify your RAJA AI access first.');
+                return;
+            }
+            if (!navigator.onLine) {
+                alert('Internet is offline. Reconnect before starting continuous auto scan.');
+                return;
+            }
+            if (typeof guardReached === 'function' && guardReached()) {
+                updateDailyPerformance();
+                alert('Trading session limit reached. AUTO SCAN UNTIL SIGNAL cannot start until the Daily Stop Guard resets/changes.');
+                return;
+            }
+            rajaUntilSignalCycles = 0;
+            rajaUntilSignalEnabled = true;
+            clearRajaUntilSignalTimer();
+            updateRajaUntilSignalUI('♾ AUTO ON · Starting full-market scan now. It will stop automatically when a qualified signal appears.');
+            void runRajaUntilSignalCycle();
+        }
+
+        window.addEventListener('offline', () => {
+            if (rajaUntilSignalEnabled) stopRajaUntilSignal('Internet connection went offline.');
+        });
+
         let rajaScanStartPending = false;
         let rajaActiveScanController = null;
         let rajaScanStopRequested = false;
@@ -10022,6 +10224,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function stopRajaScan() {
+            if (rajaUntilSignalEnabled) stopRajaUntilSignal('AUTO SCAN UNTIL SIGNAL stopped by user.');
             if (!scanSessionState.running && !rajaScanStartPending) return;
             rajaScanStopRequested = true;
             try {
@@ -10030,7 +10233,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             finalizeRajaStoppedScan();
         }
 
-        async function startDeepScan(autoTriggered = false) {
+        async function startDeepScan(autoTriggered = false, forceFullMarket = false) {
             rajaLatestNoTradeReason = '';
             rajaLatestNewsLock = null;
             rajaLatestMarketState = null;
@@ -10067,7 +10270,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     window.rajaSetScanningMarketBadge(market);
                 }
             } catch (_) {}
-            const isAutoScan = selectedPair.includes('Auto Scan') || selectedPair === '';
+            const isAutoScan = Boolean(forceFullMarket) || selectedPair.includes('Auto Scan') || selectedPair === '';
 
             // ---------------------------------------------------------
             // INSTANT FRESH-SCAN UX
@@ -10329,7 +10532,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             } finally {
                 scanBtn.innerText = rajaHasCompletedScan ? '↻ SCAN AGAIN' : '▶ START AI MARKET SCAN';
                 scanBtn.disabled = false;
-                if (!rajaScanStopRequested) scheduleAutoRescan();
+                if (!rajaScanStopRequested && !rajaUntilSignalEnabled) scheduleAutoRescan();
             }
 
             if (rajaScanStopRequested || scanFailureMessage === '__RAJA_SCAN_STOPPED__') {
@@ -10530,6 +10733,11 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function displaySignalResult(signalData) {
+            if (rajaUntilSignalEnabled) {
+                const foundPair = String(signalData?.pair || 'RAJA signal');
+                const foundPattern = String(signalData?.selectedPattern || 'qualified setup');
+                stopRajaUntilSignal(`${foundPair} · ${foundPattern}`, true);
+            }
             // Exact closed-candle dedupe: once this displayed signal is consumed,
             // SCAN AGAIN must find a different/fresher closed-candle setup.
             try {
@@ -12353,6 +12561,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 }
             });
 
+            try { updateRajaUntilSignalUI(); } catch (_) {}
+
             settingsButtons.forEach(function (settings) {
                 settings.disabled = false;
                 if (settings.id === 'rajaSheetCloseBtn') {
@@ -12380,6 +12590,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             const settings = qs('rajaMobileSettingsBtn');
             const scan = qs('rajaMobileScanBtn');
+            const autoUntil = qs('rajaMobileUntilSignalBtn');
             const home = qs('rajaMobileHomeBtn');
             const sheetHome = qs('rajaSheetHomeBtn');
             const sheetClose = qs('rajaSheetCloseBtn');
@@ -12414,6 +12625,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
 
             if (scan) scan.addEventListener('click', handleMobileScanAction);
+            if (autoUntil) autoUntil.addEventListener('click', function () { setConfigOpen(false); toggleRajaUntilSignal(); });
             if (sheetScan) sheetScan.addEventListener('click', handleMobileScanAction);
 
             ['brokerSelect', 'marketType', 'pairSelect'].forEach(function (id) {
@@ -13093,6 +13305,83 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     })();
     </script>
 
+
+    <style id="raja-v49-until-signal-ui">
+        .v32-scan-action-row {
+            grid-template-columns:minmax(0,1fr) auto auto !important;
+        }
+        .raja-until-signal-btn {
+            min-width:196px;
+            border:1px solid rgba(85,233,255,.48);
+            border-radius:9px;
+            padding:10px 14px;
+            background:linear-gradient(180deg,rgba(9,52,73,.96),rgba(5,31,49,.98));
+            color:#bdf7ff;
+            font-size:9.5px;
+            font-weight:950;
+            letter-spacing:.35px;
+            cursor:pointer;
+            box-shadow:0 8px 22px rgba(85,233,255,.10);
+        }
+        .raja-until-signal-btn:hover { border-color:#55e9ff; }
+        .raja-until-signal-btn:active { transform:scale(.985); }
+        .raja-until-signal-btn.active {
+            border-color:rgba(20,241,174,.88);
+            background:linear-gradient(100deg,rgba(10,112,82,.96),rgba(6,71,70,.98));
+            color:#dffff5;
+            box-shadow:0 0 24px rgba(20,241,174,.24);
+        }
+        .raja-until-signal-status {
+            margin-top:7px;
+            padding:7px 9px;
+            border:1px solid rgba(85,233,255,.16);
+            border-radius:8px;
+            background:rgba(4,15,27,.66);
+            color:#7896aa;
+            font-size:8px;
+            font-weight:800;
+            line-height:1.4;
+        }
+        .raja-until-signal-status.active {
+            border-color:rgba(20,241,174,.32);
+            color:#9ff4d6;
+            background:rgba(7,48,39,.48);
+        }
+        .raja-mobile-auto-until-btn {
+            border:1px solid rgba(85,233,255,.38) !important;
+            background:linear-gradient(180deg,rgba(10,48,66,.96),rgba(4,27,43,.98)) !important;
+            color:#bdf7ff !important;
+            font-weight:950 !important;
+        }
+        .raja-mobile-auto-until-btn.active {
+            border-color:rgba(20,241,174,.86) !important;
+            background:linear-gradient(100deg,#0b7d5d,#07545a) !important;
+            color:#effff9 !important;
+            box-shadow:0 0 18px rgba(20,241,174,.25) !important;
+        }
+        @media (max-width:1180px) and (min-width:821px) {
+            .v32-scan-action-row { grid-template-columns:1fr 1fr !important; }
+            .v32-scan-action-row .scan-btn { grid-column:1 / -1; }
+            .raja-until-signal-btn, .v32-stop-scan-btn { width:100%; min-width:0; }
+        }
+        @media (max-width:820px) {
+            .v32-scan-action-row { display:block !important; }
+            .raja-until-signal-btn { width:100%; min-width:0; margin-top:7px; min-height:42px; }
+            .raja-until-signal-status { margin-bottom:4px; }
+            .raja-mobile-command-actions-v49.triple {
+                grid-template-columns:64px 90px 82px minmax(0,1fr) !important;
+                gap:5px !important;
+            }
+            .raja-mobile-command-actions-v49 button { font-size:9px !important; padding:5px 4px !important; }
+        }
+        @media (max-width:420px) {
+            .raja-mobile-command-actions-v49.triple {
+                grid-template-columns:54px 76px 70px minmax(0,1fr) !important;
+                gap:4px !important;
+            }
+            .raja-mobile-command-actions-v49 button { font-size:8px !important; }
+        }
+    </style>
 
     <style id="raja-v32-control-fixes">
         /* V32 · Alert toggle + STOP SCAN + clean Recent Results */
@@ -15574,5 +15863,43 @@ window.RAJA_DIRECT_OTC_VERSION='V45_DIRECT_OTC_SAFE_NO_BRIDGE';
 }
 </style>
 
+<style id="raja-v49-mobile-final-grid">
+@media (max-width:820px) {
+  .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-scanning .raja-mobile-command-actions-v49.triple,
+  body.v32-scan-running .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-ready .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-result .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-nosignal .raja-mobile-command-actions-v49.triple {
+    grid-template-columns:64px 90px 82px minmax(0,1fr) !important;
+    gap:5px !important;
+  }
+}
+@media (max-width:420px) {
+  .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-scanning .raja-mobile-command-actions-v49.triple,
+  body.v32-scan-running .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-ready .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-result .raja-mobile-command-actions-v49.triple,
+  body.raja-mobile-nosignal .raja-mobile-command-actions-v49.triple {
+    grid-template-columns:54px 76px 70px minmax(0,1fr) !important;
+    gap:4px !important;
+  }
+}
+</style>
+<script id="raja-v49-until-signal-ticker">
+(() => {
+    setInterval(() => {
+        try {
+            if (typeof rajaUntilSignalEnabled !== 'undefined' && rajaUntilSignalEnabled && typeof updateRajaUntilSignalUI === 'function') {
+                updateRajaUntilSignalUI();
+            }
+        } catch (_) {}
+    }, 1000);
+    document.addEventListener('DOMContentLoaded', () => {
+        try { if (typeof updateRajaUntilSignalUI === 'function') updateRajaUntilSignalUI(); } catch (_) {}
+    }, {once:true});
+})();
+</script>
 </body>
 </html>
