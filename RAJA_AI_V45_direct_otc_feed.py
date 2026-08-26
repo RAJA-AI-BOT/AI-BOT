@@ -14,7 +14,7 @@ from statistics import median
 from typing import Any
 import math
 
-DIRECT_OTC_VERSION = "RAJA_DIRECT_OTC_V1"
+DIRECT_OTC_VERSION = "RAJA_DIRECT_OTC_V2_TYPE36"
 
 # Highly illiquid/exotic FX proxies often have weak or irregular 1m reference data.
 # They remain configurable in the UI, but Direct OTC Safe Mode will not issue a signal
@@ -34,7 +34,7 @@ PREFERRED_REFERENCE_FX = {
 }
 
 # Continuation/breakout families get an extra higher-timeframe trend sanity check.
-TREND_SENSITIVE_PATTERNS = {9, 10, 14, 20, 21, 22, 23, 25}
+TREND_SENSITIVE_PATTERNS = {9, 10, 14, 20, 21, 22, 23, 25, 36}
 
 
 def _clean_pair(pair: str) -> str:
