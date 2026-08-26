@@ -342,14 +342,14 @@ EXPIRY_CONFIRMATION_TIMEFRAME = {
 }
 
 # One Yahoo 1m download per unique symbol; all higher TFs are resampled.
-CACHE_DURATION = int(os.environ.get("RAJA_CACHE_SECONDS", "90"))
+CACHE_DURATION = max(5, min(45, int(os.environ.get("RAJA_CACHE_SECONDS", "20"))))
 STALE_CACHE_MAX_AGE = int(os.environ.get("RAJA_STALE_CACHE_SECONDS", "180"))
 YAHOO_FAILURE_COOLDOWN = int(os.environ.get("RAJA_YAHOO_FAILURE_COOLDOWN", "180"))
 # Keep three Yahoo fetches in flight to match the default three batch workers; this reduces
 # partial 21-pair scans without opening an aggressive request storm.
 YAHOO_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "3"))))
 YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
-BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
+BATCH_CACHE_DURATION = max(1, min(10, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "4"))))
 BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "4"))))
 YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
 YAHOO_SYMBOL_LOCK_WAIT_SECONDS = max(2.0, min(20.0, float(os.environ.get("RAJA_YAHOO_SYMBOL_LOCK_WAIT", "8"))))
@@ -372,7 +372,7 @@ TWELVE_DATA_API_KEY = (
 TWELVE_DATA_ENABLED = bool(TWELVE_DATA_API_KEY)
 TWELVE_DATA_BASE_URL = (os.environ.get("RAJA_TWELVE_DATA_BASE_URL") or "https://api.twelvedata.com/time_series").strip()
 TWELVE_DATA_OUTPUTSIZE = max(900, min(5000, int(os.environ.get("RAJA_TWELVE_DATA_OUTPUTSIZE", "4000"))))
-TWELVE_DATA_CACHE_SECONDS = max(15, int(os.environ.get("RAJA_TWELVE_DATA_CACHE_SECONDS", "45")))
+TWELVE_DATA_CACHE_SECONDS = max(10, min(45, int(os.environ.get("RAJA_TWELVE_DATA_CACHE_SECONDS", "20"))))
 TWELVE_DATA_FAILURE_COOLDOWN = max(30, int(os.environ.get("RAJA_TWELVE_DATA_FAILURE_COOLDOWN", "120")))
 TWELVE_DATA_GLOBAL_RATE_LIMIT_COOLDOWN = max(30, int(os.environ.get("RAJA_TWELVE_DATA_RATE_LIMIT_COOLDOWN", "90")))
 TWELVE_DATA_REQUEST_TIMEOUT_SECONDS = max(3.0, min(20.0, float(os.environ.get("RAJA_TWELVE_DATA_REQUEST_TIMEOUT", "9"))))
@@ -1050,7 +1050,7 @@ AUTO_TRACK_EXPIRIES = {
 # Exact next-candle execution lock. A setup predicts only the immediately following
 # candle; it must never be silently shifted to a later candle. A tiny grace is
 # allowed only for network/browser latency at the candle open.
-RAJA_NEXT_CANDLE_GRACE_SECONDS = max(0, min(10, int(os.environ.get("RAJA_NEXT_CANDLE_GRACE_SECONDS", "8"))))
+RAJA_NEXT_CANDLE_GRACE_SECONDS = max(0, min(8, int(os.environ.get("RAJA_NEXT_CANDLE_GRACE_SECONDS", "5"))))
 RAJA_MIN_LIVE_QUALITY_SCORE = max(55.0, min(90.0, float(os.environ.get("RAJA_MIN_LIVE_QUALITY_SCORE", "68"))))
 
 # V46 Smart Confirm: exact setups remain preferred. When no exact setup exists,
@@ -2375,6 +2375,51 @@ def next_candle_execution_window(closed_candle_epoch, duration, now=None):
             f"Exact NEXT candle opened {max(0, now-target_entry)}s ago; the setup is expired and will not be shifted to a later candle."
         ),
     }
+
+
+def revalidate_signal_execution(result, selected_expiry, now=None):
+    """Re-check a computed/cached signal at response time so expired candles never reach the UI."""
+    row = dict(result or {})
+    if row.get("signal") not in {"CALL", "PUT"}:
+        return row
+    tf = str(selected_expiry or row.get("selected_expiry") or row.get("timeframe") or "1m").strip().lower()
+    duration = int(AUTO_TRACK_EXPIRIES.get(tf) or (TIMEFRAMES.get(tf, 1) * 60))
+    closed_epoch = row.get("closed_candle_epoch")
+    if not closed_epoch:
+        summary = row.get("timeframe_summary") or {}
+        tf_row = summary.get(tf) if isinstance(summary, dict) else None
+        if isinstance(tf_row, dict):
+            closed_epoch = tf_row.get("closed_candle_epoch")
+    execution = next_candle_execution_window(closed_epoch, duration, now=now)
+    row["next_candle_entry_epoch"] = int(execution.get("target_entry_epoch") or 0)
+    row["next_candle_exit_epoch"] = int(execution.get("target_exit_epoch") or 0)
+    row["entry_eligible"] = bool(execution.get("entry_eligible"))
+    row["missed_entry"] = bool(execution.get("missed_entry"))
+    row["entry_grace_seconds"] = int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS)
+    row["late_entry"] = {
+        "eligible": bool(execution.get("entry_eligible")),
+        "seconds_since_open": int(execution.get("seconds_since_entry") or 0),
+        "seconds_to_open": int(execution.get("seconds_to_entry") or 0),
+    }
+    if not execution.get("entry_eligible"):
+        original_signal = row.get("signal")
+        reason = execution.get("reason") or "Exact NEXT-candle entry window expired before the signal reached the client."
+        row.update({
+            "signal": "NO SIGNAL", "score": 0.0, "no_trade": True,
+            "quality_gate": "ENTRY_EXPIRED", "no_trade_reason": reason,
+            "reason": f"NO TRADE · {reason}", "expired_signal": original_signal,
+            "exclude_from_history": True,
+        })
+        summary = row.get("timeframe_summary")
+        if isinstance(summary, dict) and isinstance(summary.get(tf), dict):
+            summary = dict(summary)
+            tf_row = dict(summary[tf])
+            tf_row["signal"] = "NO SIGNAL"
+            tf_row["score"] = 0.0
+            tf_row["entry_expired"] = True
+            summary[tf] = tf_row
+            row["timeframe_summary"] = summary
+    return row
 
 
 def calibrate_confidence(user, expiry, technical_quality):
@@ -6690,6 +6735,7 @@ def scan_batch():
 
     requested_pairs = data.get("pairs") or []; selected_expiry = str(data.get("expiry", "")).strip()
     market = str(data.get("market") or "Unknown")[:80]; broker = str(data.get("broker") or "").strip()[:80]; opts = normalize_scan_options(data.get("scan_options"))
+    fast_until_signal = bool(data.get("fast_until_signal"))
     if not isinstance(requested_pairs, list):
         return jsonify({"status": "error", "message": "pairs must be an array."}), 400
     pairs, seen = [], set()
@@ -6713,25 +6759,31 @@ def scan_batch():
             bridge_cache_signature = _broker_bridge_cache_signature(auth["user"], broker, pairs)
         except Exception:
             bridge_cache_signature = None
-    key = (broker, performance_cache_user, selected_expiry, tuple(pairs), options_key, bridge_cache_signature); now = time.time()
+    key = (broker, performance_cache_user, selected_expiry, tuple(pairs), options_key, bridge_cache_signature, bool(fast_until_signal)); now = time.time()
     with batch_cache_lock:
         cached = batch_cache.get(key)
-        if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
+        if (not fast_until_signal) and cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
             payload = cached["payload"]
-            found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
-            if batch_results_are_countable(payload["data"]):
+            fresh_data = [revalidate_signal_execution(r, selected_expiry, now=now) for r in payload["data"]]
+            found = any(r.get("signal") in {"CALL", "PUT"} for r in fresh_data)
+            if batch_results_are_countable(fresh_data):
                 _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
-            return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
+            diagnostics = dict(payload["diagnostics"] or {})
+            diagnostics["execution_revalidated"] = True
+            return jsonify({"status": "success", "data": fresh_data, "diagnostics": diagnostics, "cache_hit": True})
     key_lock = _get_batch_key_lock(key)
     with key_lock:
         now = time.time()
         with batch_cache_lock:
             cached = batch_cache.get(key)
-            if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
+            if (not fast_until_signal) and cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
                 payload = cached["payload"]
-                found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
+                fresh_data = [revalidate_signal_execution(r, selected_expiry, now=now) for r in payload["data"]]
+                found = any(r.get("signal") in {"CALL", "PUT"} for r in fresh_data)
                 _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
-                return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
+                diagnostics = dict(payload["diagnostics"] or {})
+                diagnostics["execution_revalidated"] = True
+                return jsonify({"status": "success", "data": fresh_data, "diagnostics": diagnostics, "cache_hit": True})
 
         results_by_pair, timed_out_pairs = {}, []
         batch_started = time.time()
@@ -6797,18 +6849,59 @@ def scan_batch():
         workers = min(BATCH_SCAN_WORKERS, len(compute_pairs)) if compute_pairs else 0
         pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch") if workers else None
         future_map = {pool.submit(calculate_live_strategy_signal, pair, selected_expiry, opts, auth["user"], broker): pair for pair in compute_pairs} if pool else {}
-        done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS) if future_map else (set(), set())
-        for future in done:
-            pair = future_map[future]
-            try: results_by_pair[pair] = future.result()
-            except Exception as exc:
-                print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
+        done = set(); pending = set(future_map.keys())
+        early_signal_pair = None
+        if future_map and fast_until_signal:
+            deadline_at = time.time() + BATCH_SCAN_DEADLINE_SECONDS
+            try:
+                for future in as_completed(future_map, timeout=BATCH_SCAN_DEADLINE_SECONDS):
+                    done.add(future); pending.discard(future)
+                    pair = future_map[future]
+                    try:
+                        row = revalidate_signal_execution(future.result(), selected_expiry)
+                    except Exception as exc:
+                        print(f"Batch scan error for {pair}: {exc}")
+                        row = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
+                    results_by_pair[pair] = row
+                    if row.get("signal") in {"CALL", "PUT"} and row.get("entry_eligible"):
+                        early_signal_pair = pair
+                        break
+                    if time.time() >= deadline_at:
+                        break
+            except TimeoutError:
+                pass
+            # AUTO UNTIL SIGNAL needs the first still-tradable setup, not a delayed
+            # ranking after every slow symbol. Cancel outstanding work immediately.
+            if early_signal_pair:
+                for future in list(pending):
+                    future.cancel()
+                pending.clear()
+            else:
+                # Give already-running futures the remaining safety window.
+                remaining = max(0.0, deadline_at - time.time())
+                extra_done, extra_pending = wait(pending, timeout=remaining) if pending else (set(), set())
+                for future in extra_done:
+                    done.add(future); pending.discard(future)
+                    pair = future_map[future]
+                    try: results_by_pair[pair] = revalidate_signal_execution(future.result(), selected_expiry)
+                    except Exception as exc:
+                        print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
+                pending = set(extra_pending)
+        else:
+            done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS) if future_map else (set(), set())
+            for future in done:
+                pair = future_map[future]
+                try: results_by_pair[pair] = revalidate_signal_execution(future.result(), selected_expiry)
+                except Exception as exc:
+                    print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
         for future in pending:
             pair = future_map[future]; timed_out_pairs.append(pair); future.cancel()
             results_by_pair[pair] = no_signal_result(pair, "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.", symbol=YAHOO_SYMBOLS.get(pair))
         if pool is not None:
             pool.shutdown(wait=False, cancel_futures=True)
-        results = [results_by_pair[pair] for pair in pairs]
+        # Revalidate once more at HTTP response time. This catches a signal that was
+        # valid when its worker finished but expired while other results were processed.
+        results = [revalidate_signal_execution(results_by_pair.get(pair) or no_signal_result(pair, "Not completed in this fast scan cycle.", symbol=YAHOO_SYMBOLS.get(pair)), selected_expiry) for pair in pairs]
         stale_pairs = [r for r in results if r.get("source_stale")]
         delayed_pairs = [r for r in results if r.get("data_delayed")]
         usable_rows = [r for r in results if not r.get("source_stale") and not r.get("data_delayed")]
@@ -6840,12 +6933,16 @@ def scan_batch():
             "bridge_mode_required_candles": (_sk25_required_base_candles(selected_expiry) if broker_otc_batch and not native_ready and not RAJA_OTC_REFERENCE_SIGNAL_FALLBACK else None),
             "otc_reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
             "scan_mode": opts["mode"],
+            "fast_until_signal": bool(fast_until_signal),
+            "early_signal_pair": early_signal_pair,
+            "execution_revalidated": True,
         }
         payload = {"data": results, "diagnostics": diagnostics}
-        with batch_cache_lock:
-            batch_cache[key] = {"timestamp": time.time(), "payload": payload}
-            if len(batch_cache) > 40:
-                for old_key, _ in sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]: batch_cache.pop(old_key, None)
+        if not fast_until_signal:
+            with batch_cache_lock:
+                batch_cache[key] = {"timestamp": time.time(), "payload": payload}
+                if len(batch_cache) > 40:
+                    for old_key, _ in sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]: batch_cache.pop(old_key, None)
         if batch_results_are_countable(results):
             _append_scan_event(auth["user"], market, "AUTO", opts["mode"], signals_found > 0)
         return jsonify({"status": "success", "data": results, "diagnostics": diagnostics, "cache_hit": False})
@@ -6877,6 +6974,7 @@ def scan_markets():
 
     # Pattern-only mode: exact closed-candle pattern decides the signal.
     result = calculate_live_strategy_signal(selected_pair, selected_expiry, opts, auth["user"], broker)
+    result = revalidate_signal_execution(result, selected_expiry)
     if market_result_is_countable(result):
         _append_scan_event(
             auth["user"],
