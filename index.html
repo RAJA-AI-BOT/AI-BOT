@@ -10383,8 +10383,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 const warmingRows = Array.isArray(rawResults) ? rawResults.filter(row => row && row.scan_skip_reason === 'bridge_cache_warming') : [];
                                 const bestDepth = warmingRows.reduce((m,row) => Math.max(m, Number(row?.bridge_cache?.candle_count || 0)), 0);
                                 descEl.innerText = bridgeSkipped > 0
-                                    ? `Exact broker bridge is connected, but the selected ${scanMode} mode cache is still warming. ${bridgeReady}/${total} pairs are analysis-ready${need ? `; ${need} exact 1m candles are required per ready pair` : ''}${bestDepth ? ` (best cache now ${bestDepth})` : ''}. Cached candles are reused automatically; Yahoo OTC substitution stays disabled.`
-                                    : `0/${total} pairs returned exact broker candles. Keep the broker bridge connected and stream the required OTC pair(s). Yahoo OTC substitution is disabled.`;
+                                    ? `Exact broker bridge is connected, but the selected ${scanMode} mode cache is still warming. ${bridgeReady}/${total} pairs are analysis-ready${need ? `; ${need} exact 1m candles are required per ready pair` : ''}${bestDepth ? ` (best cache now ${bestDepth})` : ''}. Cached candles are reused automatically; if exact bridge data is not ready, the labelled OTC reference fallback remains available.`
+                                    : `0/${total} pairs returned exact broker candles. Keep the broker bridge connected and stream the required OTC pair(s). The labelled OTC reference fallback remains available while the exact bridge warms.`;
                             } else {
                                 descEl.innerText = `0/${total} pairs returned usable 1m candles. Wait 2–3 minutes before scanning again.`;
                             }
@@ -10392,7 +10392,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
                             const unavailableOnly = Math.max(0, dataBad - skippedSlow);
-                            const feedCopy = brokerOtcNow ? 'Exact broker data' : 'Live reference data';
+                            const feedCopy = brokerOtcNow ? 'Exact broker data / labelled OTC reference backup' : 'Live reference data';
                             descEl.innerText = `${feedCopy} loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
                         }
                     } else {
@@ -10608,14 +10608,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 targetPairDisplay.style.color = "#00ff87";
                 resDir.className = "signal-direction dir-up";
                 resDir.textContent = 'UP'; const v37Action=document.getElementById('v37SignalAction'); if(v37Action) v37Action.textContent='BUY SIGNAL';
-                resMeta.innerHTML = `CALL 🔺 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY`;
+                resMeta.innerHTML = `CALL 🔺 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY${String(signalData.sourceMode||'').toLowerCase().includes('reference') ? ' · ⚠ REFERENCE OTC' : ''}`;
             } else {
                 hudBox.className = "ai-hud-box glow-sell";
                 targetPairBox.className = "selected-pair-box pair-glow-sell";
                 targetPairDisplay.style.color = "#ff3366";
                 resDir.className = "signal-direction dir-down";
                 resDir.textContent = 'DOWN'; const v37Action=document.getElementById('v37SignalAction'); if(v37Action) v37Action.textContent='SELL SIGNAL';
-                resMeta.innerHTML = `PUT 🔻 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY`;
+                resMeta.innerHTML = `PUT 🔻 · PATTERN TYPE ${Number(signalData.patternType||0) || '--'} · ${escapeHtml(signalData.selectedPattern||'SK25')} · SCHEDULED ${selectedExpiry.toUpperCase()} ENTRY${String(signalData.sourceMode||'').toLowerCase().includes('reference') ? ' · ⚠ REFERENCE OTC' : ''}`;
             }
             notifyRajaSignal(signalData, isBuy, confluenceString);
             updateStabilityUI(signalData);
@@ -12615,6 +12615,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
     function v23FeedLabel(source){
         const s=String(source||'AUTO');
+        if(/OTC Reference/i.test(s) && /Twelve Data/i.test(s)) return 'OTC REFERENCE · TWELVE DATA 1m';
+        if(/OTC Reference/i.test(s) && /Yahoo/i.test(s)) return 'OTC REFERENCE · YAHOO 1m';
         if(/Quotex Native WebSocket/i.test(s)) return 'QUOTEX OTC 1m · NATIVE WS';
         if(/Pocket Option Native WebSocket/i.test(s)) return 'POCKET OTC 1m · NATIVE WS';
         if(/Quotex Browser Bridge|Quotex Bridge/i.test(s)) return 'QUOTEX OTC 1m · BROWSER BRIDGE';
@@ -14565,7 +14567,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const forexFallbackVisible =
                 isForexOtcFallbackBroker(broker) &&
                 current === 'ForexOTC' &&
-                forexOtcFallbackArmed;
+                forexOtcFallbackArmed && forexReadyCount === 0;
 
             if (forexFallbackPanel) forexFallbackPanel.style.display = forexFallbackVisible ? 'block' : 'none';
             if (forexFallbackState) {
@@ -14583,7 +14585,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 renderForexOtcFallbackPairs();
                 if (forexRetryBtn) forexRetryBtn.disabled = false;
                 if (forexFallbackMeta && forexOtcFallbackReason && !forexOtcFallbackBusy) {
-                    forexFallbackMeta.textContent = `${forexOtcFallbackBrokerName()} JS FALLBACK ACTIVE · ${forexOtcFallbackReason} · Reference fallback is disabled; RAJA waits for exact broker-native data.`;
+                    forexFallbackMeta.textContent = `${forexOtcFallbackBrokerName()} JS FALLBACK ACTIVE · ${forexOtcFallbackReason} · V42 reference fallback is ON. Exact broker feed is preferred; when unavailable, signals use a clearly-labelled underlying reference feed.`;
                 }
             }
 
@@ -15191,7 +15193,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 </style>
 
 
-<script id="raja-broker-bridge-ui-v2">
+<script id="raja-broker-bridge-ui-v43">
 (() => {
     let bridgeConnected = false;
     let bridgeStatusTimer = null;
@@ -15218,19 +15220,32 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
     function updateBridgeUi(status) {
         bridgeConnected = Boolean(status && status.connected);
+        const dataStreaming = Boolean(status && (status.data_streaming || status.scan_ready));
         const broker = currentBridgeBroker();
         const short = broker === 'Pocket Option' ? 'POCKET' : 'QUOTEX';
+        const pair = String(status?.pair || status?.detected_pair || '');
+        const count = Number(status?.candle_count || 0);
+        const need = Number(status?.warmup_needed_candles || 0);
+        const parserState = String(status?.parser_state || '');
         const btn = document.getElementById('rajaBrokerBridgeBtn');
         if (btn) {
-            btn.textContent = bridgeConnected ? `🟢 ${short} BRIDGE CONNECTED` : '🔗 CONNECT BROKER BRIDGE';
-            btn.title = bridgeConnected
-                ? `${broker} browser bridge active${status?.pair ? ' · ' + status.pair : ''}`
-                : `Pair the local RAJA Broker Bridge, then keep ${broker} open on the OTC pair.`;
+            if (dataStreaming) {
+                btn.textContent = `🟢 ${short} EXACT STREAM`;
+                btn.title = `${broker} exact browser feed active${pair ? ' · ' + pair : ''}${count ? ' · ' + count + ' candles' : ''}`;
+            } else if (bridgeConnected) {
+                btn.textContent = `🟡 ${short} BRIDGE · DATA WAIT`;
+                btn.title = `${broker} extension is connected, but exact market candles are still warming${pair ? ' · ' + pair : ''}${need ? ' · need ' + need + ' more 1m candle(s)' : ''}${parserState ? ' · ' + parserState : ''}. Reference fallback remains available.`;
+            } else {
+                btn.textContent = '🔗 CONNECT BROKER BRIDGE';
+                btn.title = `Pair RAJA Broker Bridge v2.2+, reload the ${broker} OTC tab once, then keep the pair open. Reference fallback remains available while exact data warms.`;
+            }
         }
         const base = document.getElementById('rajaBaseFeedLabel');
         if (base) {
             if (isBrokerOtcScreen()) {
-                base.textContent = bridgeConnected ? `${broker} Browser Bridge 1m` : 'Broker Feed Required';
+                if (dataStreaming) base.textContent = `${broker} Exact Bridge 1m`;
+                else if (bridgeConnected) base.textContent = `${broker} Bridge Warming · REF Backup`;
+                else base.textContent = 'OTC REF Backup · Exact Bridge Optional';
             } else {
                 base.textContent = 'Yahoo/Twelve Data REF 1m';
             }
@@ -15274,7 +15289,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const code = String(payload.data?.pair_code || '');
             try { await navigator.clipboard.writeText(code); } catch (_) {}
             window.prompt(
-                'RAJA BROKER BRIDGE PAIR CODE\n\n1) Open the RAJA Broker Bridge extension on this PC.\n2) Enter this code once.\n3) Keep your selected Quotex/Pocket Option OTC pair open in its logged-in browser tab.\n\nThe extension sends parsed prices/candles only — not your broker password or cookies.\n\nCode:',
+                'RAJA BROKER BRIDGE PAIR CODE\n\n1) Open RAJA Broker Bridge v2.2+.\n2) Enter this 6-digit code and connect.\n3) Reload the logged-in Quotex/Pocket Option OTC tab once.\n4) Keep the selected OTC pair open until the extension shows MARKET STREAM ACTIVE.\n\nThe extension sends parsed prices/candles only — not your broker password or cookies.\n\nCode:',
                 code
             );
         } catch (error) {
@@ -15393,7 +15408,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
       strategyTimeframePerformance:data.strategy_timeframe_performance||{}, lateEntry:data.late_entry||{}, calibratedConfidence:Number(data.calibrated_confidence||0),
       calibrationStatus:data.calibration_status||'LEARNING', chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[], scanMode:'SK25_STRICT',
       scanThresholds:{}, source:data.source||'', sourceMode:data.source_mode||'', providerSymbol:data.provider_symbol||data.yahoo_symbol||'',
-      backupUsed:Boolean(data.backup_used), selectedExpiry:tf
+      backupUsed:Boolean(data.backup_used), exactBrokerFeed:Boolean(data.exact_broker_feed), referenceFallbackUsed:Boolean(data.reference_fallback_used),
+      referenceWarning:String(data.reference_warning||''), selectedExpiry:tf
     };
   };
 
@@ -15419,7 +15435,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     set('explainExpiry',`NEXT ${s.nextCandleColor||'--'}`); set('explainExpirySub',`${s.selectedExpiry||window.selectedExpiry||'--'} exact next-candle entry only`);
     set('explainVolatility',String(s?.movementInfo?.label||'INFO ONLY')); set('explainVolatilitySub',`Raw candle movement ${Number(s?.volatilityPct||0).toFixed(4)}% · not a signal filter`);
     const ruleText=(s.rules||[]).filter(x=>x&&x.ok).map(x=>'✓ '+x.name).join(' · ');
-    set('aiExplanationSummary',`${s.recoveryTrade?'RECOVERY TRADE · ':''}${s.selectedPattern||'SK25'} exact setup. ${ruleText || s.reason || ''}`);
+    const refWarn=String(s.sourceMode||'').toLowerCase().includes('reference') ? ` ⚠ REFERENCE OTC: ${s.referenceWarning||'Exact broker candle unavailable; underlying/reference candles can differ from broker OTC.'}` : '';
+    set('aiExplanationSummary',`${s.recoveryTrade?'RECOVERY TRADE · ':''}${s.selectedPattern||'SK25'} exact rule setup. ${ruleText || s.reason || ''}${refWarn}`);
     const ids={v31TechnicalScore:(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'),v31AgreementScore:`TYPE ${s.patternType||'--'}`,v31MarketQuality:'CLOSED ✓',v31EntryState:'EXACT NEXT',v23WinnerScore:(Number(s.deepQualityScore||0)>0?Number(s.deepQualityScore).toFixed(1)+'/100':'--'),v23WinnerAgreement:`TYPE ${s.patternType||'--'}`,v23WinnerStability:'CLOSED ✓',v23WinnerLead:`${s.rulesMatched||0}/${s.rulesTotal||0}`};
     Object.entries(ids).forEach(([id,v])=>set(id,v));
   };
@@ -15462,6 +15479,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
       const response=await fetch('/track-signal',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
         pair:s.pair,signal:direction,score:100,expiry:expiry,client_id:(typeof deviceSessionId!=='undefined'?deviceSessionId:''),
         timeframe_summary:s.timeframeSummary||{},chart_preview:s.chartPreview||[],source:s.source||'',source_mode:s.sourceMode||'',provider_symbol:s.providerSymbol||'',
+        exact_broker_feed:Boolean(s.exactBrokerFeed),reference_fallback_used:Boolean(s.referenceFallbackUsed),reference_warning:s.referenceWarning||'',
         pattern_type:s.patternType,selected_pattern:s.selectedPattern,next_candle_color:s.nextCandleColor,rules:s.rules||[],recovery_trade:Boolean(s.recoveryTrade),
         deep_quality_score:Number(s.deepQualityScore||0),quality_score:Number(s.deepQualityScore||0),
         pair_timeframe_performance:s.pairTimeframePerformance||{},strategy_timeframe_performance:s.strategyTimeframePerformance||{},
