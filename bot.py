@@ -1047,10 +1047,17 @@ AUTO_TRACK_EXPIRIES = {
     "30m": 1800,
 }
 
-# Exact next-candle execution lock. A setup predicts only the immediately following
-# candle; it must never be silently shifted to a later candle. A tiny grace is
-# allowed only for network/browser latency at the candle open.
-RAJA_NEXT_CANDLE_GRACE_SECONDS = max(0, min(8, int(os.environ.get("RAJA_NEXT_CANDLE_GRACE_SECONDS", "5"))))
+# V51 FRESH TARGET-CANDLE ENTRY WINDOW. A setup still belongs ONLY to the
+# immediately following candle; it is never shifted to a later candle. To give
+# the trader usable time to locate/select the broker pair, RAJA only surfaces a
+# signal when at least 15 seconds remain in the early target-candle entry window.
+# Default: 20-second early-entry window, minimum 15 seconds still available at
+# signal delivery. If the scan arrives later, the setup is discarded.
+RAJA_TARGET_ENTRY_WINDOW_SECONDS = max(15, min(25, int(os.environ.get("RAJA_TARGET_ENTRY_WINDOW_SECONDS", "20"))))
+RAJA_MIN_CLIENT_ACTION_SECONDS = max(10, min(RAJA_TARGET_ENTRY_WINDOW_SECONDS, int(os.environ.get("RAJA_MIN_CLIENT_ACTION_SECONDS", "15"))))
+# Backward-compatible field name used by the UI/tracker: now represents the full
+# early target-candle entry window, not permission to chase an old candle.
+RAJA_NEXT_CANDLE_GRACE_SECONDS = RAJA_TARGET_ENTRY_WINDOW_SECONDS
 RAJA_MIN_LIVE_QUALITY_SCORE = max(55.0, min(90.0, float(os.environ.get("RAJA_MIN_LIVE_QUALITY_SCORE", "68"))))
 
 # V46 Smart Confirm: exact setups remain preferred. When no exact setup exists,
@@ -2346,8 +2353,15 @@ def build_live_quality_profile(user, pair, expiry, strategy):
     }
 
 
-def next_candle_execution_window(closed_candle_epoch, duration, now=None):
-    """Return the one and only tradable candle for a closed-candle setup."""
+def next_candle_execution_window(closed_candle_epoch, duration, now=None, require_action_buffer=True):
+    """Return the one and only tradable candle plus a guaranteed client action buffer.
+
+    The strategy still predicts the immediately following candle. RAJA does not
+    shift an expired setup to a later candle. For scan/display responses, at least
+    RAJA_MIN_CLIENT_ACTION_SECONDS must remain in the early target-candle entry
+    window. Tracking calls may set require_action_buffer=False after the signal has
+    already passed the client freshness check.
+    """
     try:
         closed_candle_epoch = int(float(closed_candle_epoch or 0))
         duration = int(duration or 0)
@@ -2356,24 +2370,47 @@ def next_candle_execution_window(closed_candle_epoch, duration, now=None):
     now = int(now or time.time())
     target_entry = closed_candle_epoch + duration if closed_candle_epoch and duration else 0
     target_exit = target_entry + duration if target_entry else 0
+    window_seconds = int(RAJA_TARGET_ENTRY_WINDOW_SECONDS)
+    minimum_action = int(RAJA_MIN_CLIENT_ACTION_SECONDS)
+    entry_window_end = target_entry + window_seconds if target_entry else 0
     if not target_entry:
         return {
             "entry_eligible": False, "missed_entry": True, "target_entry_epoch": 0, "target_exit_epoch": 0,
-            "seconds_to_entry": 0, "seconds_since_entry": 0, "entry_grace_seconds": RAJA_NEXT_CANDLE_GRACE_SECONDS,
+            "entry_window_end_epoch": 0, "entry_window_seconds": window_seconds, "minimum_action_seconds": minimum_action,
+            "decision_seconds_remaining": 0, "seconds_to_entry": 0, "seconds_since_entry": 0,
+            "entry_grace_seconds": window_seconds,
             "reason": "Closed-candle timestamp is missing; exact NEXT-candle entry cannot be verified.",
         }
-    eligible = now <= target_entry + RAJA_NEXT_CANDLE_GRACE_SECONDS
+
+    seconds_to_entry = max(0, target_entry - now)
+    seconds_since_entry = max(0, now - target_entry)
+    decision_remaining = max(0, entry_window_end - now)
+    required_remaining = minimum_action if require_action_buffer else 1
+    eligible = decision_remaining >= required_remaining
+
+    if eligible:
+        reason = ""
+    elif now < target_exit:
+        reason = (
+            f"Fresh target candle has only {decision_remaining}s left in RAJA's early entry window; "
+            f"at least {minimum_action}s action time is required. Signal cancelled instead of chasing."
+        )
+    else:
+        reason = "Exact NEXT candle is already finished; this setup is expired and will not be shifted to a later candle."
+
     return {
         "entry_eligible": bool(eligible),
         "missed_entry": not bool(eligible),
         "target_entry_epoch": target_entry,
         "target_exit_epoch": target_exit,
-        "seconds_to_entry": max(0, target_entry - now),
-        "seconds_since_entry": max(0, now - target_entry),
-        "entry_grace_seconds": RAJA_NEXT_CANDLE_GRACE_SECONDS,
-        "reason": "" if eligible else (
-            f"Exact NEXT candle opened {max(0, now-target_entry)}s ago; the setup is expired and will not be shifted to a later candle."
-        ),
+        "entry_window_end_epoch": entry_window_end,
+        "entry_window_seconds": window_seconds,
+        "minimum_action_seconds": minimum_action,
+        "decision_seconds_remaining": decision_remaining,
+        "seconds_to_entry": seconds_to_entry,
+        "seconds_since_entry": seconds_since_entry,
+        "entry_grace_seconds": window_seconds,
+        "reason": reason,
     }
 
 
@@ -2396,6 +2433,10 @@ def revalidate_signal_execution(result, selected_expiry, now=None):
     row["entry_eligible"] = bool(execution.get("entry_eligible"))
     row["missed_entry"] = bool(execution.get("missed_entry"))
     row["entry_grace_seconds"] = int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS)
+    row["entry_window_end_epoch"] = int(execution.get("entry_window_end_epoch") or 0)
+    row["entry_window_seconds"] = int(execution.get("entry_window_seconds") or RAJA_TARGET_ENTRY_WINDOW_SECONDS)
+    row["minimum_action_seconds"] = int(execution.get("minimum_action_seconds") or RAJA_MIN_CLIENT_ACTION_SECONDS)
+    row["decision_seconds_remaining"] = int(execution.get("decision_seconds_remaining") or 0)
     row["late_entry"] = {
         "eligible": bool(execution.get("entry_eligible")),
         "seconds_since_open": int(execution.get("seconds_since_entry") or 0),
@@ -3064,16 +3105,17 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_V48_15_STRATEGIES_TYPE36_BALANCED"
-SK25_PATTERN_LIBRARY_SIZE = 15
+SK25_ENGINE_VERSION = "RAJA_V51_16_STRATEGIES_TYPE37_15S_BUFFER"
+SK25_PATTERN_LIBRARY_SIZE = 16
 SK25_LIVE_MIN_CANDLES = 10
 
-# V48: original 14 selected RAJA rules remain unchanged; Type 36 uses balanced demo thresholds.
-# IDs 26-35 remain in source but stay disabled; add()/add_setup() ignore them.
+# V51: original 14 selected RAJA rules remain unchanged; Type 36 stays balanced and
+# Type 37 adds a liquidity-sweep + reclaim confirmation setup. IDs 26-35 remain
+# in source but stay disabled; add()/add_setup() ignore them.
 RAJA_ACTIVE_STRATEGY_IDS = frozenset({
-    # Original 14 selected RAJA strategies + V47 Type 36 demo strategy.
+    # Original 14 selected RAJA strategies + Type 36 + V51 Type 37 demo strategy.
     # PDF/Premium strategies 26-35 remain disabled, not deleted.
-    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25, 36,
+    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25, 36, 37,
 })
 RAJA_STRATEGY_NAMES = {
     2: "RAJA Type 2 · Resistance Reversal",
@@ -3101,6 +3143,7 @@ RAJA_STRATEGY_NAMES = {
     34: "Premium · Failed Breakout Reversal",
     35: "Premium · Engulfing at Key S/R",
     36: "RAJA Type 36 · Trend Pullback Rejection",
+    37: "RAJA Type 37 · Liquidity Sweep + Reclaim",
 }
 RAJA_STRATEGY_PRIORITIES = {
     2:105, 4:115, 9:145, 10:145, 12:165, 14:150,
@@ -3108,6 +3151,7 @@ RAJA_STRATEGY_PRIORITIES = {
     26:188, 27:202, 28:205, 29:192, 30:198,
     31:210, 32:206, 33:204, 34:207, 35:200,
     36:185,
+    37:192,
 }
 
 
@@ -3178,7 +3222,7 @@ def _sk25_level_clusters(values, tolerance, min_touches=2):
 
 
 def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
-    """Evaluate the selected RAJA 15 closed-candle strategies (original 14 + Type 36)."""
+    """Evaluate the selected RAJA 16 closed-candle strategies (original 14 + Types 36/37)."""
     tf = str(timeframe or "1m").strip().lower()
     market_name = str(market or "LIVE").upper()
     previous_outcome = str(last_outcome or "").strip().upper()
@@ -3537,6 +3581,52 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
                 ("OTC extra-clean rejection / LIVE exempt", otc_clean),
             ],"Trend pullback rejection PUT","Downtrend stays intact through a controlled two-green pullback, then a bearish upper-wick rejection loses the prior green body midpoint. Target is the NEXT candle RED.","RAJA · Trend Pullback Rejection",False,"1M/5M ONLY")
 
+    # V51 TYPE 37 — Liquidity Sweep + Reclaim Confirmation.
+    # A wick must take a real prior S/R level, close back inside it, then receive a
+    # same-reversal-direction confirmation candle. Structural sweep/reclaim/wick/
+    # confirmation/midpoint rules are never waived by Smart Confirm.
+    if count >= 10 and tf in {"1m", "5m"}:
+        a,b = candles[-2:]
+        res = prior_resistance(2, 14)
+        sup = prior_support(2, 14)
+        confirmation_not_spike = b["body"] <= med_body*1.85 and b["range"] <= med_range*2.20
+
+        if sup is not None:
+            sweep_mid = (a["body_top"] + a["body_bottom"]) / 2.0
+            otc_clean = (not is_otc) or (
+                a["lower_wick"] >= max(a["body"]*0.90, med_range*0.24)
+                and b["close"] >= a["body_top"] - tol*0.08
+            )
+            add(37,1,[
+                ("1m or 5m timeframe", tf in {"1m","5m"}),
+                ("Sweep wick breaks prior support", a["low"] < sup - tol*0.10),
+                ("Sweep candle closes back above support", a["close"] > sup + tol*0.02),
+                ("Sweep has long lower rejection wick", long_lower(a)),
+                ("GREEN confirmation candle", b["dir"] > 0),
+                ("Confirmation body normal", normal(b)),
+                ("Confirmation closes above sweep body midpoint", b["close"] > sweep_mid + tol*0.04),
+                ("Confirmation not oversized", confirmation_not_spike),
+                ("OTC extra-clean reclaim / LIVE exempt", otc_clean),
+            ],"Liquidity sweep + support reclaim CALL","A closed wick sweeps prior support, reclaims it, and a bullish confirmation closes through the sweep body. Target is the NEXT candle GREEN.","RAJA · Liquidity Sweep Reclaim",False,"1M/5M ONLY")
+
+        if res is not None:
+            sweep_mid = (a["body_top"] + a["body_bottom"]) / 2.0
+            otc_clean = (not is_otc) or (
+                a["upper_wick"] >= max(a["body"]*0.90, med_range*0.24)
+                and b["close"] <= a["body_bottom"] + tol*0.08
+            )
+            add(37,-1,[
+                ("1m or 5m timeframe", tf in {"1m","5m"}),
+                ("Sweep wick breaks prior resistance", a["high"] > res + tol*0.10),
+                ("Sweep candle closes back below resistance", a["close"] < res - tol*0.02),
+                ("Sweep has long upper rejection wick", long_upper(a)),
+                ("RED confirmation candle", b["dir"] < 0),
+                ("Confirmation body normal", normal(b)),
+                ("Confirmation closes below sweep body midpoint", b["close"] < sweep_mid - tol*0.04),
+                ("Confirmation not oversized", confirmation_not_spike),
+                ("OTC extra-clean reclaim / LIVE exempt", otc_clean),
+            ],"Liquidity sweep + resistance reclaim PUT","A closed wick sweeps prior resistance, falls back below it, and a bearish confirmation closes through the sweep body. Target is the NEXT candle RED.","RAJA · Liquidity Sweep Reclaim",False,"1M/5M ONLY")
+
     exact.sort(key=lambda x:(int(x["priority"]),int(x["rules_total"]),int(x["pattern_type"])),reverse=True)
     near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"]),int(x["priority"])),reverse=True)
     directions={x["direction"] for x in exact}
@@ -3580,6 +3670,21 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
                     continue
                 if any(str(r.get("name") or "").strip().lower() not in type36_soft for r in missing):
                     continue
+            elif type_no == 37:
+                # Type 37 has 9 rules. One quality-only rule may be waived; the
+                # sweep, reclaim, rejection wick, confirmation direction and midpoint
+                # close remain mandatory.
+                type37_soft = {
+                    "confirmation body normal",
+                    "confirmation not oversized",
+                    "otc extra-clean reclaim / live exempt",
+                }
+                if len(missing) != 1:
+                    continue
+                if float(item.get("score") or 0.0) < 88.0:
+                    continue
+                if str(missing[0].get("name") or "").strip().lower() not in type37_soft:
+                    continue
             else:
                 if len(missing)!=1:
                     continue
@@ -3591,7 +3696,7 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
             candidate["smart_confirm"]=True
             candidate["missing_rules"]=[str(r.get("name") or "Soft context rule") for r in missing]
             candidate["missing_rule"]=", ".join(candidate["missing_rules"])
-            candidate["smart_confirm_tier"]="TYPE36_BALANCED" if type_no == 36 and len(missing) > 1 else "STANDARD"
+            candidate["smart_confirm_tier"]=("TYPE36_BALANCED" if type_no == 36 and len(missing) > 1 else ("TYPE37_QUALITY" if type_no == 37 else "STANDARD"))
             smart_candidates.append(candidate)
         smart_candidates.sort(key=lambda x:(float(x["score"]),int(x["priority"]),int(x["rules_total"])),reverse=True)
         smart_dirs={x["direction"] for x in smart_candidates}
@@ -3617,7 +3722,7 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     if not best:
         watch=f" Closest: {closest['name']} {closest['rules_matched']}/{closest['rules_total']} rules." if closest else ""
         return {
-            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO QUALIFIED RAJA 15 SETUP",
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO QUALIFIED RAJA 16 SETUP",
             "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":float(closest["score"]) if closest else 0.0,
             "rules":list(closest.get("rules") or []) if closest else [],"pattern_signals":near[:8],"conflict_gate":False,
             "reason":"No exact or Smart Confirm RAJA 15 setup is complete on the latest CLOSED candles."+watch,
@@ -3822,11 +3927,11 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
         "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if signal_ok else [],
         "opposing_timeframes":[],"multi_tf_agreement":100.0 if signal_ok else 0.0,
-        "confirmation_mode":("RAJA 15 SMART CONFIRM · TYPE36 BALANCED" if bool(strategy.get("smart_confirm")) and int(strategy.get("pattern_type") or 0)==36 else ("RAJA 15 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 15 STRICT · SELECTED TIMEFRAME ONLY")),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "confirmation_mode":("RAJA 16 SMART CONFIRM · TYPE36 BALANCED" if bool(strategy.get("smart_confirm")) and int(strategy.get("pattern_type") or 0)==36 else ("RAJA 16 SMART CONFIRM · TYPE37 QUALITY" if bool(strategy.get("smart_confirm")) and int(strategy.get("pattern_type") or 0)==37 else ("RAJA 16 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 16 STRICT · SELECTED TIMEFRAME ONLY"))),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
-        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 15 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
+        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 16 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
         "closed_candle_verified":True,"forming_candle_excluded":True,
         "movement_info":movement,"volatility_pct":movement["percent"],
         "market_stability_score":float(quality_profile.get("quality_score") or 0.0),
@@ -3841,6 +3946,10 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "next_candle_entry_epoch":int(execution.get("target_entry_epoch") or 0),"next_candle_exit_epoch":int(execution.get("target_exit_epoch") or 0),
         "entry_eligible":bool(execution.get("entry_eligible")),"missed_entry":bool(execution.get("missed_entry")),
         "entry_grace_seconds":int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS),
+        "entry_window_end_epoch":int(execution.get("entry_window_end_epoch") or 0),
+        "entry_window_seconds":int(execution.get("entry_window_seconds") or RAJA_TARGET_ENTRY_WINDOW_SECONDS),
+        "minimum_action_seconds":int(execution.get("minimum_action_seconds") or RAJA_MIN_CLIENT_ACTION_SECONDS),
+        "decision_seconds_remaining":int(execution.get("decision_seconds_remaining") or 0),
         "late_entry":{"eligible":bool(execution.get("entry_eligible")),"seconds_since_open":int(execution.get("seconds_since_entry") or 0),"seconds_to_open":int(execution.get("seconds_to_entry") or 0)},
         "no_trade":not signal_ok,"quality_gate":"SMART_CONFIRM_PASSED" if signal_ok and bool(result.get("smart_confirm")) else ("PASSED" if signal_ok else (result.get("quality_gate") or "PATTERN_ONLY")),
         "smart_confirm":bool(result.get("smart_confirm")),"missing_rule":str(result.get("missing_rule") or ""),
@@ -4478,7 +4587,7 @@ def health():
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "RAJA 15 · EXACT + SMART CONFIRM · SELECTED TIMEFRAME ONLY",
+        "confirmation_mode": "RAJA 16 · EXACT + SMART CONFIRM · SELECTED TIMEFRAME ONLY",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -5077,17 +5186,19 @@ def track_signal():
     # V41 EXACT NEXT-CANDLE LOCK:
     # A closed-candle strategy predicts only the immediately following candle.
     # Never move an expired setup to a later aligned candle.
-    execution = next_candle_execution_window(closed_candle_epoch, duration, now)
+    execution = next_candle_execution_window(closed_candle_epoch, duration, now, require_action_buffer=False)
     original_target_entry_epoch = int(execution.get("target_entry_epoch") or 0)
     entry_epoch = original_target_entry_epoch
     expiry_epoch = int(execution.get("target_exit_epoch") or 0)
     entry_grace_seconds = int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS)
+    entry_window_end_epoch = int(execution.get("entry_window_end_epoch") or 0)
+    minimum_action_seconds = int(execution.get("minimum_action_seconds") or RAJA_MIN_CLIENT_ACTION_SECONDS)
 
     if not execution.get("entry_eligible"):
         return jsonify({
             "status":"success","auto_tracking":False,"missed_entry":True,"entry_eligible":False,
             "entry_epoch":entry_epoch,"expiry_epoch":expiry_epoch,"server_epoch":now,
-            "entry_grace_seconds":entry_grace_seconds,"entry_timing_mode":"EXACT_NEXT_CANDLE",
+            "entry_grace_seconds":entry_grace_seconds,"entry_window_end_epoch":entry_window_end_epoch,"minimum_action_seconds":minimum_action_seconds,"entry_timing_mode":"FRESH_TARGET_CANDLE_WINDOW",
             "original_target_entry_epoch":original_target_entry_epoch,
             "message":execution.get("reason") or "Exact NEXT-candle entry was missed. Do not enter a later candle.",
         })
@@ -5096,7 +5207,7 @@ def track_signal():
     item = {
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
         "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch, "entry_grace_seconds": entry_grace_seconds,
+        "expiry_epoch": expiry_epoch, "entry_grace_seconds": entry_grace_seconds, "entry_window_end_epoch": entry_window_end_epoch, "minimum_action_seconds": minimum_action_seconds,
         "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else original_target_entry_epoch - duration),
         "setup_candle_close_epoch": original_target_entry_epoch, "target_candle_open_epoch": entry_epoch,
         "target_candle_close_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
@@ -5110,7 +5221,7 @@ def track_signal():
         "exclude_from_performance": bool("(OTC)" in pair and ("reference" in str(data.get("source_mode") or "").casefold() or "proxy" in str(data.get("source_mode") or "").casefold())),
         "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
-        "scan_mode": "SK25_STRICT", "entry_timing_mode": "EXACT_NEXT_CANDLE", "volatility_pct": data.get("volatility_pct"),
+        "scan_mode": "SK25_STRICT", "entry_timing_mode": "FRESH_TARGET_CANDLE_WINDOW", "volatility_pct": data.get("volatility_pct"),
         "deep_quality_score": float(data.get("deep_quality_score") or data.get("quality_score") or score or 0),
         "quality_score": float(data.get("quality_score") or data.get("deep_quality_score") or score or 0),
         "pair_timeframe_performance": data.get("pair_timeframe_performance") or {},
@@ -5128,7 +5239,7 @@ def track_signal():
         items = load_signals(); items.insert(0, item); save_signals(items[:2000])
     return jsonify({"status": "success", "auto_tracking": True, "signal_id": signal_id,
                     "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
-                    "entry_grace_seconds": entry_grace_seconds, "server_epoch": now,
+                    "entry_grace_seconds": entry_grace_seconds, "entry_window_end_epoch": entry_window_end_epoch, "minimum_action_seconds": minimum_action_seconds, "server_epoch": now,
                     "entry_notice_seconds": max(0, entry_epoch - now),
                     "entry_eligible": True,
                     "entry_timing_mode": "EXACT_NEXT_CANDLE",
@@ -5817,7 +5928,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
     detected_count = len(candles)
     warnings = list(quality_notes)
     reasons: list[str] = []
-    library = "RAJA Selected 15 Strategy Library"
+    library = "RAJA Selected 16 Strategy Library"
 
     # V11 Closed Candle Lock. A normal screenshot/live-now frame can contain a
     # still-forming rightmost candle, so it is excluded from setup matching. A
@@ -6448,7 +6559,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "reasons": reasons[:10],
         "warnings": warnings[:7],
         "pattern_status": {
-            "Mode": "RAJA 15 selected strategies",
+            "Mode": "RAJA 16 selected strategies",
             "Indicators": "OFF - signal engine uses only the selected closed-candle strategy rules",
             "Context": f"Visual candle context: {context_label}",
             "Candle geometry": f"{count} closed candles analysed / {detected_count} visible structures",
@@ -6601,7 +6712,7 @@ def chart_scan_api():
     except (ValueError,UnidentifiedImageError) as exc:
         return jsonify({"status":"error","message":str(exc)}),400
     now_epoch = int(time.time())
-    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 15 Strategy Library"})
+    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 16 Strategy Library"})
 
     # V29 explicit entry timing for One-Tap Close Camera. The browser supplies the
     # exact candle boundary it armed; server validates it is reasonably recent.
