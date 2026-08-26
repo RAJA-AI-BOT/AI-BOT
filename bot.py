@@ -950,6 +950,12 @@ AUTO_TRACK_EXPIRIES = {
     "30m": 1800,
 }
 
+# Exact next-candle execution lock. A setup predicts only the immediately following
+# candle; it must never be silently shifted to a later candle. A tiny grace is
+# allowed only for network/browser latency at the candle open.
+RAJA_NEXT_CANDLE_GRACE_SECONDS = max(0, min(10, int(os.environ.get("RAJA_NEXT_CANDLE_GRACE_SECONDS", "5"))))
+RAJA_MIN_LIVE_QUALITY_SCORE = max(55.0, min(90.0, float(os.environ.get("RAJA_MIN_LIVE_QUALITY_SCORE", "68"))))
+
 
 def normalize_user_id(value):
     """Canonicalize Telegram/user IDs so @Name and name resolve to the same customer."""
@@ -2117,6 +2123,123 @@ def pair_timeframe_performance(user, pair, expiry):
     }
 
 
+def strategy_timeframe_performance(user, pattern_type, expiry):
+    """Historical reliability for one RAJA strategy + expiry. Small samples stay neutral."""
+    try:
+        pattern_type = int(pattern_type or 0)
+    except Exception:
+        pattern_type = 0
+    expiry = str(expiry or "").strip()
+    rows = [
+        x for x in _completed_performance_history(user)
+        if int(x.get("pattern_type") or 0) == pattern_type
+        and (not expiry or str(x.get("expiry") or "") == expiry)
+    ][:320]
+    wins = sum(1 for x in rows if str(x.get("result") or "").upper() == "WIN")
+    losses = sum(1 for x in rows if str(x.get("result") or "").upper() == "LOSS")
+    n = wins + losses
+    raw_rate = (wins / n * 100.0) if n else None
+    smoothed = ((wins + 2.0) / (n + 4.0) * 100.0) if n else 50.0
+
+    if n < 8:
+        status = "LEARNING"
+    elif smoothed >= 65.0:
+        status = "STRONG"
+    elif smoothed >= 55.0:
+        status = "NORMAL"
+    elif smoothed >= 48.0:
+        status = "CAUTION"
+    else:
+        status = "WEAK"
+
+    # A strategy needs a real sample before it can be blocked.
+    hard_block = bool(n >= 12 and smoothed < 42.0)
+    return {
+        "pattern_type": pattern_type,
+        "sample_size": n,
+        "wins": wins,
+        "losses": losses,
+        "raw_win_rate": round(raw_rate, 2) if raw_rate is not None else None,
+        "smoothed_win_rate": round(smoothed, 2),
+        "status": status,
+        "hard_block": hard_block,
+        "minimum_gate_sample": 8,
+        "hard_block_sample": 12,
+    }
+
+
+def build_live_quality_profile(user, pair, expiry, strategy):
+    """Rank exact setups by real history first; strategy priority is only a small tie-breaker."""
+    strategy = strategy or {}
+    pattern_type = int(strategy.get("pattern_type") or 0)
+    priority = float(strategy.get("pattern_priority") or RAJA_STRATEGY_PRIORITIES.get(pattern_type, 100) or 100)
+    pair_perf = pair_timeframe_performance(user, pair, expiry)
+    strategy_perf = strategy_timeframe_performance(user, pattern_type, expiry)
+
+    # Neutral history is 50. Priority contributes only modestly so it can no longer
+    # masquerade as a "quality score" by itself.
+    priority_quality = max(50.0, min(80.0, 50.0 + (priority - 100.0) * 0.35))
+    pair_rate = float(pair_perf.get("smoothed_win_rate") or 50.0) if int(pair_perf.get("sample_size") or 0) >= 12 else 50.0
+    strategy_rate = float(strategy_perf.get("smoothed_win_rate") or 50.0) if int(strategy_perf.get("sample_size") or 0) >= 8 else 50.0
+    quality = 72.0 + (priority_quality - 65.0) * 0.15 + (pair_rate - 50.0) * 0.20 + (strategy_rate - 50.0) * 0.35
+    quality = max(0.0, min(100.0, quality))
+
+    blocked_reason = ""
+    if strategy_perf.get("hard_block"):
+        blocked_reason = (
+            f"Strategy Type {pattern_type} is temporarily blocked on {expiry}: "
+            f"historical reliability {strategy_perf.get('smoothed_win_rate')}% over {strategy_perf.get('sample_size')} decided trades."
+        )
+    elif pair_perf.get("hard_block"):
+        blocked_reason = (
+            f"{pair} {expiry} is temporarily blocked: historical reliability "
+            f"{pair_perf.get('smoothed_win_rate')}% over {pair_perf.get('sample_size')} decided trades."
+        )
+    elif quality < RAJA_MIN_LIVE_QUALITY_SCORE:
+        blocked_reason = f"Quality gate {quality:.1f}/100 is below the live minimum {RAJA_MIN_LIVE_QUALITY_SCORE:.1f}/100."
+
+    return {
+        "quality_score": round(quality, 2),
+        "minimum_quality_score": round(RAJA_MIN_LIVE_QUALITY_SCORE, 2),
+        "priority_component": round(priority_quality, 2),
+        "pair_timeframe_performance": pair_perf,
+        "strategy_timeframe_performance": strategy_perf,
+        "blocked": bool(blocked_reason),
+        "blocked_reason": blocked_reason,
+    }
+
+
+def next_candle_execution_window(closed_candle_epoch, duration, now=None):
+    """Return the one and only tradable candle for a closed-candle setup."""
+    try:
+        closed_candle_epoch = int(float(closed_candle_epoch or 0))
+        duration = int(duration or 0)
+    except Exception:
+        closed_candle_epoch, duration = 0, 0
+    now = int(now or time.time())
+    target_entry = closed_candle_epoch + duration if closed_candle_epoch and duration else 0
+    target_exit = target_entry + duration if target_entry else 0
+    if not target_entry:
+        return {
+            "entry_eligible": False, "missed_entry": True, "target_entry_epoch": 0, "target_exit_epoch": 0,
+            "seconds_to_entry": 0, "seconds_since_entry": 0, "entry_grace_seconds": RAJA_NEXT_CANDLE_GRACE_SECONDS,
+            "reason": "Closed-candle timestamp is missing; exact NEXT-candle entry cannot be verified.",
+        }
+    eligible = now <= target_entry + RAJA_NEXT_CANDLE_GRACE_SECONDS
+    return {
+        "entry_eligible": bool(eligible),
+        "missed_entry": not bool(eligible),
+        "target_entry_epoch": target_entry,
+        "target_exit_epoch": target_exit,
+        "seconds_to_entry": max(0, target_entry - now),
+        "seconds_since_entry": max(0, now - target_entry),
+        "entry_grace_seconds": RAJA_NEXT_CANDLE_GRACE_SECONDS,
+        "reason": "" if eligible else (
+            f"Exact NEXT candle opened {max(0, now-target_entry)}s ago; the setup is expired and will not be shifted to a later candle."
+        ),
+    }
+
+
 def calibrate_confidence(user, expiry, technical_quality):
     """Calibrate displayed confidence from similar historical score buckets; never gates trades."""
     technical_quality = max(0.0, min(100.0, float(technical_quality or 0.0)))
@@ -2826,7 +2949,7 @@ def _sk25_level_clusters(values, tolerance, min_touches=2):
 
 
 def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
-    """Evaluate the V39 selected 24 closed-candle strategies."""
+    """Evaluate the selected RAJA 14 closed-candle strategies."""
     tf = str(timeframe or "1m").strip().lower()
     market_name = str(market or "LIVE").upper()
     previous_outcome = str(last_outcome or "").strip().upper()
@@ -3265,28 +3388,66 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
     last_outcome=_last_strategy_outcome(bridge_user)
     strategy=analyze_sk25_ohlc(tf_df,tf,market_name,last_outcome)
     movement=_movement_info(tf_df)
+    raw_signal = strategy.get("signal") in {"CALL","PUT"}
+    quality_profile = build_live_quality_profile(bridge_user, pair, tf, strategy) if raw_signal else {
+        "quality_score":0.0,"minimum_quality_score":RAJA_MIN_LIVE_QUALITY_SCORE,
+        "pair_timeframe_performance":pair_timeframe_performance(bridge_user,pair,tf),
+        "strategy_timeframe_performance":strategy_timeframe_performance(bridge_user,strategy.get("pattern_type"),tf),
+        "blocked":False,"blocked_reason":"",
+    }
+    execution = next_candle_execution_window(strategy.get("closed_candle_epoch"), TIMEFRAMES[tf] * 60) if raw_signal else {
+        "entry_eligible":False,"missed_entry":False,"target_entry_epoch":0,"target_exit_epoch":0,
+        "seconds_to_entry":0,"seconds_since_entry":0,"entry_grace_seconds":RAJA_NEXT_CANDLE_GRACE_SECONDS,"reason":"",
+    }
+
+    if raw_signal and (quality_profile.get("blocked") or not execution.get("entry_eligible")):
+        blocked = dict(strategy)
+        blocked_reason = quality_profile.get("blocked_reason") or execution.get("reason") or "Signal blocked by safety gate."
+        blocked.update({
+            "signal":"NO SIGNAL","score":0.0,"no_trade":True,"quality_gate":"BLOCKED",
+            "reason":f"NO TRADE · {blocked_reason}","no_trade_reason":blocked_reason,
+            "missed_entry":bool(execution.get("missed_entry")),
+        })
+        strategy = blocked
+
+    calibration = calibrate_confidence(bridge_user, tf, quality_profile.get("quality_score") or 0.0) if raw_signal else {
+        "status":"LEARNING","calibrated_confidence":0.0,"sample_size":0,"observed_win_rate":None
+    }
     summary={tf:{
         "signal":strategy.get("signal"),"score":strategy.get("score",0),"pattern_type":strategy.get("pattern_type",0),
         "selected_pattern":strategy.get("selected_pattern"),"setup_match":strategy.get("setup_match",0),
         "next_candle_color":strategy.get("next_candle_color"),"closed_candle_epoch":strategy.get("closed_candle_epoch"),
+        "quality_score":quality_profile.get("quality_score",0),
     }}
     result=dict(strategy)
+    signal_ok = result.get("signal") in {"CALL","PUT"}
     result.update({
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
-        "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if strategy.get("signal") in {"CALL","PUT"} else [],
-        "opposing_timeframes":[],"multi_tf_agreement":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
-        "confirmation_mode":"RAJA 24 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if signal_ok else [],
+        "opposing_timeframes":[],"multi_tf_agreement":100.0 if signal_ok else 0.0,
+        "confirmation_mode":"RAJA 14 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
         "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 14 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
         "closed_candle_verified":True,"forming_candle_excluded":True,
-        "movement_info":movement,"volatility_pct":movement["percent"],"market_stability_score":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
-        "market_risk_level":"INFO ONLY","market_regime":strategy.get("selected_pattern") or "NO SETUP",
-        "deep_quality_score":float(strategy.get("pattern_priority") or 0),"calibration_status":"DISABLED","calibrated_confidence":0.0,
-        "no_trade":strategy.get("signal") not in {"CALL","PUT"},"quality_gate":"PASSED" if strategy.get("signal") in {"CALL","PUT"} else "PATTERN_ONLY",
+        "movement_info":movement,"volatility_pct":movement["percent"],
+        "market_stability_score":float(quality_profile.get("quality_score") or 0.0),
+        "market_risk_level":"LOW" if float(quality_profile.get("quality_score") or 0)>=78 else ("MEDIUM" if float(quality_profile.get("quality_score") or 0)>=68 else "HIGH"),
+        "market_regime":strategy.get("selected_pattern") or "NO SETUP",
+        "deep_quality_score":float(quality_profile.get("quality_score") or 0.0),"quality_score":float(quality_profile.get("quality_score") or 0.0),
+        "pair_timeframe_performance":quality_profile.get("pair_timeframe_performance") or {},
+        "strategy_timeframe_performance":quality_profile.get("strategy_timeframe_performance") or {},
+        "effective_min_score":float(quality_profile.get("minimum_quality_score") or RAJA_MIN_LIVE_QUALITY_SCORE),
+        "calibration_status":calibration.get("status") or "LEARNING","calibrated_confidence":float(calibration.get("calibrated_confidence") or 0.0),
+        "calibration_sample_size":int(calibration.get("sample_size") or 0),"calibration_observed_win_rate":calibration.get("observed_win_rate"),
+        "next_candle_entry_epoch":int(execution.get("target_entry_epoch") or 0),"next_candle_exit_epoch":int(execution.get("target_exit_epoch") or 0),
+        "entry_eligible":bool(execution.get("entry_eligible")),"missed_entry":bool(execution.get("missed_entry")),
+        "entry_grace_seconds":int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS),
+        "late_entry":{"eligible":bool(execution.get("entry_eligible")),"seconds_since_open":int(execution.get("seconds_since_entry") or 0),"seconds_to_open":int(execution.get("seconds_to_entry") or 0)},
+        "no_trade":not signal_ok,"quality_gate":"PASSED" if signal_ok else (result.get("quality_gate") or "PATTERN_ONLY"),
     })
-    if result["no_trade"]: result["no_trade_reason"]=result.get("reason")
+    if result["no_trade"]: result["no_trade_reason"]=result.get("no_trade_reason") or result.get("reason")
     return result
 
 
@@ -3303,9 +3464,12 @@ def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=N
         out.append({
             "pair":pair,"timeframe":tf,"signal":row["signal"],"direction":"UP" if row["signal"]=="CALL" else "DOWN",
             "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT","score":100.0,
-            "rank_score":float(row.get("pattern_priority") or 0),"stability":100.0,"risk":"INFO ONLY",
+            "rank_score":float(row.get("deep_quality_score") or row.get("quality_score") or 0),"stability":float(row.get("market_stability_score") or 0),"risk":row.get("market_risk_level") or "--",
             "volatility_pct":row.get("volatility_pct",0),"market_regime":row.get("selected_pattern"),
             "pattern_type":row.get("pattern_type"),"selected_pattern":row.get("selected_pattern"),"setup_match":100.0,
+            "quality_score":row.get("quality_score",row.get("deep_quality_score",0)),
+            "pair_timeframe_performance":row.get("pair_timeframe_performance") or {},
+            "strategy_timeframe_performance":row.get("strategy_timeframe_performance") or {},
             "next_candle_color":row.get("next_candle_color"),"rules":row.get("rules") or [],"recovery_trade":bool(row.get("recovery_trade")),
             "closed_candle_epoch":row.get("closed_candle_epoch"),"data_age_seconds":row.get("data_age"),
             "source":row.get("source"),"source_mode":row.get("source_mode"),"yahoo_symbol":row.get("yahoo_symbol"),
@@ -4459,28 +4623,23 @@ def track_signal():
     except Exception:
         closed_candle_epoch = 0
 
-    # V38 PREP-ENTRY MODE:
-    # Give the trader a real countdown instead of returning an already-expired
-    # entry. The signal is scheduled on the next timeframe-aligned candle that
-    # still provides at least RAJA_MIN_ENTRY_NOTICE_SECONDS of preparation.
-    # Outcome tracking uses this same scheduled entry, so UI and backend stay aligned.
-    original_target_entry_epoch = (closed_candle_epoch + duration) if closed_candle_epoch else ((now // duration) + 1) * duration
-    try:
-        min_entry_notice_seconds = max(10, min(30, int(os.environ.get("RAJA_MIN_ENTRY_NOTICE_SECONDS", "10"))))
-    except Exception:
-        min_entry_notice_seconds = 10
+    # V41 EXACT NEXT-CANDLE LOCK:
+    # A closed-candle strategy predicts only the immediately following candle.
+    # Never move an expired setup to a later aligned candle.
+    execution = next_candle_execution_window(closed_candle_epoch, duration, now)
+    original_target_entry_epoch = int(execution.get("target_entry_epoch") or 0)
+    entry_epoch = original_target_entry_epoch
+    expiry_epoch = int(execution.get("target_exit_epoch") or 0)
+    entry_grace_seconds = int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS)
 
-    earliest_entry_epoch = now + min_entry_notice_seconds
-    notice_aligned_entry_epoch = ((earliest_entry_epoch + duration - 1) // duration) * duration
-    entry_epoch = max(original_target_entry_epoch, notice_aligned_entry_epoch)
-    expiry_epoch = entry_epoch + duration
-
-    # Keep a small post-open grace as a safety fallback for device/browser latency.
-    default_entry_grace = max(10, min(45, int(duration * 0.50)))
-    try:
-        entry_grace_seconds = max(5, min(90, int(os.environ.get("RAJA_ENTRY_GRACE_SECONDS", str(default_entry_grace)))))
-    except Exception:
-        entry_grace_seconds = default_entry_grace
+    if not execution.get("entry_eligible"):
+        return jsonify({
+            "status":"success","auto_tracking":False,"missed_entry":True,"entry_eligible":False,
+            "entry_epoch":entry_epoch,"expiry_epoch":expiry_epoch,"server_epoch":now,
+            "entry_grace_seconds":entry_grace_seconds,"entry_timing_mode":"EXACT_NEXT_CANDLE",
+            "original_target_entry_epoch":original_target_entry_epoch,
+            "message":execution.get("reason") or "Exact NEXT-candle entry was missed. Do not enter a later candle.",
+        })
 
     signal_id = "sig_" + secrets.token_hex(8)
     item = {
@@ -4497,7 +4656,11 @@ def track_signal():
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
         "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
-        "scan_mode": "SK25_STRICT", "entry_timing_mode": "PREP_ENTRY", "volatility_pct": data.get("volatility_pct"),
+        "scan_mode": "SK25_STRICT", "entry_timing_mode": "EXACT_NEXT_CANDLE", "volatility_pct": data.get("volatility_pct"),
+        "deep_quality_score": float(data.get("deep_quality_score") or data.get("quality_score") or score or 0),
+        "quality_score": float(data.get("quality_score") or data.get("deep_quality_score") or score or 0),
+        "pair_timeframe_performance": data.get("pair_timeframe_performance") or {},
+        "strategy_timeframe_performance": data.get("strategy_timeframe_performance") or {},
         "pattern_type": int(data.get("pattern_type") or 0),
         "selected_pattern": str(data.get("selected_pattern") or ""),
         "next_candle_color": str(data.get("next_candle_color") or ""),
@@ -4513,12 +4676,13 @@ def track_signal():
                     "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
                     "entry_grace_seconds": entry_grace_seconds, "server_epoch": now,
                     "entry_notice_seconds": max(0, entry_epoch - now),
-                    "entry_timing_mode": "PREP_ENTRY",
+                    "entry_eligible": True,
+                    "entry_timing_mode": "EXACT_NEXT_CANDLE",
                     "original_target_entry_epoch": original_target_entry_epoch,
                     "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else original_target_entry_epoch - duration),
                     "setup_candle_close_epoch": original_target_entry_epoch,
                     "target_candle_open_epoch": entry_epoch, "target_candle_close_epoch": expiry_epoch,
-                    "message": f"Signal ready. Prepare now and enter on the scheduled {expiry} candle after the countdown."})
+                    "message": f"Exact NEXT {expiry} candle only. Enter at its open; never shift this setup to a later candle."})
 
 
 @app.route("/signals/result", methods=["POST"])
@@ -6371,7 +6535,7 @@ def telegram_scan_auto(pairs, selected_expiry):
     pool.shutdown(wait=False, cancel_futures=True)
 
     valid = [r for r in results if isinstance(r, dict) and r.get("signal") in {"CALL", "PUT"}]
-    best = max(valid, key=lambda r: float(r.get("score") or 0), default=None)
+    best = max(valid, key=lambda r: float(r.get("deep_quality_score") or r.get("quality_score") or 0), default=None)
     diagnostics = {
         "total_pairs": len(pairs),
         "completed_pairs": len(done),
