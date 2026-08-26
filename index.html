@@ -7092,7 +7092,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         let rajaBackendWarmPromise = null;
         let rajaBackendReady = false;
 
-        // V49 · AUTO SCAN UNTIL SIGNAL
+        // V50 · AUTO SCAN UNTIL SIGNAL · FRESH ENTRY LOCK
         // This is intentionally session-only (not persisted across reloads) so an
         // unattended browser never resumes continuous scanning unexpectedly.
         let rajaUntilSignalEnabled = false;
@@ -9809,35 +9809,35 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         // ==========================================
         function normalizeBackendSignal(data, fallbackPair) {
             if(!data||!data.signal||data.signal==='NO SIGNAL'||Number(data.score||0)<=0)return null;
+            const entryEpoch = Number(data.next_candle_entry_epoch || 0);
+            const graceSec = Math.max(0, Number(data.entry_grace_seconds || 5));
+            // V50 client-side freshness lock: cached/slow HTTP responses can never
+            // surface a signal after its exact NEXT-candle entry window expired.
+            if (!entryEpoch || data.missed_entry || data.entry_eligible === false || Date.now() > (entryEpoch + graceSec) * 1000) return null;
             return {
                 pair:data.pair||fallbackPair,
-                confluence:Number(data.score||0),
-                technicalScore:Number(data.score||0),
-                calibratedConfidence:Number(data.calibrated_confidence||0),
-                calibrationStatus:data.calibration_status||'LEARNING',
-                calibrationSampleSize:Number(data.calibration_sample_size||0),
-                calibrationObservedWinRate:data.calibration_observed_win_rate,
-                calibrationNote:data.calibration_note||'',
+                confluence:Number(data.score||0), technicalScore:Number(data.score||0),
+                patternType:Number(data.pattern_type||0), selectedPattern:data.selected_pattern||'',
+                setupMatch:Number(data.setup_match||data.score||0), rules:Array.isArray(data.rules)?data.rules:[],
+                recoveryTrade:Boolean(data.recovery_trade), smartConfirm:Boolean(data.smart_confirm), missingRule:data.missing_rule||'',
+                closedCandleEpoch:Number(data.closed_candle_epoch||0),
+                nextCandleEntryEpoch:entryEpoch, nextCandleExitEpoch:Number(data.next_candle_exit_epoch||0),
+                entryEligible:Boolean(data.entry_eligible), missedEntry:Boolean(data.missed_entry), entryGraceSeconds:graceSec,
+                calibratedConfidence:Number(data.calibrated_confidence||0), calibrationStatus:data.calibration_status||'LEARNING',
+                calibrationSampleSize:Number(data.calibration_sample_size||0), calibrationObservedWinRate:data.calibration_observed_win_rate, calibrationNote:data.calibration_note||'',
                 dir:data.signal==='CALL'?'CALL (UP)':'PUT (DOWN)', reason:data.reason||'',
-                rsi:data.rsi, stochRsiK:data.stoch_rsi_k, stochRsiD:data.stoch_rsi_d,
-                rsiDivergence:data.rsi_divergence||'NONE', bbContext:data.bb_context||'--',
-                support:data.support, resistance:data.resistance, srContext:data.sr_context||'--',
-                hybridEngine:data.hybrid_engine||'', bullishPoints:data.bullish_points, bearishPoints:data.bearish_points,
-                dataAge:data.data_age, timeframeSummary:data.timeframe_summary||{}, alignedTimeframes:data.aligned_timeframes||[],
-                opposingTimeframes:data.opposing_timeframes||[], multiTfAgreement:data.multi_tf_agreement,
+                rsi:data.rsi, stochRsiK:data.stoch_rsi_k, stochRsiD:data.stoch_rsi_d, rsiDivergence:data.rsi_divergence||'NONE', bbContext:data.bb_context||'--',
+                support:data.support, resistance:data.resistance, srContext:data.sr_context||'--', hybridEngine:data.hybrid_engine||'', bullishPoints:data.bullish_points, bearishPoints:data.bearish_points,
+                dataAge:data.data_age, timeframeSummary:data.timeframe_summary||{}, alignedTimeframes:data.aligned_timeframes||[], opposingTimeframes:data.opposing_timeframes||[], multiTfAgreement:data.multi_tf_agreement,
                 confirmationMode:data.confirmation_mode||'RAJA 15 STRICT · SELECTED TIMEFRAME ONLY', duplicateProtection:Boolean(data.duplicate_protection),
-                marketStabilityScore:Number(data.market_stability_score||0), marketRiskLevel:data.market_risk_level||'--',
-                volatilityPct:Number(data.volatility_pct||0), deepQualityScore:Number(data.deep_quality_score||0),
-                deepQualityComponents:data.deep_quality_components||{}, deepScanMode:data.deep_scan_mode||'',
-                marketRegime:data.market_regime||'--', marketRegimeQuality:Number(data.market_regime_quality||0),
-                marketRegimeReason:data.market_regime_reason||'', pairTimeframePerformance:data.pair_timeframe_performance||{},
-                effectiveMinScore:Number(data.effective_min_score||0), lateEntry:data.late_entry||{},
-                chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[], scanMode:data.scan_mode||scanMode,
-                scanThresholds:data.scan_thresholds||{}, source:data.source||((/\(OTC\)/i.test(String(data.pair||document.getElementById('pairSelect')?.value||'')) && /Quotex|Pocket/i.test(String(document.getElementById('brokerSelect')?.value||'')))?'Direct OTC reference':'Yahoo Finance'), sourceMode:data.source_mode||'',
-                providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used),
-                directOtc:Boolean(data.direct_otc), directOtcSafeMode:Boolean(data.direct_otc_safe_mode),
-                directOtcReferenceScore:Number(data.direct_otc_reference_score||0), directOtcPairTier:data.direct_otc_pair_tier||'',
-                directOtcAssessment:data.direct_otc_assessment||{}, referenceWarning:data.reference_warning||''
+                marketStabilityScore:Number(data.market_stability_score||0), marketRiskLevel:data.market_risk_level||'--', volatilityPct:Number(data.volatility_pct||0),
+                deepQualityScore:Number(data.deep_quality_score||0), qualityScore:Number(data.quality_score||data.deep_quality_score||0), deepQualityComponents:data.deep_quality_components||{}, deepScanMode:data.deep_scan_mode||'',
+                marketRegime:data.market_regime||'--', marketRegimeQuality:Number(data.market_regime_quality||0), marketRegimeReason:data.market_regime_reason||'',
+                pairTimeframePerformance:data.pair_timeframe_performance||{}, strategyTimeframePerformance:data.strategy_timeframe_performance||{}, effectiveMinScore:Number(data.effective_min_score||0), lateEntry:data.late_entry||{},
+                chartPreview:Array.isArray(data.chart_preview)?data.chart_preview:[], scanMode:data.scan_mode||scanMode, scanThresholds:data.scan_thresholds||{},
+                source:data.source||((/\(OTC\)/i.test(String(data.pair||document.getElementById('pairSelect')?.value||'')) && /Quotex|Pocket/i.test(String(document.getElementById('brokerSelect')?.value||'')))?'Direct OTC reference':'Yahoo Finance'), sourceMode:data.source_mode||'',
+                providerSymbol:data.provider_symbol||data.yahoo_symbol||'', backupUsed:Boolean(data.backup_used), directOtc:Boolean(data.direct_otc), directOtcSafeMode:Boolean(data.direct_otc_safe_mode),
+                directOtcReferenceScore:Number(data.direct_otc_reference_score||0), directOtcPairTier:data.direct_otc_pair_tier||'', directOtcAssessment:data.direct_otc_assessment||{}, referenceWarning:data.reference_warning||''
             };
         }
 
@@ -9928,7 +9928,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             throw lastError || new Error('Live market data is temporarily unavailable.');
         }
 
-        async function scanPairsBatchFromBackend(pairs) {
+        async function scanPairsBatchFromBackend(pairs, fastUntilSignal = false) {
             const controller = new AbortController();
             rajaActiveScanController = controller;
             const timeoutId = setTimeout(() => controller.abort(), 90000);
@@ -9936,7 +9936,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 const response = await fetch('/scan-batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', broker: document.getElementById('brokerSelect')?.value || 'Quotex', scan_options: getScanOptions(), ...getAuthPayload() }),
+                    body: JSON.stringify({ pairs: pairs, expiry: selectedExpiry, client_id: deviceSessionId, market: document.getElementById('marketType')?.value || '', broker: document.getElementById('brokerSelect')?.value || 'Quotex', scan_options: getScanOptions(), fast_until_signal:Boolean(fastUntilSignal), ...getAuthPayload() }),
                     signal: controller.signal
                 });
 
@@ -10003,7 +10003,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         // =========================================================
-        // V49 · AUTO SCAN UNTIL SIGNAL
+        // V50 · AUTO SCAN UNTIL SIGNAL · FRESH ENTRY LOCK
         // - One click starts repeated FULL-MARKET scans for the currently selected
         //   broker + market.
         // - Re-scans only after a fresh selected-timeframe candle closes, so the
@@ -10030,7 +10030,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const now = Date.now();
             // Small provider-settle buffer after the boundary lets Yahoo/Twelve Data
             // publish the just-closed candle while remaining early in the next candle.
-            const nextBoundary = (Math.floor(now / step) + 1) * step + 1400;
+            const nextBoundary = (Math.floor(now / step) + 1) * step + 1800;
             return Math.max(1200, nextBoundary - now);
         }
 
@@ -10067,7 +10067,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (status) {
                 status.classList.toggle('active', active);
                 if (message) status.textContent = message;
-                else if (active) status.textContent = `ON · Full-market cycle ${Math.max(1, rajaUntilSignalCycles)} · scanning continues on each fresh ${selectedExpiry} candle until a qualified signal is found.`;
+                else if (active) status.textContent = `ON · Full-market cycle ${Math.max(1, rajaUntilSignalCycles)} · scanning continues on each fresh ${selectedExpiry} candle until a fresh enterable signal is found.`;
                 else status.textContent = 'OFF · Press AUTO SCAN UNTIL SIGNAL to scan the full selected market on each fresh candle until RAJA finds a qualified signal.';
             }
         }
@@ -10135,7 +10135,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             clearRajaUntilSignalTimer();
             rajaUntilSignalCycles += 1;
-            updateRajaUntilSignalUI(`♾ AUTO SEARCHING · Cycle ${rajaUntilSignalCycles} · full selected market · stops automatically on first qualified signal.`);
+            updateRajaUntilSignalUI(`♾ AUTO SEARCHING · Cycle ${rajaUntilSignalCycles} · full selected market · stops automatically on first FRESH enterable signal.`);
 
             // Pause the normal side-auto timer during this foreground cycle, but
             // preserve autoRescanEnabled so it can be restored after this mode stops.
@@ -10416,7 +10416,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     scanStep.innerText = 'Scanning every pair for exact RAJA 15 strategy setups...';
                     setScanProgress(25);
 
-                    const batch = await scanPairsBatchFromBackend(eligiblePairs);
+                    const batch = await scanPairsBatchFromBackend(eligiblePairs, Boolean(forceFullMarket && rajaUntilSignalEnabled));
 
                     scanDiagnostics = batch.diagnostics || null;
 
@@ -10617,8 +10617,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
         async function registerSignalForTracking(signalData) {
             const direction = signalData.dir.includes('CALL') ? 'CALL' : 'PUT';
-            const selectedTfMs = getExpirySeconds(selectedExpiry) * 1000;
-            activeSignalEntryEpochMs = (Math.floor(Date.now() / selectedTfMs) + 1) * selectedTfMs;
+            activeSignalEntryEpochMs = Number(signalData.nextCandleEntryEpoch || 0) * 1000 || null;
+            activeSignalSetupEpochMs = Number(signalData.closedCandleEpoch || 0) * 1000 || null;
+            if (!rajaSignalTradableNow(signalData)) {
+                activeSignalEntryEpochMs = null;
+                activeSignalSetupEpochMs = null;
+                return;
+            }
 
             if (typeof v23SetLifecycle === 'function') v23SetLifecycle('waiting');
             if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('WAITING ENTRY','pending');
@@ -10633,6 +10638,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         signal: direction,
                         score: signalData.confluence,
                         expiry: selectedExpiry,
+                        closed_candle_epoch: Number(signalData.closedCandleEpoch || 0),
+                        pattern_type: Number(signalData.patternType || 0),
+                        selected_pattern: signalData.selectedPattern || '',
+                        setup_match: Number(signalData.setupMatch || signalData.confluence || 0),
+                        rules: Array.isArray(signalData.rules) ? signalData.rules : [],
+                        recovery_trade: Boolean(signalData.recoveryTrade),
+                        direct_otc: Boolean(signalData.directOtc),
+                        reference_warning: signalData.referenceWarning || '',
                         timeframe_summary: signalData.timeframeSummary || {},
                         client_id: deviceSessionId,
                         chart_preview: signalData.chartPreview || [],
@@ -10673,6 +10686,12 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     startTimer();
                     await refreshTrackedHistory();
                     if (typeof v24SyncActiveOutcome === 'function') v24SyncActiveOutcome();
+                } else if (result && result.status === 'success' && result.missed_entry) {
+                    activeTrackedSignalId = null;
+                    activeSignalEntryEpochMs = null;
+                    if (typeof v23SetTrackingBadge === 'function') v23SetTrackingBadge(false);
+                    if (typeof v24SetOutcomeBadge === 'function') v24SetOutcomeBadge('ENTRY EXPIRED','verify');
+                    showRajaNoTradeView('⏱ ENTRY WINDOW PASSED — SIGNAL CANCELLED', result.message || 'The target candle entry window expired. Do not enter this candle.');
                 } else if (result && result.status === 'success') {
                     activeTrackedSignalId = null;
                     if (typeof v23SetTrackingBadge === 'function') v23SetTrackingBadge(false);
@@ -10732,7 +10751,29 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             syncSelectedExpiryUI();
         }
 
+        function rajaSignalTradableNow(signalData) {
+            const entryMs = Number(signalData?.nextCandleEntryEpoch || 0) * 1000;
+            const graceMs = Math.max(0, Number(signalData?.entryGraceSeconds || 5)) * 1000;
+            if (!entryMs || signalData?.missedEntry || signalData?.entryEligible === false) return false;
+            return Date.now() <= entryMs + graceMs;
+        }
+
         function displaySignalResult(signalData) {
+            if (!rajaSignalTradableNow(signalData)) {
+                // Never stop AUTO UNTIL SIGNAL for an expired result. Keep searching
+                // for a setup whose exact target candle is still enterable.
+                completeScanSession('nosignal');
+                activeSignalEntryEpochMs = null;
+                activeSignalSetupEpochMs = null;
+                activeTrackedSignalId = null;
+                if (typeof v23SetLifecycle === 'function') v23SetLifecycle('scanning');
+                const consoleEl = document.getElementById('liveScanConsole');
+                if (consoleEl) consoleEl.innerHTML += `<div class="live-scan-row rejected"><span>⏱ Expired setup skipped</span><span>Target candle entry window already passed · continuing fresh scan</span></div>`;
+                if (!rajaUntilSignalEnabled) {
+                    showRajaNoTradeView('⏱ SIGNAL EXPIRED — NOT SHOWN', 'The exact target candle had already opened beyond the safe entry window. RAJA discarded it instead of asking you to chase a running candle. Scan again for a fresh setup.');
+                }
+                return;
+            }
             if (rajaUntilSignalEnabled) {
                 const foundPair = String(signalData?.pair || 'RAJA signal');
                 const foundPattern = String(signalData?.selectedPattern || 'qualified setup');
