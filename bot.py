@@ -11,7 +11,6 @@ import hashlib
 import base64
 import threading
 import queue
-import re
 from pathlib import Path
 from typing import Any
 
@@ -33,21 +32,6 @@ except Exception as _native_feed_import_error:
         return {
             "quotex": {"configured": False, "connected": False, "last_error": f"native feed import failed: {_err}"},
             "pocket_option": {"configured": False, "connected": False, "last_error": f"native feed import failed: {_err}"},
-        }
-
-# V45 Direct OTC Safe Mode: bridge/native feed is optional. When exact broker
-# candles are unavailable, the bot may use a conservative public underlying
-# reference feed. The signal is always labelled REFERENCE OTC and never claimed
-# to be an exact Quotex/Pocket Option candle.
-try:
-    from direct_otc_feed import assess_direct_otc_reference, DIRECT_OTC_VERSION
-except Exception as _direct_otc_import_error:
-    DIRECT_OTC_VERSION = "UNAVAILABLE"
-    def assess_direct_otc_reference(*_args, **_kwargs):
-        return {
-            "allowed": False, "score": 0.0, "mode": DIRECT_OTC_VERSION,
-            "reason": f"Direct OTC safety module unavailable: {type(_direct_otc_import_error).__name__}: {_direct_otc_import_error}",
-            "warnings": [], "pair_tier": "UNAVAILABLE",
         }
 
 # Lazy-load yfinance only when a market scan actually starts.
@@ -226,51 +210,6 @@ YAHOO_SYMBOLS = {
     "ExxonMobil (OTC)": "XOM",
     "Advanced Micro Devices (OTC)": "AMD",
 }
-
-# V43 bridge pair normalization. Broker pages/wires may send AUDCAD_otc, AUDCAD,
-# EURUSD-OTC, etc. Server-side normalization prevents a harmless naming difference
-# from dropping exact broker ticks/candles.
-def _bridge_pair_alias_key(value):
-    text = str(value or "").upper().replace("(OTC)", "OTC")
-    text = re.sub(r"OTC", "", text)
-    return re.sub(r"[^A-Z0-9]", "", text)
-
-
-BRIDGE_PAIR_ALIASES = {}
-for _configured_pair in YAHOO_SYMBOLS:
-    if "(OTC)" not in _configured_pair.upper():
-        continue
-    _key = _bridge_pair_alias_key(_configured_pair)
-    if _key:
-        BRIDGE_PAIR_ALIASES.setdefault(_key, _configured_pair)
-
-BRIDGE_PAIR_ALIASES.update({
-    "BTC": "Bitcoin (OTC)", "BITCOIN": "Bitcoin (OTC)",
-    "ETH": "Ethereum (OTC)", "ETHEREUM": "Ethereum (OTC)",
-    "BCH": "Bitcoin Cash (OTC)", "BITCOINCASH": "Bitcoin Cash (OTC)",
-    "BNB": "BNB (OTC)", "ZEC": "Zcash (OTC)", "LINK": "Chainlink (OTC)",
-    "ATOM": "Cosmos (OTC)", "ETC": "Ethereum Classic (OTC)", "AXS": "Axie Infinity (OTC)",
-    "DASH": "Dash (OTC)", "SOL": "Solana (OTC)", "LTC": "Litecoin (OTC)",
-    "AVAX": "Avalanche (OTC)", "DOT": "Polkadot (OTC)", "XRP": "Ripple (OTC)",
-    "ADA": "Cardano (OTC)", "MATIC": "Polygon (OTC)", "TRX": "TRON (OTC)",
-    "DOGE": "Dogecoin (OTC)", "AAPL": "Apple (OTC)", "AXP": "American Express (OTC)",
-    "BA": "Boeing Company (OTC)", "CSCO": "Cisco (OTC)", "META": "Facebook Inc (OTC)",
-    "FB": "Facebook Inc (OTC)", "INTC": "Intel (OTC)", "JNJ": "Johnson & Johnson (OTC)",
-    "MCD": "McDonald's (OTC)", "MSFT": "Microsoft (OTC)", "PFE": "Pfizer Inc (OTC)",
-    "TSLA": "Tesla (OTC)", "XOM": "ExxonMobil (OTC)", "AMD": "Advanced Micro Devices (OTC)",
-})
-
-
-def normalize_bridge_pair_name(value):
-    raw = str(value or "").strip()
-    if raw in YAHOO_SYMBOLS and "(OTC)" in raw.upper():
-        return raw
-    pair = BRIDGE_PAIR_ALIASES.get(_bridge_pair_alias_key(raw), "")
-    if pair in YAHOO_SYMBOLS and "(OTC)" in pair.upper():
-        return pair
-    return ""
-
-
 # Twelve Data LIVE BACKUP symbols. These are underlying/reference instruments,
 # never exact Quotex/Pocket Option OTC candles.
 TWELVE_DATA_SYMBOLS = {
@@ -317,9 +256,32 @@ ALL_PAIRS = list(YAHOO_SYMBOLS.keys())
 UNIQUE_YAHOO_SYMBOLS = list(dict.fromkeys(YAHOO_SYMBOLS.values()))
 FOREX_OTC_PAIRS = [pair for pair in YAHOO_SYMBOLS if pair.endswith(" (OTC)") and "/" in pair]
 
-POCKET_OPTION_FOREX_OTC_PAIRS = ['EUR/USD (OTC)', 'GBP/USD (OTC)', 'USD/JPY (OTC)', 'AUD/USD (OTC)', 'USD/CAD (OTC)', 'USD/CHF (OTC)', 'EUR/JPY (OTC)', 'GBP/JPY (OTC)', 'AUD/JPY (OTC)', 'CAD/JPY (OTC)', 'EUR/CHF (OTC)', 'EUR/GBP (OTC)', 'AUD/CAD (OTC)', 'AUD/CHF (OTC)', 'CAD/CHF (OTC)', 'NZD/JPY (OTC)', 'AUD/NZD (OTC)', 'EUR/NZD (OTC)', 'GBP/AUD (OTC)', 'CHF/JPY (OTC)', 'USD/MXN (OTC)', 'USD/BRL (OTC)', 'USD/INR (OTC)', 'USD/SGD (OTC)', 'USD/CNH (OTC)', 'USD/IDR (OTC)', 'USD/PHP (OTC)', 'USD/MYR (OTC)', 'USD/COP (OTC)', 'EUR/TRY (OTC)']
+POCKET_OPTION_FOREX_OTC_PAIRS = ['EUR/USD (OTC)', 'GBP/USD (OTC)', 'USD/JPY (OTC)', 'AUD/USD (OTC)', 'USD/CAD (OTC)', 'USD/CHF (OTC)', 'EUR/JPY (OTC)', 'GBP/JPY (OTC)', 'AUD/JPY (OTC)', 'CAD/JPY (OTC)', 'EUR/CHF (OTC)', 'EUR/GBP (OTC)', 'AUD/CAD (OTC)', 'AUD/CHF (OTC)', 'CAD/CHF (OTC)', 'NZD/JPY (OTC)', 'EUR/NZD (OTC)', 'GBP/AUD (OTC)', 'CHF/JPY (OTC)', 'USD/MXN (OTC)', 'USD/BRL (OTC)', 'USD/INR (OTC)', 'USD/SGD (OTC)', 'USD/CNH (OTC)', 'USD/IDR (OTC)', 'USD/PHP (OTC)', 'USD/MYR (OTC)', 'USD/COP (OTC)', 'EUR/TRY (OTC)']
 POCKET_OPTION_CRYPTO_OTC_PAIRS = ['BNB (OTC)', 'Polkadot (OTC)', 'Ethereum (OTC)', 'Toncoin (OTC)', 'Cardano (OTC)', 'Polygon (OTC)', 'TRON (OTC)', 'Avalanche (OTC)', 'Bitcoin (OTC)', 'Bitcoin ETF (OTC)', 'Solana (OTC)', 'Chainlink (OTC)', 'Litecoin (OTC)', 'Dogecoin (OTC)']
 POCKET_OPTION_STOCKS_OTC_PAIRS = ['Apple (OTC)', 'American Express (OTC)', 'Boeing Company (OTC)', 'Cisco (OTC)', 'Facebook Inc (OTC)', 'Intel (OTC)', 'Johnson & Johnson (OTC)', "McDonald's (OTC)", 'Microsoft (OTC)', 'Pfizer Inc (OTC)', 'Tesla (OTC)', 'ExxonMobil (OTC)', 'Advanced Micro Devices (OTC)']
+
+
+# Broker-side availability guard. Keep the backend aligned with index.html so
+# an old browser/client cannot request a signal for a pair unavailable on the
+# selected broker. Auto Scan will simply continue with the remaining pairs.
+RAJA_BROKER_UNAVAILABLE_PAIR_KEYS = {
+    "quotex": {"AUDNZD", "AUDNZDOTC"},
+    "pocketoption": {"AUDNZD", "AUDNZDOTC"},
+}
+
+def _raja_broker_pair_key(pair):
+    raw = str(pair or "").upper().replace("(OTC)", "OTC")
+    return "".join(ch for ch in raw if ch.isalnum())
+
+def raja_pair_allowed_for_broker(broker, pair):
+    broker_key = str(broker or "").casefold().replace(" ", "").replace("_", "")
+    if broker_key in {"pocket", "pocketoption"}:
+        broker_key = "pocketoption"
+    elif broker_key == "quotex":
+        broker_key = "quotex"
+    else:
+        return True
+    return _raja_broker_pair_key(pair) not in RAJA_BROKER_UNAVAILABLE_PAIR_KEYS.get(broker_key, set())
 
 TIMEFRAMES = {
     "1m": 1,
@@ -342,14 +304,14 @@ EXPIRY_CONFIRMATION_TIMEFRAME = {
 }
 
 # One Yahoo 1m download per unique symbol; all higher TFs are resampled.
-CACHE_DURATION = max(5, min(45, int(os.environ.get("RAJA_CACHE_SECONDS", "20"))))
+CACHE_DURATION = int(os.environ.get("RAJA_CACHE_SECONDS", "90"))
 STALE_CACHE_MAX_AGE = int(os.environ.get("RAJA_STALE_CACHE_SECONDS", "180"))
 YAHOO_FAILURE_COOLDOWN = int(os.environ.get("RAJA_YAHOO_FAILURE_COOLDOWN", "180"))
 # Keep three Yahoo fetches in flight to match the default three batch workers; this reduces
 # partial 21-pair scans without opening an aggressive request storm.
 YAHOO_FETCH_CONCURRENCY = max(1, min(3, int(os.environ.get("RAJA_YAHOO_CONCURRENCY", "3"))))
 YAHOO_MIN_GAP_SECONDS = max(0.0, float(os.environ.get("RAJA_YAHOO_MIN_GAP", "0.30")))
-BATCH_CACHE_DURATION = max(1, min(10, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "4"))))
+BATCH_CACHE_DURATION = max(5, int(os.environ.get("RAJA_BATCH_CACHE_SECONDS", "30")))
 BATCH_SCAN_WORKERS = max(1, min(4, int(os.environ.get("RAJA_BATCH_WORKERS", "4"))))
 YAHOO_REQUEST_TIMEOUT_SECONDS = max(3.0, min(15.0, float(os.environ.get("RAJA_YAHOO_REQUEST_TIMEOUT", "7"))))
 YAHOO_SYMBOL_LOCK_WAIT_SECONDS = max(2.0, min(20.0, float(os.environ.get("RAJA_YAHOO_SYMBOL_LOCK_WAIT", "8"))))
@@ -372,7 +334,7 @@ TWELVE_DATA_API_KEY = (
 TWELVE_DATA_ENABLED = bool(TWELVE_DATA_API_KEY)
 TWELVE_DATA_BASE_URL = (os.environ.get("RAJA_TWELVE_DATA_BASE_URL") or "https://api.twelvedata.com/time_series").strip()
 TWELVE_DATA_OUTPUTSIZE = max(900, min(5000, int(os.environ.get("RAJA_TWELVE_DATA_OUTPUTSIZE", "4000"))))
-TWELVE_DATA_CACHE_SECONDS = max(10, min(45, int(os.environ.get("RAJA_TWELVE_DATA_CACHE_SECONDS", "20"))))
+TWELVE_DATA_CACHE_SECONDS = max(15, int(os.environ.get("RAJA_TWELVE_DATA_CACHE_SECONDS", "45")))
 TWELVE_DATA_FAILURE_COOLDOWN = max(30, int(os.environ.get("RAJA_TWELVE_DATA_FAILURE_COOLDOWN", "120")))
 TWELVE_DATA_GLOBAL_RATE_LIMIT_COOLDOWN = max(30, int(os.environ.get("RAJA_TWELVE_DATA_RATE_LIMIT_COOLDOWN", "90")))
 TWELVE_DATA_REQUEST_TIMEOUT_SECONDS = max(3.0, min(20.0, float(os.environ.get("RAJA_TWELVE_DATA_REQUEST_TIMEOUT", "9"))))
@@ -438,7 +400,6 @@ def _compute_app_build_id():
     digest = hashlib.sha256()
     build_files = [
         Path(__file__).resolve(),
-        BASE_DIR / "direct_otc_feed.py",
         BASE_DIR / "index.html",
         BASE_DIR / "sw.js",
         BASE_DIR / "manifest.json",
@@ -484,30 +445,15 @@ RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRI
 # Yahoo/Twelve Data reference feed may be used instead of hard-blocking the whole bot.
 RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK = str(os.environ.get("RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
 RAJA_STRICT_BROKER_OTC = str(os.environ.get("RAJA_STRICT_BROKER_OTC", "1")).strip().lower() not in {"0", "false", "no", "off"}
-# V42: if exact Quotex/Pocket Option OTC candles are unavailable, keep the bot usable
-# with a clearly-labelled underlying/reference feed. Exact broker data always has priority.
-# Set RAJA_OTC_REFERENCE_SIGNAL_FALLBACK=0 to restore exact-only blocking.
-RAJA_OTC_REFERENCE_SIGNAL_FALLBACK = str(os.environ.get("RAJA_OTC_REFERENCE_SIGNAL_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
-# V45: no bridge is required for OTC reference signals. Set to 0 only if an
-# operator intentionally wants exact-broker-only behaviour.
-RAJA_DIRECT_OTC_ENABLED = str(os.environ.get("RAJA_DIRECT_OTC_ENABLED", "1")).strip().lower() not in {"0", "false", "no", "off"}
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
 QUOTEX_BRIDGE_MAX_CANDLES = max(1900, min(5000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_MAX_CANDLES", "2500"))))
-# V43: keep pairing tokens valid across Railway restarts/redeploys whenever the
-# project already has any persistent secret (explicit bridge secret, admin password,
-# or DATABASE_URL). A random secret is used only for unconfigured/local testing.
-_QUOTEX_BRIDGE_SECRET_TEXT = (
-    os.environ.get("RAJA_QUOTEX_BRIDGE_SECRET")
-    or ADMIN_PASSWORD
-    or os.environ.get("DATABASE_URL")
-    or os.environ.get("RAJA_DATABASE_URL")
-    or ""
-).strip()
-QUOTEX_BRIDGE_SECRET_PERSISTENT = bool(_QUOTEX_BRIDGE_SECRET_TEXT)
+_QUOTEX_BRIDGE_SECRET_TEXT = (os.environ.get("RAJA_QUOTEX_BRIDGE_SECRET") or ADMIN_PASSWORD or "").strip()
 if _QUOTEX_BRIDGE_SECRET_TEXT:
-    QUOTEX_BRIDGE_SECRET = hashlib.sha256(("raja-broker-bridge-v43|" + _QUOTEX_BRIDGE_SECRET_TEXT).encode("utf-8")).digest()
+    QUOTEX_BRIDGE_SECRET = hashlib.sha256(_QUOTEX_BRIDGE_SECRET_TEXT.encode("utf-8")).digest()
 else:
+    # Functional fallback for local/testing. Set RAJA_QUOTEX_BRIDGE_SECRET in Railway
+    # so paired extensions remain valid across server restarts/deployments.
     QUOTEX_BRIDGE_SECRET = secrets.token_bytes(32)
 
 quotex_bridge_pair_codes = {}
@@ -529,9 +475,9 @@ pocket_bridge_data_lock = threading.RLock()
 # EUR/JPY cache look current.  Auto Scan also uses this metadata to skip
 # unavailable broker pairs immediately instead of spending the shared batch
 # deadline on pairs that have no exact candles yet.
-BROKER_BRIDGE_PAIR_FRESH_SECONDS = max(8.0, min(90.0, float(os.environ.get("RAJA_BRIDGE_PAIR_FRESH_SECONDS", "30"))))
+BROKER_BRIDGE_PAIR_FRESH_SECONDS = max(5.0, min(60.0, float(os.environ.get("RAJA_BRIDGE_PAIR_FRESH_SECONDS", "20"))))
 BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS = max(60.0, min(float(MAX_SOURCE_CANDLE_AGE_SECONDS), float(os.environ.get("RAJA_BRIDGE_MARKET_MAX_AGE_SECONDS", "180"))))
-BROKER_BRIDGE_SCAN_MIN_CANDLES = max(10, min(15, int(os.environ.get("RAJA_BRIDGE_SCAN_MIN_CANDLES", "15"))))
+BROKER_BRIDGE_SCAN_MIN_CANDLES = max(30, min(300, int(os.environ.get("RAJA_BRIDGE_SCAN_MIN_CANDLES", "61"))))
 quotex_bridge_pair_seen = {}
 pocket_bridge_pair_seen = {}
 
@@ -656,7 +602,7 @@ def _bridge_upsert_tick(user, pair, price, epoch=None):
     return True
 
 
-def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=None, *, mark_pair_fresh=True, extra=None):
+def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=None):
     user = normalize_user_id(user)
     now = time.time()
     with quotex_bridge_data_lock:
@@ -670,17 +616,12 @@ def _set_quotex_bridge_status(user, device, pair=None, price=None, source_page=N
         if pair:
             clean_pair = str(pair)[:120]
             current["pair"] = clean_pair
-            if mark_pair_fresh:
-                quotex_bridge_pair_seen[_quotex_bridge_pair_key(user, clean_pair)] = now
+            quotex_bridge_pair_seen[_quotex_bridge_pair_key(user, clean_pair)] = now
         if price is not None:
             try: current["price"] = float(price)
             except Exception: pass
         if source_page:
             current["source_page"] = str(source_page)[:300]
-        if isinstance(extra, dict):
-            for k, v in extra.items():
-                if k in {"parser_state", "client_version", "raw_socket_seen", "parsed_market_seen", "detected_pair", "tab_host", "transport"}:
-                    current[k] = v
         quotex_bridge_status[user] = current
 
 
@@ -733,11 +674,6 @@ def _get_quotex_bridge_status(user, pair=None):
                 and pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
                 and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
             )
-            status["data_streaming"] = bool(
-                pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
-                and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
-            )
-            status["warmup_needed_candles"] = max(0, BROKER_BRIDGE_SCAN_MIN_CANDLES - len(rows))
         else:
             status["pairs_with_data"] = sum(1 for (u, _p), book in quotex_bridge_candles.items() if u == user and book)
     last_seen = float(status.get("last_seen") or 0.0)
@@ -850,7 +786,7 @@ def _pocket_bridge_upsert_tick(user, pair, price, epoch=None):
     return True
 
 
-def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=None, *, mark_pair_fresh=True, extra=None):
+def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=None):
     user = normalize_user_id(user)
     now = time.time()
     with pocket_bridge_data_lock:
@@ -864,8 +800,7 @@ def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=N
         if pair:
             clean_pair = str(pair)[:120]
             current["pair"] = clean_pair
-            if mark_pair_fresh:
-                pocket_bridge_pair_seen[_pocket_bridge_pair_key(user, clean_pair)] = now
+            pocket_bridge_pair_seen[_pocket_bridge_pair_key(user, clean_pair)] = now
         if price is not None:
             try:
                 current["price"] = float(price)
@@ -873,10 +808,6 @@ def _set_pocket_bridge_status(user, device, pair=None, price=None, source_page=N
                 pass
         if source_page:
             current["source_page"] = str(source_page)[:300]
-        if isinstance(extra, dict):
-            for k, v in extra.items():
-                if k in {"parser_state", "client_version", "raw_socket_seen", "parsed_market_seen", "detected_pair", "tab_host", "transport"}:
-                    current[k] = v
         pocket_bridge_status[user] = current
 
 
@@ -900,11 +831,6 @@ def _get_pocket_bridge_status(user, pair=None):
                 and pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
                 and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
             )
-            status["data_streaming"] = bool(
-                pair_age is not None and pair_age <= BROKER_BRIDGE_PAIR_FRESH_SECONDS
-                and market_age is not None and market_age <= BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS
-            )
-            status["warmup_needed_candles"] = max(0, BROKER_BRIDGE_SCAN_MIN_CANDLES - len(rows))
         else:
             status["pairs_with_data"] = sum(1 for (u, _p), book in pocket_bridge_candles.items() if u == user and book)
     last_seen = float(status.get("last_seen") or 0.0)
@@ -1046,26 +972,6 @@ AUTO_TRACK_EXPIRIES = {
     "15m": 900,
     "30m": 1800,
 }
-
-# V51 FRESH TARGET-CANDLE ENTRY WINDOW. A setup still belongs ONLY to the
-# immediately following candle; it is never shifted to a later candle. To give
-# the trader usable time to locate/select the broker pair, RAJA only surfaces a
-# signal when at least 15 seconds remain in the early target-candle entry window.
-# Default: 20-second early-entry window, minimum 15 seconds still available at
-# signal delivery. If the scan arrives later, the setup is discarded.
-RAJA_TARGET_ENTRY_WINDOW_SECONDS = max(15, min(25, int(os.environ.get("RAJA_TARGET_ENTRY_WINDOW_SECONDS", "20"))))
-RAJA_MIN_CLIENT_ACTION_SECONDS = max(10, min(RAJA_TARGET_ENTRY_WINDOW_SECONDS, int(os.environ.get("RAJA_MIN_CLIENT_ACTION_SECONDS", "15"))))
-# Backward-compatible field name used by the UI/tracker: now represents the full
-# early target-candle entry window, not permission to chase an old candle.
-RAJA_NEXT_CANDLE_GRACE_SECONDS = RAJA_TARGET_ENTRY_WINDOW_SECONDS
-RAJA_MIN_LIVE_QUALITY_SCORE = max(55.0, min(90.0, float(os.environ.get("RAJA_MIN_LIVE_QUALITY_SCORE", "68"))))
-
-# V46 Smart Confirm: exact setups remain preferred. When no exact setup exists,
-# a near setup may surface only when exactly ONE non-structural/soft rule is missing.
-# This is deliberately not a generic 80% rule mode: sequence, breakout, S/R and
-# direction rules still have to be complete.
-RAJA_SMART_CONFIRM_ENABLED = str(os.environ.get("RAJA_SMART_CONFIRM_ENABLED", "1")).strip().lower() not in {"0","false","no","off"}
-RAJA_SMART_CONFIRM_MIN_MATCH = max(80.0, min(95.0, float(os.environ.get("RAJA_SMART_CONFIRM_MIN_MATCH", "80"))))
 
 
 def normalize_user_id(value):
@@ -1953,11 +1859,9 @@ def dataframe_epoch_rows(df):
 
 
 def resolve_tracked_signal(item):
-    """Resolve a due signal from the same source class used for the scan."""
+    """Resolve a due signal from the same market source used for the scan."""
     pair = str(item.get("pair") or "")
     is_otc = "(OTC)" in pair
-    source_mode_text = str(item.get("source_mode") or "").casefold()
-    is_reference_otc = bool(is_otc and ("reference" in source_mode_text or "proxy" in source_mode_text))
     if pair not in YAHOO_SYMBOLS and not is_otc:
         return False
 
@@ -1965,55 +1869,36 @@ def resolve_tracked_signal(item):
     resolved_source = None
     source_info = {}
 
-    if is_reference_otc:
-        # A V42 reference-OTC signal is resolved from a reference feed too. This
-        # result is explicitly marked REFERENCE and is not treated as exact broker P/L.
-        data, _age, _symbol, source_info = get_market_data(pair, bridge_user=None, broker=None)
-        if data is not None and not getattr(data, "empty", True):
-            resolved_source = str((source_info or {}).get("source") or "Reference feed") + " · OTC Reference Result"
-        else:
-            item["result_wait_reason"] = "Reference OTC result candles are not available yet."
-            return False
-    elif is_otc:
+    if is_otc:
         broker = str(item.get("broker") or "").strip()
         if not broker:
             src = str(item.get("source") or "").casefold()
             broker = "PocketOption" if "pocket" in src else "Quotex"
-        broker_key = broker.casefold().replace(" ", "")
 
-        if item.get("user"):
-            # V43: resolve exact OTC from the same browser-bridge class first.
-            try:
-                if broker_key in {"pocketoption", "pocket_option", "pocket"}:
-                    bridge_df, _bridge_age, _bridge_symbol, bridge_info = get_pocket_bridge_market_data(item.get("user"), pair)
-                    bridge_label = "Pocket Option Bridge"
-                else:
-                    bridge_df, _bridge_age, _bridge_symbol, bridge_info = get_quotex_bridge_market_data(item.get("user"), pair)
-                    bridge_label = "Quotex Bridge"
-            except Exception as exc:
-                bridge_df = None
-                bridge_info = {"unavailable_reason": f"Bridge result feed error: {type(exc).__name__}: {exc}"}
-            if bridge_df is not None and not bridge_df.empty:
-                data = bridge_df
-                source_info = bridge_info or {}
-                resolved_source = bridge_label
-
-        if (data is None or getattr(data, "empty", True)) and callable(get_native_broker_market_data):
+        if callable(get_native_broker_market_data):
             try:
                 data, _age, _symbol, source_info = get_native_broker_market_data(broker, pair)
             except Exception as exc:
                 source_info = {"unavailable_reason": f"Native result feed error: {type(exc).__name__}: {exc}"}
                 data = None
-            if data is not None and not getattr(data, "empty", True):
-                resolved_source = str((source_info or {}).get("source") or "Broker Native WebSocket")
+        if data is not None and not getattr(data, "empty", True):
+            resolved_source = str((source_info or {}).get("source") or "Broker Native WebSocket")
+        elif str(broker).casefold().replace(" ", "") == "quotex" and item.get("user"):
+            # Exact broker bridge fallback for outcome resolution too.
+            bridge_df, _bridge_age, _bridge_symbol, bridge_info = get_quotex_bridge_market_data(item.get("user"), pair)
+            if bridge_df is not None and not bridge_df.empty:
+                data = bridge_df
+                source_info = bridge_info or {}
+                resolved_source = "Quotex Bridge"
 
+        # Never calculate OTC WIN/LOSS from Yahoo/Twelve Data in strict mode.
         if data is None or getattr(data, "empty", True):
             item["result_wait_reason"] = (source_info or {}).get("unavailable_reason") or "Exact broker OTC result candles are not available yet."
             return False
     else:
         yahoo_symbol = YAHOO_SYMBOLS.get(pair)
         preferred_source = str(item.get("source") or "Yahoo Finance")
-        if preferred_source.startswith("Twelve Data") and TWELVE_DATA_ENABLED:
+        if preferred_source == "Twelve Data" and TWELVE_DATA_ENABLED:
             data, _ = get_twelve_data_market_data(pair, force=True)
             if data is not None and not data.empty:
                 resolved_source = "Twelve Data"
@@ -2074,16 +1959,9 @@ def resolve_tracked_signal(item):
             item["yahoo_result"] = result
         elif resolved_source == "Twelve Data":
             item["backup_result"] = result
-    elif is_reference_otc:
-        item["reference_result"] = result
-        item["reference_otc_result"] = result
-        item["exact_broker_result"] = False
-        item["result_is_reference_only"] = True
-        item["exclude_from_performance"] = True
     else:
         item["exact_broker_result"] = True
     return True
-
 
 def tracked_signal_phase(item, now=None):
     """Return the live lifecycle phase used by the browser Signal Flow UI."""
@@ -2260,207 +2138,6 @@ def pair_timeframe_performance(user, pair, expiry):
         "minimum_gate_sample": 12,
         "hard_block_sample": 25,
     }
-
-
-def strategy_timeframe_performance(user, pattern_type, expiry):
-    """Historical reliability for one RAJA strategy + expiry. Small samples stay neutral."""
-    try:
-        pattern_type = int(pattern_type or 0)
-    except Exception:
-        pattern_type = 0
-    expiry = str(expiry or "").strip()
-    rows = [
-        x for x in _completed_performance_history(user)
-        if int(x.get("pattern_type") or 0) == pattern_type
-        and (not expiry or str(x.get("expiry") or "") == expiry)
-    ][:320]
-    wins = sum(1 for x in rows if str(x.get("result") or "").upper() == "WIN")
-    losses = sum(1 for x in rows if str(x.get("result") or "").upper() == "LOSS")
-    n = wins + losses
-    raw_rate = (wins / n * 100.0) if n else None
-    smoothed = ((wins + 2.0) / (n + 4.0) * 100.0) if n else 50.0
-
-    if n < 8:
-        status = "LEARNING"
-    elif smoothed >= 65.0:
-        status = "STRONG"
-    elif smoothed >= 55.0:
-        status = "NORMAL"
-    elif smoothed >= 48.0:
-        status = "CAUTION"
-    else:
-        status = "WEAK"
-
-    # A strategy needs a real sample before it can be blocked.
-    hard_block = bool(n >= 12 and smoothed < 42.0)
-    return {
-        "pattern_type": pattern_type,
-        "sample_size": n,
-        "wins": wins,
-        "losses": losses,
-        "raw_win_rate": round(raw_rate, 2) if raw_rate is not None else None,
-        "smoothed_win_rate": round(smoothed, 2),
-        "status": status,
-        "hard_block": hard_block,
-        "minimum_gate_sample": 8,
-        "hard_block_sample": 12,
-    }
-
-
-def build_live_quality_profile(user, pair, expiry, strategy):
-    """Rank exact setups by real history first; strategy priority is only a small tie-breaker."""
-    strategy = strategy or {}
-    pattern_type = int(strategy.get("pattern_type") or 0)
-    priority = float(strategy.get("pattern_priority") or RAJA_STRATEGY_PRIORITIES.get(pattern_type, 100) or 100)
-    pair_perf = pair_timeframe_performance(user, pair, expiry)
-    strategy_perf = strategy_timeframe_performance(user, pattern_type, expiry)
-
-    # Neutral history is 50. Priority contributes only modestly so it can no longer
-    # masquerade as a "quality score" by itself.
-    priority_quality = max(50.0, min(80.0, 50.0 + (priority - 100.0) * 0.35))
-    pair_rate = float(pair_perf.get("smoothed_win_rate") or 50.0) if int(pair_perf.get("sample_size") or 0) >= 12 else 50.0
-    strategy_rate = float(strategy_perf.get("smoothed_win_rate") or 50.0) if int(strategy_perf.get("sample_size") or 0) >= 8 else 50.0
-    quality = 72.0 + (priority_quality - 65.0) * 0.15 + (pair_rate - 50.0) * 0.20 + (strategy_rate - 50.0) * 0.35
-    if bool(strategy.get("smart_confirm")):
-        setup_match = max(0.0, min(100.0, float(strategy.get("setup_match") or strategy.get("score") or 0.0)))
-        # Small but real penalty: exact setups still rank ahead, while high-quality
-        # 7/8 or 4/5 soft-rule setups can pass the existing 68/100 quality gate.
-        quality -= 2.0 + max(0.0, 100.0 - setup_match) * 0.12
-    quality = max(0.0, min(100.0, quality))
-
-    blocked_reason = ""
-    if strategy_perf.get("hard_block"):
-        blocked_reason = (
-            f"Strategy Type {pattern_type} is temporarily blocked on {expiry}: "
-            f"historical reliability {strategy_perf.get('smoothed_win_rate')}% over {strategy_perf.get('sample_size')} decided trades."
-        )
-    elif pair_perf.get("hard_block"):
-        blocked_reason = (
-            f"{pair} {expiry} is temporarily blocked: historical reliability "
-            f"{pair_perf.get('smoothed_win_rate')}% over {pair_perf.get('sample_size')} decided trades."
-        )
-    elif quality < RAJA_MIN_LIVE_QUALITY_SCORE:
-        blocked_reason = f"Quality gate {quality:.1f}/100 is below the live minimum {RAJA_MIN_LIVE_QUALITY_SCORE:.1f}/100."
-
-    return {
-        "quality_score": round(quality, 2),
-        "minimum_quality_score": round(RAJA_MIN_LIVE_QUALITY_SCORE, 2),
-        "priority_component": round(priority_quality, 2),
-        "pair_timeframe_performance": pair_perf,
-        "strategy_timeframe_performance": strategy_perf,
-        "blocked": bool(blocked_reason),
-        "blocked_reason": blocked_reason,
-    }
-
-
-def next_candle_execution_window(closed_candle_epoch, duration, now=None, require_action_buffer=True):
-    """Return the one and only tradable candle plus a guaranteed client action buffer.
-
-    The strategy still predicts the immediately following candle. RAJA does not
-    shift an expired setup to a later candle. For scan/display responses, at least
-    RAJA_MIN_CLIENT_ACTION_SECONDS must remain in the early target-candle entry
-    window. Tracking calls may set require_action_buffer=False after the signal has
-    already passed the client freshness check.
-    """
-    try:
-        closed_candle_epoch = int(float(closed_candle_epoch or 0))
-        duration = int(duration or 0)
-    except Exception:
-        closed_candle_epoch, duration = 0, 0
-    now = int(now or time.time())
-    target_entry = closed_candle_epoch + duration if closed_candle_epoch and duration else 0
-    target_exit = target_entry + duration if target_entry else 0
-    window_seconds = int(RAJA_TARGET_ENTRY_WINDOW_SECONDS)
-    minimum_action = int(RAJA_MIN_CLIENT_ACTION_SECONDS)
-    entry_window_end = target_entry + window_seconds if target_entry else 0
-    if not target_entry:
-        return {
-            "entry_eligible": False, "missed_entry": True, "target_entry_epoch": 0, "target_exit_epoch": 0,
-            "entry_window_end_epoch": 0, "entry_window_seconds": window_seconds, "minimum_action_seconds": minimum_action,
-            "decision_seconds_remaining": 0, "seconds_to_entry": 0, "seconds_since_entry": 0,
-            "entry_grace_seconds": window_seconds,
-            "reason": "Closed-candle timestamp is missing; exact NEXT-candle entry cannot be verified.",
-        }
-
-    seconds_to_entry = max(0, target_entry - now)
-    seconds_since_entry = max(0, now - target_entry)
-    decision_remaining = max(0, entry_window_end - now)
-    required_remaining = minimum_action if require_action_buffer else 1
-    eligible = decision_remaining >= required_remaining
-
-    if eligible:
-        reason = ""
-    elif now < target_exit:
-        reason = (
-            f"Fresh target candle has only {decision_remaining}s left in RAJA's early entry window; "
-            f"at least {minimum_action}s action time is required. Signal cancelled instead of chasing."
-        )
-    else:
-        reason = "Exact NEXT candle is already finished; this setup is expired and will not be shifted to a later candle."
-
-    return {
-        "entry_eligible": bool(eligible),
-        "missed_entry": not bool(eligible),
-        "target_entry_epoch": target_entry,
-        "target_exit_epoch": target_exit,
-        "entry_window_end_epoch": entry_window_end,
-        "entry_window_seconds": window_seconds,
-        "minimum_action_seconds": minimum_action,
-        "decision_seconds_remaining": decision_remaining,
-        "seconds_to_entry": seconds_to_entry,
-        "seconds_since_entry": seconds_since_entry,
-        "entry_grace_seconds": window_seconds,
-        "reason": reason,
-    }
-
-
-def revalidate_signal_execution(result, selected_expiry, now=None):
-    """Re-check a computed/cached signal at response time so expired candles never reach the UI."""
-    row = dict(result or {})
-    if row.get("signal") not in {"CALL", "PUT"}:
-        return row
-    tf = str(selected_expiry or row.get("selected_expiry") or row.get("timeframe") or "1m").strip().lower()
-    duration = int(AUTO_TRACK_EXPIRIES.get(tf) or (TIMEFRAMES.get(tf, 1) * 60))
-    closed_epoch = row.get("closed_candle_epoch")
-    if not closed_epoch:
-        summary = row.get("timeframe_summary") or {}
-        tf_row = summary.get(tf) if isinstance(summary, dict) else None
-        if isinstance(tf_row, dict):
-            closed_epoch = tf_row.get("closed_candle_epoch")
-    execution = next_candle_execution_window(closed_epoch, duration, now=now)
-    row["next_candle_entry_epoch"] = int(execution.get("target_entry_epoch") or 0)
-    row["next_candle_exit_epoch"] = int(execution.get("target_exit_epoch") or 0)
-    row["entry_eligible"] = bool(execution.get("entry_eligible"))
-    row["missed_entry"] = bool(execution.get("missed_entry"))
-    row["entry_grace_seconds"] = int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS)
-    row["entry_window_end_epoch"] = int(execution.get("entry_window_end_epoch") or 0)
-    row["entry_window_seconds"] = int(execution.get("entry_window_seconds") or RAJA_TARGET_ENTRY_WINDOW_SECONDS)
-    row["minimum_action_seconds"] = int(execution.get("minimum_action_seconds") or RAJA_MIN_CLIENT_ACTION_SECONDS)
-    row["decision_seconds_remaining"] = int(execution.get("decision_seconds_remaining") or 0)
-    row["late_entry"] = {
-        "eligible": bool(execution.get("entry_eligible")),
-        "seconds_since_open": int(execution.get("seconds_since_entry") or 0),
-        "seconds_to_open": int(execution.get("seconds_to_entry") or 0),
-    }
-    if not execution.get("entry_eligible"):
-        original_signal = row.get("signal")
-        reason = execution.get("reason") or "Exact NEXT-candle entry window expired before the signal reached the client."
-        row.update({
-            "signal": "NO SIGNAL", "score": 0.0, "no_trade": True,
-            "quality_gate": "ENTRY_EXPIRED", "no_trade_reason": reason,
-            "reason": f"NO TRADE · {reason}", "expired_signal": original_signal,
-            "exclude_from_history": True,
-        })
-        summary = row.get("timeframe_summary")
-        if isinstance(summary, dict) and isinstance(summary.get(tf), dict):
-            summary = dict(summary)
-            tf_row = dict(summary[tf])
-            tf_row["signal"] = "NO SIGNAL"
-            tf_row["score"] = 0.0
-            tf_row["entry_expired"] = True
-            summary[tf] = tf_row
-            row["timeframe_summary"] = summary
-    return row
 
 
 def calibrate_confidence(user, expiry, technical_quality):
@@ -2870,53 +2547,30 @@ def _market_source_info(pair, yahoo_symbol, source="Yahoo Finance", provider_sym
 
 def get_market_data(pair, bridge_user=None, broker=None):
     """
-    V43 source policy:
-      * Broker OTC: exact browser bridge -> optional native websocket -> labelled reference fallback.
-      * Non-OTC/live markets: Yahoo -> Twelve Data reference chain.
+    Source policy:
+      * Broker OTC: broker-native websocket -> browser bridge backup -> NO DATA.
+      * Non-OTC/live markets: existing Yahoo -> Twelve Data reference chain.
 
-    The OTC reference fallback is deliberately labelled and never presented as an
-    exact Quotex/Pocket Option candle. Set RAJA_OTC_REFERENCE_SIGNAL_FALLBACK=0
-    to force exact-only OTC behaviour.
+    Yahoo/Twelve Data are never used as Quotex/Pocket Option OTC candles.
     """
+    # Broker-native OTC must not depend on a Yahoo proxy mapping existing.
+    # Resolve Yahoo only after the native/bridge OTC path has been considered.
     yahoo_symbol = YAHOO_SYMBOLS.get(pair)
+
     broker_name = str(broker or "").strip().casefold().replace(" ", "")
     is_otc = "(otc)" in str(pair).casefold()
     is_quotex = broker_name == "quotex"
     is_pocket = broker_name in {"pocketoption", "pocket_option", "pocket"}
-    bridge_fallback_info = None
 
-    # V43 exact source order: Browser Bridge first. It is the direct feed from the
-    # user's logged-in broker tab and must not wait on an optional Railway-native
-    # connector. Native feed is second exact source; labelled reference is last.
+    # Exact OTC feed always tries the broker-native websocket first. This path
+    # runs on Railway and therefore does not depend on the Chrome bridge/tab.
     if is_otc and (is_quotex or is_pocket):
-        native_df = native_age = native_symbol = None
         native_info = {}
-        bridge_info = {}
-
-        if bridge_user:
-            try:
-                if is_quotex:
-                    bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
-                else:
-                    bridge_df, bridge_age, bridge_symbol, bridge_info = get_pocket_bridge_market_data(bridge_user, pair)
-            except Exception as exc:
-                bridge_df, bridge_age, bridge_symbol = None, None, None
-                bridge_info = {"unavailable_reason": f"Browser bridge error: {type(exc).__name__}: {exc}"}
-            if bridge_df is not None and not bridge_df.empty:
-                bridge_info = dict(bridge_info or {})
-                bridge_info.update({
-                    "source": "Pocket Option Browser Bridge" if is_pocket else "Quotex Browser Bridge",
-                    "source_mode": "broker_otc_exact",
-                    "exact_broker_feed": True,
-                    "fallback_used": "browser_bridge",
-                    "reference_fallback_used": False,
-                })
-                return bridge_df, bridge_age, bridge_symbol or pair, bridge_info
-
         if callable(get_native_broker_market_data):
             try:
                 native_df, native_age, native_symbol, native_info = get_native_broker_market_data(broker, pair)
             except Exception as exc:
+                native_df, native_age, native_symbol = None, None, None
                 native_info = {
                     "source": "Broker Native WebSocket",
                     "source_mode": "broker_native_websocket",
@@ -2924,71 +2578,51 @@ def get_market_data(pair, bridge_user=None, broker=None):
                     "unavailable_reason": f"Native broker feed error: {type(exc).__name__}: {exc}",
                 }
             if native_df is not None and not native_df.empty:
-                native_info = dict(native_info or {})
-                native_info.setdefault("source", "Pocket Option Native WebSocket" if is_pocket else "Quotex Native WebSocket")
-                native_info.update({
-                    "source_mode": "broker_otc_exact",
-                    "exact_broker_feed": True,
-                    "fallback_used": "native_websocket",
-                    "reference_fallback_used": False,
-                })
                 return native_df, native_age, native_symbol or pair, native_info
 
-        bridge_reason = (bridge_info or {}).get("unavailable_reason") or (
-            "Pocket Option Browser Bridge is not streaming this pair." if is_pocket
-            else "Quotex Browser Bridge is not streaming this pair."
-        )
-        native_reason = (native_info or {}).get("unavailable_reason") or "Optional Railway native feed has no fresh data."
-        reason = f"{bridge_reason} {native_reason}"
+        # Local browser bridge is an exact-broker fallback for BOTH brokers.
+        # It reads the already logged-in broker tab and never needs Railway to
+        # authenticate to the broker directly.
+        if bridge_user:
+            if is_quotex:
+                bridge_df, bridge_age, bridge_symbol, bridge_info = get_quotex_bridge_market_data(bridge_user, pair)
+            else:
+                bridge_df, bridge_age, bridge_symbol, bridge_info = get_pocket_bridge_market_data(bridge_user, pair)
+            if bridge_df is not None and not bridge_df.empty:
+                bridge_info = dict(bridge_info or {})
+                bridge_info.update({
+                    "exact_broker_feed": True,
+                    "native_primary_failed": True,
+                    "fallback_used": "browser_bridge",
+                })
+                return bridge_df, bridge_age, bridge_symbol or native_symbol or pair, bridge_info
 
-        # V42: do not freeze the whole OTC market when exact broker streaming is absent.
-        # Continue into the Yahoo/Twelve reference chain when a proxy symbol exists.
-        if RAJA_OTC_REFERENCE_SIGNAL_FALLBACK and yahoo_symbol:
-            bridge_fallback_info = {
-                "exact_broker_feed": False,
-                "reference_fallback_used": True,
-                "reference_fallback_reason": reason,
-                "broker": "Pocket Option" if is_pocket else "Quotex",
-            }
+        reason = (native_info or {}).get("unavailable_reason") or "Broker-native OTC websocket has no fresh data."
+        if is_quotex:
+            reason += " Quotex browser bridge is also not streaming this pair."
         else:
-            blocked_info = dict(native_info or {})
-            blocked_info.update({
-                "source": blocked_info.get("source") or ("Pocket Option Native WebSocket" if is_pocket else "Quotex Native WebSocket"),
-                "source_mode": "broker_native_required",
-                "exact_broker_feed": False,
-                "reference_fallback_blocked": True,
-                "unavailable_reason": reason,
-            })
-            return None, None, native_symbol or yahoo_symbol or pair, blocked_info
+            reason += " Pocket Option browser bridge is also not streaming this pair."
+        blocked_info = dict(native_info or {})
+        blocked_info.update({
+            "source": blocked_info.get("source") or ("Quotex Native WebSocket" if is_quotex else "Pocket Option Native WebSocket"),
+            "source_mode": "broker_native_required",
+            "exact_broker_feed": False,
+            "reference_fallback_blocked": True,
+            "unavailable_reason": reason,
+        })
+        # Exact broker OTC is the core V27 rule. RAJA_STRICT_BROKER_OTC defaults
+        # on; even when legacy reference-fallback variables exist, broker OTC
+        # does not silently become Yahoo/Twelve Data.
+        return None, None, native_symbol or yahoo_symbol or pair, blocked_info
 
+    # Live/non-OTC path remains the original Yahoo -> Twelve Data chain.
     if not yahoo_symbol:
-        missing = _market_source_info(pair, None)
-        if bridge_fallback_info:
-            missing.update({
-                "source_mode": "broker_otc_reference_unavailable",
-                "exact_broker_feed": False,
-                "reference_fallback_used": True,
-                "unavailable_reason": "Exact broker OTC data is unavailable and no reference symbol is configured for this pair.",
-            })
-        return None, None, None, missing
+        return None, None, None, _market_source_info(pair, None)
+
+    bridge_fallback_info = None
 
     def _with_bridge_fallback(info):
-        merged = dict(info or {})
-        if bridge_fallback_info:
-            provider = str(merged.get("source") or "Reference feed")
-            broker_label = str(bridge_fallback_info.get("broker") or "Broker")
-            merged.update({
-                "source": f"{provider} · OTC Reference",
-                "reference_provider": provider,
-                "source_mode": "broker_otc_reference_fallback",
-                "exact_broker_feed": False,
-                "reference_fallback_used": True,
-                "backup_used": True,
-                "broker": broker_label,
-                "reference_warning": f"{broker_label} exact OTC candles are unavailable; signal uses {provider} underlying/reference candles and can differ from broker OTC.",
-                "bridge_unavailable_reason": bridge_fallback_info.get("reference_fallback_reason") or "Exact broker feed unavailable.",
-            })
-        return merged
+        return dict(info or {})
 
     yahoo_data = None
     yahoo_age = None
@@ -3049,10 +2683,8 @@ def get_market_data(pair, bridge_user=None, broker=None):
         return data.copy(), age, yahoo_symbol, source_info
 
     missing_info = _with_bridge_fallback(_market_source_info(pair, yahoo_symbol))
-    if bridge_fallback_info:
-        missing_info["unavailable_reason"] = (
-            "Exact broker OTC feed is unavailable and the Yahoo/Twelve reference feed also has no fresh candles for this pair."
-        )
+    if bridge_fallback_info and not missing_info.get("unavailable_reason"):
+        missing_info["unavailable_reason"] = bridge_fallback_info.get("bridge_unavailable_reason") or "No fresh bridge/reference market data is available."
     return None, None, yahoo_symbol, missing_info
 
 
@@ -3105,17 +2737,16 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_V51_16_STRATEGIES_TYPE37_15S_BUFFER"
-SK25_PATTERN_LIBRARY_SIZE = 16
+SK25_ENGINE_VERSION = "RAJA_14_SELECTED_STRATEGIES_TEMP_TEST"
+SK25_PATTERN_LIBRARY_SIZE = 14
 SK25_LIVE_MIN_CANDLES = 10
 
-# V51: original 14 selected RAJA rules remain unchanged; Type 36 stays balanced and
-# Type 37 adds a liquidity-sweep + reclaim confirmation setup. IDs 26-35 remain
-# in source but stay disabled; add()/add_setup() ignore them.
+# TEMP TEST: only the original 14 selected RAJA rules are active; IDs 26-35 remain in source but are ignored.
+# Old skipped rules stay in source for backward compatibility/history, but add()/add_setup() ignore them.
 RAJA_ACTIVE_STRATEGY_IDS = frozenset({
-    # Original 14 selected RAJA strategies + Type 36 + V51 Type 37 demo strategy.
-    # PDF/Premium strategies 26-35 remain disabled, not deleted.
-    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25, 36, 37,
+    # TEMP TEST: original 14 selected RAJA strategies only.
+    # PDF/Premium strategies 26-35 are temporarily disabled, not deleted.
+    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25,
 })
 RAJA_STRATEGY_NAMES = {
     2: "RAJA Type 2 · Resistance Reversal",
@@ -3142,16 +2773,12 @@ RAJA_STRATEGY_NAMES = {
     33: "Premium · Trend Pullback Continuation",
     34: "Premium · Failed Breakout Reversal",
     35: "Premium · Engulfing at Key S/R",
-    36: "RAJA Type 36 · Trend Pullback Rejection",
-    37: "RAJA Type 37 · Liquidity Sweep + Reclaim",
 }
 RAJA_STRATEGY_PRIORITIES = {
     2:105, 4:115, 9:145, 10:145, 12:165, 14:150,
     18:155, 19:155, 20:145, 21:145, 22:155, 23:155, 24:180, 25:175,
     26:188, 27:202, 28:205, 29:192, 30:198,
     31:210, 32:206, 33:204, 34:207, 35:200,
-    36:185,
-    37:192,
 }
 
 
@@ -3222,7 +2849,7 @@ def _sk25_level_clusters(values, tolerance, min_touches=2):
 
 
 def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
-    """Evaluate the selected RAJA 16 closed-candle strategies (original 14 + Types 36/37)."""
+    """Evaluate the V39 selected 24 closed-candle strategies."""
     tf = str(timeframe or "1m").strip().lower()
     market_name = str(market or "LIVE").upper()
     previous_outcome = str(last_outcome or "").strip().upper()
@@ -3279,15 +2906,8 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
             "rules":[{"name":name,"ok":bool(ok)} for name,ok in rules],
             "recovery_trade":bool(recovery), "timeframe_rule":tf_rule,
         }
-        tf_rule_u = str(tf_rule or "ANY").upper()
-        context_ok = not (
-            ("2M ONLY" in tf_rule_u and tf != "2m") or
-            ("30S ONLY" in tf_rule_u and tf != "30s") or
-            ("OTC ONLY" in tf_rule_u and not is_otc) or
-            (("LIVE ONLY" in tf_rule_u or "LIVE MARKET ONLY" in tf_rule_u) and not is_live)
-        )
         if matched==total: exact.append(item)
-        elif pct>=60 and context_ok: near.append(item)
+        elif pct>=60: near.append(item)
 
     # Type 1 — OTC: 8 same-colour closed candles -> next same colour.
     last8=candles[-8:]
@@ -3529,187 +3149,13 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
         if res is not None:
             add(35,-1,[("GREEN setup candle at resistance",a["dir"]>0 and touch_price(a,res,0.55)),("RED bearish engulfing",bearish_engulf(b,a,0.18)),("Engulf closes below resistance",b["close"]<res-tol*0.04)],"Bearish engulfing at key resistance","A true body engulf occurs at recent resistance and closes back below the level.","Premium · Engulfing S/R")
 
-    # V48 TYPE 36 — Trend Pullback Rejection (balanced frequency, structural rules still hard).
-    # Price-action only: trend + two controlled opposite candles + wick rejection + midpoint reclaim.
-    # Designed for 1m/5m. OTC/reference mode requires an extra-clean rejection.
-    if count >= 12 and tf in {"1m", "5m"}:
-        a,b,c = candles[-3:]
-        big_t = trend_before_setup(3, 12)
-        small_t = trend_before_setup(3, 6)
-        pre = candles[max(0, count-11):count-3]
-        recent4 = pre[-4:] if pre else []
-        support_zone = max((x["low"] for x in recent4), default=None)
-        resistance_zone = min((x["high"] for x in recent4), default=None)
-        pullback_body_ok = a["body"] <= med_body*1.50 and b["body"] <= med_body*1.50
-        reject_not_spike = c["body"] <= med_body*1.85 and c["range"] <= med_range*2.20
-
-        if support_zone is not None:
-            midpoint_b = (b["open"] + b["close"]) / 2.0
-            support_test = min(a["low"], b["low"], c["low"]) <= support_zone + med_range*0.65
-            support_hold = min(a["close"], b["close"], c["close"]) >= support_zone - med_range*0.45
-            otc_clean = (not is_otc) or (c["lower_wick"] >= max(c["body"]*0.85, med_range*0.22) and c["close"] >= b["body_top"]-tol*0.10)
-            add(36,1,[
-                ("1m or 5m timeframe", tf in {"1m","5m"}),
-                ("Big trend UP", big_t > 0.035),
-                ("Small trend UP", small_t > 0.015),
-                ("Two RED pullback candles", seq_is([a,b],[-1,-1])),
-                ("Pullback candles not oversized", pullback_body_ok),
-                ("Pullback tests and holds rising support zone", support_test and support_hold),
-                ("GREEN rejection candle with long lower wick", c["dir"]>0 and long_lower(c)),
-                ("Rejection body normal", normal(c)),
-                ("GREEN rejection closes above previous RED body midpoint", c["close"] > midpoint_b + tol*0.02),
-                ("Rejection not oversized", reject_not_spike),
-                ("OTC extra-clean rejection / LIVE exempt", otc_clean),
-            ],"Trend pullback rejection CALL","Uptrend stays intact through a controlled two-red pullback, then a bullish lower-wick rejection reclaims the prior red body midpoint. Target is the NEXT candle GREEN.","RAJA · Trend Pullback Rejection",False,"1M/5M ONLY")
-
-        if resistance_zone is not None:
-            midpoint_b = (b["open"] + b["close"]) / 2.0
-            resistance_test = max(a["high"], b["high"], c["high"]) >= resistance_zone - med_range*0.65
-            resistance_hold = max(a["close"], b["close"], c["close"]) <= resistance_zone + med_range*0.45
-            otc_clean = (not is_otc) or (c["upper_wick"] >= max(c["body"]*0.85, med_range*0.22) and c["close"] <= b["body_bottom"]+tol*0.10)
-            add(36,-1,[
-                ("1m or 5m timeframe", tf in {"1m","5m"}),
-                ("Big trend DOWN", big_t < -0.035),
-                ("Small trend DOWN", small_t < -0.015),
-                ("Two GREEN pullback candles", seq_is([a,b],[1,1])),
-                ("Pullback candles not oversized", pullback_body_ok),
-                ("Pullback tests and holds falling resistance zone", resistance_test and resistance_hold),
-                ("RED rejection candle with long upper wick", c["dir"]<0 and long_upper(c)),
-                ("Rejection body normal", normal(c)),
-                ("RED rejection closes below previous GREEN body midpoint", c["close"] < midpoint_b - tol*0.02),
-                ("Rejection not oversized", reject_not_spike),
-                ("OTC extra-clean rejection / LIVE exempt", otc_clean),
-            ],"Trend pullback rejection PUT","Downtrend stays intact through a controlled two-green pullback, then a bearish upper-wick rejection loses the prior green body midpoint. Target is the NEXT candle RED.","RAJA · Trend Pullback Rejection",False,"1M/5M ONLY")
-
-    # V51 TYPE 37 — Liquidity Sweep + Reclaim Confirmation.
-    # A wick must take a real prior S/R level, close back inside it, then receive a
-    # same-reversal-direction confirmation candle. Structural sweep/reclaim/wick/
-    # confirmation/midpoint rules are never waived by Smart Confirm.
-    if count >= 10 and tf in {"1m", "5m"}:
-        a,b = candles[-2:]
-        res = prior_resistance(2, 14)
-        sup = prior_support(2, 14)
-        confirmation_not_spike = b["body"] <= med_body*1.85 and b["range"] <= med_range*2.20
-
-        if sup is not None:
-            sweep_mid = (a["body_top"] + a["body_bottom"]) / 2.0
-            otc_clean = (not is_otc) or (
-                a["lower_wick"] >= max(a["body"]*0.90, med_range*0.24)
-                and b["close"] >= a["body_top"] - tol*0.08
-            )
-            add(37,1,[
-                ("1m or 5m timeframe", tf in {"1m","5m"}),
-                ("Sweep wick breaks prior support", a["low"] < sup - tol*0.10),
-                ("Sweep candle closes back above support", a["close"] > sup + tol*0.02),
-                ("Sweep has long lower rejection wick", long_lower(a)),
-                ("GREEN confirmation candle", b["dir"] > 0),
-                ("Confirmation body normal", normal(b)),
-                ("Confirmation closes above sweep body midpoint", b["close"] > sweep_mid + tol*0.04),
-                ("Confirmation not oversized", confirmation_not_spike),
-                ("OTC extra-clean reclaim / LIVE exempt", otc_clean),
-            ],"Liquidity sweep + support reclaim CALL","A closed wick sweeps prior support, reclaims it, and a bullish confirmation closes through the sweep body. Target is the NEXT candle GREEN.","RAJA · Liquidity Sweep Reclaim",False,"1M/5M ONLY")
-
-        if res is not None:
-            sweep_mid = (a["body_top"] + a["body_bottom"]) / 2.0
-            otc_clean = (not is_otc) or (
-                a["upper_wick"] >= max(a["body"]*0.90, med_range*0.24)
-                and b["close"] <= a["body_bottom"] + tol*0.08
-            )
-            add(37,-1,[
-                ("1m or 5m timeframe", tf in {"1m","5m"}),
-                ("Sweep wick breaks prior resistance", a["high"] > res + tol*0.10),
-                ("Sweep candle closes back below resistance", a["close"] < res - tol*0.02),
-                ("Sweep has long upper rejection wick", long_upper(a)),
-                ("RED confirmation candle", b["dir"] < 0),
-                ("Confirmation body normal", normal(b)),
-                ("Confirmation closes below sweep body midpoint", b["close"] < sweep_mid - tol*0.04),
-                ("Confirmation not oversized", confirmation_not_spike),
-                ("OTC extra-clean reclaim / LIVE exempt", otc_clean),
-            ],"Liquidity sweep + resistance reclaim PUT","A closed wick sweeps prior resistance, falls back below it, and a bearish confirmation closes through the sweep body. Target is the NEXT candle RED.","RAJA · Liquidity Sweep Reclaim",False,"1M/5M ONLY")
-
     exact.sort(key=lambda x:(int(x["priority"]),int(x["rules_total"]),int(x["pattern_type"])),reverse=True)
-    near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"]),int(x["priority"])),reverse=True)
+    near.sort(key=lambda x:(float(x["score"]),int(x["rules_total"])),reverse=True)
     directions={x["direction"] for x in exact}
     conflict=len(directions)>1
     best=None if conflict or not exact else exact[0]
     closest=near[0] if near else None
     closed_epoch=candles[-1]["epoch"]
-
-    # V48 Smart Confirm. Exact remains first choice. Existing strategies keep the
-    # original one-soft-rule rule. Type 36 may miss up to TWO explicitly soft quality
-    # rules (9/11 minimum); its trend, sequence, S/R, wick rejection and midpoint
-    # reclaim rules remain mandatory.
-    def _soft_missing_rule(name):
-        n=str(name or "").strip().lower()
-        soft_phrases=(
-            "sideways/mixed context", "normal body", "normal bodies",
-            "body smaller", "is small/doji", "is doji/small",
-            "smaller than previous", "not oversized",
-        )
-        return any(p in n for p in soft_phrases)
-
-    smart_candidates=[]
-    if RAJA_SMART_CONFIRM_ENABLED and not best and not conflict:
-        for item in near:
-            missing=[r for r in (item.get("rules") or []) if not bool(r.get("ok"))]
-            type_no=int(item.get("pattern_type") or 0)
-            if int(item.get("rules_total") or 0) < 4:
-                continue
-            if type_no == 36:
-                # Type 36 has 11 rules. Permit 9/11 only when BOTH missing rules are
-                # from this narrow quality-only allowlist. Structural setup logic is never waived.
-                type36_soft = {
-                    "pullback candles not oversized",
-                    "rejection body normal",
-                    "rejection not oversized",
-                    "otc extra-clean rejection / live exempt",
-                }
-                if not (1 <= len(missing) <= 2):
-                    continue
-                if float(item.get("score") or 0.0) < 81.0:
-                    continue
-                if any(str(r.get("name") or "").strip().lower() not in type36_soft for r in missing):
-                    continue
-            elif type_no == 37:
-                # Type 37 has 9 rules. One quality-only rule may be waived; the
-                # sweep, reclaim, rejection wick, confirmation direction and midpoint
-                # close remain mandatory.
-                type37_soft = {
-                    "confirmation body normal",
-                    "confirmation not oversized",
-                    "otc extra-clean reclaim / live exempt",
-                }
-                if len(missing) != 1:
-                    continue
-                if float(item.get("score") or 0.0) < 88.0:
-                    continue
-                if str(missing[0].get("name") or "").strip().lower() not in type37_soft:
-                    continue
-            else:
-                if len(missing)!=1:
-                    continue
-                if float(item.get("score") or 0.0) < RAJA_SMART_CONFIRM_MIN_MATCH:
-                    continue
-                if not _soft_missing_rule(missing[0].get("name")):
-                    continue
-            candidate=dict(item)
-            candidate["smart_confirm"]=True
-            candidate["missing_rules"]=[str(r.get("name") or "Soft context rule") for r in missing]
-            candidate["missing_rule"]=", ".join(candidate["missing_rules"])
-            candidate["smart_confirm_tier"]=("TYPE36_BALANCED" if type_no == 36 and len(missing) > 1 else ("TYPE37_QUALITY" if type_no == 37 else "STANDARD"))
-            smart_candidates.append(candidate)
-        smart_candidates.sort(key=lambda x:(float(x["score"]),int(x["priority"]),int(x["rules_total"])),reverse=True)
-        smart_dirs={x["direction"] for x in smart_candidates}
-        if len(smart_dirs)==1 and smart_candidates:
-            best=smart_candidates[0]
-        elif len(smart_dirs)>1:
-            return {
-                "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"SMART CONFIRM CONFLICT",
-                "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":0.0,
-                "rules":[],"pattern_signals":smart_candidates[:8],"conflict_gate":True,
-                "reason":"NO TRADE · Opposite Smart Confirm candidates are present on the same closed-candle snapshot.",
-                "closed_candle_epoch":closed_epoch,
-            }
 
     if conflict:
         return {
@@ -3722,25 +3168,20 @@ def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
     if not best:
         watch=f" Closest: {closest['name']} {closest['rules_matched']}/{closest['rules_total']} rules." if closest else ""
         return {
-            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO QUALIFIED RAJA 16 SETUP",
+            "signal":"NO SIGNAL","score":0.0,"pattern_type":0,"selected_pattern":"NO ACTIVE STRATEGY SETUP",
             "pattern_direction":"NONE","next_candle_color":"NONE","setup_match":float(closest["score"]) if closest else 0.0,
             "rules":list(closest.get("rules") or []) if closest else [],"pattern_signals":near[:8],"conflict_gate":False,
-            "reason":"No exact or Smart Confirm RAJA 15 setup is complete on the latest CLOSED candles."+watch,
+            "reason":"No exact active strategy setup is complete on the latest CLOSED candles."+watch,
             "closed_candle_epoch":closed_epoch,
         }
 
-    smart=bool(best.get("smart_confirm"))
-    setup_match=float(best.get("score") or 100.0) if smart else 100.0
-    mode_label="SMART CONFIRM" if smart else "EXACT"
-    missing_text=f" Soft quality rule(s) waived: {best.get('missing_rule')}." if smart else ""
     return {
-        "signal":best["signal"],"score":setup_match,"pattern_type":best["pattern_type"],"selected_pattern":best["name"],
-        "pattern_direction":best["direction"],"next_candle_color":best["next_candle"],"setup_match":setup_match,
-        "rules":best["rules"],"pattern_signals":smart_candidates[:8] if smart else exact[:8],"conflict_gate":False,
-        "setup":best["setup"],"reason":f"{best['name']} {mode_label} matched {best['rules_matched']}/{best['rules_total']} rules.{missing_text} NEXT candle {best['next_candle']} ({best['direction']}).",
+        "signal":best["signal"],"score":100.0,"pattern_type":best["pattern_type"],"selected_pattern":best["name"],
+        "pattern_direction":best["direction"],"next_candle_color":best["next_candle"],"setup_match":100.0,
+        "rules":best["rules"],"pattern_signals":exact[:8],"conflict_gate":False,
+        "setup":best["setup"],"reason":f"{best['name']} exact setup matched {best['rules_matched']}/{best['rules_total']} rules. NEXT candle {best['next_candle']} ({best['direction']}).",
         "family":best["family"],"recovery_trade":bool(best.get("recovery_trade")),"timeframe_rule":best.get("timeframe_rule"),
         "pattern_priority":best["priority"],"rules_matched":best["rules_matched"],"rules_total":best["rules_total"],
-        "smart_confirm":smart,"missing_rule":str(best.get("missing_rule") or ""),
         "closed_candle_epoch":closed_epoch,
     }
 
@@ -3772,8 +3213,6 @@ def no_signal_result(pair, reason, symbol=None, data_age=None, timeframes=None, 
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
-        "exact_broker_feed":bool(source_info.get("exact_broker_feed")),"reference_fallback_used":bool(source_info.get("reference_fallback_used")),
-        "reference_warning":str(source_info.get("reference_warning") or ""),"reference_provider":source_info.get("reference_provider"),
         "timeframe_summary":timeframes or {},"timeframes_scanned":[],"no_trade":True,
         "no_trade_reason":str(reason or "No exact active strategy setup."),"quality_gate":"PATTERN_ONLY",
         "engine":SK25_ENGINE_VERSION,
@@ -3849,120 +3288,28 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
     last_outcome=_last_strategy_outcome(bridge_user)
     strategy=analyze_sk25_ohlc(tf_df,tf,market_name,last_outcome)
     movement=_movement_info(tf_df)
-    raw_signal = strategy.get("signal") in {"CALL","PUT"}
-
-    # V45 DIRECT OTC SAFE MODE.  If no exact bridge/native candle exists, the
-    # reference signal must pass an additional feed-quality/regime sanity layer.
-    # This keeps the bot usable without a bridge while avoiding the false claim
-    # that public underlying candles are identical to broker OTC candles.
-    direct_otc_assessment = {}
-    reference_otc = bool(
-        broker_otc and str(source_info.get("source_mode") or "").lower() == "broker_otc_reference_fallback"
-    )
-    if raw_signal and reference_otc:
-        if not RAJA_DIRECT_OTC_ENABLED:
-            direct_otc_assessment = {
-                "allowed": False, "score": 0.0, "mode": DIRECT_OTC_VERSION,
-                "reason": "Direct OTC Safe Mode is disabled by server configuration.",
-                "warnings": [], "pair_tier": "DISABLED",
-            }
-        else:
-            direct_otc_assessment = assess_direct_otc_reference(
-                base_df, pair, strategy.get("signal"), strategy.get("pattern_type"), tf, data_age
-            )
-        if not bool(direct_otc_assessment.get("allowed")):
-            blocked = dict(strategy)
-            why = str(direct_otc_assessment.get("reason") or "Direct OTC reference safety gate blocked this setup.")
-            blocked.update({
-                "signal":"NO SIGNAL", "score":0.0, "no_trade":True,
-                "quality_gate":"DIRECT_OTC_BLOCKED",
-                "reason":f"NO TRADE · {why}", "no_trade_reason":why,
-            })
-            strategy = blocked
-            raw_signal = False
-
-    quality_profile = build_live_quality_profile(bridge_user, pair, tf, strategy) if raw_signal else {
-        "quality_score":0.0,"minimum_quality_score":RAJA_MIN_LIVE_QUALITY_SCORE,
-        "pair_timeframe_performance":pair_timeframe_performance(bridge_user,pair,tf),
-        "strategy_timeframe_performance":strategy_timeframe_performance(bridge_user,strategy.get("pattern_type"),tf),
-        "blocked":False,"blocked_reason":"",
-    }
-    if raw_signal and reference_otc and direct_otc_assessment:
-        # Blend, do not replace, the existing strategy/pair history quality.  The
-        # direct-feed score mostly measures reference-feed cleanliness, not win odds.
-        live_q = float(quality_profile.get("quality_score") or 0.0)
-        ref_q = float(direct_otc_assessment.get("score") or 0.0)
-        blended_q = max(0.0, min(100.0, live_q * 0.72 + ref_q * 0.28))
-        quality_profile["quality_score"] = round(blended_q, 2)
-        quality_profile["direct_otc_reference_score"] = round(ref_q, 2)
-        quality_profile["direct_otc_mode"] = direct_otc_assessment.get("mode") or DIRECT_OTC_VERSION
-
-    execution = next_candle_execution_window(strategy.get("closed_candle_epoch"), TIMEFRAMES[tf] * 60) if raw_signal else {
-        "entry_eligible":False,"missed_entry":False,"target_entry_epoch":0,"target_exit_epoch":0,
-        "seconds_to_entry":0,"seconds_since_entry":0,"entry_grace_seconds":RAJA_NEXT_CANDLE_GRACE_SECONDS,"reason":"",
-    }
-
-    if raw_signal and (quality_profile.get("blocked") or not execution.get("entry_eligible")):
-        blocked = dict(strategy)
-        blocked_reason = quality_profile.get("blocked_reason") or execution.get("reason") or "Signal blocked by safety gate."
-        blocked.update({
-            "signal":"NO SIGNAL","score":0.0,"no_trade":True,"quality_gate":"BLOCKED",
-            "reason":f"NO TRADE · {blocked_reason}","no_trade_reason":blocked_reason,
-            "missed_entry":bool(execution.get("missed_entry")),
-        })
-        strategy = blocked
-
-    calibration = calibrate_confidence(bridge_user, tf, quality_profile.get("quality_score") or 0.0) if raw_signal else {
-        "status":"LEARNING","calibrated_confidence":0.0,"sample_size":0,"observed_win_rate":None
-    }
     summary={tf:{
         "signal":strategy.get("signal"),"score":strategy.get("score",0),"pattern_type":strategy.get("pattern_type",0),
         "selected_pattern":strategy.get("selected_pattern"),"setup_match":strategy.get("setup_match",0),
         "next_candle_color":strategy.get("next_candle_color"),"closed_candle_epoch":strategy.get("closed_candle_epoch"),
-        "quality_score":quality_profile.get("quality_score",0),
     }}
     result=dict(strategy)
-    signal_ok = result.get("signal") in {"CALL","PUT"}
     result.update({
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
-        "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if signal_ok else [],
-        "opposing_timeframes":[],"multi_tf_agreement":100.0 if signal_ok else 0.0,
-        "confirmation_mode":("RAJA 16 SMART CONFIRM · TYPE36 BALANCED" if bool(strategy.get("smart_confirm")) and int(strategy.get("pattern_type") or 0)==36 else ("RAJA 16 SMART CONFIRM · TYPE37 QUALITY" if bool(strategy.get("smart_confirm")) and int(strategy.get("pattern_type") or 0)==37 else ("RAJA 16 SMART CONFIRM · 1 SOFT RULE MAX" if bool(strategy.get("smart_confirm")) else "RAJA 16 STRICT · SELECTED TIMEFRAME ONLY"))),"scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if strategy.get("signal") in {"CALL","PUT"} else [],
+        "opposing_timeframes":[],"multi_tf_agreement":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
+        "confirmation_mode":"RAJA 24 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
-        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 16 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
+        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 14 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
         "closed_candle_verified":True,"forming_candle_excluded":True,
-        "movement_info":movement,"volatility_pct":movement["percent"],
-        "market_stability_score":float(quality_profile.get("quality_score") or 0.0),
-        "market_risk_level":"LOW" if float(quality_profile.get("quality_score") or 0)>=78 else ("MEDIUM" if float(quality_profile.get("quality_score") or 0)>=68 else "HIGH"),
-        "market_regime":strategy.get("selected_pattern") or "NO SETUP",
-        "deep_quality_score":float(quality_profile.get("quality_score") or 0.0),"quality_score":float(quality_profile.get("quality_score") or 0.0),
-        "pair_timeframe_performance":quality_profile.get("pair_timeframe_performance") or {},
-        "strategy_timeframe_performance":quality_profile.get("strategy_timeframe_performance") or {},
-        "effective_min_score":float(quality_profile.get("minimum_quality_score") or RAJA_MIN_LIVE_QUALITY_SCORE),
-        "calibration_status":calibration.get("status") or "LEARNING","calibrated_confidence":float(calibration.get("calibrated_confidence") or 0.0),
-        "calibration_sample_size":int(calibration.get("sample_size") or 0),"calibration_observed_win_rate":calibration.get("observed_win_rate"),
-        "next_candle_entry_epoch":int(execution.get("target_entry_epoch") or 0),"next_candle_exit_epoch":int(execution.get("target_exit_epoch") or 0),
-        "entry_eligible":bool(execution.get("entry_eligible")),"missed_entry":bool(execution.get("missed_entry")),
-        "entry_grace_seconds":int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS),
-        "entry_window_end_epoch":int(execution.get("entry_window_end_epoch") or 0),
-        "entry_window_seconds":int(execution.get("entry_window_seconds") or RAJA_TARGET_ENTRY_WINDOW_SECONDS),
-        "minimum_action_seconds":int(execution.get("minimum_action_seconds") or RAJA_MIN_CLIENT_ACTION_SECONDS),
-        "decision_seconds_remaining":int(execution.get("decision_seconds_remaining") or 0),
-        "late_entry":{"eligible":bool(execution.get("entry_eligible")),"seconds_since_open":int(execution.get("seconds_since_entry") or 0),"seconds_to_open":int(execution.get("seconds_to_entry") or 0)},
-        "no_trade":not signal_ok,"quality_gate":"SMART_CONFIRM_PASSED" if signal_ok and bool(result.get("smart_confirm")) else ("PASSED" if signal_ok else (result.get("quality_gate") or "PATTERN_ONLY")),
-        "smart_confirm":bool(result.get("smart_confirm")),"missing_rule":str(result.get("missing_rule") or ""),
-        "direct_otc": bool(reference_otc),
-        "direct_otc_safe_mode": bool(reference_otc and RAJA_DIRECT_OTC_ENABLED),
-        "direct_otc_assessment": direct_otc_assessment or {},
-        "direct_otc_reference_score": float((direct_otc_assessment or {}).get("score") or 0.0),
-        "direct_otc_pair_tier": str((direct_otc_assessment or {}).get("pair_tier") or ""),
-        "reference_warning": source_info.get("reference_warning") or (
-            "REFERENCE OTC · This is an underlying/public reference signal, not an exact broker OTC candle." if reference_otc else ""
-        ),
+        "movement_info":movement,"volatility_pct":movement["percent"],"market_stability_score":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
+        "market_risk_level":"INFO ONLY","market_regime":strategy.get("selected_pattern") or "NO SETUP",
+        "deep_quality_score":float(strategy.get("pattern_priority") or 0),"calibration_status":"DISABLED","calibrated_confidence":0.0,
+        "no_trade":strategy.get("signal") not in {"CALL","PUT"},"quality_gate":"PASSED" if strategy.get("signal") in {"CALL","PUT"} else "PATTERN_ONLY",
     })
-    if result["no_trade"]: result["no_trade_reason"]=result.get("no_trade_reason") or result.get("reason")
+    if result["no_trade"]: result["no_trade_reason"]=result.get("reason")
     return result
 
 
@@ -3971,25 +3318,20 @@ SIDE_AUTO_SIGNAL_DEADLINE_SECONDS = max(20.0, min(75.0, float(os.environ.get("RA
 
 
 def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=None, broker=None):
-    """Background feed uses exact RAJA 15 first, then V46 Smart Confirm (1m and 5m)."""
+    """Background feed also uses ONLY exact SK25 rules (1m and 5m)."""
     out=[]
     for tf in ("1m","5m"):
         row=calculate_live_strategy_signal(pair,tf,scan_options,bridge_user,broker)
         if row.get("signal") not in {"CALL","PUT"}: continue
         out.append({
             "pair":pair,"timeframe":tf,"signal":row["signal"],"direction":"UP" if row["signal"]=="CALL" else "DOWN",
-            "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT","score":float(row.get("setup_match") or row.get("score") or 0.0),
-            "rank_score":float(row.get("deep_quality_score") or row.get("quality_score") or 0),"stability":float(row.get("market_stability_score") or 0),"risk":row.get("market_risk_level") or "--",
+            "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT","score":100.0,
+            "rank_score":float(row.get("pattern_priority") or 0),"stability":100.0,"risk":"INFO ONLY",
             "volatility_pct":row.get("volatility_pct",0),"market_regime":row.get("selected_pattern"),
-            "pattern_type":row.get("pattern_type"),"selected_pattern":row.get("selected_pattern"),"setup_match":float(row.get("setup_match") or row.get("score") or 0.0),"smart_confirm":bool(row.get("smart_confirm")),"missing_rule":row.get("missing_rule") or "",
-            "quality_score":row.get("quality_score",row.get("deep_quality_score",0)),
-            "pair_timeframe_performance":row.get("pair_timeframe_performance") or {},
-            "strategy_timeframe_performance":row.get("strategy_timeframe_performance") or {},
+            "pattern_type":row.get("pattern_type"),"selected_pattern":row.get("selected_pattern"),"setup_match":100.0,
             "next_candle_color":row.get("next_candle_color"),"rules":row.get("rules") or [],"recovery_trade":bool(row.get("recovery_trade")),
             "closed_candle_epoch":row.get("closed_candle_epoch"),"data_age_seconds":row.get("data_age"),
             "source":row.get("source"),"source_mode":row.get("source_mode"),"yahoo_symbol":row.get("yahoo_symbol"),
-            "exact_broker_feed":bool(row.get("exact_broker_feed")),"reference_fallback_used":bool(row.get("reference_fallback_used")),
-            "reference_warning":row.get("reference_warning") or "",
         })
     return out
 
@@ -4307,15 +3649,15 @@ def otc_fallback_config():
     po_native = dict(native.get("pocket_option") or {})
     qx_native_ready = bool(qx_native.get("configured") and qx_native.get("connected"))
     po_native_ready = bool(po_native.get("configured") and po_native.get("connected"))
-    direct_ready = bool(RAJA_DIRECT_OTC_ENABLED or (bridge_connected and pairs_with_data > 0) or qx_native_ready)
-    if bridge_connected and pairs_with_data > 0:
-        message = "Exact Quotex Browser Bridge is streaming. Direct OTC Safe reference mode remains available as backup."
-    elif qx_native_ready:
-        message = "Optional Quotex native WebSocket is connected. Direct OTC Safe reference mode is also enabled."
-    elif bridge_connected:
-        message = "Bridge is connected and warming. RAJA Direct OTC Safe Mode can scan meanwhile without waiting for exact candles."
+    direct_ready = bool(qx_native_ready or (bridge_connected and pairs_with_data > 0))
+    if qx_native_ready:
+        message = "Quotex native WebSocket is connected. Browser bridge is optional backup."
+    elif bridge_connected and pairs_with_data > 0:
+        message = "Quotex native feed is unavailable; exact browser bridge backup is streaming."
+    elif qx_native.get("configured"):
+        message = "Quotex native feed is configured but not connected yet. Bridge may be used as backup."
     else:
-        message = "RAJA Direct OTC Safe Mode is active — no bridge is required. Optional exact bridge can be connected later."
+        message = "Configure Quotex native session/credentials for bridge-independent OTC data."
     return jsonify({
         "status": "success",
         "data": {
@@ -4325,18 +3667,15 @@ def otc_fallback_config():
             "companion_connected": bridge_connected or bool(companion_url),
             "companion_url": companion_url,
             "direct_scan_available": direct_ready,
-            "native_primary": False,
+            "native_primary": True,
             "native_feeds": native,
             "quotex_native_ready": qx_native_ready,
             "pocket_native_ready": po_native_ready,
             "bridge": bridge,
             "bridge_required_for_quotex_otc": False,
-            "bridge_is_backup": False,
-            "reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
-            "direct_otc_safe_mode": bool(RAJA_DIRECT_OTC_ENABLED),
-            "direct_otc_version": DIRECT_OTC_VERSION,
-            "bridge_optional_for_otc": True,
-            "strict_broker_otc": False,
+            "bridge_is_backup": True,
+            "reference_fallback_enabled": False,
+            "strict_broker_otc": True,
             "message": message,
         },
     })
@@ -4408,7 +3747,9 @@ def quotex_bridge_status_route():
     auth, error = _auth_session(data)
     if error:
         return error
-    pair = normalize_bridge_pair_name(data.get("pair"))
+    pair = str(data.get("pair") or "").strip()
+    if pair and pair not in YAHOO_SYMBOLS:
+        pair = ""
     broker = str(data.get("broker") or ("Quotex" if request.path.startswith("/quotex-bridge/") else "Quotex")).strip().casefold().replace(" ", "")
     if broker in {"pocketoption", "pocket_option", "pocket"}:
         status = _get_pocket_bridge_status(auth["user"], pair or None)
@@ -4426,8 +3767,8 @@ def quotex_bridge_tick():
     bridge_auth = _validate_quotex_bridge_token(token)
     if not bridge_auth:
         return jsonify({"status": "error", "message": "Bridge token is invalid or expired. Pair the extension again."}), 401
-    pair = normalize_bridge_pair_name(data.get("pair"))
-    if not pair:
+    pair = str(data.get("pair") or "").strip()
+    if pair not in YAHOO_SYMBOLS or "(OTC)" not in pair:
         return jsonify({"status": "error", "message": "Unsupported or non-OTC bridge pair."}), 400
 
     broker = str(data.get("broker") or ("Quotex" if request.path.startswith("/quotex-bridge/") else "")).strip().casefold().replace(" ", "")
@@ -4472,44 +3813,6 @@ def quotex_bridge_tick():
         status = _get_quotex_bridge_status(bridge_auth["user"], pair)
         status.setdefault("broker", "Quotex")
     return jsonify({"status": "success", "data": {"accepted": accepted, **status}})
-
-
-@app.route("/broker-bridge/heartbeat", methods=["POST"])
-def broker_bridge_heartbeat_route():
-    """Extension/tab heartbeat; does NOT mark broker market data as fresh."""
-    data = request.get_json(silent=True) or {}
-    token = request.headers.get("X-RAJA-Bridge-Token") or data.get("bridge_token")
-    bridge_auth = _validate_quotex_bridge_token(token)
-    if not bridge_auth:
-        return jsonify({"status": "error", "message": "Bridge token is invalid or expired. Pair the extension again."}), 401
-
-    broker = str(data.get("broker") or "").strip()
-    broker_key = broker.casefold().replace(" ", "")
-    is_pocket = broker_key in {"pocketoption", "pocket_option", "pocket"}
-    if not is_pocket and broker_key not in {"quotex", ""}:
-        return jsonify({"status": "error", "message": "Unsupported broker bridge."}), 400
-
-    pair = normalize_bridge_pair_name(data.get("pair"))
-    extra = {
-        "parser_state": str(data.get("parser_state") or "")[:80],
-        "client_version": str(data.get("client_version") or "")[:40],
-        "raw_socket_seen": bool(data.get("raw_socket_seen")),
-        "parsed_market_seen": bool(data.get("parsed_market_seen")),
-        "detected_pair": str(pair or data.get("pair") or "")[:120],
-        "tab_host": str(data.get("tab_host") or "")[:160],
-        "transport": str(data.get("transport") or "")[:80],
-    }
-    if is_pocket:
-        _set_pocket_bridge_status(bridge_auth["user"], bridge_auth["device"], pair=pair or None,
-                                  source_page=data.get("source_page"), mark_pair_fresh=False, extra=extra)
-        status = _get_pocket_bridge_status(bridge_auth["user"], pair or None)
-    else:
-        _set_quotex_bridge_status(bridge_auth["user"], bridge_auth["device"], pair=pair or None,
-                                  source_page=data.get("source_page"), mark_pair_fresh=False, extra=extra)
-        status = _get_quotex_bridge_status(bridge_auth["user"], pair or None)
-        status.setdefault("broker", "Quotex")
-    status["extension_alive"] = bool(status.get("connected"))
-    return jsonify({"status": "success", "data": status})
 
 
 @app.route("/broker-bridge/ready-pairs", methods=["POST"])
@@ -4573,21 +3876,17 @@ def health():
         "broker_bridge_pair_fresh_seconds": BROKER_BRIDGE_PAIR_FRESH_SECONDS,
         "broker_bridge_market_max_age_seconds": BROKER_BRIDGE_MARKET_MAX_AGE_SECONDS,
         "broker_bridge_scan_min_candles": BROKER_BRIDGE_SCAN_MIN_CANDLES,
-        "bridge_token_secret_persistent": QUOTEX_BRIDGE_SECRET_PERSISTENT,
         "quotex_bridge_required_for_otc": False,
         "legacy_bridge_required_env": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
-        "quotex_reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
+        "quotex_reference_fallback_enabled": False,
         "legacy_reference_fallback_env": RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK,
         "strict_broker_otc": RAJA_STRICT_BROKER_OTC,
-        "direct_otc_safe_mode": bool(RAJA_DIRECT_OTC_ENABLED),
-        "direct_otc_version": DIRECT_OTC_VERSION,
-        "broker_otc_source_priority": ["browser_bridge_optional", "native_websocket_optional", "direct_otc_safe_reference", "no_data"],
-        "otc_reference_signal_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
+        "broker_otc_source_priority": ["native_websocket", "browser_bridge", "no_data"],
         "native_broker_feeds": native_feed_status(),
         "base_interval": "1m",
         "timeframes_scanned": list(TIMEFRAMES.keys()),
         "cache_duration_seconds": CACHE_DURATION,
-        "confirmation_mode": "RAJA 16 · EXACT + SMART CONFIRM · SELECTED TIMEFRAME ONLY",
+        "confirmation_mode": "SK25 STRICT · SELECTED TIMEFRAME ONLY",
         "duplicate_signal_cooldown_seconds": DUPLICATE_SIGNAL_COOLDOWN,
         "background_full_market_poller": False,
         "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
@@ -5183,31 +4482,34 @@ def track_signal():
     except Exception:
         closed_candle_epoch = 0
 
-    # V41 EXACT NEXT-CANDLE LOCK:
-    # A closed-candle strategy predicts only the immediately following candle.
-    # Never move an expired setup to a later aligned candle.
-    execution = next_candle_execution_window(closed_candle_epoch, duration, now, require_action_buffer=False)
-    original_target_entry_epoch = int(execution.get("target_entry_epoch") or 0)
-    entry_epoch = original_target_entry_epoch
-    expiry_epoch = int(execution.get("target_exit_epoch") or 0)
-    entry_grace_seconds = int(execution.get("entry_grace_seconds") or RAJA_NEXT_CANDLE_GRACE_SECONDS)
-    entry_window_end_epoch = int(execution.get("entry_window_end_epoch") or 0)
-    minimum_action_seconds = int(execution.get("minimum_action_seconds") or RAJA_MIN_CLIENT_ACTION_SECONDS)
+    # V38 PREP-ENTRY MODE:
+    # Give the trader a real countdown instead of returning an already-expired
+    # entry. The signal is scheduled on the next timeframe-aligned candle that
+    # still provides at least RAJA_MIN_ENTRY_NOTICE_SECONDS of preparation.
+    # Outcome tracking uses this same scheduled entry, so UI and backend stay aligned.
+    original_target_entry_epoch = (closed_candle_epoch + duration) if closed_candle_epoch else ((now // duration) + 1) * duration
+    try:
+        min_entry_notice_seconds = max(10, min(30, int(os.environ.get("RAJA_MIN_ENTRY_NOTICE_SECONDS", "10"))))
+    except Exception:
+        min_entry_notice_seconds = 10
 
-    if not execution.get("entry_eligible"):
-        return jsonify({
-            "status":"success","auto_tracking":False,"missed_entry":True,"entry_eligible":False,
-            "entry_epoch":entry_epoch,"expiry_epoch":expiry_epoch,"server_epoch":now,
-            "entry_grace_seconds":entry_grace_seconds,"entry_window_end_epoch":entry_window_end_epoch,"minimum_action_seconds":minimum_action_seconds,"entry_timing_mode":"FRESH_TARGET_CANDLE_WINDOW",
-            "original_target_entry_epoch":original_target_entry_epoch,
-            "message":execution.get("reason") or "Exact NEXT-candle entry was missed. Do not enter a later candle.",
-        })
+    earliest_entry_epoch = now + min_entry_notice_seconds
+    notice_aligned_entry_epoch = ((earliest_entry_epoch + duration - 1) // duration) * duration
+    entry_epoch = max(original_target_entry_epoch, notice_aligned_entry_epoch)
+    expiry_epoch = entry_epoch + duration
+
+    # Keep a small post-open grace as a safety fallback for device/browser latency.
+    default_entry_grace = max(10, min(45, int(duration * 0.50)))
+    try:
+        entry_grace_seconds = max(5, min(90, int(os.environ.get("RAJA_ENTRY_GRACE_SECONDS", str(default_entry_grace)))))
+    except Exception:
+        entry_grace_seconds = default_entry_grace
 
     signal_id = "sig_" + secrets.token_hex(8)
     item = {
         "id": signal_id, "client_id": client_id, "user": auth["user"], "pair": pair, "signal": direction,
         "score": float(score or 0), "expiry": expiry, "created_at": now, "entry_epoch": entry_epoch,
-        "expiry_epoch": expiry_epoch, "entry_grace_seconds": entry_grace_seconds, "entry_window_end_epoch": entry_window_end_epoch, "minimum_action_seconds": minimum_action_seconds,
+        "expiry_epoch": expiry_epoch, "entry_grace_seconds": entry_grace_seconds,
         "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else original_target_entry_epoch - duration),
         "setup_candle_close_epoch": original_target_entry_epoch, "target_candle_open_epoch": entry_epoch,
         "target_candle_close_epoch": expiry_epoch, "entry_price": None, "exit_price": None, "result": None,
@@ -5216,16 +4518,9 @@ def track_signal():
         "entry_notice_seconds": max(0, entry_epoch - now),
         "source": str(data.get("source") or "Yahoo Finance"),
         "source_mode": str(data.get("source_mode") or ("underlying_proxy" if "(OTC)" in pair else "live_reference")),
-        "direct_otc": bool(data.get("direct_otc") or str(data.get("source_mode") or "").lower() == "broker_otc_reference_fallback"),
-        "reference_warning": str(data.get("reference_warning") or ""),
-        "exclude_from_performance": bool("(OTC)" in pair and ("reference" in str(data.get("source_mode") or "").casefold() or "proxy" in str(data.get("source_mode") or "").casefold())),
         "provider_symbol": data.get("provider_symbol"),
         "timeframe_summary": timeframe_summary, "chart_preview": data.get("chart_preview") or [],
-        "scan_mode": "SK25_STRICT", "entry_timing_mode": "FRESH_TARGET_CANDLE_WINDOW", "volatility_pct": data.get("volatility_pct"),
-        "deep_quality_score": float(data.get("deep_quality_score") or data.get("quality_score") or score or 0),
-        "quality_score": float(data.get("quality_score") or data.get("deep_quality_score") or score or 0),
-        "pair_timeframe_performance": data.get("pair_timeframe_performance") or {},
-        "strategy_timeframe_performance": data.get("strategy_timeframe_performance") or {},
+        "scan_mode": "SK25_STRICT", "entry_timing_mode": "PREP_ENTRY", "volatility_pct": data.get("volatility_pct"),
         "pattern_type": int(data.get("pattern_type") or 0),
         "selected_pattern": str(data.get("selected_pattern") or ""),
         "next_candle_color": str(data.get("next_candle_color") or ""),
@@ -5239,15 +4534,14 @@ def track_signal():
         items = load_signals(); items.insert(0, item); save_signals(items[:2000])
     return jsonify({"status": "success", "auto_tracking": True, "signal_id": signal_id,
                     "entry_epoch": entry_epoch, "expiry_epoch": expiry_epoch,
-                    "entry_grace_seconds": entry_grace_seconds, "entry_window_end_epoch": entry_window_end_epoch, "minimum_action_seconds": minimum_action_seconds, "server_epoch": now,
+                    "entry_grace_seconds": entry_grace_seconds, "server_epoch": now,
                     "entry_notice_seconds": max(0, entry_epoch - now),
-                    "entry_eligible": True,
-                    "entry_timing_mode": "EXACT_NEXT_CANDLE",
+                    "entry_timing_mode": "PREP_ENTRY",
                     "original_target_entry_epoch": original_target_entry_epoch,
                     "setup_candle_open_epoch": (closed_candle_epoch if closed_candle_epoch else original_target_entry_epoch - duration),
                     "setup_candle_close_epoch": original_target_entry_epoch,
                     "target_candle_open_epoch": entry_epoch, "target_candle_close_epoch": expiry_epoch,
-                    "message": f"Exact NEXT {expiry} candle only. Enter at its open; never shift this setup to a later candle."})
+                    "message": f"Signal ready. Prepare now and enter on the scheduled {expiry} candle after the countdown."})
 
 
 @app.route("/signals/result", methods=["POST"])
@@ -5928,7 +5222,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
     detected_count = len(candles)
     warnings = list(quality_notes)
     reasons: list[str] = []
-    library = "RAJA Selected 16 Strategy Library"
+    library = "RAJA Selected 14 Strategy Library"
 
     # V11 Closed Candle Lock. A normal screenshot/live-now frame can contain a
     # still-forming rightmost candle, so it is excluded from setup matching. A
@@ -6087,16 +5381,9 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
             "recovery_trade": bool(recovery),
             "timeframe_rule": timeframe_rule,
         }
-        tf_rule_u = str(timeframe_rule or "ANY").upper()
-        context_ok = not (
-            ("2M ONLY" in tf_rule_u and tf != "2m") or
-            ("30S ONLY" in tf_rule_u and tf != "30s") or
-            ("OTC ONLY" in tf_rule_u and not is_otc) or
-            (("LIVE ONLY" in tf_rule_u or "LIVE MARKET ONLY" in tf_rule_u) and not is_live)
-        )
         if matched == total:
             exact.append(item)
-        elif pct >= 50.0 and context_ok:
+        elif pct >= 50.0:
             near.append(item)
 
     # TYPE 1 - OTC 9-candle sequence: 8 same-colour setup candles -> next same colour.
@@ -6402,42 +5689,6 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         if res is not None:
             add_setup(35,-1,[("GREEN setup at resistance",a["dir"]>0 and vtouch(a,res,0.55)),("RED bearish engulfing",vbear_engulf(b,a,0.18)),("Engulf closes below resistance",float(b["close_y"])>res+tol*0.04)],"Bearish engulfing at key resistance","Engulfing occurs at resistance, not in the middle of the range.",family="Premium · Engulfing S/R")
 
-    # V48 visual equivalent — Type 36 Trend Pullback Rejection.
-    if count >= 12 and tf in {"1m", "5m"}:
-        a,b,c=candles[-3:]
-        big=vtrend_before_setup(3,12); smallt=vtrend_before_setup(3,6)
-        pre=candles[max(0,count-11):count-3]; recent4=pre[-4:] if pre else []
-        support_zone=min((float(x["bottom"]) for x in recent4), default=None)
-        resistance_zone=max((float(x["top"]) for x in recent4), default=None)
-        pullback_ok=float(a["body_height"])<=med_body*1.50 and float(b["body_height"])<=med_body*1.50
-        reject_not_spike=float(c["body_height"])<=med_body*1.85 and float(c["range"])<=med_range*2.20
-        if support_zone is not None:
-            midpoint=(float(b["open_y"])+float(b["close_y"]))/2.0
-            support_test=max(float(a["bottom"]),float(b["bottom"]),float(c["bottom"]))>=support_zone-med_range*0.55
-            support_hold=max(float(a["close_y"]),float(b["close_y"]),float(c["close_y"]))<=support_zone+med_range*0.38
-            otc_clean=(not is_otc) or (float(c["lower_wick"])>=max(float(c["body_height"])*0.85,med_range*0.22) and float(c["close_y"])<=float(b["body_top"])+tol*0.10)
-            add_setup(36,1,[
-                ("1m or 5m timeframe",True),("Big trend UP",big>0.045),("Small trend UP",smallt>0.020),
-                ("Two RED pullback candles",seq_is([a,b],[-1,-1])),("Pullback candles not oversized",pullback_ok),
-                ("Pullback tests and holds rising support zone",support_test and support_hold),
-                ("GREEN rejection candle with long lower wick",c["dir"]>0 and long_lower(c)),
-                ("Rejection body normal",is_normal(c)),("GREEN rejection closes above previous RED body midpoint",float(c["close_y"])<midpoint-tol*0.02),
-                ("Rejection not oversized",reject_not_spike),("OTC extra-clean rejection / LIVE exempt",otc_clean),
-            ],"Trend pullback rejection CALL","Controlled two-red pullback rejects from rising support; target is the NEXT candle GREEN.",family="RAJA · Trend Pullback Rejection",timeframe_rule="1M/5M ONLY")
-        if resistance_zone is not None:
-            midpoint=(float(b["open_y"])+float(b["close_y"]))/2.0
-            resistance_test=min(float(a["top"]),float(b["top"]),float(c["top"]))<=resistance_zone+med_range*0.55
-            resistance_hold=min(float(a["close_y"]),float(b["close_y"]),float(c["close_y"]))>=resistance_zone-med_range*0.38
-            otc_clean=(not is_otc) or (float(c["upper_wick"])>=max(float(c["body_height"])*0.85,med_range*0.22) and float(c["close_y"])>=float(b["body_bottom"])-tol*0.10)
-            add_setup(36,-1,[
-                ("1m or 5m timeframe",True),("Big trend DOWN",big<-0.045),("Small trend DOWN",smallt<-0.020),
-                ("Two GREEN pullback candles",seq_is([a,b],[1,1])),("Pullback candles not oversized",pullback_ok),
-                ("Pullback tests and holds falling resistance zone",resistance_test and resistance_hold),
-                ("RED rejection candle with long upper wick",c["dir"]<0 and long_upper(c)),
-                ("Rejection body normal",is_normal(c)),("RED rejection closes below previous GREEN body midpoint",float(c["close_y"])>midpoint+tol*0.02),
-                ("Rejection not oversized",reject_not_spike),("OTC extra-clean rejection / LIVE exempt",otc_clean),
-            ],"Trend pullback rejection PUT","Controlled two-green pullback rejects from falling resistance; target is the NEXT candle RED.",family="RAJA · Trend Pullback Rejection",timeframe_rule="1M/5M ONLY")
-
     # V11 conflict gate: an opposite exact setup is never overridden by a numeric
     # priority. Same-direction exact setups reinforce one another; opposite exact
     # setups produce NO TRADE until the chart resolves.
@@ -6559,7 +5810,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "reasons": reasons[:10],
         "warnings": warnings[:7],
         "pattern_status": {
-            "Mode": "RAJA 16 selected strategies",
+            "Mode": "RAJA 14 selected strategies",
             "Indicators": "OFF - signal engine uses only the selected closed-candle strategy rules",
             "Context": f"Visual candle context: {context_label}",
             "Candle geometry": f"{count} closed candles analysed / {detected_count} visible structures",
@@ -6712,7 +5963,7 @@ def chart_scan_api():
     except (ValueError,UnidentifiedImageError) as exc:
         return jsonify({"status":"error","message":str(exc)}),400
     now_epoch = int(time.time())
-    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 16 Strategy Library"})
+    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 14 Strategy Library"})
 
     # V29 explicit entry timing for One-Tap Close Camera. The browser supplies the
     # exact candle boundary it armed; server validates it is reasonably recent.
@@ -6846,7 +6097,6 @@ def scan_batch():
 
     requested_pairs = data.get("pairs") or []; selected_expiry = str(data.get("expiry", "")).strip()
     market = str(data.get("market") or "Unknown")[:80]; broker = str(data.get("broker") or "").strip()[:80]; opts = normalize_scan_options(data.get("scan_options"))
-    fast_until_signal = bool(data.get("fast_until_signal"))
     if not isinstance(requested_pairs, list):
         return jsonify({"status": "error", "message": "pairs must be an array."}), 400
     pairs, seen = [], set()
@@ -6855,7 +6105,8 @@ def scan_batch():
     for raw in requested_pairs[:40]:
         pair = str(raw).strip()
         supported = pair in YAHOO_SYMBOLS or (broker_is_native and "(otc)" in pair.casefold())
-        if supported and pair not in seen: pairs.append(pair); seen.add(pair)
+        broker_allowed = raja_pair_allowed_for_broker(broker, pair)
+        if supported and broker_allowed and pair not in seen: pairs.append(pair); seen.add(pair)
     if not pairs:
         return jsonify({"status": "error", "message": "No supported pairs were supplied."}), 400
 
@@ -6870,36 +6121,30 @@ def scan_batch():
             bridge_cache_signature = _broker_bridge_cache_signature(auth["user"], broker, pairs)
         except Exception:
             bridge_cache_signature = None
-    key = (broker, performance_cache_user, selected_expiry, tuple(pairs), options_key, bridge_cache_signature, bool(fast_until_signal)); now = time.time()
+    key = (broker, performance_cache_user, selected_expiry, tuple(pairs), options_key, bridge_cache_signature); now = time.time()
     with batch_cache_lock:
         cached = batch_cache.get(key)
-        if (not fast_until_signal) and cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
+        if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
             payload = cached["payload"]
-            fresh_data = [revalidate_signal_execution(r, selected_expiry, now=now) for r in payload["data"]]
-            found = any(r.get("signal") in {"CALL", "PUT"} for r in fresh_data)
-            if batch_results_are_countable(fresh_data):
+            found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
+            if batch_results_are_countable(payload["data"]):
                 _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
-            diagnostics = dict(payload["diagnostics"] or {})
-            diagnostics["execution_revalidated"] = True
-            return jsonify({"status": "success", "data": fresh_data, "diagnostics": diagnostics, "cache_hit": True})
+            return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
     key_lock = _get_batch_key_lock(key)
     with key_lock:
         now = time.time()
         with batch_cache_lock:
             cached = batch_cache.get(key)
-            if (not fast_until_signal) and cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
+            if cached and (now - cached["timestamp"]) <= BATCH_CACHE_DURATION:
                 payload = cached["payload"]
-                fresh_data = [revalidate_signal_execution(r, selected_expiry, now=now) for r in payload["data"]]
-                found = any(r.get("signal") in {"CALL", "PUT"} for r in fresh_data)
+                found = any(r.get("signal") in {"CALL", "PUT"} for r in payload["data"])
                 _append_scan_event(auth["user"], market, "AUTO", opts["mode"], found)
-                diagnostics = dict(payload["diagnostics"] or {})
-                diagnostics["execution_revalidated"] = True
-                return jsonify({"status": "success", "data": fresh_data, "diagnostics": diagnostics, "cache_hit": True})
+                return jsonify({"status": "success", "data": payload["data"], "diagnostics": payload["diagnostics"], "cache_hit": True})
 
         results_by_pair, timed_out_pairs = {}, []
         batch_started = time.time()
 
-        # V42 exact-first OTC path: when reference fallback is disabled and native is unavailable
+        # V29 fast exact-OTC path: if the unofficial native connector is disabled
         # (the recommended bridge-only setup), do not create workers for broker
         # pairs that the paired browser is not currently streaming.  This removes
         # the apparent "stuck on one pair" behaviour and makes the response time
@@ -6915,7 +6160,7 @@ def scan_batch():
         except Exception:
             native_ready = False
 
-        if broker_otc_batch and not native_ready and not RAJA_OTC_REFERENCE_SIGNAL_FALLBACK:
+        if broker_otc_batch and not native_ready:
             bridge_rows = _broker_bridge_ready_pairs(auth["user"], broker, pairs)
             bridge_meta = {row["pair"]: row for row in bridge_rows}
             compute_pairs = []
@@ -6960,59 +6205,18 @@ def scan_batch():
         workers = min(BATCH_SCAN_WORKERS, len(compute_pairs)) if compute_pairs else 0
         pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-batch") if workers else None
         future_map = {pool.submit(calculate_live_strategy_signal, pair, selected_expiry, opts, auth["user"], broker): pair for pair in compute_pairs} if pool else {}
-        done = set(); pending = set(future_map.keys())
-        early_signal_pair = None
-        if future_map and fast_until_signal:
-            deadline_at = time.time() + BATCH_SCAN_DEADLINE_SECONDS
-            try:
-                for future in as_completed(future_map, timeout=BATCH_SCAN_DEADLINE_SECONDS):
-                    done.add(future); pending.discard(future)
-                    pair = future_map[future]
-                    try:
-                        row = revalidate_signal_execution(future.result(), selected_expiry)
-                    except Exception as exc:
-                        print(f"Batch scan error for {pair}: {exc}")
-                        row = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
-                    results_by_pair[pair] = row
-                    if row.get("signal") in {"CALL", "PUT"} and row.get("entry_eligible"):
-                        early_signal_pair = pair
-                        break
-                    if time.time() >= deadline_at:
-                        break
-            except TimeoutError:
-                pass
-            # AUTO UNTIL SIGNAL needs the first still-tradable setup, not a delayed
-            # ranking after every slow symbol. Cancel outstanding work immediately.
-            if early_signal_pair:
-                for future in list(pending):
-                    future.cancel()
-                pending.clear()
-            else:
-                # Give already-running futures the remaining safety window.
-                remaining = max(0.0, deadline_at - time.time())
-                extra_done, extra_pending = wait(pending, timeout=remaining) if pending else (set(), set())
-                for future in extra_done:
-                    done.add(future); pending.discard(future)
-                    pair = future_map[future]
-                    try: results_by_pair[pair] = revalidate_signal_execution(future.result(), selected_expiry)
-                    except Exception as exc:
-                        print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
-                pending = set(extra_pending)
-        else:
-            done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS) if future_map else (set(), set())
-            for future in done:
-                pair = future_map[future]
-                try: results_by_pair[pair] = revalidate_signal_execution(future.result(), selected_expiry)
-                except Exception as exc:
-                    print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
+        done, pending = wait(future_map.keys(), timeout=BATCH_SCAN_DEADLINE_SECONDS) if future_map else (set(), set())
+        for future in done:
+            pair = future_map[future]
+            try: results_by_pair[pair] = future.result()
+            except Exception as exc:
+                print(f"Batch scan error for {pair}: {exc}"); results_by_pair[pair] = no_signal_result(pair, "Scan worker failed for this pair.", symbol=YAHOO_SYMBOLS.get(pair))
         for future in pending:
             pair = future_map[future]; timed_out_pairs.append(pair); future.cancel()
             results_by_pair[pair] = no_signal_result(pair, "Skipped because the shared scan deadline was reached; next Auto Re-Scan will retry.", symbol=YAHOO_SYMBOLS.get(pair))
         if pool is not None:
             pool.shutdown(wait=False, cancel_futures=True)
-        # Revalidate once more at HTTP response time. This catches a signal that was
-        # valid when its worker finished but expired while other results were processed.
-        results = [revalidate_signal_execution(results_by_pair.get(pair) or no_signal_result(pair, "Not completed in this fast scan cycle.", symbol=YAHOO_SYMBOLS.get(pair)), selected_expiry) for pair in pairs]
+        results = [results_by_pair[pair] for pair in pairs]
         stale_pairs = [r for r in results if r.get("source_stale")]
         delayed_pairs = [r for r in results if r.get("data_delayed")]
         usable_rows = [r for r in results if not r.get("source_stale") and not r.get("data_delayed")]
@@ -7038,22 +6242,17 @@ def scan_batch():
             "yahoo_request_timeout_seconds": YAHOO_REQUEST_TIMEOUT_SECONDS,
             "yahoo_fetch_concurrency": YAHOO_FETCH_CONCURRENCY,
             "batch_workers": workers,
-            "bridge_ready_pairs_count": len(compute_pairs) if broker_otc_batch and not native_ready and not RAJA_OTC_REFERENCE_SIGNAL_FALLBACK else None,
+            "bridge_ready_pairs_count": len(compute_pairs) if broker_otc_batch and not native_ready else None,
             "bridge_skipped_pairs": bridge_skipped_pairs,
             "bridge_skipped_pairs_count": len(bridge_skipped_pairs),
-            "bridge_mode_required_candles": (_sk25_required_base_candles(selected_expiry) if broker_otc_batch and not native_ready and not RAJA_OTC_REFERENCE_SIGNAL_FALLBACK else None),
-            "otc_reference_fallback_enabled": bool(RAJA_OTC_REFERENCE_SIGNAL_FALLBACK),
+            "bridge_mode_required_candles": (_sk25_required_base_candles(selected_expiry) if broker_otc_batch and not native_ready else None),
             "scan_mode": opts["mode"],
-            "fast_until_signal": bool(fast_until_signal),
-            "early_signal_pair": early_signal_pair,
-            "execution_revalidated": True,
         }
         payload = {"data": results, "diagnostics": diagnostics}
-        if not fast_until_signal:
-            with batch_cache_lock:
-                batch_cache[key] = {"timestamp": time.time(), "payload": payload}
-                if len(batch_cache) > 40:
-                    for old_key, _ in sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]: batch_cache.pop(old_key, None)
+        with batch_cache_lock:
+            batch_cache[key] = {"timestamp": time.time(), "payload": payload}
+            if len(batch_cache) > 40:
+                for old_key, _ in sorted(batch_cache.items(), key=lambda kv: kv[1]["timestamp"])[:10]: batch_cache.pop(old_key, None)
         if batch_results_are_countable(results):
             _append_scan_event(auth["user"], market, "AUTO", opts["mode"], signals_found > 0)
         return jsonify({"status": "success", "data": results, "diagnostics": diagnostics, "cache_hit": False})
@@ -7079,13 +6278,15 @@ def scan_markets():
         return jsonify({"status": "error", "message": "Auto Scan must use /scan-batch with the selected market pair list."}), 400
     broker_key = broker.casefold().replace(" ", "")
     broker_otc = "(otc)" in selected_pair.casefold() and broker_key in {"quotex", "pocketoption", "pocket_option", "pocket"}
+    if not raja_pair_allowed_for_broker(broker, selected_pair):
+        return jsonify({"status": "error", "message": f"{selected_pair} is unavailable on the selected broker. Choose another pair or use Auto Scan.",
+                        "data": no_signal_result(selected_pair, "Pair is not available on the selected broker; RAJA skipped it.")}), 400
     if selected_pair not in YAHOO_SYMBOLS and not broker_otc:
         return jsonify({"status": "error", "message": f"Unsupported pair: {selected_pair}",
                         "data": no_signal_result(selected_pair, "Pair is not configured for this broker/market.")}), 400
 
     # Pattern-only mode: exact closed-candle pattern decides the signal.
     result = calculate_live_strategy_signal(selected_pair, selected_expiry, opts, auth["user"], broker)
-    result = revalidate_signal_execution(result, selected_expiry)
     if market_result_is_countable(result):
         _append_scan_event(
             auth["user"],
@@ -7197,7 +6398,7 @@ def telegram_scan_auto(pairs, selected_expiry):
     pool.shutdown(wait=False, cancel_futures=True)
 
     valid = [r for r in results if isinstance(r, dict) and r.get("signal") in {"CALL", "PUT"}]
-    best = max(valid, key=lambda r: float(r.get("deep_quality_score") or r.get("quality_score") or 0), default=None)
+    best = max(valid, key=lambda r: float(r.get("score") or 0), default=None)
     diagnostics = {
         "total_pairs": len(pairs),
         "completed_pairs": len(done),
