@@ -6179,6 +6179,59 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         @media(prefers-reduced-motion:reduce){#signalView .v37-direction-badge,#signalView .v37-live-ribbon span,#signalView .v37-arrow-chevron,#signalView .v37-down-mark{animation:none!important}}
 </style>
 
+
+<style id="raja-strong-signal-feed-v1">
+    .raja-strong-signals-panel{
+        border:1px solid rgba(96,239,255,.22);
+        background:linear-gradient(180deg,rgba(4,18,31,.98),rgba(2,10,19,.99));
+        border-radius:14px;
+        padding:10px;
+        box-shadow:0 14px 34px rgba(0,0,0,.22),inset 0 0 20px rgba(96,239,255,.025);
+        min-width:0;
+    }
+    .raja-strong-signals-panel .raja-side-auto-head strong{font-size:10px}
+    .raja-strong-signals-panel .raja-side-auto-head small{font-size:6.6px;line-height:1.3}
+    .raja-strong-signals-panel .raja-side-signal-list{max-height:520px}
+    .raja-strong-signals-panel .raja-side-signal-card{padding:9px}
+    .raja-strong-signals-panel .raja-side-signal-pair{font-size:11px}
+    .raja-strong-signals-panel .raja-side-signal-dir{font-size:13px}
+    .raja-strong-signals-panel .raja-side-signal-trade{font-size:9px}
+    .raja-signal-power-row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:7px}
+    .raja-signal-power-label{font-size:6.5px;color:#8fa9bb;font-weight:900;letter-spacing:.25px}
+    .raja-signal-power-value{font-size:12px;color:#60efff;font-weight:1000;text-shadow:0 0 10px rgba(96,239,255,.25)}
+    .raja-side-signal-card.buy .raja-signal-power-value{color:#00ff87}
+    .raja-side-signal-card.sell .raja-signal-power-value{color:#ff718d}
+    .raja-signal-pattern{margin-top:4px;color:#8ca4b8;font-size:6px;font-weight:800;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .raja-auto-best-btn{
+        width:100%;min-height:46px;border:1px solid rgba(0,255,135,.38);border-radius:11px;
+        background:linear-gradient(90deg,rgba(0,255,135,.17),rgba(0,210,255,.16));
+        color:#eafff8;font-size:10px;font-weight:1000;letter-spacing:.35px;cursor:pointer;
+    }
+    .raja-auto-best-btn:hover{border-color:#00ff87;box-shadow:0 0 18px rgba(0,255,135,.15)}
+    .v32-scan-action-row.raja-three-actions{grid-template-columns:1fr 1fr auto!important}
+    @media (min-width:1450px){
+        #mainAppContent .main-column{padding-right:270px!important}
+        .raja-strong-signals-panel{
+            position:fixed;right:12px;top:198px;width:248px;z-index:72;
+            max-height:calc(100dvh - 214px);overflow:auto;
+        }
+    }
+    @media (min-width:901px) and (max-width:1449px){
+        .raja-strong-signals-panel{margin:0 0 10px}
+        .raja-strong-signals-panel .raja-side-signal-list{
+            grid-template-columns:repeat(4,minmax(0,1fr));max-height:none;overflow:visible;
+        }
+    }
+    @media (max-width:900px){
+        .raja-strong-signals-panel{margin:0 0 8px}
+        .raja-strong-signals-panel .raja-side-signal-list{grid-template-columns:1fr 1fr;max-height:none}
+        .v32-scan-action-row.raja-three-actions{grid-template-columns:1fr!important}
+    }
+    @media (max-width:560px){
+        .raja-strong-signals-panel .raja-side-signal-list{grid-template-columns:1fr}
+    }
+</style>
+
 </head>
 <body>
 
@@ -6395,28 +6448,6 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         <span class="fs-icon">⛶</span>
                         <span class="fs-label">FULL SCREEN</span>
                     </button>
-
-                    <section id="rajaSideAutoSignalsPanel" class="raja-side-auto-signals" aria-label="Background auto scan signals" aria-live="polite">
-                        <div class="raja-side-auto-head">
-                            <div>
-                                <strong>AUTO SCAN SIGNALS</strong>
-                                <small>Every 3 Minutes</small>
-                            </div>
-                            <span id="rajaSideAutoLiveBadge" class="raja-side-auto-live">LIVE</span>
-                        </div>
-                        <div class="raja-side-auto-status">
-                            <span id="rajaSideAutoState"><i></i> AUTO SCAN: ON</span>
-                            <b id="rajaSideAutoCountdown">READY</b>
-                        </div>
-                        <div class="raja-side-auto-tabs" role="tablist" aria-label="Auto signal timeframe">
-                            <button id="rajaSideTab1m" class="active" type="button" onclick="setRajaSideSignalTab('1m')">1M SIGNALS</button>
-                            <button id="rajaSideTab5m" type="button" onclick="setRajaSideSignalTab('5m')">5M SIGNALS</button>
-                        </div>
-                        <div id="rajaSideSignalList" class="raja-side-signal-list">
-                            <div class="raja-side-signal-empty">Waiting for the first background scan…</div>
-                        </div>
-                        <div id="rajaSideAutoFooter" class="raja-side-auto-footer">Side feed only · HUD stays unchanged</div>
-                    </section>
                 </aside>
 
                 <main class="main-column">
@@ -6472,10 +6503,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             </button>
                         </div>
                     </section>
-
-                    <div id="rajaSideAutoMobileMount" aria-label="Auto scan signals mobile placement"></div>
-
-                    <section class="main-panel-card">
+<section class="main-panel-card">
                         <div class="scan-heading-row">
                             <div>
                                 <div class="scan-heading">🤖 RAJA AI BOT</div>
@@ -6515,7 +6543,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                     <div class="scan-ring" id="scanRing"><div class="scan-ring-center"><div class="scan-ring-value" id="scanPercent">0%</div><div class="scan-ring-label">READY</div></div></div>
                                     <div class="ready-copy">
                                         <div class="ready-title">AI Deep Scan Ready</div>
-                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS / HOME on mobile anytime while the scan is running. Background Auto Signals update the left panel every three minutes; the main HUD changes only when you run a scan.</div>
+                                        <div class="ready-sub">Choose market, pair mode and expiry below. Use SETTINGS / HOME on mobile anytime while the scan is running. Background Auto Search keeps the Strong Signals feed updated every three minutes; the main HUD changes only when you run a scan.</div>
                                         <div class="scan-stage-list" style="margin-top:18px;">
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Market engine connected</span></div>
                                             <div class="scan-stage done"><span class="scan-dot"></span><span>Multi-timeframe filters loaded</span></div>
@@ -6926,7 +6954,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                     </div>
                                 </div>
 
-                                <div class="inline-list-box"><div class="inline-item"><span>Signal Engine:</span><span style="color:#00ff87;">RAJA 24 SELECTED STRATEGIES ✔</span></div><div class="inline-item"><span>Closed Candle Lock:</span><span id="settingsModeStatus" style="color:#00ff87;">STRICT ✔</span></div><div class="inline-item"><span>Auto Signals:</span><span style="color:#00ff87;">3 Minutes · Left Panel Only ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Underlying proxy feed</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
+                                <div class="inline-list-box"><div class="inline-item"><span>Signal Engine:</span><span style="color:#00ff87;">RAJA 24 SELECTED STRATEGIES ✔</span></div><div class="inline-item"><span>Closed Candle Lock:</span><span id="settingsModeStatus" style="color:#00ff87;">STRICT ✔</span></div><div class="inline-item"><span>Auto Signals:</span><span style="color:#00ff87;">3 Minutes · Strong Signals Feed ✔</span></div><div class="inline-item"><span>OTC:</span><span style="color:#facc15;">Underlying proxy feed</span></div></div><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button>
                             </div>
                             <div id="newsInlineView" class="inline-content-view">
                                 <div class="inline-title">📰 Live Economic News / Calendar</div>
@@ -6957,6 +6985,25 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 <div style="display:flex;justify-content:center;margin-top:8px;"><button class="menu-back-btn" onclick="showDefaultView()">🏠 Dashboard</button></div>
                             </div>
                         </div>
+                    </section>
+
+
+                    <section id="rajaSideAutoSignalsPanel" class="raja-strong-signals-panel" aria-label="Live strong signals" aria-live="polite">
+                        <div class="raja-side-auto-head">
+                            <div>
+                                <strong>⚡ LIVE STRONG SIGNALS</strong>
+                                <small>Continuous background search · refreshes every 3 minutes</small>
+                            </div>
+                            <span id="rajaSideAutoLiveBadge" class="raja-side-auto-live">LIVE</span>
+                        </div>
+                        <div class="raja-side-auto-status">
+                            <span id="rajaSideAutoState"><i></i> AUTO SEARCH: ON</span>
+                            <b id="rajaSideAutoCountdown">READY</b>
+                        </div>
+                        <div id="rajaSideSignalList" class="raja-side-signal-list">
+                            <div class="raja-side-signal-empty">Searching the selected broker/market for up to 4 strong signals…</div>
+                        </div>
+                        <div id="rajaSideAutoFooter" class="raja-side-auto-footer">Power = setup quality, not guaranteed win probability.</div>
                     </section>
 
                     <div class="status-grid">
@@ -6994,7 +7041,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button><button class="utility-btn" type="button" onclick="location.href='/live-scanner'">🎥 Live Scanner</button><button class="utility-btn" type="button" onclick="location.href='/chart-scanner'">📷 Chart Scanner</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
                         </div>
-                        <div class="v32-scan-action-row">
+                        <div class="v32-scan-action-row raja-three-actions">
+                        <button id="rajaAutoBestPairBtn" class="raja-auto-best-btn" type="button" onclick="playClickSound(); runAutoBestPairNow()">✨ AUTO SCAN BEST PAIR NOW</button>
                         <button id="scanBtn" class="scan-btn" type="button" onclick="playClickSound(); startDeepScan(false)">▶ START AI MARKET SCAN</button>
                         <button id="stopScanBtn" class="v32-stop-scan-btn" type="button" onclick="stopRajaScan()">■ STOP SCAN</button>
                     </div>
@@ -7944,15 +7992,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function relocateRajaSideAutoPanel() {
-            const panel = document.getElementById('rajaSideAutoSignalsPanel');
-            const mobileMount = document.getElementById('rajaSideAutoMobileMount');
-            const desktopBtn = document.getElementById('rajaFullscreenDesktopBtn');
-            if (!panel) return;
-            if (window.matchMedia('(max-width: 900px)').matches) {
-                if (mobileMount && panel.parentElement !== mobileMount) mobileMount.appendChild(panel);
-            } else if (desktopBtn && desktopBtn.parentElement && panel.previousElementSibling !== desktopBtn) {
-                desktopBtn.insertAdjacentElement('afterend', panel);
-            }
+            // V1 strong feed stays in the main dashboard / right rail.
+            return;
         }
 
         function updateRajaSideAutoHeader() {
@@ -7962,7 +8003,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             const live = document.getElementById('rajaSideAutoLiveBadge');
             if (!panel) return;
             panel.classList.toggle('is-off', !autoRescanEnabled);
-            if (state) state.innerHTML = `<i></i> AUTO SCAN: ${autoRescanEnabled ? 'ON' : 'OFF'}`;
+            if (state) state.innerHTML = `<i></i> AUTO SEARCH: ${autoRescanEnabled ? 'ON' : 'OFF'}`;
             if (live) live.textContent = rajaSideAutoScanRunning ? 'SCAN' : (autoRescanEnabled ? 'LIVE' : 'OFF');
             if (countdown) {
                 if (rajaSideAutoScanRunning) countdown.textContent = 'SCANNING…';
@@ -7972,42 +8013,75 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             }
         }
 
+        function rajaStrongSignalPower(item) {
+            const explicit = Number(item?.power);
+            if (Number.isFinite(explicit) && explicit > 0) return Math.max(0, Math.min(99, explicit));
+            const priority = Number(item?.rank_score || 0);
+            if (priority > 0) return Math.max(55, Math.min(96, 60 + ((priority - 100) / 110) * 34));
+            return 70;
+        }
+
         function renderRajaSideSignals() {
             const list = document.getElementById('rajaSideSignalList');
             if (!list) return;
             const nowMs = Date.now();
             pruneRajaSideSignalHistory(nowMs);
-            const tf = rajaSideSignalActiveTf === '5m' ? '5m' : '1m';
-            const rows = Array.isArray(rajaSideSignalHistory[tf]) ? rajaSideSignalHistory[tf] : [];
+
+            const combined = [];
+            for (const tf of ['1m','5m']) {
+                const rows = Array.isArray(rajaSideSignalHistory[tf]) ? rajaSideSignalHistory[tf] : [];
+                for (const item of rows) {
+                    const timing = rajaSideSignalTiming(item, tf, nowMs);
+                    if (timing.state === 'expired') continue;
+                    const power = rajaStrongSignalPower(item);
+                    if (power < 72) continue;
+                    combined.push({...item, _tf:tf, _timing:timing, _power:power});
+                }
+            }
+
+            // Keep one freshest/highest-power entry per pair + direction, then show TOP 4.
+            const unique = new Map();
+            combined
+                .sort((a,b) => (b._power - a._power) || (Number(b.scanned_at||0)-Number(a.scanned_at||0)))
+                .forEach(item => {
+                    const key = `${String(item.pair||'')}|${String(item.signal||'')}`;
+                    if (!unique.has(key)) unique.set(key,item);
+                });
+            const rows = Array.from(unique.values()).slice(0,4);
+
             if (!rows.length) {
-                list.innerHTML = `<div class="raja-side-signal-empty"><strong>WAITING FOR NEXT DIRECTION</strong><br>No active ${tf.toUpperCase()} signal right now.<br>Auto Scan checks again every 3 minutes.</div>`;
+                list.innerHTML = `<div class="raja-side-signal-empty"><strong>SEARCHING FOR STRONG SETUPS</strong><br>No 72+ Power setup is active right now.<br>Background search keeps checking every 3 minutes.</div>`;
                 return;
             }
+
             list.innerHTML = rows.map(item => {
+                const tf = item._tf || item.timeframe || '1m';
                 const sig = String(item.signal || '').toUpperCase();
                 const buy = sig === 'CALL';
-                const score = Math.max(0, Math.min(100, Number(item.score || 0)));
+                const power = item._power;
                 const pair = escapeHtml(String(item.pair || '--'));
-                const regime = escapeHtml(String(item.market_regime || 'LIVE'));
+                const pattern = escapeHtml(String(item.selected_pattern || item.market_regime || 'Exact RAJA setup'));
                 const direction = buy ? 'UP ↑' : 'DOWN ↓';
                 const trade = buy ? 'BUY / CALL' : 'SELL / PUT';
-                const timing = rajaSideSignalTiming(item, tf, nowMs);
+                const timing = item._timing || rajaSideSignalTiming(item, tf, nowMs);
                 const sourceInfo = rajaSideSourceInfo(item);
                 const stateClass = timing.state === 'enter' ? 'status-enter' : 'status-wait';
-                const countdownLabel = timing.state === 'enter' ? `Entry ${formatCountdown(timing.remaining)}` : (nowMs < timing.targetStart ? `Opens ${formatCountdown(timing.remaining)}` : `Expires ${formatCountdown(timing.remaining)}`);
+                const countdownLabel = timing.state === 'enter'
+                    ? `Entry ${formatCountdown(timing.remaining)}`
+                    : (nowMs < timing.targetStart ? `Opens ${formatCountdown(timing.remaining)}` : `Expires ${formatCountdown(timing.remaining)}`);
                 const openPair = encodeURIComponent(String(item.pair || ''));
                 return `<div class="raja-side-signal-card raja-broker-clickable ${buy ? 'buy' : 'sell'} ${stateClass}" onclick="openBrokerForPair(decodeURIComponent('${openPair}'))" title="Open ${pair} in selected broker">
-                    <div class="raja-side-signal-top"><span class="raja-side-signal-time">Signal ${rajaSideSignalClock(item.scanned_at)}</span><span class="raja-side-signal-tf">${tf.toUpperCase()}</span></div>
+                    <div class="raja-side-signal-top"><span class="raja-side-signal-time">${rajaSideSignalClock(item.scanned_at)}</span><span class="raja-side-signal-tf">${String(tf).toUpperCase()}</span></div>
                     <div class="raja-side-signal-pair">${pair}</div>
                     <div class="raja-side-signal-main"><span class="raja-side-signal-dir">${direction}</span><span class="raja-side-signal-trade">${trade}</span></div>
+                    <div class="raja-signal-power-row"><span class="raja-signal-power-label">SETUP POWER</span><strong class="raja-signal-power-value">${power.toFixed(0)}%</strong></div>
+                    <div class="raja-side-signal-strength"><i style="--side-strength:${power.toFixed(0)}%"></i></div>
+                    <div class="raja-signal-pattern">${pattern}</div>
                     <div class="raja-side-entry-row">
                         <span class="raja-side-entry-status ${timing.state}">${timing.label}</span>
                         <span class="raja-side-entry-countdown">${countdownLabel}</span>
-                        <span class="raja-side-entry-help">${timing.helper}</span>
                     </div>
-                    <div class="raja-side-signal-meta"><span>Strength ${score.toFixed(0)}%</span><span>${regime}</span></div>
                     <span class="raja-side-source-badge ${sourceInfo.cls}">${escapeHtml(sourceInfo.label)}</span>
-                    <div class="raja-side-signal-strength"><i style="--side-strength:${score.toFixed(0)}%"></i></div>
                 </div>`;
             }).join('');
         }
@@ -8023,6 +8097,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 pair: String(item.pair || ''),
                 signal: String(item.signal || '').toUpperCase(),
                 score: Number(item.score || 0),
+                power: Number(item.power || 0),
+                rank_score: Number(item.rank_score || 0),
+                pattern_type: Number(item.pattern_type || 0),
+                selected_pattern: String(item.selected_pattern || item.market_regime || ''),
                 market_regime: String(item.market_regime || ''),
                 stability: Number(item.stability || 0),
                 closed_candle_epoch: Number(item.closed_candle_epoch || 0),
@@ -8118,7 +8196,10 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 let added = 0;
                 for (const tf of ['1m','5m']) {
                     const candidates = Array.isArray(result?.signals?.[tf]) ? result.signals[tf] : [];
-                    if (candidates[0] && rememberRajaSideSignal(tf, candidates[0])) added += 1;
+                    for (const candidate of candidates.slice(0,4)) {
+                        if (Number(candidate?.power || 0) < 72) continue;
+                        if (rememberRajaSideSignal(tf, candidate)) added += 1;
+                    }
                 }
                 renderRajaSideSignals();
 
@@ -8132,7 +8213,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         footer.textContent = 'No safe 1M/5M setup · wait';
                         footer.className = 'raja-side-auto-footer';
                     } else {
-                        footer.textContent = `Updated now · ${added ? 'new signal saved' : 'same candle refreshed'}`;
+                        footer.textContent = `Updated now · ${added ? `${added} strong setup(s) refreshed` : 'no new strong setup'}`;
                         footer.className = 'raja-side-auto-footer';
                     }
                 }
@@ -10066,6 +10147,19 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 if (rajaActiveScanController) rajaActiveScanController.abort();
             } catch (_) {}
             finalizeRajaStoppedScan();
+        }
+
+
+        function runAutoBestPairNow() {
+            const pairEl = document.getElementById('pairSelect');
+            if (pairEl) {
+                const autoOption = Array.from(pairEl.options || []).find(opt => String(opt.value || '').includes('Auto Scan'));
+                if (autoOption) {
+                    pairEl.value = autoOption.value;
+                    try { syncTargetPairDisplay(); } catch (_) {}
+                }
+            }
+            startDeepScan(false);
         }
 
         async function startDeepScan(autoTriggered = false) {
@@ -15633,4 +15727,5 @@ window.RAJA_ENTRY_TIMING_VERSION='V38_PREP_ENTRY_COUNTDOWN';
 
 </body>
 <!-- RAJA UI BROKER-PAIR-LAUNCH V1 · AUDNZD SKIP · HISTORY WINLOSS · 2026-08-28 -->
+<!-- RAJA STRONG SIGNAL FEED V1 · TOP4 POWER · AUTO BUTTON RESTORED · 2026-08-28 -->
 </html>
