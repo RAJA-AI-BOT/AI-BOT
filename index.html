@@ -6245,6 +6245,16 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 </style>
 
+
+<style id="raja-otc-reference-mode-v1">
+    .raja-otc-ref-note{
+        margin-top:6px;padding:7px 9px;border-radius:9px;
+        border:1px solid rgba(251,191,36,.28);
+        background:rgba(251,191,36,.07);color:#f4d67a;
+        font-size:7px;font-weight:850;line-height:1.35;
+    }
+</style>
+
 </head>
 <body>
 
@@ -6806,7 +6816,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                         </div>
 
                         <div id="rajaScanReadySummary" class="raja-scan-ready-summary">
-                            RAJA AI will check all markets and show only markets with fresh, usable reference data.
+                            RAJA AI can scan OTC without a bridge using fresh underlying/reference data. OTC reference candles may differ from the broker's synthetic OTC candles.
                         </div>
 
                         <button type="button" id="rajaBestAvailableBtn" class="raja-best-market-btn" style="display:none;">
@@ -10692,7 +10702,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             const skippedSlow = Number(scanDiagnostics.timed_out_pairs_count || 0);
                             titleEl.innerText = '⚠️ NO VALID LIVE SIGNAL FOUND';
                             const unavailableOnly = Math.max(0, dataBad - skippedSlow);
-                            const feedCopy = brokerOtcNow ? 'Exact broker data' : 'Live reference data';
+                            const feedCopy = brokerOtcNow ? 'OTC market data' : 'Live reference data';
                             descEl.innerText = `${feedCopy} loaded for ${dataOk}/${total} pairs${unavailableOnly ? `; ${unavailableOnly} unavailable` : ''}${skippedSlow ? `; ${skippedSlow} slow pair(s) will retry on the next re-scan` : ''}. None of the completed pairs passed ${scanMode} mode + ${selectedExpiry} confirmation on the current closed candles.`;
                         }
                     } else {
@@ -14604,11 +14614,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function armForexOtcFallback(reason = '') {
-            // V27 strict broker-native mode: never arm the old Yahoo/reference
-            // OTC fallback. Exact native WebSocket is primary; bridge is backup.
-            disarmForexOtcFallback();
-            forexOtcFallbackReason = String(reason || 'Exact broker OTC data unavailable.');
-            return;
+            // Bridge-free OTC mode: reference fallback is allowed and clearly labelled.
             forexOtcFallbackArmed = true;
             forexOtcFallbackReason = String(reason || 'Forex OTC live reference data is stale or unavailable.');
 
@@ -15581,7 +15587,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         const base = document.getElementById('rajaBaseFeedLabel');
         if (base) {
             if (isBrokerOtcScreen()) {
-                base.textContent = bridgeConnected ? `${broker} Browser Bridge 1m` : 'Broker Feed Required';
+                base.textContent = bridgeConnected ? `${broker} Exact Feed 1m` : 'OTC Reference 1m · No Bridge';
             } else {
                 base.textContent = 'Yahoo 1m';
             }
@@ -15634,19 +15640,12 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 
     function installBridgeButton() {
-        if (document.getElementById('rajaBrokerBridgeBtn')) return;
+        const existing = document.getElementById('rajaBrokerBridgeBtn');
+        if (existing) existing.remove();
         const old = document.getElementById('rajaQuotexBridgeBtn');
         if (old) old.remove();
-        const grid = document.querySelector('.utility-grid');
-        if (!grid) return;
-        const btn = document.createElement('button');
-        btn.id = 'rajaBrokerBridgeBtn';
-        btn.type = 'button';
-        btn.className = 'utility-btn';
-        btn.textContent = '🔗 CONNECT BROKER BRIDGE';
-        btn.addEventListener('click', createBridgePairCode);
-        grid.appendChild(btn);
-        refreshBridgeStatus();
+        updateBridgeUi(null);
+        return;
     }
 
     window.rajaCreateBrokerBridgePairCode = createBridgePairCode;
@@ -15886,8 +15885,37 @@ window.RAJA_ENTRY_TIMING_VERSION='V38_PREP_ENTRY_COUNTDOWN';
 }
 </style>
 
+
+<script id="raja-otc-reference-note-v1">
+(() => {
+    function syncOtcReferenceNote(){
+        const market = String(document.getElementById('marketType')?.value || '');
+        let note = document.getElementById('rajaOtcReferenceModeNote');
+        const snap = document.querySelector('.status-grid');
+        if (!snap) return;
+        if (/OTC/i.test(market)) {
+            if (!note) {
+                note = document.createElement('div');
+                note.id = 'rajaOtcReferenceModeNote';
+                note.className = 'raja-otc-ref-note';
+                snap.insertAdjacentElement('afterend', note);
+            }
+            note.textContent = 'OTC REFERENCE MODE · No bridge required. Signals use underlying/reference candles and may not match the broker’s exact synthetic OTC candle.';
+        } else if (note) {
+            note.remove();
+        }
+    }
+    document.addEventListener('change', e => {
+        if (e.target && (e.target.id === 'marketType' || e.target.id === 'brokerSelect')) setTimeout(syncOtcReferenceNote, 50);
+    });
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', syncOtcReferenceNote, {once:true});
+    else syncOtcReferenceNote();
+})();
+</script>
+
 </body>
 <!-- RAJA UI BROKER-PAIR-LAUNCH V1 · AUDNZD SKIP · HISTORY WINLOSS · 2026-08-28 -->
 <!-- RAJA STRONG SIGNAL FEED V1 · TOP4 POWER · AUTO BUTTON RESTORED · 2026-08-28 -->
 <!-- RAJA CONTINUOUS AUTO SEARCH V1 · NEXT CLOSED CANDLE LOOP · STRONG 72+ · 2026-08-28 -->
+<!-- RAJA OTC NO-BRIDGE REFERENCE MODE V1 · 2026-08-28 -->
 </html>
