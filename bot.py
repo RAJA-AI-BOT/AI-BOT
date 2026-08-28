@@ -3317,21 +3317,96 @@ SIDE_AUTO_SIGNAL_TIMEFRAMES = ("1m", "5m")
 SIDE_AUTO_SIGNAL_DEADLINE_SECONDS = max(20.0, min(75.0, float(os.environ.get("RAJA_SIDE_AUTO_DEADLINE_SECONDS", "68"))))
 
 
+
+def _raja_side_signal_power(row, user, pair, timeframe):
+    """
+    UI setup-power score for ranking background candidates.
+    This is NOT a win probability. It blends coded strategy priority,
+    feed freshness, movement regime, and a conservative history adjustment.
+    """
+    row = row or {}
+    try:
+        priority = float(row.get("pattern_priority") or 100.0)
+    except Exception:
+        priority = 100.0
+
+    # Active priorities are roughly 105..210. Map that into a conservative 60..94 base.
+    power = 60.0 + max(0.0, min(1.0, (priority - 100.0) / 110.0)) * 34.0
+
+    try:
+        age = float(row.get("data_age") or 0.0)
+        if age <= 25:
+            power += 3.0
+        elif age <= 60:
+            power += 1.5
+        elif age > 90:
+            power -= 4.0
+    except Exception:
+        pass
+
+    movement = row.get("movement_info") if isinstance(row.get("movement_info"), dict) else {}
+    label = str(movement.get("label") or "").upper()
+    if label == "NORMAL":
+        power += 2.5
+    elif label == "HIGH":
+        power -= 3.0
+    elif label == "LOW":
+        power -= 1.5
+
+    perf = {}
+    try:
+        perf = pair_timeframe_performance(user, pair, timeframe) if user else {}
+    except Exception:
+        perf = {}
+
+    sample = int(perf.get("sample_size") or 0) if isinstance(perf, dict) else 0
+    smoothed = float(perf.get("smoothed_win_rate") or 50.0) if isinstance(perf, dict) else 50.0
+    if sample >= 5:
+        power += max(-7.0, min(7.0, (smoothed - 50.0) * 0.22))
+    if isinstance(perf, dict) and perf.get("hard_block"):
+        power -= 12.0
+    if row.get("recovery_trade"):
+        power -= 5.0
+
+    return round(max(50.0, min(98.0, power)), 1), perf
+
+
 def calculate_side_auto_signal_candidates(pair, scan_options=None, bridge_user=None, broker=None):
-    """Background feed also uses ONLY exact SK25 rules (1m and 5m)."""
+    """Background feed: exact RAJA rules only. Returns ranked 1m/5m candidates with setup power."""
     out=[]
     for tf in ("1m","5m"):
         row=calculate_live_strategy_signal(pair,tf,scan_options,bridge_user,broker)
-        if row.get("signal") not in {"CALL","PUT"}: continue
+        if row.get("signal") not in {"CALL","PUT"}:
+            continue
+        power, perf = _raja_side_signal_power(row, bridge_user, pair, tf)
         out.append({
-            "pair":pair,"timeframe":tf,"signal":row["signal"],"direction":"UP" if row["signal"]=="CALL" else "DOWN",
-            "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT","score":100.0,
-            "rank_score":float(row.get("pattern_priority") or 0),"stability":100.0,"risk":"INFO ONLY",
-            "volatility_pct":row.get("volatility_pct",0),"market_regime":row.get("selected_pattern"),
-            "pattern_type":row.get("pattern_type"),"selected_pattern":row.get("selected_pattern"),"setup_match":100.0,
-            "next_candle_color":row.get("next_candle_color"),"rules":row.get("rules") or [],"recovery_trade":bool(row.get("recovery_trade")),
-            "closed_candle_epoch":row.get("closed_candle_epoch"),"data_age_seconds":row.get("data_age"),
-            "source":row.get("source"),"source_mode":row.get("source_mode"),"yahoo_symbol":row.get("yahoo_symbol"),
+            "pair":pair,
+            "timeframe":tf,
+            "signal":row["signal"],
+            "direction":"UP" if row["signal"]=="CALL" else "DOWN",
+            "trade":"BUY / CALL" if row["signal"]=="CALL" else "SELL / PUT",
+            "score":float(row.get("score") or 100.0),
+            "power":power,
+            "rank_score":float(row.get("pattern_priority") or 0),
+            "stability":float(row.get("market_stability_score") or 0.0),
+            "risk":"INFO ONLY",
+            "volatility_pct":row.get("volatility_pct",0),
+            "market_regime":row.get("selected_pattern"),
+            "pattern_type":row.get("pattern_type"),
+            "selected_pattern":row.get("selected_pattern"),
+            "setup_match":float(row.get("setup_match") or 0.0),
+            "next_candle_color":row.get("next_candle_color"),
+            "rules":row.get("rules") or [],
+            "recovery_trade":bool(row.get("recovery_trade")),
+            "closed_candle_epoch":row.get("closed_candle_epoch"),
+            "data_age_seconds":row.get("data_age"),
+            "source":row.get("source"),
+            "source_mode":row.get("source_mode"),
+            "yahoo_symbol":row.get("yahoo_symbol"),
+            "history_sample":int((perf or {}).get("sample_size") or 0),
+            "history_smoothed_win_rate":(perf or {}).get("smoothed_win_rate"),
+            "performance_status":(perf or {}).get("status") or "LEARNING",
+            "power_is_probability":False,
         })
     return out
 
@@ -5987,7 +6062,7 @@ def chart_scan_api():
 
 @app.route("/side-auto-signals", methods=["POST"])
 def side_auto_signals():
-    """3-minute left-rail feed. Returns ranked 1m and 5m candidates without changing the HUD."""
+    """Continuous 3-minute strong-signal feed. Returns ranked 1m/5m candidates without changing the HUD."""
     data = request.get_json(silent=True) or {}
     auth, error = _auth_session(data)
     if error:
@@ -6055,6 +6130,7 @@ def side_auto_signals():
     for tf in grouped:
         grouped[tf].sort(
             key=lambda item: (
+                float(item.get("power") or 0.0),
                 float(item.get("rank_score") or 0.0),
                 float(item.get("score") or 0.0),
             ),
@@ -6438,3 +6514,4 @@ if __name__ == "__main__":
         debug=False,
         threaded=True,
     )
+# RAJA STRONG SIGNAL FEED V1 · TOP4 POWER · 2026-08-28
