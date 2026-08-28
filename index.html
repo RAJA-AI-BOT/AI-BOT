@@ -6232,6 +6232,19 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 </style>
 
+
+<style id="raja-continuous-auto-search-v1">
+    #rajaAutoBestPairBtn.searching{
+        border-color:rgba(96,239,255,.72)!important;
+        background:linear-gradient(90deg,rgba(0,190,255,.24),rgba(0,255,135,.20))!important;
+        box-shadow:0 0 22px rgba(0,210,255,.15);
+    }
+    #rajaAutoBestPairBtn.found{
+        border-color:rgba(0,255,135,.72)!important;
+        background:linear-gradient(90deg,rgba(0,255,135,.28),rgba(0,190,255,.18))!important;
+    }
+</style>
+
 </head>
 <body>
 
@@ -7042,7 +7055,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             </div>
                         </div>
                         <div class="v32-scan-action-row raja-three-actions">
-                        <button id="rajaAutoBestPairBtn" class="raja-auto-best-btn" type="button" onclick="playClickSound(); runAutoBestPairNow()">✨ AUTO SCAN BEST PAIR NOW</button>
+                        <button id="rajaAutoBestPairBtn" class="raja-auto-best-btn" type="button" onclick="playClickSound(); runAutoBestPairNow()">✨ AUTO SCAN BEST PAIR · KEEP SEARCHING</button>
                         <button id="scanBtn" class="scan-btn" type="button" onclick="playClickSound(); startDeepScan(false)">▶ START AI MARKET SCAN</button>
                         <button id="stopScanBtn" class="v32-stop-scan-btn" type="button" onclick="stopRajaScan()">■ STOP SCAN</button>
                     </div>
@@ -10141,6 +10154,7 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
         function stopRajaScan() {
+            if (rajaContinuousAutoSearch) stopRajaContinuousAutoSearch('user');
             if (!scanSessionState.running && !rajaScanStartPending) return;
             rajaScanStopRequested = true;
             try {
@@ -10150,16 +10164,150 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
 
-        function runAutoBestPairNow() {
+        let rajaContinuousAutoSearch = false;
+        let rajaContinuousAutoTimer = null;
+        let rajaContinuousAutoTicker = null;
+        let rajaContinuousNextScanAt = 0;
+        const RAJA_CONTINUOUS_STRONG_POWER = 72;
+
+        function rajaMainSignalPower(signalData) {
+            const explicit = Number(signalData?.power);
+            if (Number.isFinite(explicit) && explicit > 0) return Math.max(0, Math.min(99, explicit));
+            const priority = Number(signalData?.patternPriority || signalData?.deepQualityScore || 0);
+            if (priority > 0) {
+                return Math.max(55, Math.min(96, 60 + ((priority - 100) / 110) * 34));
+            }
+            return 70;
+        }
+
+        function rajaContinuousAutoDelayMs() {
+            const seconds = Math.max(60, Number(getExpirySeconds(selectedExpiry) || 60));
+            const tfMs = seconds * 1000;
+            const now = Date.now();
+            const nextBoundary = (Math.floor(now / tfMs) + 1) * tfMs;
+            // Wait a little after the candle boundary so the backend has the CLOSED candle.
+            return Math.max(8000, (nextBoundary - now) + 2500);
+        }
+
+        function clearRajaContinuousAutoTimer() {
+            if (rajaContinuousAutoTimer) clearTimeout(rajaContinuousAutoTimer);
+            if (rajaContinuousAutoTicker) clearInterval(rajaContinuousAutoTicker);
+            rajaContinuousAutoTimer = null;
+            rajaContinuousAutoTicker = null;
+            rajaContinuousNextScanAt = 0;
+        }
+
+        function updateRajaContinuousAutoButton(label) {
+            const btn = document.getElementById('rajaAutoBestPairBtn');
+            if (!btn) return;
+            btn.classList.toggle('searching', rajaContinuousAutoSearch);
+            if (label) {
+                btn.textContent = label;
+                return;
+            }
+            if (!rajaContinuousAutoSearch) {
+                btn.textContent = '✨ AUTO SCAN BEST PAIR · KEEP SEARCHING';
+                return;
+            }
+            if (rajaContinuousNextScanAt > Date.now()) {
+                btn.textContent = `■ AUTO SEARCH ON · NEXT ${formatCountdown(rajaContinuousNextScanAt - Date.now())}`;
+            } else {
+                btn.textContent = '■ AUTO SEARCH ON · SCANNING…';
+            }
+        }
+
+        function stopRajaContinuousAutoSearch(reason = '') {
+            rajaContinuousAutoSearch = false;
+            clearRajaContinuousAutoTimer();
+            const btn = document.getElementById('rajaAutoBestPairBtn');
+            if (btn) {
+                btn.classList.remove('searching');
+                if (reason === 'found') {
+                    btn.classList.add('found');
+                    btn.textContent = '✓ STRONG SIGNAL FOUND · AUTO SEARCH STOPPED';
+                    setTimeout(() => {
+                        btn.classList.remove('found');
+                        updateRajaContinuousAutoButton();
+                    }, 4500);
+                } else {
+                    btn.classList.remove('found');
+                    updateRajaContinuousAutoButton();
+                }
+            }
+        }
+
+        function scheduleRajaContinuousAutoSearch(delayMs) {
+            clearRajaContinuousAutoTimer();
+            if (!rajaContinuousAutoSearch || !isUserVerified) return;
+            const delay = Math.max(5000, Number(delayMs || rajaContinuousAutoDelayMs()));
+            rajaContinuousNextScanAt = Date.now() + delay;
+            updateRajaContinuousAutoButton();
+            rajaContinuousAutoTicker = setInterval(updateRajaContinuousAutoButton, 1000);
+            rajaContinuousAutoTimer = setTimeout(() => {
+                clearRajaContinuousAutoTimer();
+                if (rajaContinuousAutoSearch) runRajaContinuousAutoCycle();
+            }, delay);
+        }
+
+        async function runRajaContinuousAutoCycle() {
+            if (!rajaContinuousAutoSearch || !isUserVerified) return;
+
+            if (!navigator.onLine) {
+                updateRajaContinuousAutoButton('■ AUTO SEARCH ON · OFFLINE, RETRYING…');
+                scheduleRajaContinuousAutoSearch(15000);
+                return;
+            }
+
+            // Do not collide with another foreground scan.
+            if (rajaScanStartPending || scanSessionState.running) {
+                updateRajaContinuousAutoButton('■ AUTO SEARCH ON · WAITING FOR CURRENT SCAN…');
+                scheduleRajaContinuousAutoSearch(8000);
+                return;
+            }
+
             const pairEl = document.getElementById('pairSelect');
             if (pairEl) {
                 const autoOption = Array.from(pairEl.options || []).find(opt => String(opt.value || '').includes('Auto Scan'));
-                if (autoOption) {
-                    pairEl.value = autoOption.value;
-                    try { syncTargetPairDisplay(); } catch (_) {}
+                if (autoOption) pairEl.value = autoOption.value;
+            }
+            try { syncTargetPairDisplay(); } catch (_) {}
+
+            rajaContinuousNextScanAt = 0;
+            updateRajaContinuousAutoButton('■ AUTO SEARCH ON · SCANNING ALL PAIRS…');
+
+            const signal = await startDeepScan(false);
+            if (!rajaContinuousAutoSearch) return;
+
+            if (signal) {
+                const power = rajaMainSignalPower(signal);
+                if (power >= RAJA_CONTINUOUS_STRONG_POWER) {
+                    stopRajaContinuousAutoSearch('found');
+                    return;
                 }
             }
-            startDeepScan(false);
+
+            // No strong setup yet: wait for the next CLOSED candle, then scan again.
+            scheduleRajaContinuousAutoSearch(rajaContinuousAutoDelayMs());
+        }
+
+        function runAutoBestPairNow() {
+            if (rajaContinuousAutoSearch) {
+                stopRajaContinuousAutoSearch('user');
+                try {
+                    if (rajaActiveScanController) rajaActiveScanController.abort();
+                } catch (_) {}
+                return;
+            }
+
+            rajaContinuousAutoSearch = true;
+            const pairEl = document.getElementById('pairSelect');
+            if (pairEl) {
+                const autoOption = Array.from(pairEl.options || []).find(opt => String(opt.value || '').includes('Auto Scan'));
+                if (autoOption) pairEl.value = autoOption.value;
+            }
+            try { syncTargetPairDisplay(); } catch (_) {}
+            updateRajaContinuousAutoButton();
+            runRajaContinuousAutoCycle();
         }
 
         async function startDeepScan(autoTriggered = false) {
@@ -10471,7 +10619,18 @@ body:not(.raja-authenticated).raja-mobile-scanning {
 
             setTimeout(() => {
                 if (bestSignalFound) {
-                    displaySignalResult(bestSignalFound);
+                    const continuousPower = rajaMainSignalPower(bestSignalFound);
+                    if (rajaContinuousAutoSearch && continuousPower < RAJA_CONTINUOUS_STRONG_POWER) {
+                        completeScanSession('nosignal');
+                        syncTargetPairDisplay();
+                        const titleEl = document.getElementById('noSignalTitle');
+                        const descEl = document.getElementById('noSignalDesc');
+                        if (titleEl) titleEl.innerText = '🔎 AUTO SEARCH CONTINUES · STRONGER SETUP REQUIRED';
+                        if (descEl) descEl.innerText = `Best exact setup was ${continuousPower.toFixed(0)} Power. RAJA will scan again after the next closed ${selectedExpiry} candle until a ${RAJA_CONTINUOUS_STRONG_POWER}+ Power setup appears.`;
+                        if (currentSection === 'dashboard') renderPrimaryView();
+                    } else {
+                        displaySignalResult(bestSignalFound);
+                    }
                 } else {
                     completeScanSession(
                         rajaLatestMarketState
@@ -10543,6 +10702,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                     if (currentSection === 'dashboard') renderPrimaryView();
                 }
             }, 250);
+
+            return bestSignalFound;
         }
 
 
@@ -15728,4 +15889,5 @@ window.RAJA_ENTRY_TIMING_VERSION='V38_PREP_ENTRY_COUNTDOWN';
 </body>
 <!-- RAJA UI BROKER-PAIR-LAUNCH V1 · AUDNZD SKIP · HISTORY WINLOSS · 2026-08-28 -->
 <!-- RAJA STRONG SIGNAL FEED V1 · TOP4 POWER · AUTO BUTTON RESTORED · 2026-08-28 -->
+<!-- RAJA CONTINUOUS AUTO SEARCH V1 · NEXT CLOSED CANDLE LOOP · STRONG 72+ · 2026-08-28 -->
 </html>
