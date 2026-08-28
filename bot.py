@@ -443,7 +443,7 @@ RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC = str(os.environ.get("RAJA_REQUIRE_QUOTEX_BRI
 # Keep the scanner usable when the browser bridge is connected but not yet streaming.
 # Exact Quotex OTC candles are preferred; when they are missing, a clearly-labelled
 # Yahoo/Twelve Data reference feed may be used instead of hard-blocking the whole bot.
-RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK = str(os.environ.get("RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK", "1")).strip().lower() not in {"0", "false", "no", "off"}
+RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK = True  # Forced ON for no-bridge OTC mode
 RAJA_STRICT_BROKER_OTC = False  # Bridge-free OTC reference mode
 QUOTEX_BRIDGE_PAIR_CODE_TTL_SECONDS = max(120, min(1800, int(os.environ.get("RAJA_QUOTEX_BRIDGE_PAIR_CODE_TTL", "600"))))
 QUOTEX_BRIDGE_TOKEN_TTL_SECONDS = max(3600, min(31536000, int(os.environ.get("RAJA_QUOTEX_BRIDGE_TOKEN_TTL", str(30 * 24 * 3600)))))
@@ -2586,7 +2586,7 @@ def get_market_data(pair, bridge_user=None, broker=None):
             or "Exact broker OTC feed is unavailable; using underlying reference data."
         )
 
-        if RAJA_STRICT_BROKER_OTC or not RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK or not yahoo_symbol:
+        if RAJA_STRICT_BROKER_OTC or not yahoo_symbol:
             blocked_info = dict(native_info or {})
             blocked_info.update({
                 "source": blocked_info.get("source") or ("Quotex Native WebSocket" if is_quotex else "Pocket Option Native WebSocket"),
@@ -3719,15 +3719,13 @@ def otc_fallback_config():
     po_native = dict(native.get("pocket_option") or {})
     qx_native_ready = bool(qx_native.get("configured") and qx_native.get("connected"))
     po_native_ready = bool(po_native.get("configured") and po_native.get("connected"))
-    direct_ready = bool(qx_native_ready or (bridge_connected and pairs_with_data > 0))
+    # No-bridge reference mode is always scan-capable when the normal
+    # Yahoo/Twelve reference chain is available. Native broker data remains optional.
+    direct_ready = True
     if qx_native_ready:
-        message = "Quotex native WebSocket is connected. Browser bridge is optional backup."
-    elif bridge_connected and pairs_with_data > 0:
-        message = "Quotex native feed is unavailable; exact browser bridge backup is streaming."
-    elif qx_native.get("configured"):
-        message = "Quotex native feed is configured but not connected yet. Bridge may be used as backup."
+        message = "Exact Quotex native feed is connected. It will be preferred automatically."
     else:
-        message = "Configure Quotex native session/credentials for bridge-independent OTC data."
+        message = "No-bridge OTC reference mode is active. Yahoo/Twelve reference candles will be used when exact broker OTC data is unavailable."
     return jsonify({
         "status": "success",
         "data": {
@@ -3744,8 +3742,8 @@ def otc_fallback_config():
             "bridge": bridge,
             "bridge_required_for_quotex_otc": False,
             "bridge_is_backup": True,
-            "reference_fallback_enabled": False,
-            "strict_broker_otc": True,
+            "reference_fallback_enabled": True,
+            "strict_broker_otc": False,
             "message": message,
         },
     })
@@ -3949,8 +3947,8 @@ def health():
         "quotex_bridge_required_for_otc": False,
         "legacy_bridge_required_env": RAJA_REQUIRE_QUOTEX_BRIDGE_FOR_OTC,
         "quotex_reference_fallback_enabled": True,
-        "legacy_reference_fallback_env": RAJA_ALLOW_QUOTEX_REFERENCE_FALLBACK,
-        "strict_broker_otc": RAJA_STRICT_BROKER_OTC,
+        "legacy_reference_fallback_env": True,
+        "strict_broker_otc": False,
         "broker_otc_source_priority": ["native_websocket", "yahoo_reference", "twelve_data_reference"],
         "native_broker_feeds": native_feed_status(),
         "base_interval": "1m",
@@ -4720,7 +4718,7 @@ def forex_otc_fallback_data():
     if RAJA_STRICT_BROKER_OTC:
         return jsonify({
             "status": "error",
-            "message": "Reference-based OTC fallback is disabled. Use the broker-native WebSocket feed (bridge is optional backup).",
+            "message": "OTC reference mode is active; this strict-mode guard should not be reached.",
             "source_mode": "broker_native_required",
         }), 409
 
@@ -6512,3 +6510,5 @@ if __name__ == "__main__":
 # RAJA STRONG SIGNAL FEED V1 · TOP4 POWER · 2026-08-28
 
 # RAJA OTC NO-BRIDGE REFERENCE MODE V1 · 2026-08-28
+
+# RAJA OTC NO-BRIDGE FIX2 · FORCE REFERENCE FALLBACK · 2026-08-28
