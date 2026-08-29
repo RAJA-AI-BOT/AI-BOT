@@ -2732,11 +2732,11 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_SK25_TYPE_1_25_ONLY_V41"
+SK25_ENGINE_VERSION = "RAJA_SK25_TYPE_1_25_ONLY_V42"
 SK25_PATTERN_LIBRARY_SIZE = 25
 SK25_LIVE_MIN_CANDLES = 10
 
-# V41 scanner policy: Pattern Type 1-25 only. IDs 26-35 remain in the
+# V42 scanner policy: Pattern Type 1-25 only. IDs 26-35 remain in the
 # historical source for compatibility, but add()/add_setup() ignore them.
 RAJA_ACTIVE_STRATEGY_IDS = frozenset(range(1, 26))
 RAJA_STRATEGY_NAMES = {
@@ -5203,8 +5203,15 @@ def _detect_candles_in_chart(chart: np.ndarray) -> tuple[list[dict[str, Any]], f
     density = float(colored.mean())
     return candles, quality, quality_notes, max(0.0, span), density
 
-def _candidate_chart_regions(arr: np.ndarray) -> list[tuple[str, np.ndarray]]:
-    """Return desktop + mobile chart crops; the engine scores and chooses the best one."""
+def _candidate_chart_regions_with_bounds(
+    arr: np.ndarray,
+) -> list[tuple[str, np.ndarray, tuple[float, float, float, float]]]:
+    """Return chart candidates plus normalized full-frame bounds.
+
+    The normalized bounds are reused by the V42 preflight endpoint to draw a
+    proposed crop on the exact frame shown in the browser.  Signal analysis keeps
+    using the same candidate list, so auto-detect does not change SK25 rules.
+    """
     h, w, _ = arr.shape
     portrait = h > w * 1.12
     specs: list[tuple[str, float, float, float, float]]
@@ -5227,13 +5234,192 @@ def _candidate_chart_regions(arr: np.ndarray) -> list[tuple[str, np.ndarray]]:
             ("desktop-fullchart", 0.01, 0.99, 0.16, 0.96),
         ]
 
-    out: list[tuple[str, np.ndarray]] = []
+    out: list[tuple[str, np.ndarray, tuple[float, float, float, float]]] = []
     for name, xa, xb, ya, yb in specs:
         x1, x2 = int(w * xa), int(w * xb)
         y1, y2 = int(h * ya), int(h * yb)
         if x2 - x1 >= 180 and y2 - y1 >= 140:
-            out.append((name, arr[y1:y2, x1:x2]))
+            out.append((name, arr[y1:y2, x1:x2], (xa, ya, xb - xa, yb - ya)))
     return out
+
+
+def _candidate_chart_regions(arr: np.ndarray) -> list[tuple[str, np.ndarray]]:
+    """Compatibility wrapper for the existing visual signal analyzer."""
+    return [(name, crop) for name, crop, _bounds in _candidate_chart_regions_with_bounds(arr)]
+
+
+def _wide_colored_overlay_count(chart: np.ndarray) -> int:
+    """Count likely indicator/overlay lines without treating one price line as an indicator.
+
+    This is only a preflight warning.  It never generates a direction.  Two or more
+    long, thin saturated components usually mean an indicator/annotation overlay;
+    one line is allowed because brokers commonly draw the current-price line.
+    """
+    h, w, _ = chart.shape
+    red, bull, _meta = _adaptive_candle_color_masks(chart)
+    wide = 0
+    for mask in (red, bull):
+        for left, right, top, bottom, pixels in _connected_color_components(mask):
+            width = right - left + 1
+            height = bottom - top + 1
+            if (
+                width >= max(70, int(w * 0.22))
+                and height <= max(10, int(h * 0.055))
+                and pixels >= max(45, int(width * 0.28))
+            ):
+                wide += 1
+    return wide
+
+
+def _preflight_roi_from_candles(
+    candles: list[dict[str, Any]],
+    chart_shape: tuple[int, ...],
+    candidate_bounds: tuple[float, float, float, float],
+) -> tuple[dict[str, float], int]:
+    """Build a stable newest-30-candle crop in full-frame normalized coordinates."""
+    ch, cw = int(chart_shape[0]), int(chart_shape[1])
+    selected = sorted(candles, key=lambda c: float(c.get("x") or 0.0))[-30:]
+    if not selected:
+        return {}, 0
+
+    xs = np.array([float(c.get("x") or 0.0) for c in selected], dtype=float)
+    tops = np.array([float(c.get("top") or 0.0) for c in selected], dtype=float)
+    bottoms = np.array([float(c.get("bottom") or 0.0) for c in selected], dtype=float)
+    gaps = np.diff(xs)
+    useful = gaps[gaps > 2.0]
+    spacing = float(np.median(useful)) if useful.size else max(8.0, cw * 0.035)
+
+    x1 = max(0.0, float(xs.min()) - spacing * 1.35)
+    x2 = min(float(cw), float(xs.max()) + spacing * 1.65)
+    raw_y1 = max(0.0, float(tops.min()))
+    raw_y2 = min(float(ch), float(bottoms.max()))
+    candle_height = max(1.0, raw_y2 - raw_y1)
+    y_pad = max(ch * 0.08, candle_height * 0.30)
+    y1 = max(0.0, raw_y1 - y_pad)
+    y2 = min(float(ch), raw_y2 + y_pad)
+
+    # Preserve enough vertical context for wicks/SR while still excluding broker UI.
+    min_h = ch * 0.42
+    if y2 - y1 < min_h:
+        centre = (y1 + y2) / 2.0
+        y1 = max(0.0, centre - min_h / 2.0)
+        y2 = min(float(ch), y1 + min_h)
+        y1 = max(0.0, y2 - min_h)
+
+    xa, ya, wa, ha = candidate_bounds
+    roi = {
+        "x": max(0.0, min(1.0, xa + (x1 / max(cw, 1)) * wa)),
+        "y": max(0.0, min(1.0, ya + (y1 / max(ch, 1)) * ha)),
+        "w": max(0.0, min(1.0, ((x2 - x1) / max(cw, 1)) * wa)),
+        "h": max(0.0, min(1.0, ((y2 - y1) / max(ch, 1)) * ha)),
+    }
+    roi["w"] = min(1.0 - roi["x"], max(0.12, roi["w"]))
+    roi["h"] = min(1.0 - roi["y"], max(0.18, roi["h"]))
+    return {key: round(float(value), 6) for key, value in roi.items()}, len(selected)
+
+
+def analyze_chart_preflight(raw: bytes, *, already_cropped: bool = False) -> dict[str, Any]:
+    """Auto-detect/test a candle crop without running strategies or creating a signal."""
+    try:
+        image = Image.open(io.BytesIO(raw))
+        image = ImageOps.exif_transpose(image).convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise ValueError("Image could not be opened. Use a clear PNG/JPG chart frame.") from exc
+
+    original_w, original_h = image.size
+    if original_w < 240 or original_h < 180:
+        raise ValueError("Frame is too small. Use a clearer chart frame.")
+
+    scale = min(1.0, 1600.0 / max(original_w, original_h))
+    if scale < 1.0:
+        image = image.resize(
+            (max(1, int(original_w * scale)), max(1, int(original_h * scale))),
+            Image.Resampling.LANCZOS,
+        )
+    arr = np.asarray(image, dtype=np.uint8)
+
+    if already_cropped:
+        candidates = [("confirmed-crop", arr, (0.0, 0.0, 1.0, 1.0))]
+    else:
+        candidates = _candidate_chart_regions_with_bounds(arr)
+        candidates.append(("full-frame-fallback", arr, (0.0, 0.0, 1.0, 1.0)))
+
+    best: tuple[str, np.ndarray, tuple[float, float, float, float], list[dict[str, Any]], float, list[str], float, float] | None = None
+    best_score = -1e9
+    for name, candidate, bounds in candidates:
+        candles, quality, quality_notes, span, density = _detect_candles_in_chart(candidate)
+        score = (
+            min(len(candles), 45) * 4.0
+            + min(1.0, span / 0.55) * 36.0
+            + min(16.0, density * 850.0)
+            + quality * 0.14
+        )
+        if len(candles) < 6:
+            score -= 24.0
+        if name == "full-frame-fallback":
+            score -= 8.0
+        if score > best_score:
+            best_score = score
+            best = (name, candidate, bounds, candles, quality, quality_notes, span, density)
+
+    if best is None:
+        raise ValueError("No readable chart region was found.")
+
+    name, chart, bounds, candles, quality, quality_notes, span, _density = best
+    detected = len(candles)
+    roi, selected_count = _preflight_roi_from_candles(candles, chart.shape, bounds)
+    wide_overlays = _wide_colored_overlay_count(chart)
+    possible_indicator = wide_overlays >= 2
+    warnings = list(quality_notes)
+    guidance = "READY"
+    gate = "PASS"
+
+    if possible_indicator:
+        gate = "RESCAN"
+        guidance = "REMOVE INDICATORS"
+        warnings.insert(0, "REMOVE INDICATORS: multiple wide coloured overlay lines were detected.")
+    elif detected < MIN_SIGNAL_CANDLES:
+        gate = "RESCAN"
+        guidance = "ZOOM OUT"
+        warnings.insert(0, f"Only {detected} candles detected; show at least {MIN_SIGNAL_CANDLES} complete candles.")
+    elif quality < MIN_SIGNAL_IMAGE_QUALITY:
+        gate = "RESCAN"
+        guidance = "CLEARER FRAME"
+        warnings.insert(0, f"Frame quality {quality:.0f}/100 is below {MIN_SIGNAL_IMAGE_QUALITY:.0f}/100.")
+    elif detected < 20:
+        guidance = "ZOOM OUT SLIGHTLY"
+        warnings.insert(0, f"{detected} candles pass the minimum; 20–30 is the ideal view.")
+    elif detected > 30:
+        guidance = "ZOOM IN SLIGHTLY"
+        warnings.insert(0, f"{detected} candles detected; the proposed crop keeps the newest 30.")
+
+    auto_detected = bool(roi) and detected >= 6 and span >= 0.10
+    if not auto_detected:
+        gate = "RESCAN"
+        guidance = "ZOOM OUT" if detected < MIN_SIGNAL_CANDLES else "SET AREA MANUALLY"
+        warnings.insert(0, "Automatic chart-area detection was not reliable; set the candle area manually.")
+
+    xa, _ya, wa, _ha = bounds
+    sidebars_excluded = not already_cropped and (xa > 0.025 or xa + wa < 0.96)
+    return {
+        "mode": "TEST_FRAME" if already_cropped else "AUTO_DETECT",
+        "auto_detected": auto_detected,
+        "roi": roi if not already_cropped else {},
+        "crop_name": name,
+        "detected_candles": int(detected),
+        "selected_candles": int(selected_count),
+        "minimum_candles": int(MIN_SIGNAL_CANDLES),
+        "ideal_candles": "20-30",
+        "image_quality_score": round(float(quality), 1),
+        "scan_gate": gate,
+        "zoom_guidance": guidance,
+        "possible_indicator_overlay": possible_indicator,
+        "wide_overlay_count": int(wide_overlays),
+        "sidebars_excluded": bool(sidebars_excluded),
+        "warnings": warnings[:6],
+        "strategy_scan_performed": False,
+        "signal_generated": False,
+    }
 
 def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", last_outcome: str = "", *, captured_at_close: bool = False) -> dict[str, Any]:
     """Strict Pattern Type 1-25 closed-candle chart scanner.
@@ -5348,7 +5534,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
             "latest_candle_direction": "UNKNOWN",
             "reasons": ["Insufficient readable candle structure for Pattern Type 1-25 recognition."], "warnings": warnings,
             "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "Pattern Type 1-25"},
-            "engine": "RAJA V41 · Strict SK25 + Adaptive Vision + Closed Candle Lock", "analysis_crop_mode": crop_name,
+            "engine": "RAJA V42 · Strict SK25 + Adaptive Vision + Closed Candle Lock", "analysis_crop_mode": crop_name,
             "timing_verified": bool(captured_at_close), "forming_candle_excluded": forming_candle_excluded, "newborn_candle_excluded": newborn_candle_excluded,
             **legacy_aliases("NO ACTIVE STRATEGY SETUP", "NONE", 0.0, []),
         }
@@ -5896,7 +6082,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
             "Conflict Gate": "BLOCK" if conflict_gate else "PASS",
             "Timeframe rules": "Type 11=30s; Type 12/13=2m; Type 1=OTC; Type 24=Live market",
         },
-        "engine": "RAJA V41 · Strict SK25 + Adaptive Vision + Closed Candle Lock + Conflict Gate",
+        "engine": "RAJA V42 · Strict SK25 + Adaptive Vision + Closed Candle Lock + Conflict Gate",
         "analysis_crop_mode": crop_name,
     }
     result.update(legacy_aliases(selected, selected_dir, round(float(match_score), 1), signals_out, 25))
@@ -6012,6 +6198,38 @@ def chart_scanner_page():
     return response
 
 
+@app.route("/chart-preflight", methods=["POST"])
+def chart_preflight_api():
+    """Detect/test a candle crop. This endpoint never evaluates SK25 or emits a signal."""
+    auth_data = {
+        "key": request.form.get("key"), "user": request.form.get("user"),
+        "device": request.form.get("device"), "session_token": request.form.get("session_token"),
+    }
+    _auth, error = _auth_session(auth_data)
+    if error:
+        return error
+    upload = request.files.get("image")
+    if not upload:
+        return jsonify({"status": "error", "message": "A live chart frame is required."}), 400
+    raw = upload.read(RAJA_CHART_SCAN_MAX_UPLOAD + 1)
+    if len(raw) > RAJA_CHART_SCAN_MAX_UPLOAD:
+        return jsonify({"status": "error", "message": "Image is too large."}), 413
+    already_cropped = str(request.form.get("already_cropped") or "").lower() in {"1", "true", "yes", "on"}
+    try:
+        result = analyze_chart_preflight(raw, already_cropped=already_cropped)
+    except (ValueError, UnidentifiedImageError) as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    finished_ms = int(time.time() * 1000)
+    result.update({
+        "broker": str(request.form.get("broker") or "Quotex").strip()[:60],
+        "market": str(request.form.get("market") or "OTC").strip()[:40],
+        "engine": "RAJA V42 · AUTO CHART PREFLIGHT · NO SIGNAL",
+    })
+    response = jsonify({"status": "success", "result": result, "server_epoch_ms": finished_ms})
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
+
+
 @app.route("/chart-scan", methods=["POST"])
 def chart_scan_api():
     request_received_ms = int(time.time() * 1000)
@@ -6032,6 +6250,7 @@ def chart_scan_api():
     source=str(request.form.get("source") or "CHART_SCANNER").strip()[:80]
     capture_mode=str(request.form.get("capture_mode") or "SCREENSHOT").strip().upper()[:30]
     chart_crop_set=str(request.form.get("chart_crop_set") or "").lower() in {"1","true","yes","on"}
+    chart_crop_tested=str(request.form.get("chart_crop_tested") or "").lower() in {"1","true","yes","on"}
     previous_signal_key=str(request.form.get("last_signal_key") or "").strip()[:96]
     if timeframe not in {"30s","1m","2m","5m","10m","15m","30m"}:
         return jsonify({"status":"error","message":"Unsupported timeframe."}),400
@@ -6050,24 +6269,28 @@ def chart_scan_api():
     result.update({
         "broker":broker,"market":market,"pair":pair,"timeframe":timeframe,
         "created_at":now_epoch,"created_at_ms":now_epoch_ms,
-        "engine":"RAJA V41 · VISUAL SK25 · FIVE SAFETY GATES",
+        "engine":"RAJA V42 · VISUAL SK25 · AUTO CHART PREFLIGHT",
         "pattern_library":"RAJA SK25 Pattern Type 1-25",
         "pattern_library_size":25,
         "chart_crop_set":chart_crop_set,
+        "chart_crop_tested":chart_crop_tested,
         "capture_mode":capture_mode,
         "source":source,
     })
 
-    # V41 Auto Chart Gate: a live boundary frame must be an explicit candle-area
-    # crop. Full-screen broker controls/sidebars can look like candle geometry and
-    # are therefore WATCH-only. Screenshot scans remain analysis-only as before.
+    # V42 Auto Chart Gate: a live boundary frame requires both an explicitly
+    # confirmed crop and a passing TEST FRAME. Full-screen/unverified frames remain
+    # WATCH-only because broker controls and indicators can resemble candle geometry.
     live_boundary_source = source == "RAJA_LIVE_SCREEN_SCANNER" and captured
-    if live_boundary_source and not chart_crop_set:
-        gate_message = "Set CHART AREA around candles before a close scan; full-frame live signals are blocked."
+    if live_boundary_source and (not chart_crop_set or not chart_crop_tested):
+        gate_message = (
+            "Confirm CHART AREA and pass TEST FRAME before a close scan; "
+            "full-frame or untested live signals are blocked."
+        )
         result.update({
             "raw_bias_before_chart_gate": result.get("bias"),
             "bias":"NO TRADE","confidence":0.0,"pattern_direction":"NONE",
-            "next_candle_color":"NONE","entry_instruction":"SET CHART AREA FIRST",
+            "next_candle_color":"NONE","entry_instruction":"CONFIRM AND TEST CHART AREA FIRST",
             "rescan_required":True,"scan_gate":"RESCAN","scan_gate_reason":gate_message,
             "signal_state":"GATE BLOCKED","entry_allowed":False,
             "duplicate_signal":False,"late_signal":False,"signal_key":"",
@@ -6076,7 +6299,7 @@ def chart_scan_api():
         warnings.insert(0,gate_message)
         result["warnings"]=warnings[:7]
 
-    # V41 Exact Entry Clock. The close frame targets the candle that opens at the
+    # V42 Exact Entry Clock. The close frame targets the candle that opens at the
     # captured boundary. Short windows prevent a late mid-candle entry from being
     # presented as the original setup.
     duration_seconds={"30s":30,"1m":60,"2m":120,"5m":300,"10m":600,"15m":900,"30m":1800}.get(timeframe,60)
@@ -6141,7 +6364,7 @@ def chart_scan_api():
 
     finished_ms=int(time.time()*1000)
     proof={
-        "version":"V41_FIVE_GATE_PROOF",
+        "version":"V42_AUTO_CHART_PROOF",
         "broker":broker,"market":market,"pair":pair,"timeframe":timeframe,
         "signal_state":result.get("signal_state"),"direction":result.get("pattern_direction"),
         "pattern_type":int(result.get("pattern_type") or 0),
@@ -6149,6 +6372,7 @@ def chart_scan_api():
         "rules_matched":int(result.get("rules_matched") or 0),
         "rules_total":int(result.get("rules_total") or 0),
         "captured_at_close":bool(captured),"chart_crop_set":bool(chart_crop_set),
+        "chart_crop_tested":bool(chart_crop_tested),
         "scan_gate":str(result.get("scan_gate") or "PASS"),
         "image_quality_score":float(result.get("image_quality_score") or 0),
         "detected_candles":int(result.get("detected_candles") or 0),
