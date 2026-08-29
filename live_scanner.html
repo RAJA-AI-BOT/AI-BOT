@@ -7,15 +7,26 @@
 <title>RAJA AI · Live Screen Scanner</title>
 <style>
 :root{--bg:#020713;--card:#07111e;--line:rgba(96,239,255,.22);--cyan:#60efff;--green:#00ff87;--red:#ff426a;--gold:#f6c85f;--muted:#91a8bc}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(circle at 50% -8%,#11274b,#050913 42%,#010308 82%);color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}body{padding:12px;padding-bottom:max(18px,env(safe-area-inset-bottom))}.app{width:min(920px,100%);margin:auto}.top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.back{color:var(--cyan);text-decoration:none;font-size:11px;font-weight:900}.pill{font-size:8px;font-weight:950;border:1px solid rgba(0,255,135,.35);color:#9affc8;border-radius:999px;padding:5px 8px}.card{background:linear-gradient(180deg,rgba(8,18,34,.97),rgba(3,9,18,.98));border:1px solid var(--line);border-radius:16px;padding:13px;margin-bottom:10px;box-shadow:0 14px 38px rgba(0,0,0,.28)}h1{font-size:19px;margin:0 0 5px}p{margin:0;color:#a9bbca;font-size:10px;line-height:1.45}.notice{margin-top:9px;padding:9px;border-radius:10px;background:rgba(246,200,95,.06);border:1px solid rgba(246,200,95,.22);color:#e8d9a7;font-size:9px;line-height:1.45}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}label{display:block;margin:7px 0 4px;color:var(--cyan);font-size:8px;font-weight:950;letter-spacing:.45px;text-transform:uppercase}select,input{width:100%;height:40px;border-radius:9px;border:1px solid var(--line);background:#030812;color:#fff;padding:0 10px;outline:none}input:focus,select:focus{border-color:var(--cyan)}.btn{border:0;border-radius:10px;min-height:42px;padding:9px 10px;font-weight:950;font-size:9px;letter-spacing:.2px;cursor:pointer;background:linear-gradient(135deg,#00ff87,#60efff);color:#01100b}.btn.alt{background:#0c1828;color:#d4f8ff;border:1px solid rgba(96,239,255,.25)}.btn.gold{background:#231e0d;color:#ffe59a;border:1px solid rgba(246,200,95,.35)}.btn.danger{background:#251018;color:#ff9aae;border:1px solid rgba(255,66,106,.35)}.btn:disabled{opacity:.48;cursor:not-allowed}.modebar{margin-top:10px}.stage{position:relative;display:none;width:100%;margin-top:10px;background:#000;border:1px solid rgba(96,239,255,.28);border-radius:13px;overflow:hidden;min-height:220px;max-height:64vh;aspect-ratio:16/9;touch-action:none}.stage video{width:100%;height:100%;display:block;object-fit:contain;background:#000}.hud{position:absolute;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;gap:6px;pointer-events:none}.hud span{background:rgba(0,0,0,.76);border:1px solid rgba(96,239,255,.25);border-radius:999px;padding:5px 8px;font-size:8px;font-weight:900;color:#c8f8ff}.crop{position:absolute;border:2px solid var(--green);box-shadow:0 0 0 9999px rgba(0,0,0,.24),0 0 20px rgba(0,255,135,.28);display:none;pointer-events:none}.dragbox{position:absolute;border:2px dashed var(--cyan);background:rgba(96,239,255,.08);display:none;pointer-events:none}.stage.crop-mode{cursor:crosshair}.stage.crop-mode:after{content:'DRAG OVER ONLY THE CANDLE CHART AREA';position:absolute;bottom:9px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.82);border:1px solid var(--cyan);color:var(--cyan);font-size:8px;font-weight:950;padding:6px 9px;border-radius:999px;white-space:nowrap;pointer-events:none}.statusbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:9px}.metric{border:1px solid rgba(96,239,255,.16);border-radius:9px;padding:7px;background:#040a13;text-align:center;min-width:0}.metric small{display:block;color:#7892a8;font-size:7px;font-weight:900}.metric strong{display:block;color:#fff;font-size:10px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.metric strong.live{color:var(--green)}.status{min-height:18px;margin-top:8px;font-size:9px;color:var(--gold);line-height:1.45}.preview{margin-top:7px;display:none}.preview img{width:100%;max-height:180px;object-fit:contain;background:#000;border-radius:9px;border:1px solid rgba(96,239,255,.2)}.result{display:none}.hero{text-align:center;border-radius:12px;padding:13px;background:#020710;border:1px solid rgba(246,200,95,.35)}.hero.up{border-color:rgba(0,255,135,.65)}.hero.down{border-color:rgba(255,66,106,.65)}.big{font-size:22px;font-weight:1000}.sub{font-size:9px;color:#a8bdce;margin-top:5px;line-height:1.45}.watch{margin-top:9px;padding:10px;border-radius:10px;background:#050d18;border:1px solid rgba(96,239,255,.18)}.watch strong{display:block;color:var(--cyan);font-size:9px}.watch div{margin-top:4px;font-size:10px;line-height:1.4;color:#d2dde6}.entry{display:none;margin-top:9px;padding:11px;text-align:center;border-radius:10px;border:1px solid rgba(0,255,135,.42);background:rgba(0,255,135,.05)}.entry strong{font-size:17px;color:var(--green)}.entry div{font-size:9px;margin-top:5px;color:#c9d6df}.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.chip{font-size:8px;border:1px solid rgba(96,239,255,.2);border-radius:999px;padding:4px 7px;color:#a9c1d1}.chip.good{color:#8dffc4;border-color:rgba(0,255,135,.3)}.rules{font-size:9px;color:#c8d5df;line-height:1.5;padding-left:18px;margin:8px 0 0}.switchrow{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:9px;color:#b7c7d4}.switchrow input{width:18px;height:18px}.compat{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.compat span{font-size:7px;padding:4px 6px;border-radius:999px;border:1px solid rgba(96,239,255,.18);color:#a7bdca}.compat .ok{border-color:rgba(0,255,135,.28);color:#8dffc4}.compat .warn{border-color:rgba(246,200,95,.28);color:#f6d98d}@media(max-width:600px){body{padding:8px}.grid3{grid-template-columns:1fr}.stage{aspect-ratio:9/13;max-height:58vh}.statusbar{grid-template-columns:repeat(2,minmax(0,1fr))}.btn{min-height:44px}.card{padding:11px}}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(circle at 50% -8%,#11274b,#050913 42%,#010308 82%);color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}body{padding:12px;padding-bottom:max(18px,env(safe-area-inset-bottom))}.app{width:min(920px,100%);margin:auto}.top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.back{color:var(--cyan);text-decoration:none;font-size:11px;font-weight:900}.pill{font-size:8px;font-weight:950;border:1px solid rgba(0,255,135,.35);color:#9affc8;border-radius:999px;padding:5px 8px}.card{background:linear-gradient(180deg,rgba(8,18,34,.97),rgba(3,9,18,.98));border:1px solid var(--line);border-radius:16px;padding:13px;margin-bottom:10px;box-shadow:0 14px 38px rgba(0,0,0,.28)}h1{font-size:19px;margin:0 0 5px}p{margin:0;color:#a9bbca;font-size:10px;line-height:1.45}.notice{margin-top:9px;padding:9px;border-radius:10px;background:rgba(246,200,95,.06);border:1px solid rgba(246,200,95,.22);color:#e8d9a7;font-size:9px;line-height:1.45}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}label{display:block;margin:7px 0 4px;color:var(--cyan);font-size:8px;font-weight:950;letter-spacing:.45px;text-transform:uppercase}select,input{width:100%;height:40px;border-radius:9px;border:1px solid var(--line);background:#030812;color:#fff;padding:0 10px;outline:none}input:focus,select:focus{border-color:var(--cyan)}.btn{border:0;border-radius:10px;min-height:42px;padding:9px 10px;font-weight:950;font-size:9px;letter-spacing:.2px;cursor:pointer;background:linear-gradient(135deg,#00ff87,#60efff);color:#01100b}.btn.alt{background:#0c1828;color:#d4f8ff;border:1px solid rgba(96,239,255,.25)}.btn.gold{background:#231e0d;color:#ffe59a;border:1px solid rgba(246,200,95,.35)}.btn.danger{background:#251018;color:#ff9aae;border:1px solid rgba(255,66,106,.35)}.btn:disabled{opacity:.48;cursor:not-allowed}.modebar{margin-top:10px}.stage{position:relative;display:none;width:100%;margin-top:10px;background:#000;border:1px solid rgba(96,239,255,.28);border-radius:13px;overflow:hidden;min-height:220px;max-height:64vh;aspect-ratio:16/9;touch-action:none}.stage video{width:100%;height:100%;display:block;object-fit:contain;background:#000}.hud{position:absolute;top:8px;left:8px;right:8px;display:flex;justify-content:space-between;gap:6px;pointer-events:none}.hud span{background:rgba(0,0,0,.76);border:1px solid rgba(96,239,255,.25);border-radius:999px;padding:5px 8px;font-size:8px;font-weight:900;color:#c8f8ff}.crop{position:absolute;border:2px solid var(--green);box-shadow:0 0 0 9999px rgba(0,0,0,.24),0 0 20px rgba(0,255,135,.28);display:none;pointer-events:none}.dragbox{position:absolute;border:2px dashed var(--cyan);background:rgba(96,239,255,.08);display:none;pointer-events:none}.stage.crop-mode{cursor:crosshair}.stage.crop-mode:after{content:'DRAG OVER ONLY THE CANDLE CHART AREA';position:absolute;bottom:9px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.82);border:1px solid var(--cyan);color:var(--cyan);font-size:8px;font-weight:950;padding:6px 9px;border-radius:999px;white-space:nowrap;pointer-events:none}.statusbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:9px}.metric{border:1px solid rgba(96,239,255,.16);border-radius:9px;padding:7px;background:#040a13;text-align:center;min-width:0}.metric small{display:block;color:#7892a8;font-size:7px;font-weight:900}.metric strong{display:block;color:#fff;font-size:10px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.metric strong.live{color:var(--green)}.status{min-height:18px;margin-top:8px;font-size:9px;color:var(--gold);line-height:1.45}.preview{margin-top:7px;display:none}.preview img{width:100%;max-height:180px;object-fit:contain;background:#000;border-radius:9px;border:1px solid rgba(96,239,255,.2)}.result{display:none}.hero{text-align:center;border-radius:12px;padding:13px;background:#020710;border:1px solid rgba(246,200,95,.35)}.hero.up{border-color:rgba(0,255,135,.65)}.hero.down{border-color:rgba(255,66,106,.65)}.big{font-size:22px;font-weight:1000}.sub{font-size:9px;color:#a8bdce;margin-top:5px;line-height:1.45}.watch{margin-top:9px;padding:10px;border-radius:10px;background:#050d18;border:1px solid rgba(96,239,255,.18)}.watch strong{display:block;color:var(--cyan);font-size:9px}.watch div{margin-top:4px;font-size:10px;line-height:1.4;color:#d2dde6}.entry{display:none;margin-top:9px;padding:11px;text-align:center;border-radius:10px;border:1px solid rgba(0,255,135,.42);background:rgba(0,255,135,.05)}.entry strong{font-size:17px;color:var(--green)}.entry div{font-size:9px;margin-top:5px;color:#c9d6df}.chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.chip{font-size:8px;border:1px solid rgba(96,239,255,.2);border-radius:999px;padding:4px 7px;color:#a9c1d1}.chip.good{color:#8dffc4;border-color:rgba(0,255,135,.3)}.rules{font-size:9px;color:#c8d5df;line-height:1.5;padding-left:18px;margin:8px 0 0}.switchrow{display:flex;align-items:center;gap:7px;margin-top:8px;font-size:9px;color:#b7c7d4}.switchrow input{width:18px;height:18px}.compat{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.compat span{font-size:7px;padding:4px 6px;border-radius:999px;border:1px solid rgba(96,239,255,.18);color:#a7bdca}.compat .ok{border-color:rgba(0,255,135,.28);color:#8dffc4}.compat .warn{border-color:rgba(246,200,95,.28);color:#f6d98d}.pair-search-wrap{position:relative;display:flex;align-items:center}.pair-search-input{padding-left:34px;padding-right:38px}.pair-search-icon{position:absolute;left:11px;color:var(--cyan);font-size:16px;font-weight:950;pointer-events:none}.pair-search-clear{position:absolute;right:5px;width:30px;height:30px;border:0;border-radius:7px;background:#0c1828;color:#d4f8ff;font-weight:950;cursor:pointer}.pair-search-count{min-height:14px;margin-top:4px;font-size:8px;color:#8fa6bc}.pair-search-count.empty{color:var(--gold)}@media(max-width:600px){body{padding:8px}.grid3{grid-template-columns:1fr}.stage{aspect-ratio:9/13;max-height:58vh}.statusbar{grid-template-columns:repeat(2,minmax(0,1fr))}.btn{min-height:44px}.card{padding:11px}}
+.safetybar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin-top:6px}.metric strong.ok{color:var(--green)}.metric strong.warn{color:var(--gold)}.metric strong.block{color:var(--red)}
+.hero{transition:.2s ease;overflow:hidden}.hero.confirmed{padding:18px 12px}.hero.confirmed.up{background:radial-gradient(circle at 50% 0,rgba(0,255,135,.30),rgba(0,255,135,.06) 55%,#020710);border:2px solid var(--green);box-shadow:0 0 30px rgba(0,255,135,.22)}.hero.confirmed.down{background:radial-gradient(circle at 50% 0,rgba(255,66,106,.30),rgba(255,66,106,.06) 55%,#020710);border:2px solid var(--red);box-shadow:0 0 30px rgba(255,66,106,.22)}.hero.confirmed .big{font-size:clamp(34px,7vw,58px);line-height:1.05;letter-spacing:.5px}.hero.armed{border-color:rgba(246,200,95,.75);background:rgba(246,200,95,.05)}.hero.blocked{border-color:rgba(255,66,106,.48);opacity:.9}
+.entry.up{border-color:var(--green);background:rgba(0,255,135,.08)}.entry.down{border-color:var(--red);background:rgba(255,66,106,.08)}.entry.down strong{color:#ff7895}.entry.blocked{border-color:rgba(246,200,95,.45);background:rgba(246,200,95,.06)}.entry.blocked strong{color:var(--gold)}
+.signal-banner{position:fixed;z-index:9999;top:max(8px,env(safe-area-inset-top));left:50%;width:min(700px,calc(100% - 16px));transform:translate(-50%,-130%);opacity:0;pointer-events:none;border-radius:18px;padding:14px;text-align:center;transition:.25s ease;border:2px solid transparent;box-shadow:0 18px 55px rgba(0,0,0,.55)}.signal-banner.show{transform:translate(-50%,0);opacity:1}.signal-banner.up{background:linear-gradient(135deg,#003e29,#00c86f);border-color:#89ffc8;color:#fff}.signal-banner.down{background:linear-gradient(135deg,#4a0717,#ef3159);border-color:#ff9eb2;color:#fff}.signal-banner .direction{font-size:clamp(28px,7vw,52px);font-weight:1000;line-height:1}.signal-banner .detail{margin-top:6px;font-size:11px;font-weight:900}.signal-banner .clock{margin-top:5px;font-size:13px;font-weight:1000;color:#fff4ae}
+.proof{display:none;margin-top:10px;padding:10px;border-radius:11px;border:1px solid rgba(96,239,255,.20);background:#030913}.proof h3{margin:0;color:var(--cyan);font-size:10px}.proof-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px}.proof-item{border:1px solid rgba(96,239,255,.13);border-radius:8px;padding:7px;min-width:0}.proof-item small{display:block;color:#7892a8;font-size:7px;font-weight:900}.proof-item strong{display:block;margin-top:3px;color:#eafcff;font-size:9px;overflow-wrap:anywhere}.proof-note{margin-top:7px;color:#8fa7bb;font-size:8px;line-height:1.45}.proof-note.good{color:#8dffc4}.proof-note.block{color:#ff9aae}
+@media(max-width:600px){.safetybar{grid-template-columns:repeat(2,minmax(0,1fr))}.proof-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.signal-banner{padding:12px}.hero.confirmed .big{font-size:38px}}
 </style>
 </head>
 <body>
+<div id="signalBanner" class="signal-banner" role="alert" aria-live="assertive">
+  <div id="signalBannerDirection" class="direction">--</div>
+  <div id="signalBannerDetail" class="detail"></div>
+  <div id="signalBannerClock" class="clock"></div>
+</div>
 <div class="app">
-  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V40 · LIVE VISUAL FEED</span></div>
+  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V41 · FIVE SAFETY GATES · SK25</span></div>
   <section class="card">
     <h1>🎥 RAJA Live Screen Scanner</h1>
-    <p>Continuously watches the visible chart, sends lightweight snapshots to the RAJA 24-strategy visual engine, and performs a priority scan exactly at each selected candle boundary.</p>
+    <p>Watches the visible chart, validates the candle crop, and scans Pattern Type 1-25 exactly at each selected candle boundary.</p>
     <div class="compat" id="compat"></div>
     <div class="notice">For trade integrity, forming-candle frames are WATCH only. A directional entry can be armed only from the boundary frame after the candle closes. On iPhone/iPad, another app's screen may not be shareable from a browser; use Live Camera or Screenshot mode there.</div>
   </section>
@@ -26,7 +37,16 @@
       <div><label>Market</label><select id="market"><option value="OTC" selected>OTC</option><option value="LIVE">LIVE</option></select></div>
     </div>
     <div class="grid">
-      <div><label>Pair / Asset</label><input id="pair" value="EUR/USD (OTC)" placeholder="e.g. EUR/JPY (OTC)"></div>
+      <div>
+        <label>Pair / Asset</label>
+        <div class="pair-search-wrap">
+          <span class="pair-search-icon">⌕</span>
+          <input id="pairSearch" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — EUR/USD, BTC, OTC" aria-label="Search live scanner pair">
+          <button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button>
+        </div>
+        <div id="pairSearchCount" class="pair-search-count">Search or choose a pair below</div>
+        <select id="pair"></select>
+      </div>
       <div><label>Timeframe</label><select id="tf"><option value="30s">30s</option><option value="1m" selected>1m</option><option value="2m">2m</option><option value="5m">5m</option><option value="10m">10m</option><option value="15m">15m</option><option value="30m">30m</option></select></div>
     </div>
     <div class="grid">
@@ -58,58 +78,291 @@
       <div class="metric"><small>LAST FRAME</small><strong id="lastFrame">--</strong></div>
       <div class="metric"><small>CHART AREA</small><strong id="cropState">FULL FRAME</strong></div>
     </div>
+    <div class="safetybar">
+      <div class="metric"><small>ENTRY CLOCK</small><strong id="clockState">SYNCING</strong></div>
+      <div class="metric"><small>AUTO CHART GATE</small><strong id="gateState" class="warn">SET CROP</strong></div>
+      <div class="metric"><small>SIGNAL STATE</small><strong id="signalState">WATCH</strong></div>
+      <div class="metric"><small>SCAN LATENCY</small><strong id="latencyState">--</strong></div>
+    </div>
     <div id="status" class="status">Ready. Choose Screen Share, Live Camera, or Screenshot.</div>
     <div id="preview" class="preview"><img id="previewImg" alt="Last scanned chart frame"></div>
   </section>
 
   <section id="result" class="card result">
     <div id="hero" class="hero"><div id="big" class="big">WATCHING</div><div id="meta" class="sub"></div></div>
-    <div class="watch"><strong>RAJA 24 STRATEGY ENGINE</strong><div id="strategy">Waiting for a readable chart frame.</div></div>
+    <div class="watch"><strong>RAJA SK25 · PATTERN TYPE 1–25 ONLY</strong><div id="strategy">Waiting for a readable chart frame.</div></div>
     <div id="entry" class="entry"><strong id="entryMain"></strong><div id="entrySub"></div></div>
-    <div class="chips"><span class="chip" id="qualityChip">QUALITY --</span><span class="chip" id="candlesChip">CANDLES --</span><span class="chip" id="matchChip">MATCH --</span><span class="chip" id="timingChip">WATCH</span></div>
+    <div class="chips"><span class="chip" id="qualityChip">QUALITY --</span><span class="chip" id="candlesChip">CANDLES --</span><span class="chip" id="matchChip">RULES --</span><span class="chip" id="timingChip">WATCH</span></div>
     <ul id="rules" class="rules"></ul>
+    <div id="proof" class="proof">
+      <h3>🔒 SIGNAL PROOF</h3>
+      <div class="proof-grid">
+        <div class="proof-item"><small>STATE</small><strong id="proofState">--</strong></div>
+        <div class="proof-item"><small>PATTERN</small><strong id="proofPattern">--</strong></div>
+        <div class="proof-item"><small>RULES</small><strong id="proofRules">--</strong></div>
+        <div class="proof-item"><small>SETUP CLOSE</small><strong id="proofClose">--</strong></div>
+        <div class="proof-item"><small>ENTRY / EXPIRY</small><strong id="proofTiming">--</strong></div>
+        <div class="proof-item"><small>GATE / LATENCY</small><strong id="proofGate">--</strong></div>
+        <div class="proof-item"><small>SIGNAL KEY</small><strong id="proofKey">--</strong></div>
+      </div>
+      <div id="proofNote" class="proof-note">A confirmed proof is created only from a cropped closed-candle frame.</div>
+    </div>
   </section>
 </div>
 <script>
 'use strict';
 const $=id=>document.getElementById(id);
 const TF_MS={"30s":30000,"1m":60000,"2m":120000,"5m":300000,"10m":600000,"15m":900000,"30m":1800000};
-let stream=null,sourceMode='',watchTimer=null,clockTimer=null,busy=false,currentKind='',nextCloseMs=0,pendingBoundary=null,cropMode=false,dragStart=null,roi=null,lastObjectUrl='',lastSignalKey='',entryTimer=null;
+const LIVE_PAIR_DATA={
+  Quotex:{
+    LIVE:[
+      'BTC-USD','ETH-USD','SOL-USD','LTC-USD','XRP-USD','ADA-USD','DOGE-USD',
+      'EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','USD/CHF','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY',
+      'AUD/JPY','EUR/AUD','GBP/AUD','CAD/JPY','EUR/CAD','GBP/CAD','NZD/JPY','AUD/NZD','EUR/CHF','GBP/CHF','XAUUSD'
+    ],
+    OTC:[
+      'Zcash (OTC)','Chainlink (OTC)','Bitcoin (OTC)','Binance Coin (OTC)','Ethereum (OTC)','Bitcoin Cash (OTC)',
+      'Cosmos (OTC)','Ethereum Classic (OTC)','Axie Infinity (OTC)','Trump (OTC)','Dash (OTC)','Solana (OTC)',
+      'Toncoin (OTC)','Litecoin (OTC)','Avalanche (OTC)','Polkadot (OTC)','Ripple (OTC)',
+      'USD/BRL (OTC)','NZD/CHF (OTC)','NZD/JPY (OTC)','USD/COP (OTC)','USD/MXN (OTC)','AUD/NZD (OTC)',
+      'USD/BDT (OTC)','USD/DZD (OTC)','USD/NGN (OTC)','USD/PHP (OTC)','USD/PKR (OTC)','USD/ZAR (OTC)',
+      'USD/INR (OTC)','USD/EGP (OTC)','USD/IDR (OTC)','USD/ARS (OTC)','GBP/NZD (OTC)','EUR/NZD (OTC)',
+      'NZD/USD (OTC)','NZD/CAD (OTC)','CAD/CHF (OTC)'
+    ]
+  },
+  'Pocket Option':{
+    LIVE:[
+      'BTC-USD','ETH-USD','SOL-USD','LTC-USD','XRP-USD','ADA-USD','DOGE-USD',
+      'EUR/USD','GBP/USD','USD/JPY','AUD/USD','USD/CAD','USD/CHF','NZD/USD','EUR/GBP','EUR/JPY','GBP/JPY',
+      'AUD/JPY','EUR/AUD','GBP/AUD','CAD/JPY','EUR/CAD','GBP/CAD','NZD/JPY','AUD/NZD','EUR/CHF','GBP/CHF','XAUUSD'
+    ],
+    OTC:[
+      'BNB (OTC)','Polkadot (OTC)','Ethereum (OTC)','Toncoin (OTC)','Cardano (OTC)','Polygon (OTC)','TRON (OTC)',
+      'Avalanche (OTC)','Bitcoin (OTC)','Bitcoin ETF (OTC)','Solana (OTC)','Chainlink (OTC)','Litecoin (OTC)','Dogecoin (OTC)',
+      'EUR/USD (OTC)','GBP/USD (OTC)','USD/JPY (OTC)','AUD/USD (OTC)','USD/CAD (OTC)','USD/CHF (OTC)',
+      'EUR/JPY (OTC)','GBP/JPY (OTC)','AUD/JPY (OTC)','CAD/JPY (OTC)','EUR/CHF (OTC)','EUR/GBP (OTC)',
+      'AUD/CAD (OTC)','AUD/CHF (OTC)','CAD/CHF (OTC)','NZD/JPY (OTC)','AUD/NZD (OTC)','EUR/NZD (OTC)',
+      'GBP/AUD (OTC)','CHF/JPY (OTC)','USD/MXN (OTC)','USD/BRL (OTC)','USD/INR (OTC)','USD/SGD (OTC)',
+      'USD/CNH (OTC)','USD/IDR (OTC)','USD/PHP (OTC)','USD/MYR (OTC)','USD/COP (OTC)','EUR/TRY (OTC)',
+      'Apple (OTC)','American Express (OTC)','Boeing Company (OTC)','Cisco (OTC)','Facebook Inc (OTC)','Intel (OTC)',
+      'Johnson & Johnson (OTC)',"McDonald's (OTC)",'Microsoft (OTC)','Pfizer Inc (OTC)','Tesla (OTC)','ExxonMobil (OTC)',
+      'Advanced Micro Devices (OTC)'
+    ]
+  }
+};
+
+let stream=null,sourceMode='',watchTimer=null,clockTimer=null,busy=false,currentKind='',nextCloseMs=0,pendingBoundary=null,cropMode=false,dragStart=null,roi=null,lastObjectUrl='',lastSignalKey='',entryTimer=null,activeController=null,serverOffsetMs=0,clockSynced=false,lastRoundTripMs=0;
 function auth(){const key=localStorage.getItem('raja_active_key')||'';return{key,user:localStorage.getItem('raja_active_user')||'',device:localStorage.getItem('raja_device_uid')||'',session_token:key?(localStorage.getItem('raja_token_'+key)||''):''};}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function tfMs(){return TF_MS[$('tf').value]||60000;}
-function boundaryAfter(now=Date.now()){const d=tfMs();return (Math.floor(now/d)+1)*d;}
+function serverNowMs(){return Date.now()+serverOffsetMs;}
+function boundaryAfter(now=serverNowMs()){const d=tfMs();return (Math.floor(now/d)+1)*d;}
 function fmtLeft(ms){const s=Math.max(0,Math.ceil(ms/1000)),m=Math.floor(s/60);return String(m).padStart(2,'0')+':'+String(s%60).padStart(2,'0');}
+function fmtClock(ms){if(!Number(ms))return'--';return new Date(Number(ms)).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});}
 function setStatus(t){$('status').textContent=t;}
 function setEngine(t,live=false){$('engineState').textContent=t;$('engineState').classList.toggle('live',live);}
+function setMetric(id,text,tone=''){const el=$(id);if(!el)return;el.textContent=text;el.classList.remove('ok','warn','block');if(tone)el.classList.add(tone);}
+function storedSignalKey(){return localStorage.getItem('raja_visual_last_signal_key')||'';}
+function storeSignalKey(key){if(!key)return;lastSignalKey=key;localStorage.setItem('raja_visual_last_signal_key',key);}
+async function syncServerClock(){
+  const t0=Date.now();
+  try{
+    const r=await fetch('/app-version?scanner_clock='+t0,{cache:'no-store'}),j=await r.json(),t3=Date.now();
+    if(r.ok&&Number(j.server_epoch_ms)){
+      serverOffsetMs=Number(j.server_epoch_ms)-((t0+t3)/2);
+      clockSynced=true;
+      setMetric('clockState','SYNCED '+(serverOffsetMs>=0?'+':'')+Math.round(serverOffsetMs)+'ms','ok');
+      nextCloseMs=boundaryAfter();
+      return true;
+    }
+  }catch(_){}
+  clockSynced=false;serverOffsetMs=0;setMetric('clockState','LOCAL CLOCK','warn');return false;
+}
+function setSignalState(state,tone=''){setMetric('signalState',state,tone);}
+function updateChartGate(){
+  if(roi){setMetric('gateState','PASS · CROPPED','ok');$('cropState').textContent='CHART CROPPED';return true;}
+  setMetric('gateState',stream?'BLOCK · SET CROP':'SET CROP','warn');$('cropState').textContent='FULL FRAME';return false;
+}
+function hideSignalBanner(){const b=$('signalBanner');b.classList.remove('show','up','down');}
+function renderLocalGateBlock(message){
+  hideSignalBanner();if(entryTimer)clearInterval(entryTimer);entryTimer=null;$('result').style.display='block';$('hero').className='hero blocked';
+  $('big').textContent='🚫 CHART GATE BLOCKED';$('meta').innerHTML=`${esc($('broker').value)} · ${esc($('pair').value||'SCREEN CHART')} · ${esc($('tf').value.toUpperCase())}<br>NO CLOSED-CANDLE SIGNAL SENT`;
+  $('strategy').textContent=message;$('entry').style.display='none';$('timingChip').textContent='GATE BLOCKED';$('timingChip').classList.remove('good');$('rules').innerHTML='';
+  $('proof').style.display='block';$('proofState').textContent='GATE BLOCKED';$('proofPattern').textContent='NO SIGNAL';$('proofRules').textContent='--';$('proofClose').textContent='NOT CAPTURED';$('proofTiming').textContent='NO ENTRY';$('proofGate').textContent='SET CANDLE CROP';$('proofKey').textContent='--';$('proofNote').className='proof-note block';$('proofNote').textContent=message;
+}
+function showSignalBanner(dir,pair,entryMs,expiryMs,left){
+  const b=$('signalBanner'),up=dir==='UP';b.className='signal-banner show '+(up?'up':'down');
+  $('signalBannerDirection').textContent=up?'⬆ UP / CALL':'⬇ DOWN / PUT';
+  $('signalBannerDetail').textContent=`CONFIRMED · ${pair} · ${$('tf').value.toUpperCase()} · ENTRY ${fmtClock(entryMs)} · EXPIRY ${fmtClock(expiryMs)}`;
+  $('signalBannerClock').textContent=`ENTER NOW · ${Math.max(0,Math.ceil(left/1000))}s WINDOW LEFT`;
+}
 function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
 function renderCompat(){const canShare=!!navigator.mediaDevices?.getDisplayMedia,canCam=!!navigator.mediaDevices?.getUserMedia;const rows=[];rows.push(`<span class="${canShare?'ok':'warn'}">SCREEN SHARE ${canShare?'✓':'FALLBACK'}</span>`);rows.push(`<span class="${canCam?'ok':'warn'}">LIVE CAMERA ${canCam?'✓':'FALLBACK'}</span>`);rows.push(`<span class="ok">SCREENSHOT ✓</span>`);if(isIOS())rows.push('<span class="warn">iPhone/iPad: external-app screen sharing depends on iOS browser permissions</span>');$('compat').innerHTML=rows.join('');}
-function savePrefs(){localStorage.setItem('raja_live_scanner_prefs',JSON.stringify({broker:$('broker').value,market:$('market').value,pair:$('pair').value,tf:$('tf').value,interval:$('interval').value,quality:$('quality').value,auto:$('autoScan').checked}));}
-function loadPrefs(){try{const p=JSON.parse(localStorage.getItem('raja_live_scanner_prefs')||'{}');['broker','market','pair','tf','interval','quality'].forEach(k=>{if(p[k]!=null&&$(k))$(k).value=p[k];});if(typeof p.auto==='boolean')$('autoScan').checked=p.auto;}catch(_){}}
-['broker','market','pair','tf','interval','quality','autoScan'].forEach(id=>$(id).addEventListener('change',()=>{savePrefs();if(id==='tf'&&stream){nextCloseMs=boundaryAfter();}}));
+function pairUniverse(){
+  const broker=$('broker').value,market=$('market').value;
+  const rows=LIVE_PAIR_DATA[broker]?.[market];
+  return Array.isArray(rows)?rows.slice():[];
+}
+function filterLivePairs(query='',preferred=''){
+  const select=$('pair'),count=$('pairSearchCount'),all=pairUniverse();
+  const needle=String(query||'').trim().toLowerCase(),compactNeedle=needle.replace(/[^a-z0-9]/g,'');
+  const rows=all.filter(x=>{
+    if(!needle)return true;
+    const t=String(x).toLowerCase(),compact=t.replace(/[^a-z0-9]/g,'');
+    return t.includes(needle)||(compactNeedle&&compact.includes(compactNeedle));
+  });
+  const current=preferred||select.value;
+  select.innerHTML='';
+  if(!rows.length){
+    const o=document.createElement('option');o.value='';o.textContent='No matching pair';o.disabled=true;o.selected=true;select.appendChild(o);
+    if(count){count.textContent=`0 matches for “${String(query||'').trim()}”`;count.classList.add('empty');}
+    return;
+  }
+  rows.forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;select.appendChild(o);});
+  if(current&&rows.includes(current))select.value=current;else select.selectedIndex=0;
+  if(count){
+    count.textContent=needle?`${rows.length} matching pair${rows.length===1?'':'s'} · ${all.length} total`:`${all.length} pairs available · search above`;
+    count.classList.remove('empty');
+  }
+}
+function refreshLivePairs(preferred=''){
+  if($('pairSearch'))$('pairSearch').value='';
+  filterLivePairs('',preferred);
+}
+function savePrefs(){
+  localStorage.setItem('raja_live_scanner_prefs',JSON.stringify({
+    broker:$('broker').value,market:$('market').value,pair:$('pair').value,tf:$('tf').value,
+    interval:$('interval').value,quality:$('quality').value,auto:$('autoScan').checked
+  }));
+}
+function loadPrefs(){
+  let p={};
+  try{p=JSON.parse(localStorage.getItem('raja_live_scanner_prefs')||'{}')||{};}catch(_){}
+  ['broker','market','tf','interval','quality'].forEach(k=>{if(p[k]!=null&&$(k))$(k).value=p[k];});
+  if(typeof p.auto==='boolean')$('autoScan').checked=p.auto;
+  refreshLivePairs(p.pair||'');
+}
+$('broker').addEventListener('change',()=>{refreshLivePairs();savePrefs();});
+$('market').addEventListener('change',()=>{refreshLivePairs();savePrefs();});
+$('pair').addEventListener('change',savePrefs);
+$('pairSearch').addEventListener('input',()=>filterLivePairs($('pairSearch').value,$('pair').value));
+$('pairSearch').addEventListener('search',()=>filterLivePairs($('pairSearch').value,$('pair').value));
+$('pairSearch').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){
+    e.preventDefault();
+    const p=$('pair');
+    if(p.options.length&&!p.options[0].disabled){p.selectedIndex=0;p.focus();savePrefs();}
+  }
+});
+$('pairSearchClear').addEventListener('click',()=>{
+  $('pairSearch').value='';filterLivePairs('',$('pair').value);$('pairSearch').focus();
+});
+['tf','interval','quality','autoScan'].forEach(id=>$(id).addEventListener('change',()=>{
+  savePrefs();
+  if(id==='tf'&&stream)nextCloseMs=boundaryAfter();
+}));
 function contentRect(){const stage=$('stage'),v=$('video'),r=stage.getBoundingClientRect();if(!v.videoWidth||!v.videoHeight)return{x:0,y:0,w:r.width,h:r.height};const va=v.videoWidth/v.videoHeight,sa=r.width/r.height;let w,h,x,y;if(va>sa){w=r.width;h=w/va;x=0;y=(r.height-h)/2;}else{h=r.height;w=h*va;y=0;x=(r.width-w)/2;}return{x,y,w,h};}
-function drawRoi(){const box=$('crop');if(!roi){box.style.display='none';$('cropState').textContent='FULL FRAME';return;}const c=contentRect();box.style.display='block';box.style.left=(c.x+roi.x*c.w)+'px';box.style.top=(c.y+roi.y*c.h)+'px';box.style.width=(roi.w*c.w)+'px';box.style.height=(roi.h*c.h)+'px';$('cropState').textContent='CHART CROPPED';}
+function drawRoi(){const box=$('crop');if(!roi){box.style.display='none';updateChartGate();return;}const c=contentRect();box.style.display='block';box.style.left=(c.x+roi.x*c.w)+'px';box.style.top=(c.y+roi.y*c.h)+'px';box.style.width=(roi.w*c.w)+'px';box.style.height=(roi.h*c.h)+'px';updateChartGate();}
 window.addEventListener('resize',drawRoi);
 function pointerPos(ev){const r=$('stage').getBoundingClientRect(),c=contentRect();return{x:Math.max(c.x,Math.min(c.x+c.w,ev.clientX-r.left)),y:Math.max(c.y,Math.min(c.y+c.h,ev.clientY-r.top)),c};}
 $('stage').addEventListener('pointerdown',ev=>{if(!cropMode)return;ev.preventDefault();const p=pointerPos(ev);dragStart=p;$('stage').setPointerCapture?.(ev.pointerId);$('dragbox').style.display='block';});
 $('stage').addEventListener('pointermove',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y),b=$('dragbox');b.style.left=x+'px';b.style.top=y+'px';b.style.width=w+'px';b.style.height=h+'px';});
-$('stage').addEventListener('pointerup',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),c=p.c,x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y);dragStart=null;$('dragbox').style.display='none';if(w<50||h<50){setStatus('Chart area too small. Drag around the complete candle chart.');return;}roi={x:(x-c.x)/c.w,y:(y-c.y)/c.h,w:w/c.w,h:h/c.h};cropMode=false;$('stage').classList.remove('crop-mode');$('cropBtn').textContent='↺ RESET / SET CHART AREA';drawRoi();setStatus('Chart area locked. Live scanner will analyse only this crop.');});
-$('cropBtn').onclick=()=>{if(!stream)return;if(roi){roi=null;drawRoi();}cropMode=true;$('stage').classList.add('crop-mode');setStatus('Drag a box around ONLY the candle chart area (include enough historical candles).');};
-async function startSource(mode){stopSource();const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('Login to RAJA AI first, then reopen Live Scanner.');return;}try{if(mode==='screen'){if(!navigator.mediaDevices?.getDisplayMedia){setStatus('This browser cannot share the screen. Use LIVE CAMERA or SCREENSHOT.');return;}stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:10,max:15}},audio:false});sourceMode='SCREEN';}else{if(!navigator.mediaDevices?.getUserMedia){$('legacyCamera').click();return;}stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:15,max:30}},audio:false});sourceMode='CAMERA';}const v=$('video');v.srcObject=stream;$('stage').style.display='block';await v.play().catch(()=>{});const track=stream.getVideoTracks()[0];track?.addEventListener('ended',()=>stopSource('Screen/camera sharing ended.'));$('modeHud').textContent='SOURCE: '+sourceMode;$('captureState').textContent='LIVE';$('captureState').classList.add('live');$('cropBtn').disabled=false;$('stopBtn').disabled=false;nextCloseMs=boundaryAfter();startLoops();setStatus(sourceMode==='SCREEN'?'Live screen received. Set CHART AREA, then keep the broker chart visible.':'Live camera received. Point at the broker chart and set CHART AREA.');setTimeout(drawRoi,100);}catch(e){stopSource();setStatus((mode==='screen'?'Screen share':'Camera')+' unavailable: '+(e.message||e));if(mode==='camera'&&isIOS())$('legacyCamera').click();}}
-function stopSource(msg='Live scanner stopped.'){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);watchTimer=clockTimer=null;pendingBoundary=null;busy=false;try{stream?.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;sourceMode='';$('video').srcObject=null;$('stage').style.display='none';$('captureState').textContent='OFF';$('captureState').classList.remove('live');$('cropBtn').disabled=true;$('stopBtn').disabled=true;roi=null;cropMode=false;$('stage').classList.remove('crop-mode');drawRoi();$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');if(msg)setStatus(msg);}
+$('stage').addEventListener('pointerup',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),c=p.c,x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y);dragStart=null;$('dragbox').style.display='none';if(w<Math.max(120,c.w*.28)||h<Math.max(90,c.h*.24)){setStatus('Chart area too small. Include at least 14–20 complete candles.');setMetric('gateState','BLOCK · CROP SMALL','block');return;}roi={x:(x-c.x)/c.w,y:(y-c.y)/c.h,w:w/c.w,h:h/c.h};cropMode=false;$('stage').classList.remove('crop-mode');$('cropBtn').textContent='↺ RESET / SET CHART AREA';drawRoi();setStatus('Chart Gate PASS. Only the cropped candle area will be scanned.');});
+$('cropBtn').onclick=()=>{if(!stream)return;if(roi){roi=null;drawRoi();}cropMode=true;$('stage').classList.add('crop-mode');setMetric('gateState','SELECT AREA','warn');setStatus('Drag around ONLY the candle chart. Exclude broker buttons, pair list and indicators.');};
+async function startSource(mode){stopSource();const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('Login to RAJA AI first, then reopen Live Scanner.');return;}const clockPromise=syncServerClock();try{if(mode==='screen'){if(!navigator.mediaDevices?.getDisplayMedia){setStatus('This browser cannot share the screen. Use LIVE CAMERA or SCREENSHOT.');return;}stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:10,max:15}},audio:false});sourceMode='SCREEN';}else{if(!navigator.mediaDevices?.getUserMedia){$('legacyCamera').click();return;}stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:15,max:30}},audio:false});sourceMode='CAMERA';}await clockPromise.catch(()=>false);const v=$('video');v.srcObject=stream;$('stage').style.display='block';await v.play().catch(()=>{});const track=stream.getVideoTracks()[0];track?.addEventListener('ended',()=>stopSource('Screen/camera sharing ended.'));$('modeHud').textContent='SOURCE: '+sourceMode;$('captureState').textContent='LIVE';$('captureState').classList.add('live');$('cropBtn').disabled=false;$('stopBtn').disabled=false;nextCloseMs=boundaryAfter();startLoops();updateChartGate();setSignalState('WATCH');setStatus(sourceMode==='SCREEN'?'Screen received. SET CHART AREA is required before any UP/DOWN signal.':'Camera received. SET CHART AREA is required before any UP/DOWN signal.');setTimeout(drawRoi,100);}catch(e){stopSource();setStatus((mode==='screen'?'Screen share':'Camera')+' unavailable: '+(e.message||e));if(mode==='camera'&&isIOS())$('legacyCamera').click();}}
+function stopSource(msg='Live scanner stopped.'){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);if(entryTimer)clearInterval(entryTimer);try{activeController?.abort();}catch(_){}watchTimer=clockTimer=entryTimer=null;activeController=null;pendingBoundary=null;busy=false;try{stream?.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;sourceMode='';$('video').srcObject=null;$('stage').style.display='none';$('captureState').textContent='OFF';$('captureState').classList.remove('live');$('cropBtn').disabled=true;$('stopBtn').disabled=true;roi=null;cropMode=false;$('stage').classList.remove('crop-mode');drawRoi();$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');setSignalState('WATCH');hideSignalBanner();if(msg)setStatus(msg);}
 $('shareBtn').onclick=()=>startSource('screen');$('cameraBtn').onclick=()=>startSource('camera');$('stopBtn').onclick=()=>stopSource();$('shotBtn').onclick=()=>$('file').click();
-function startLoops(){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);const cadence=Math.max(2,Number($('interval').value)||3)*1000;watchTimer=setInterval(()=>{if(!$('autoScan').checked||!stream||busy)return;const left=nextCloseMs-Date.now();if(left<1400)return;captureAndQueue(false,0);},cadence);clockTimer=setInterval(()=>{if(!stream)return;const now=Date.now();if(!nextCloseMs)nextCloseMs=boundaryAfter(now);$('closeHud').textContent='NEXT CLOSE: '+fmtLeft(nextCloseMs-now);if(now>=nextCloseMs){const epoch=nextCloseMs;nextCloseMs=boundaryAfter(now+250);captureAndQueue(true,epoch);}},160);}
+function startLoops(){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);const cadence=Math.max(2,Number($('interval').value)||3)*1000;watchTimer=setInterval(()=>{if(!$('autoScan').checked||!stream||busy)return;const left=nextCloseMs-serverNowMs();if(left<1600)return;captureAndQueue(false,0);},cadence);clockTimer=setInterval(()=>{if(!stream)return;const now=serverNowMs();if(!nextCloseMs)nextCloseMs=boundaryAfter(now);$('closeHud').textContent='NEXT CLOSE: '+fmtLeft(nextCloseMs-now);if(now>=nextCloseMs){const epoch=nextCloseMs;nextCloseMs=boundaryAfter(now+250);setTimeout(()=>captureAndQueue(true,epoch),380);}},120);}
 $('interval').addEventListener('change',()=>{if(stream)startLoops();});
 async function captureBlob(){const v=$('video');if(!v.videoWidth||!v.videoHeight)throw new Error('Video frame is not ready.');let sx=0,sy=0,sw=v.videoWidth,sh=v.videoHeight;if(roi){sx=Math.round(roi.x*v.videoWidth);sy=Math.round(roi.y*v.videoHeight);sw=Math.max(80,Math.round(roi.w*v.videoWidth));sh=Math.max(80,Math.round(roi.h*v.videoHeight));}const maxW=1280,scale=Math.min(1,maxW/sw),cw=Math.max(80,Math.round(sw*scale)),ch=Math.max(80,Math.round(sh*scale));const c=document.createElement('canvas');c.width=cw;c.height=ch;const ctx=c.getContext('2d',{alpha:false});ctx.drawImage(v,sx,sy,sw,sh,0,0,cw,ch);const q=Math.max(.55,Math.min(.94,Number($('quality').value)||.78));return new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('Frame capture failed.')),'image/jpeg',q));}
-async function captureAndQueue(atClose,epoch){try{const blob=await captureBlob();if(atClose&&busy){pendingBoundary={blob,epoch};setStatus('Candle-close frame captured; waiting for current WATCH request to finish.');return;}if(!atClose&&busy)return;await scanBlob(blob,atClose,epoch);}catch(e){setStatus('Capture error: '+(e.message||e));}}
+async function captureAndQueue(atClose,epoch){
+  try{
+    if(atClose&&!roi){const message='Close scan blocked: first use SET CHART AREA around candles only.';setMetric('gateState','BLOCK · SET CROP','block');setSignalState('GATE BLOCKED','block');renderLocalGateBlock(message);setStatus(message);return;}
+    const blob=await captureBlob();
+    if(atClose&&busy){
+      pendingBoundary={blob,epoch};
+      if(currentKind==='WATCH'){try{activeController?.abort();}catch(_){}}
+      setStatus('Closed-candle frame saved; cancelling WATCH and starting priority CLOSE scan.');return;
+    }
+    if(!atClose&&busy)return;
+    await scanBlob(blob,atClose,epoch);
+  }catch(e){setStatus('Capture error: '+(e.message||e));}
+}
 function previewBlob(blob){if(lastObjectUrl)URL.revokeObjectURL(lastObjectUrl);lastObjectUrl=URL.createObjectURL(blob);$('previewImg').src=lastObjectUrl;$('preview').style.display='block';}
-async function scanBlob(blob,atClose,epoch){const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('RAJA AI login session missing.');return;}busy=true;currentKind=atClose?'CLOSE':'WATCH';setEngine(atClose?'CLOSE SCAN':'WATCH SCAN',true);$('lastFrame').textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});if(atClose)previewBlob(blob);const fd=new FormData();fd.append('image',blob,'raja-live-frame.jpg');fd.append('broker',$('broker').value);fd.append('market',$('market').value);fd.append('pair',$('pair').value.trim()||'SCREEN CHART');fd.append('timeframe',$('tf').value);fd.append('captured_at_close',atClose?'1':'0');fd.append('captured_at_epoch_ms',String(epoch||0));fd.append('source','RAJA_LIVE_SCREEN_SCANNER');Object.entries(a).forEach(([k,v])=>fd.append(k,v));try{const r=await fetch('/chart-scan',{method:'POST',body:fd,cache:'no-store'}),j=await r.json();if(!r.ok||j.status!=='success')throw new Error(j.message||'Visual scan failed');renderResult(j.result,atClose);setStatus(atClose?'Closed-candle priority scan complete. Live watching continues.':'Live chart WATCH updated.');}catch(e){if(String(e.name)!=='AbortError')setStatus('Scan error: '+(e.message||e));}finally{busy=false;currentKind='';setEngine('LIVE',!!stream);if(pendingBoundary){const p=pendingBoundary;pendingBoundary=null;scanBlob(p.blob,true,p.epoch);}}}
+async function scanBlob(blob,atClose,epoch){
+  const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('RAJA AI login session missing.');return;}
+  busy=true;currentKind=atClose?'CLOSE':'WATCH';setEngine(atClose?'CLOSE SCAN':'WATCH SCAN',true);
+  $('lastFrame').textContent=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});if(atClose)previewBlob(blob);
+  const t0=Date.now(),fd=new FormData();
+  fd.append('image',blob,'raja-live-frame.jpg');fd.append('broker',$('broker').value);fd.append('market',$('market').value);
+  fd.append('pair',$('pair').value.trim()||'SCREEN CHART');fd.append('timeframe',$('tf').value);
+  fd.append('captured_at_close',atClose?'1':'0');fd.append('captured_at_epoch_ms',String(epoch||0));
+  fd.append('chart_crop_set',roi?'1':'0');fd.append('capture_mode',sourceMode||'SCREENSHOT');
+  fd.append('last_signal_key',storedSignalKey());fd.append('client_request_started_ms',String(t0));
+  fd.append('source','RAJA_LIVE_SCREEN_SCANNER');Object.entries(a).forEach(([k,v])=>fd.append(k,v));
+  activeController=new AbortController();const timeout=setTimeout(()=>activeController?.abort(),atClose?15000:10000);
+  try{
+    const r=await fetch('/chart-scan',{method:'POST',body:fd,cache:'no-store',signal:activeController.signal}),j=await r.json(),t3=Date.now();
+    lastRoundTripMs=t3-t0;setMetric('latencyState',lastRoundTripMs+'ms',lastRoundTripMs<=4000?'ok':lastRoundTripMs<=8000?'warn':'block');
+    if(Number(j.request_received_epoch_ms)&&Number(j.server_epoch_ms)){
+      const measured=((Number(j.request_received_epoch_ms)-t0)+(Number(j.server_epoch_ms)-t3))/2;
+      if(Number.isFinite(measured)&&Math.abs(measured)<86400000){serverOffsetMs=measured;clockSynced=true;setMetric('clockState','SYNCED '+(measured>=0?'+':'')+Math.round(measured)+'ms','ok');}
+    }
+    if(!r.ok||j.status!=='success')throw new Error(j.message||'Visual scan failed');
+    const state=renderResult(j.result,atClose);
+    setStatus(atClose?(state==='CONFIRMED'?'CONFIRMED closed-candle signal ready. Follow the entry clock.':state==='EXPIRED'?'Signal verified but arrived late — SKIP this candle.':state==='DUPLICATE'?'Duplicate signal blocked — do not place it again.':'Close checked — no valid entry. Live watching continues.'):'Live chart WATCH updated — this is not an entry signal.');
+  }catch(e){if(String(e.name)!=='AbortError')setStatus('Scan error: '+(e.message||e));else if(atClose)setStatus('Close scan timed out — NO TRADE. Wait for the next candle.');}
+  finally{clearTimeout(timeout);activeController=null;busy=false;currentKind='';setEngine('LIVE',!!stream);if(pendingBoundary){const p=pendingBoundary;pendingBoundary=null;scanBlob(p.blob,true,p.epoch);}}
+}
 function speak(text){try{if(!('speechSynthesis' in window))return;const u=new SpeechSynthesisUtterance(text);u.rate=1.03;u.pitch=.9;u.volume=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(_){}}
-function startEntry(x){if(entryTimer)clearInterval(entryTimer);const box=$('entry');if(!x.entry_epoch){box.style.display='none';return;}const entryMs=Number(x.entry_epoch)*1000,grace=Math.max(5,Number(x.entry_window_seconds||30))*1000,bias=String(x.bias||'').toUpperCase(),dir=bias.startsWith('UP')?'UP CALL':bias.startsWith('DOWN')?'DOWN PUT':'';if(!dir){box.style.display='none';return;}box.style.display='block';const tick=()=>{const now=Date.now(),d=now-entryMs;if(d<0){$('entryMain').textContent='TRADE IN '+Math.ceil(-d/1000)+' SEC · '+dir;$('entrySub').textContent='Wait for the target candle open.';}else if(d<=grace){$('entryMain').textContent='TAKE '+dir+' NOW';$('entrySub').textContent=Math.max(0,Math.ceil((grace-d)/1000))+' sec remains in the allowed entry window.';}else{$('entryMain').textContent='ENTRY WINDOW PASSED';$('entrySub').textContent='Do not chase this candle. Keep Live Scanner running for a fresh close.';}};tick();entryTimer=setInterval(tick,250);}
-function renderResult(x,atClose){$('result').style.display='block';const bias=String(x.bias||'NO TRADE').toUpperCase(),up=bias.startsWith('UP'),down=bias.startsWith('DOWN'),hero=$('hero');hero.className='hero '+(up?'up':down?'down':'');$('big').textContent=up?'⬆ UP / CALL':down?'⬇ DOWN / PUT':atClose?'⏸ NO TRADE · CLOSE SCANNED':'👁 LIVE WATCH';const timing=atClose?'CLOSED-CANDLE FRAME':'FORMING CANDLE EXCLUDED';$('meta').innerHTML=`${esc($('broker').value)} · ${esc($('pair').value||'SCREEN CHART')} · ${esc($('tf').value.toUpperCase())}<br>${timing}`;$('strategy').textContent=x.selected_pattern||x.selected_strategy||x.scan_gate_reason||'No exact active setup yet.';const q=Math.round(Number(x.image_quality_score||0)),c=Number(x.detected_candles||x.closed_candles_analyzed||0),m=Math.round(Number(x.setup_match||x.pattern_score||0));$('qualityChip').textContent='QUALITY '+q+'/100';$('candlesChip').textContent='CANDLES '+c;$('matchChip').textContent='MATCH '+m+'%';$('timingChip').textContent=atClose?'CLOSE VERIFIED':'WATCH';$('timingChip').classList.toggle('good',atClose);const rules=Array.isArray(x.setup_rules)?x.setup_rules:Array.isArray(x.rules)?x.rules:[];$('rules').innerHTML=rules.slice(0,8).map(r=>`<li>${r.ok?'✓':'✕'} ${esc(r.name||'Rule')}</li>`).join('');startEntry(x);if(atClose&&(up||down)){const key=[x.pattern_type,x.selected_pattern,x.entry_epoch,bias].join('|');if(key!==lastSignalKey){lastSignalKey=key;speak(`RAJA AI. ${$('pair').value}. ${up?'UP CALL':'DOWN PUT'} signal. Take trade now.`);}}}
+function startEntry(x,state){
+  if(entryTimer)clearInterval(entryTimer);entryTimer=null;hideSignalBanner();
+  const box=$('entry'),bias=String(x.bias||'').toUpperCase(),up=bias.startsWith('UP'),down=bias.startsWith('DOWN');
+  if(!up&&!down){box.style.display='none';return;}
+  const dir=up?'UP / CALL':'DOWN / PUT',entryMs=Number(x.entry_epoch_ms||Number(x.entry_epoch||0)*1000),expiryMs=Number(x.expiry_epoch_ms||0),grace=Math.max(3,Number(x.entry_window_seconds||8))*1000;
+  box.style.display='block';box.className='entry '+(up?'up':'down')+((state==='DUPLICATE'||state==='EXPIRED')?' blocked':'');
+  if(state==='DUPLICATE'){$('entryMain').textContent='DUPLICATE BLOCKED';$('entrySub').textContent='This pair/timeframe/candle signal was already shown. Do not place it again.';return;}
+  if(state==='EXPIRED'||!entryMs){$('entryMain').textContent='ENTRY WINDOW PASSED';$('entrySub').textContent='Do not chase this candle. Wait for a fresh confirmed close.';return;}
+  const tick=()=>{
+    const now=serverNowMs(),d=now-entryMs,left=grace-d;
+    if(d<0){$('entryMain').textContent='WAIT '+Math.ceil(-d/1000)+'s · '+dir;$('entrySub').textContent=`Entry ${fmtClock(entryMs)} · Expiry ${fmtClock(expiryMs)}`;hideSignalBanner();}
+    else if(left>=0&&x.entry_allowed){$('entryMain').textContent='TAKE '+dir+' NOW';$('entrySub').textContent=`${Math.ceil(left/1000)}s left · Entry ${fmtClock(entryMs)} · Expiry ${fmtClock(expiryMs)}`;showSignalBanner(up?'UP':'DOWN',$('pair').value,entryMs,expiryMs,left);}
+    else{$('entryMain').textContent='ENTRY WINDOW PASSED';$('entrySub').textContent='Do not chase this candle. Wait for a fresh confirmed close.';hideSignalBanner();setSignalState('EXPIRED','block');if(entryTimer){clearInterval(entryTimer);entryTimer=null;}}
+  };
+  tick();entryTimer=setInterval(tick,200);
+}
+function renderProof(x,state,rules){
+  const p=x.proof||{},matched=Number(x.rules_matched??p.rules_matched??rules.filter(r=>r.ok).length),total=Number(x.rules_total??p.rules_total??rules.length);
+  $('proof').style.display='block';$('proofState').textContent=state;$('proofPattern').textContent=(x.pattern_type?'TYPE '+x.pattern_type+' · ':'')+(x.selected_pattern||'NO EXACT SETUP');
+  $('proofRules').textContent=total?matched+'/'+total+' CODED RULES':'--';$('proofClose').textContent=p.setup_candle_close_epoch_ms?fmtClock(p.setup_candle_close_epoch_ms):'WATCH FRAME';
+  $('proofTiming').textContent=p.entry_epoch_ms?fmtClock(p.entry_epoch_ms)+' → '+fmtClock(p.expiry_epoch_ms):'NO ENTRY';
+  const analysis=Number(p.server_analysis_ms||0),roundTrip=Number(lastRoundTripMs||0);$('proofGate').textContent=`${p.scan_gate||x.scan_gate||'PASS'} · ${analysis}ms server / ${roundTrip}ms total`;
+  $('proofKey').textContent=p.signal_key||x.signal_key||'--';const note=$('proofNote');note.className='proof-note '+(state==='CONFIRMED'?'good':state==='EXPIRED'||state==='DUPLICATE'||state==='GATE BLOCKED'?'block':'');
+  note.textContent=state==='CONFIRMED'?'Cropped closed-candle frame verified. Frozen proof image is shown above.':state==='DUPLICATE'?'Same candle signal was already delivered; repeat entry blocked.':state==='EXPIRED'?'Exact setup was found, but the short entry window passed. Entry blocked.':state==='GATE BLOCKED'?(x.scan_gate_reason||'Chart crop/quality gate blocked the signal.'):'WATCH/close proof only — no directional entry is armed.';
+}
+function renderResult(x,atClose){
+  $('result').style.display='block';
+  const bias=String(x.bias||'NO TRADE').toUpperCase(),up=bias.startsWith('UP'),down=bias.startsWith('DOWN'),selected=String(x.selected_pattern||x.selected_strategy||''),hero=$('hero');
+  let state=String(x.signal_state||'').toUpperCase();if(!state)state=atClose?(up||down?'CONFIRMED':'CLOSE CHECKED'):selected.toUpperCase().startsWith('WAIT CLOSE:')?'ARMED':'WATCH';
+  const confirmed=state==='CONFIRMED'&&atClose&&(up||down)&&x.entry_allowed&&!x.duplicate_signal&&!x.late_signal;
+  hero.className='hero '+(confirmed?'confirmed ':'')+(up?'up':down?'down':state==='ARMED'?'armed':state==='EXPIRED'||state==='DUPLICATE'||state==='GATE BLOCKED'?'blocked':'');
+  $('big').textContent=confirmed?(up?'✅ CONFIRMED\n⬆ UP / CALL':'✅ CONFIRMED\n⬇ DOWN / PUT'):state==='ARMED'?'🟡 ARMED · WAIT CLOSE':state==='DUPLICATE'?'🚫 DUPLICATE BLOCKED':state==='EXPIRED'?'⌛ SIGNAL LATE · SKIP':state==='GATE BLOCKED'?'🚫 CHART GATE BLOCKED':atClose?'⏸ NO TRADE · CLOSE CHECKED':'👁 LIVE WATCH';
+  $('big').style.whiteSpace='pre-line';const timing=atClose?'CLOSED-CANDLE FRAME':'FORMING CANDLE EXCLUDED';
+  $('meta').innerHTML=`${esc($('broker').value)} · ${esc($('pair').value||'SCREEN CHART')} · ${esc($('tf').value.toUpperCase())}<br>${timing}`;
+  $('strategy').textContent=selected||x.scan_gate_reason||'No exact active setup yet.';
+  const q=Math.round(Number(x.image_quality_score||0)),c=Number(x.detected_candles||x.closed_candles_analyzed||0),rules=Array.isArray(x.setup_rules)?x.setup_rules:Array.isArray(x.rules)?x.rules:[],matched=Number(x.rules_matched??rules.filter(r=>r.ok).length),total=Number(x.rules_total??rules.length);
+  $('qualityChip').textContent='QUALITY '+q+'/100';$('candlesChip').textContent='CANDLES '+c;$('matchChip').textContent=total?'RULES '+matched+'/'+total:'RULES --';
+  $('timingChip').textContent=state;$('timingChip').classList.toggle('good',confirmed);$('rules').innerHTML=rules.slice(0,10).map(r=>`<li>${r.ok?'✓':'✕'} ${esc(r.name||'Rule')}</li>`).join('');
+  setSignalState(state,confirmed?'ok':state==='ARMED'?'warn':state==='WATCH'||state==='CLOSE CHECKED'?'':'block');
+  const gateBlocked=x.scan_gate==='RESCAN',gatePassed=!!x.chart_crop_set&&!gateBlocked;
+  setMetric('gateState',gateBlocked?'BLOCK · RESCAN':gatePassed?'PASS · CROPPED':'WATCH ONLY',gateBlocked?'block':gatePassed?'ok':'warn');
+  renderProof(x,state,rules);startEntry(x,state);
+  if(confirmed){const key=x.signal_key||[x.pattern_type,x.selected_pattern,x.entry_epoch,bias].join('|'),already=key&&(key===storedSignalKey()||key===lastSignalKey);if(!already){storeSignalKey(key);speak(`RAJA AI confirmed. ${$('pair').value}. ${up?'UP CALL':'DOWN PUT'}. Take trade now.`);}else{state='DUPLICATE';setSignalState('DUPLICATE','block');hideSignalBanner();}}
+  return state;
+}
 $('file').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;previewBlob(f);scanBlob(f,false,0);};
 $('legacyCamera').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;previewBlob(f);scanBlob(f,false,0);};
-renderCompat();loadPrefs();nextCloseMs=boundaryAfter();
+renderCompat();loadPrefs();updateChartGate();setSignalState('WATCH');syncServerClock().finally(()=>{nextCloseMs=boundaryAfter();});
 </script>
 </body>
 </html>
