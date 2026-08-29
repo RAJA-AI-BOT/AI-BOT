@@ -14,6 +14,12 @@
 .signal-banner{position:fixed;z-index:9999;top:max(8px,env(safe-area-inset-top));left:50%;width:min(700px,calc(100% - 16px));transform:translate(-50%,-130%);opacity:0;pointer-events:none;border-radius:18px;padding:14px;text-align:center;transition:.25s ease;border:2px solid transparent;box-shadow:0 18px 55px rgba(0,0,0,.55)}.signal-banner.show{transform:translate(-50%,0);opacity:1}.signal-banner.up{background:linear-gradient(135deg,#003e29,#00c86f);border-color:#89ffc8;color:#fff}.signal-banner.down{background:linear-gradient(135deg,#4a0717,#ef3159);border-color:#ff9eb2;color:#fff}.signal-banner .direction{font-size:clamp(28px,7vw,52px);font-weight:1000;line-height:1}.signal-banner .detail{margin-top:6px;font-size:11px;font-weight:900}.signal-banner .clock{margin-top:5px;font-size:13px;font-weight:1000;color:#fff4ae}
 .proof{display:none;margin-top:10px;padding:10px;border-radius:11px;border:1px solid rgba(96,239,255,.20);background:#030913}.proof h3{margin:0;color:var(--cyan);font-size:10px}.proof-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px}.proof-item{border:1px solid rgba(96,239,255,.13);border-radius:8px;padding:7px;min-width:0}.proof-item small{display:block;color:#7892a8;font-size:7px;font-weight:900}.proof-item strong{display:block;margin-top:3px;color:#eafcff;font-size:9px;overflow-wrap:anywhere}.proof-note{margin-top:7px;color:#8fa7bb;font-size:8px;line-height:1.45}.proof-note.good{color:#8dffc4}.proof-note.block{color:#ff9aae}
 @media(max-width:600px){.safetybar{grid-template-columns:repeat(2,minmax(0,1fr))}.proof-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.signal-banner{padding:12px}.hero.confirmed .big{font-size:38px}}
+.crop.proposed{border-style:dashed;background:rgba(0,255,135,.035)}
+.crop.confirmed{border-style:solid;box-shadow:0 0 0 9999px rgba(0,0,0,.28),0 0 26px rgba(0,255,135,.42)}
+.safetybar{grid-template-columns:repeat(3,minmax(0,1fr))}
+.preflight-hint{margin-top:8px;padding:9px;border-radius:10px;border:1px solid rgba(96,239,255,.18);background:#040a13;color:#a9c1d1;font-size:9px;line-height:1.45}
+.preflight-hint.good{border-color:rgba(0,255,135,.35);color:#8dffc4}.preflight-hint.block{border-color:rgba(255,66,106,.4);color:#ff9aae}
+@media(max-width:600px){.safetybar{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
 <body>
@@ -23,10 +29,10 @@
   <div id="signalBannerClock" class="clock"></div>
 </div>
 <div class="app">
-  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V41 · FIVE SAFETY GATES · SK25</span></div>
+  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V42 · AUTO CHART PREFLIGHT · SK25</span></div>
   <section class="card">
     <h1>🎥 RAJA Live Screen Scanner</h1>
-    <p>Watches the visible chart, validates the candle crop, and scans Pattern Type 1-25 exactly at each selected candle boundary.</p>
+    <p>Auto-detects a candle-only crop, requires a passing test frame, and scans Pattern Type 1-25 exactly at each selected candle boundary.</p>
     <div class="compat" id="compat"></div>
     <div class="notice">For trade integrity, forming-candle frames are WATCH only. A directional entry can be armed only from the boundary frame after the candle closes. On iPhone/iPad, another app's screen may not be shareable from a browser; use Live Camera or Screenshot mode there.</div>
   </section>
@@ -58,8 +64,13 @@
       <button class="btn alt" id="cameraBtn">📷 LIVE CAMERA</button>
       <button class="btn alt" id="shotBtn">🖼 SCREENSHOT</button>
     </div>
+    <div class="grid3" style="margin-top:8px">
+      <button class="btn" id="autoDetectBtn" disabled>◎ AUTO DETECT CHART AREA</button>
+      <button class="btn gold" id="cropBtn" disabled>▣ SET AREA MANUALLY</button>
+      <button class="btn alt" id="confirmCropBtn" disabled>✓ CONFIRM CHART AREA</button>
+    </div>
     <div class="grid" style="margin-top:8px">
-      <button class="btn gold" id="cropBtn" disabled>▣ SET CHART AREA</button>
+      <button class="btn alt" id="testFrameBtn" disabled>🧪 TEST FRAME</button>
       <button class="btn danger" id="stopBtn" disabled>■ STOP LIVE SCANNER</button>
     </div>
     <div class="switchrow"><input type="checkbox" id="autoScan" checked><label for="autoScan" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Live WATCH scans between candle closes</label></div>
@@ -83,7 +94,10 @@
       <div class="metric"><small>AUTO CHART GATE</small><strong id="gateState" class="warn">SET CROP</strong></div>
       <div class="metric"><small>SIGNAL STATE</small><strong id="signalState">WATCH</strong></div>
       <div class="metric"><small>SCAN LATENCY</small><strong id="latencyState">--</strong></div>
+      <div class="metric"><small>CANDLE COUNT</small><strong id="candleCountState">-- / 14 MIN</strong></div>
+      <div class="metric"><small>ZOOM GUIDE</small><strong id="zoomGuideState">SHOW 20–30</strong></div>
     </div>
+    <div id="preflightHint" class="preflight-hint">Start a source, then use AUTO DETECT. Green box is only a proposal until CONFIRM + TEST FRAME passes.</div>
     <div id="status" class="status">Ready. Choose Screen Share, Live Camera, or Screenshot.</div>
     <div id="preview" class="preview"><img id="previewImg" alt="Last scanned chart frame"></div>
   </section>
@@ -151,7 +165,7 @@ const LIVE_PAIR_DATA={
   }
 };
 
-let stream=null,sourceMode='',watchTimer=null,clockTimer=null,busy=false,currentKind='',nextCloseMs=0,pendingBoundary=null,cropMode=false,dragStart=null,roi=null,lastObjectUrl='',lastSignalKey='',entryTimer=null,activeController=null,serverOffsetMs=0,clockSynced=false,lastRoundTripMs=0;
+let stream=null,sourceMode='',watchTimer=null,clockTimer=null,busy=false,currentKind='',nextCloseMs=0,pendingBoundary=null,cropMode=false,dragStart=null,roi=null,roiConfirmed=false,lastCropTestPassed=false,lastPreflight=null,lastLayoutSignature='',layoutRecheckTimer=null,preflightBusy=false,lastObjectUrl='',lastSignalKey='',entryTimer=null,activeController=null,serverOffsetMs=0,clockSynced=false,lastRoundTripMs=0;
 function auth(){const key=localStorage.getItem('raja_active_key')||'';return{key,user:localStorage.getItem('raja_active_user')||'',device:localStorage.getItem('raja_device_uid')||'',session_token:key?(localStorage.getItem('raja_token_'+key)||''):''};}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 function tfMs(){return TF_MS[$('tf').value]||60000;}
@@ -180,9 +194,21 @@ async function syncServerClock(){
 }
 function setSignalState(state,tone=''){setMetric('signalState',state,tone);}
 function updateChartGate(){
-  if(roi){setMetric('gateState','PASS · CROPPED','ok');$('cropState').textContent='CHART CROPPED';return true;}
+  const box=$('crop');if(box){box.classList.toggle('confirmed',!!roi&&roiConfirmed&&lastCropTestPassed);box.classList.toggle('proposed',!!roi&&!(roiConfirmed&&lastCropTestPassed));}
+  if(roi&&roiConfirmed&&lastCropTestPassed){setMetric('gateState','PASS · TESTED','ok');$('cropState').textContent='CROP CONFIRMED';return true;}
+  if(roi){setMetric('gateState',lastCropTestPassed?'CONFIRM CROP':'TEST + CONFIRM','warn');$('cropState').textContent='CROP PROPOSED';return false;}
   setMetric('gateState',stream?'BLOCK · SET CROP':'SET CROP','warn');$('cropState').textContent='FULL FRAME';return false;
 }
+function setPreflightHint(text,tone=''){const el=$('preflightHint');if(!el)return;el.textContent=text;el.className='preflight-hint'+(tone?' '+tone:'');}
+function updatePreflightButtons(){const hasSource=!!stream,hasCrop=!!roi;$('autoDetectBtn').disabled=!hasSource||preflightBusy;$('cropBtn').disabled=!hasSource||preflightBusy;$('confirmCropBtn').disabled=!hasSource||!hasCrop||preflightBusy;$('testFrameBtn').disabled=!hasSource||!hasCrop||preflightBusy;}
+function resetPreflightMetrics(){setMetric('candleCountState','-- / 14 MIN','warn');setMetric('zoomGuideState','SHOW 20–30','warn');}
+function invalidateCrop(reason='',keepRoi=true){roiConfirmed=false;lastCropTestPassed=false;lastPreflight=null;if(!keepRoi)roi=null;updatePreflightButtons();drawRoi();if(reason)setPreflightHint(reason,'block');}
+function layoutSignature(){const v=$('video'),angle=screen.orientation&&Number.isFinite(Number(screen.orientation.angle))?Number(screen.orientation.angle):Number(window.orientation||0);return `${v.videoWidth||0}x${v.videoHeight||0}@${angle}`;}
+function cropPresetKey(){return `raja_chart_crop_v42:${$('broker').value}:${sourceMode||'SOURCE'}:${layoutSignature()}`;}
+function validRoi(value){return value&&['x','y','w','h'].every(k=>Number.isFinite(Number(value[k])))&&Number(value.w)>=.12&&Number(value.h)>=.18&&Number(value.x)>=0&&Number(value.y)>=0&&Number(value.x)+Number(value.w)<=1.001&&Number(value.y)+Number(value.h)<=1.001;}
+function saveCropPreset(){if(!validRoi(roi))return;try{localStorage.setItem(cropPresetKey(),JSON.stringify({roi,broker:$('broker').value,layout:layoutSignature(),saved_at:Date.now()}));}catch(_){}}
+function loadCropPreset(){let saved=null;try{saved=JSON.parse(localStorage.getItem(cropPresetKey())||'null');}catch(_){}if(!validRoi(saved?.roi))return false;roi={x:Number(saved.roi.x),y:Number(saved.roi.y),w:Number(saved.roi.w),h:Number(saved.roi.h)};roiConfirmed=false;lastCropTestPassed=false;drawRoi();updatePreflightButtons();setPreflightHint(`${$('broker').value} crop position restored for this screen. CONFIRM CHART AREA to re-test it.`);return true;}
+function scheduleLayoutRecheck(){if(layoutRecheckTimer)clearTimeout(layoutRecheckTimer);layoutRecheckTimer=setTimeout(()=>{if(!stream)return;const sig=layoutSignature();if(sig===lastLayoutSignature)return;lastLayoutSignature=sig;invalidateCrop('Screen size/orientation changed. Chart area must be detected and tested again.',false);resetPreflightMetrics();if(!loadCropPreset())setStatus('Layout changed — run AUTO DETECT CHART AREA again.');},300);}
 function hideSignalBanner(){const b=$('signalBanner');b.classList.remove('show','up','down');}
 function renderLocalGateBlock(message){
   hideSignalBanner();if(entryTimer)clearInterval(entryTimer);entryTimer=null;$('result').style.display='block';$('hero').className='hero blocked';
@@ -242,7 +268,7 @@ function loadPrefs(){
   if(typeof p.auto==='boolean')$('autoScan').checked=p.auto;
   refreshLivePairs(p.pair||'');
 }
-$('broker').addEventListener('change',()=>{refreshLivePairs();savePrefs();});
+$('broker').addEventListener('change',()=>{refreshLivePairs();savePrefs();if(stream){invalidateCrop('Broker layout changed. Load/detect and confirm its chart area again.',false);resetPreflightMetrics();loadCropPreset();}});
 $('market').addEventListener('change',()=>{refreshLivePairs();savePrefs();});
 $('pair').addEventListener('change',savePrefs);
 $('pairSearch').addEventListener('input',()=>filterLivePairs($('pairSearch').value,$('pair').value));
@@ -263,21 +289,79 @@ $('pairSearchClear').addEventListener('click',()=>{
 }));
 function contentRect(){const stage=$('stage'),v=$('video'),r=stage.getBoundingClientRect();if(!v.videoWidth||!v.videoHeight)return{x:0,y:0,w:r.width,h:r.height};const va=v.videoWidth/v.videoHeight,sa=r.width/r.height;let w,h,x,y;if(va>sa){w=r.width;h=w/va;x=0;y=(r.height-h)/2;}else{h=r.height;w=h*va;y=0;x=(r.width-w)/2;}return{x,y,w,h};}
 function drawRoi(){const box=$('crop');if(!roi){box.style.display='none';updateChartGate();return;}const c=contentRect();box.style.display='block';box.style.left=(c.x+roi.x*c.w)+'px';box.style.top=(c.y+roi.y*c.h)+'px';box.style.width=(roi.w*c.w)+'px';box.style.height=(roi.h*c.h)+'px';updateChartGate();}
-window.addEventListener('resize',drawRoi);
+window.addEventListener('resize',()=>{drawRoi();scheduleLayoutRecheck();});
+window.addEventListener('orientationchange',scheduleLayoutRecheck);
+$('video').addEventListener('resize',scheduleLayoutRecheck);
 function pointerPos(ev){const r=$('stage').getBoundingClientRect(),c=contentRect();return{x:Math.max(c.x,Math.min(c.x+c.w,ev.clientX-r.left)),y:Math.max(c.y,Math.min(c.y+c.h,ev.clientY-r.top)),c};}
 $('stage').addEventListener('pointerdown',ev=>{if(!cropMode)return;ev.preventDefault();const p=pointerPos(ev);dragStart=p;$('stage').setPointerCapture?.(ev.pointerId);$('dragbox').style.display='block';});
 $('stage').addEventListener('pointermove',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y),b=$('dragbox');b.style.left=x+'px';b.style.top=y+'px';b.style.width=w+'px';b.style.height=h+'px';});
-$('stage').addEventListener('pointerup',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),c=p.c,x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y);dragStart=null;$('dragbox').style.display='none';if(w<Math.max(120,c.w*.28)||h<Math.max(90,c.h*.24)){setStatus('Chart area too small. Include at least 14–20 complete candles.');setMetric('gateState','BLOCK · CROP SMALL','block');return;}roi={x:(x-c.x)/c.w,y:(y-c.y)/c.h,w:w/c.w,h:h/c.h};cropMode=false;$('stage').classList.remove('crop-mode');$('cropBtn').textContent='↺ RESET / SET CHART AREA';drawRoi();setStatus('Chart Gate PASS. Only the cropped candle area will be scanned.');});
-$('cropBtn').onclick=()=>{if(!stream)return;if(roi){roi=null;drawRoi();}cropMode=true;$('stage').classList.add('crop-mode');setMetric('gateState','SELECT AREA','warn');setStatus('Drag around ONLY the candle chart. Exclude broker buttons, pair list and indicators.');};
-async function startSource(mode){stopSource();const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('Login to RAJA AI first, then reopen Live Scanner.');return;}const clockPromise=syncServerClock();try{if(mode==='screen'){if(!navigator.mediaDevices?.getDisplayMedia){setStatus('This browser cannot share the screen. Use LIVE CAMERA or SCREENSHOT.');return;}stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:10,max:15}},audio:false});sourceMode='SCREEN';}else{if(!navigator.mediaDevices?.getUserMedia){$('legacyCamera').click();return;}stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:15,max:30}},audio:false});sourceMode='CAMERA';}await clockPromise.catch(()=>false);const v=$('video');v.srcObject=stream;$('stage').style.display='block';await v.play().catch(()=>{});const track=stream.getVideoTracks()[0];track?.addEventListener('ended',()=>stopSource('Screen/camera sharing ended.'));$('modeHud').textContent='SOURCE: '+sourceMode;$('captureState').textContent='LIVE';$('captureState').classList.add('live');$('cropBtn').disabled=false;$('stopBtn').disabled=false;nextCloseMs=boundaryAfter();startLoops();updateChartGate();setSignalState('WATCH');setStatus(sourceMode==='SCREEN'?'Screen received. SET CHART AREA is required before any UP/DOWN signal.':'Camera received. SET CHART AREA is required before any UP/DOWN signal.');setTimeout(drawRoi,100);}catch(e){stopSource();setStatus((mode==='screen'?'Screen share':'Camera')+' unavailable: '+(e.message||e));if(mode==='camera'&&isIOS())$('legacyCamera').click();}}
-function stopSource(msg='Live scanner stopped.'){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);if(entryTimer)clearInterval(entryTimer);try{activeController?.abort();}catch(_){}watchTimer=clockTimer=entryTimer=null;activeController=null;pendingBoundary=null;busy=false;try{stream?.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;sourceMode='';$('video').srcObject=null;$('stage').style.display='none';$('captureState').textContent='OFF';$('captureState').classList.remove('live');$('cropBtn').disabled=true;$('stopBtn').disabled=true;roi=null;cropMode=false;$('stage').classList.remove('crop-mode');drawRoi();$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');setSignalState('WATCH');hideSignalBanner();if(msg)setStatus(msg);}
+$('stage').addEventListener('pointerup',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),c=p.c,x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y);dragStart=null;$('dragbox').style.display='none';if(w<Math.max(120,c.w*.28)||h<Math.max(90,c.h*.24)){setStatus('Chart area too small. Include at least 14–20 complete candles.');setMetric('gateState','BLOCK · CROP SMALL','block');return;}roi={x:(x-c.x)/c.w,y:(y-c.y)/c.h,w:w/c.w,h:h/c.h};roiConfirmed=false;lastCropTestPassed=false;lastPreflight=null;cropMode=false;$('stage').classList.remove('crop-mode');$('cropBtn').textContent='↺ RESET / SET AREA MANUALLY';drawRoi();updatePreflightButtons();setPreflightHint('Manual green crop proposed. Remove indicators/sidebar, then press CONFIRM CHART AREA.');setStatus('Manual crop ready for confirmation and TEST FRAME.');});
+$('cropBtn').onclick=()=>{if(!stream)return;if(roi){invalidateCrop('',false);resetPreflightMetrics();}cropMode=true;$('stage').classList.add('crop-mode');setMetric('gateState','SELECT AREA','warn');setPreflightHint('Drag over 20–30 complete candles only. Exclude broker buttons, pair list and every indicator.');setStatus('Drag around ONLY the candle chart. Exclude broker buttons, pair list and indicators.');};
+async function startSource(mode){
+  stopSource('');const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('Login to RAJA AI first, then reopen Live Scanner.');return;}
+  const clockPromise=syncServerClock();
+  try{
+    if(mode==='screen'){
+      if(!navigator.mediaDevices?.getDisplayMedia){setStatus('This browser cannot share the screen. Use LIVE CAMERA or SCREENSHOT.');return;}
+      stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:10,max:15}},audio:false});sourceMode='SCREEN';
+    }else{
+      if(!navigator.mediaDevices?.getUserMedia){$('legacyCamera').click();return;}
+      stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:15,max:30}},audio:false});sourceMode='CAMERA';
+    }
+    await clockPromise.catch(()=>false);const v=$('video');v.srcObject=stream;$('stage').style.display='block';await v.play().catch(()=>{});
+    const track=stream.getVideoTracks()[0];track?.addEventListener('ended',()=>stopSource('Screen/camera sharing ended.'));
+    $('modeHud').textContent='SOURCE: '+sourceMode;$('captureState').textContent='LIVE';$('captureState').classList.add('live');$('stopBtn').disabled=false;
+    lastLayoutSignature=layoutSignature();nextCloseMs=boundaryAfter();startLoops();updatePreflightButtons();updateChartGate();setSignalState('WATCH');resetPreflightMetrics();
+    if(!loadCropPreset())setPreflightHint('Press AUTO DETECT CHART AREA. Keep 20–30 candles visible and remove indicators/sidebar.');
+    setStatus(sourceMode==='SCREEN'?'Screen received. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.':'Camera received. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.');
+    setTimeout(()=>{lastLayoutSignature=layoutSignature();drawRoi();},100);
+  }catch(e){stopSource('');setStatus((mode==='screen'?'Screen share':'Camera')+' unavailable: '+(e.message||e));if(mode==='camera'&&isIOS())$('legacyCamera').click();}
+}
+function stopSource(msg='Live scanner stopped.'){
+  if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);if(entryTimer)clearInterval(entryTimer);if(layoutRecheckTimer)clearTimeout(layoutRecheckTimer);
+  try{activeController?.abort();}catch(_){}watchTimer=clockTimer=entryTimer=layoutRecheckTimer=null;activeController=null;pendingBoundary=null;busy=false;preflightBusy=false;
+  try{stream?.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;sourceMode='';$('video').srcObject=null;$('stage').style.display='none';$('captureState').textContent='OFF';$('captureState').classList.remove('live');
+  ['autoDetectBtn','cropBtn','confirmCropBtn','testFrameBtn','stopBtn'].forEach(id=>$(id).disabled=true);roi=null;roiConfirmed=false;lastCropTestPassed=false;lastPreflight=null;lastLayoutSignature='';cropMode=false;$('stage').classList.remove('crop-mode');drawRoi();resetPreflightMetrics();
+  setPreflightHint('Start a source, then use AUTO DETECT. Green box is only a proposal until CONFIRM + TEST FRAME passes.');$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');setSignalState('WATCH');hideSignalBanner();if(msg)setStatus(msg);
+}
 $('shareBtn').onclick=()=>startSource('screen');$('cameraBtn').onclick=()=>startSource('camera');$('stopBtn').onclick=()=>stopSource();$('shotBtn').onclick=()=>$('file').click();
-function startLoops(){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);const cadence=Math.max(2,Number($('interval').value)||3)*1000;watchTimer=setInterval(()=>{if(!$('autoScan').checked||!stream||busy)return;const left=nextCloseMs-serverNowMs();if(left<1600)return;captureAndQueue(false,0);},cadence);clockTimer=setInterval(()=>{if(!stream)return;const now=serverNowMs();if(!nextCloseMs)nextCloseMs=boundaryAfter(now);$('closeHud').textContent='NEXT CLOSE: '+fmtLeft(nextCloseMs-now);if(now>=nextCloseMs){const epoch=nextCloseMs;nextCloseMs=boundaryAfter(now+250);setTimeout(()=>captureAndQueue(true,epoch),380);}},120);}
+function startLoops(){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);const cadence=Math.max(2,Number($('interval').value)||3)*1000;watchTimer=setInterval(()=>{if(!$('autoScan').checked||!stream||busy||preflightBusy||!roiConfirmed||!lastCropTestPassed)return;const left=nextCloseMs-serverNowMs();if(left<1600)return;captureAndQueue(false,0);},cadence);clockTimer=setInterval(()=>{if(!stream)return;const now=serverNowMs();if(!nextCloseMs)nextCloseMs=boundaryAfter(now);$('closeHud').textContent='NEXT CLOSE: '+fmtLeft(nextCloseMs-now);if(now>=nextCloseMs){const epoch=nextCloseMs;nextCloseMs=boundaryAfter(now+250);setTimeout(()=>captureAndQueue(true,epoch),380);}},120);}
 $('interval').addEventListener('change',()=>{if(stream)startLoops();});
-async function captureBlob(){const v=$('video');if(!v.videoWidth||!v.videoHeight)throw new Error('Video frame is not ready.');let sx=0,sy=0,sw=v.videoWidth,sh=v.videoHeight;if(roi){sx=Math.round(roi.x*v.videoWidth);sy=Math.round(roi.y*v.videoHeight);sw=Math.max(80,Math.round(roi.w*v.videoWidth));sh=Math.max(80,Math.round(roi.h*v.videoHeight));}const maxW=1280,scale=Math.min(1,maxW/sw),cw=Math.max(80,Math.round(sw*scale)),ch=Math.max(80,Math.round(sh*scale));const c=document.createElement('canvas');c.width=cw;c.height=ch;const ctx=c.getContext('2d',{alpha:false});ctx.drawImage(v,sx,sy,sw,sh,0,0,cw,ch);const q=Math.max(.55,Math.min(.94,Number($('quality').value)||.78));return new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('Frame capture failed.')),'image/jpeg',q));}
+async function captureBlob(useCrop=true){const v=$('video');if(!v.videoWidth||!v.videoHeight)throw new Error('Video frame is not ready.');let sx=0,sy=0,sw=v.videoWidth,sh=v.videoHeight;if(useCrop&&roi){sx=Math.round(roi.x*v.videoWidth);sy=Math.round(roi.y*v.videoHeight);sw=Math.max(80,Math.round(roi.w*v.videoWidth));sh=Math.max(80,Math.round(roi.h*v.videoHeight));}const maxW=1280,scale=Math.min(1,maxW/sw),cw=Math.max(80,Math.round(sw*scale)),ch=Math.max(80,Math.round(sh*scale));const c=document.createElement('canvas');c.width=cw;c.height=ch;const ctx=c.getContext('2d',{alpha:false});ctx.drawImage(v,sx,sy,sw,sh,0,0,cw,ch);const q=Math.max(.55,Math.min(.94,Number($('quality').value)||.78));return new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(new Error('Frame capture failed.')),'image/jpeg',q));}
+function applyPreflightMetrics(x){
+  const count=Number(x.detected_candles||0),quality=Math.round(Number(x.image_quality_score||0)),guide=String(x.zoom_guidance||'CHECK FRAME');
+  setMetric('candleCountState',`${count} / 14 MIN`,count>=20&&count<=30?'ok':count>=14?'warn':'block');
+  setMetric('zoomGuideState',guide,guide==='READY'?'ok':guide.includes('REMOVE')||guide==='CLEARER FRAME'?'block':'warn');
+  const warning=Array.isArray(x.warnings)&&x.warnings.length?x.warnings[0]:'';
+  const sidebar=x.sidebars_excluded?' Sidebar/control area excluded.':'';
+  setPreflightHint(`${x.scan_gate==='PASS'?'FRAME PASS':'FRAME BLOCKED'} · ${count} candles · quality ${quality}/100 · ${guide}.${sidebar}${warning?' '+warning:''}`,x.scan_gate==='PASS'?'good':'block');
+}
+async function requestPreflight(blob,alreadyCropped){
+  const a=auth(),fd=new FormData();fd.append('image',blob,alreadyCropped?'raja-test-crop.jpg':'raja-auto-detect.jpg');fd.append('already_cropped',alreadyCropped?'1':'0');fd.append('broker',$('broker').value);fd.append('market',$('market').value);fd.append('capture_mode',sourceMode||'SCREENSHOT');Object.entries(a).forEach(([k,v])=>fd.append(k,v));
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+  try{const r=await fetch('/chart-preflight',{method:'POST',body:fd,cache:'no-store',signal:controller.signal}),j=await r.json();if(!r.ok||j.status!=='success')throw new Error(j.message||'Chart preflight failed.');return j.result;}finally{clearTimeout(timeout);}
+}
+async function runAutoDetect(){
+  if(!stream||preflightBusy||busy)return;preflightBusy=true;updatePreflightButtons();setEngine('AUTO DETECT',true);setStatus('Detecting candle chart area…');
+  try{const blob=await captureBlob(false),x=await requestPreflight(blob,false);lastPreflight=x;applyPreflightMetrics(x);if(x.auto_detected&&validRoi(x.roi)){roi={x:Number(x.roi.x),y:Number(x.roi.y),w:Number(x.roi.w),h:Number(x.roi.h)};roiConfirmed=false;lastCropTestPassed=false;drawRoi();setStatus('Green crop proposed. Check it, then press CONFIRM CHART AREA.');}else{invalidateCrop('Auto-detect could not safely lock the candle area. Follow the zoom guide or set it manually.',false);setStatus('Auto-detect needs another frame. Follow the red instruction.');}}
+  catch(e){setPreflightHint('AUTO DETECT failed: '+(e.message||e),'block');setStatus('Auto-detect error: '+(e.message||e));}
+  finally{preflightBusy=false;setEngine('LIVE',!!stream);updatePreflightButtons();}
+}
+async function runTestFrame(confirmOnPass=false){
+  if(!stream||!roi||preflightBusy||busy)return false;preflightBusy=true;updatePreflightButtons();setEngine('TEST FRAME',true);setStatus('Testing the proposed candle crop…');
+  try{const blob=await captureBlob(true),x=await requestPreflight(blob,true);lastPreflight=x;applyPreflightMetrics(x);const count=Number(x.detected_candles||0),pass=x.scan_gate==='PASS'&&count>=14&&!x.possible_indicator_overlay;lastCropTestPassed=pass;
+    if(pass&&confirmOnPass){roiConfirmed=true;lastLayoutSignature=layoutSignature();saveCropPreset();drawRoi();setPreflightHint(`CONFIRMED + TEST PASS · ${count} candles · ${x.zoom_guidance}. Crop saved for ${$('broker').value}.`,'good');setStatus('Chart Gate PASS. Live WATCH and closed-candle scans are now enabled.');}
+    else if(pass){roiConfirmed=false;drawRoi();setStatus('TEST FRAME passed. Now press CONFIRM CHART AREA to lock it.');}
+    else{roiConfirmed=false;drawRoi();setSignalState('GATE BLOCKED','block');setStatus(x.possible_indicator_overlay?'REMOVE INDICATORS, then run TEST FRAME again.':'TEST FRAME blocked. Follow ZOOM IN/OUT guidance and retry.');}
+    return pass;
+  }catch(e){roiConfirmed=false;lastCropTestPassed=false;setPreflightHint('TEST FRAME failed: '+(e.message||e),'block');setStatus('Test error: '+(e.message||e));return false;}
+  finally{preflightBusy=false;setEngine('LIVE',!!stream);updatePreflightButtons();updateChartGate();}
+}
+async function confirmCrop(){if(!roi)return;setStatus('Confirming chart area with a fresh TEST FRAME…');await runTestFrame(true);}
+$('autoDetectBtn').onclick=runAutoDetect;$('testFrameBtn').onclick=()=>runTestFrame(false);$('confirmCropBtn').onclick=confirmCrop;
 async function captureAndQueue(atClose,epoch){
   try{
-    if(atClose&&!roi){const message='Close scan blocked: first use SET CHART AREA around candles only.';setMetric('gateState','BLOCK · SET CROP','block');setSignalState('GATE BLOCKED','block');renderLocalGateBlock(message);setStatus(message);return;}
+    if(!roi||!roiConfirmed||!lastCropTestPassed){const message='Scan blocked: AUTO DETECT/SET AREA, CONFIRM CHART AREA, then pass TEST FRAME.';setMetric('gateState','BLOCK · CONFIRM/TEST','block');setSignalState('GATE BLOCKED','block');if(atClose)renderLocalGateBlock(message);setStatus(message);return;}
     const blob=await captureBlob();
     if(atClose&&busy){
       pendingBoundary={blob,epoch};
@@ -297,7 +381,7 @@ async function scanBlob(blob,atClose,epoch){
   fd.append('image',blob,'raja-live-frame.jpg');fd.append('broker',$('broker').value);fd.append('market',$('market').value);
   fd.append('pair',$('pair').value.trim()||'SCREEN CHART');fd.append('timeframe',$('tf').value);
   fd.append('captured_at_close',atClose?'1':'0');fd.append('captured_at_epoch_ms',String(epoch||0));
-  fd.append('chart_crop_set',roi?'1':'0');fd.append('capture_mode',sourceMode||'SCREENSHOT');
+  fd.append('chart_crop_set',roi&&roiConfirmed?'1':'0');fd.append('chart_crop_tested',lastCropTestPassed?'1':'0');fd.append('capture_mode',sourceMode||'SCREENSHOT');
   fd.append('last_signal_key',storedSignalKey());fd.append('client_request_started_ms',String(t0));
   fd.append('source','RAJA_LIVE_SCREEN_SCANNER');Object.entries(a).forEach(([k,v])=>fd.append(k,v));
   activeController=new AbortController();const timeout=setTimeout(()=>activeController?.abort(),atClose?15000:10000);
@@ -354,8 +438,8 @@ function renderResult(x,atClose){
   $('qualityChip').textContent='QUALITY '+q+'/100';$('candlesChip').textContent='CANDLES '+c;$('matchChip').textContent=total?'RULES '+matched+'/'+total:'RULES --';
   $('timingChip').textContent=state;$('timingChip').classList.toggle('good',confirmed);$('rules').innerHTML=rules.slice(0,10).map(r=>`<li>${r.ok?'✓':'✕'} ${esc(r.name||'Rule')}</li>`).join('');
   setSignalState(state,confirmed?'ok':state==='ARMED'?'warn':state==='WATCH'||state==='CLOSE CHECKED'?'':'block');
-  const gateBlocked=x.scan_gate==='RESCAN',gatePassed=!!x.chart_crop_set&&!gateBlocked;
-  setMetric('gateState',gateBlocked?'BLOCK · RESCAN':gatePassed?'PASS · CROPPED':'WATCH ONLY',gateBlocked?'block':gatePassed?'ok':'warn');
+  const gateBlocked=x.scan_gate==='RESCAN',gatePassed=!!x.chart_crop_set&&!!x.chart_crop_tested&&!gateBlocked;
+  setMetric('gateState',gateBlocked?'BLOCK · RESCAN':gatePassed?'PASS · TESTED':'WATCH ONLY',gateBlocked?'block':gatePassed?'ok':'warn');
   renderProof(x,state,rules);startEntry(x,state);
   if(confirmed){const key=x.signal_key||[x.pattern_type,x.selected_pattern,x.entry_epoch,bias].join('|'),already=key&&(key===storedSignalKey()||key===lastSignalKey);if(!already){storeSignalKey(key);speak(`RAJA AI confirmed. ${$('pair').value}. ${up?'UP CALL':'DOWN PUT'}. Take trade now.`);}else{state='DUPLICATE';setSignalState('DUPLICATE','block');hideSignalBanner();}}
   return state;
