@@ -2732,24 +2732,31 @@ def build_timeframe(base_df, minutes):
 # Signals are generated only from closed OHLC candle structure + supplied pattern rules.
 # =========================================================
 
-SK25_ENGINE_VERSION = "RAJA_14_SELECTED_STRATEGIES_TEMP_TEST"
-SK25_PATTERN_LIBRARY_SIZE = 14
+SK25_ENGINE_VERSION = "RAJA_SK25_TYPE_1_25_ONLY_V41"
+SK25_PATTERN_LIBRARY_SIZE = 25
 SK25_LIVE_MIN_CANDLES = 10
 
-# TEMP TEST: only the original 14 selected RAJA rules are active; IDs 26-35 remain in source but are ignored.
-# Old skipped rules stay in source for backward compatibility/history, but add()/add_setup() ignore them.
-RAJA_ACTIVE_STRATEGY_IDS = frozenset({
-    # TEMP TEST: original 14 selected RAJA strategies only.
-    # PDF/Premium strategies 26-35 are temporarily disabled, not deleted.
-    2, 4, 9, 10, 12, 14, 18, 19, 20, 21, 22, 23, 24, 25,
-})
+# V41 scanner policy: Pattern Type 1-25 only. IDs 26-35 remain in the
+# historical source for compatibility, but add()/add_setup() ignore them.
+RAJA_ACTIVE_STRATEGY_IDS = frozenset(range(1, 26))
 RAJA_STRATEGY_NAMES = {
+    1: "RAJA Type 1 · OTC Eight-Candle Continuation",
     2: "RAJA Type 2 · Resistance Reversal",
+    3: "RAJA Type 3 · Sideways Wick Sweep",
     4: "RAJA Type 4 · Long-Wick Rejection",
+    5: "RAJA Type 5 · Double-Tail Reversal",
+    6: "RAJA Type 6 · Loss Recovery Sequence",
+    7: "RAJA Type 7 · RED + Two GREEN Reversal",
+    8: "RAJA Type 8 · GREEN + Two RED Reversal",
     9: "RAJA Type 9 · Bull Continuation",
     10: "RAJA Type 10 · Bear Continuation",
+    11: "RAJA Type 11 · True 30s Contained Reversal",
     12: "RAJA Type 12 · 2m Resistance Hold",
+    13: "RAJA Type 13 · 2m Retest Breakout Reversal",
     14: "RAJA Type 14 · Horizontal Break",
+    15: "RAJA Type 15 · V-Shape Breakout Reversal",
+    16: "RAJA Type 16 · Bull Run Continuation",
+    17: "RAJA Type 17 · Bear Run Continuation",
     18: "RAJA Type 18 · Sideways Resistance Hold",
     19: "RAJA Type 19 · Sideways Support Hold",
     20: "RAJA Type 20 · Downtrend Hold",
@@ -2844,7 +2851,7 @@ def _sk25_level_clusters(values, tolerance, min_touches=2):
 
 
 def analyze_sk25_ohlc(df, timeframe="1m", market="LIVE", last_outcome=""):
-    """Evaluate the V39 selected 24 closed-candle strategies."""
+    """Evaluate Pattern Type 1-25 using closed-candle structure only."""
     tf = str(timeframe or "1m").strip().lower()
     market_name = str(market or "LIVE").upper()
     previous_outcome = str(last_outcome or "").strip().upper()
@@ -3293,11 +3300,11 @@ def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None
         "pair":pair,"selected_expiry":tf,"required_expiry_timeframe":tf,"timeframe":tf,
         "timeframe_summary":summary,"timeframes_scanned":[tf],"aligned_timeframes":[tf] if strategy.get("signal") in {"CALL","PUT"} else [],
         "opposing_timeframes":[],"multi_tf_agreement":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
-        "confirmation_mode":"RAJA 24 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
+        "confirmation_mode":"SK25 TYPE 1-25 STRICT · SELECTED TIMEFRAME ONLY","scan_mode":"SK25_STRICT","scan_thresholds":opts,
         "data_age":round(float(data_age),2) if data_age is not None else None,
         "source":source_info.get("source") or "Yahoo Finance","source_mode":source_info.get("source_mode") or ("underlying_proxy" if market_name=="OTC" else "live_reference"),
         "backup_used":bool(source_info.get("backup_used")),"provider_symbol":source_info.get("provider_symbol"),"yahoo_symbol":symbol,
-        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA Selected 14 Strategy Library","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
+        "chart_preview":serialize_candles(tf_df,32),"engine":SK25_ENGINE_VERSION,"pattern_library":"RAJA SK25 Pattern Type 1-25","pattern_library_size":SK25_PATTERN_LIBRARY_SIZE,
         "closed_candle_verified":True,"forming_candle_excluded":True,
         "movement_info":movement,"volatility_pct":movement["percent"],"market_stability_score":100.0 if strategy.get("signal") in {"CALL","PUT"} else 0.0,
         "market_risk_level":"INFO ONLY","market_regime":strategy.get("selected_pattern") or "NO SETUP",
@@ -3605,6 +3612,7 @@ def app_version():
         "status": "success",
         "build": APP_BUILD_ID,
         "update_policy": "auto",
+        "server_epoch_ms": int(time.time() * 1000),
     })
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     response.headers["Pragma"] = "no-cache"
@@ -5228,10 +5236,10 @@ def _candidate_chart_regions(arr: np.ndarray) -> list[tuple[str, np.ndarray]]:
     return out
 
 def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", last_outcome: str = "", *, captured_at_close: bool = False) -> dict[str, Any]:
-    """TEMP TEST: selected 14-strategy closed-candle chart scanner.
+    """Strict Pattern Type 1-25 closed-candle chart scanner.
 
-    The engine evaluates the selected 14 RAJA rules, 5 PDF setups and 5 premium
-    price-action setups using visible candle body/wick geometry plus S/R/trend context.
+    The engine evaluates RAJA Pattern Type 1-25 using visible candle body/wick
+    geometry plus S/R/trend context.
     No RSI/EMA/MACD/Stochastic/Bollinger values are used for directional signals.
     """
     try:
@@ -5290,7 +5298,7 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
     detected_count = len(candles)
     warnings = list(quality_notes)
     reasons: list[str] = []
-    library = "RAJA Selected 14 Strategy Library"
+    library = "RAJA SK25 Pattern Type 1-25"
 
     # V11 Closed Candle Lock. A normal screenshot/live-now frame can contain a
     # still-forming rightmost candle, so it is excluded from setup matching. A
@@ -5332,15 +5340,15 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         warnings.append("Not enough candle structure was detected. Move closer to the chart and keep candles sharp.")
         return {
             "bias": "NO TRADE", "confidence": 0.0, "image_quality_score": quality,
-            "detected_candles": detected_count, "closed_candles_analyzed": count, "visual_trend": "UNREADABLE", "momentum": "14 SELECTED STRATEGIES", "volatility": "NOT USED",
+            "detected_candles": detected_count, "closed_candles_analyzed": count, "visual_trend": "UNREADABLE", "momentum": "PATTERN TYPE 1-25 ONLY", "volatility": "NOT USED",
             "selected_pattern": "NO ACTIVE STRATEGY SETUP", "pattern_direction": "NONE", "pattern_score": 0.0,
             "pattern_signals": [], "pattern_library": library, "pattern_library_size": SK25_PATTERN_LIBRARY_SIZE,
             "confluence_count": 0, "setup_quality": "LOW", "next_candle_color": "NONE",
             "entry_instruction": "WAIT FOR A COMPLETE SETUP", "recovery_trade": False,
             "latest_candle_direction": "UNKNOWN",
-            "reasons": ["Insufficient readable candle structure for 14-strategy recognition."], "warnings": warnings,
-            "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "14 selected strategies"},
-            "engine": "RAJA V11 · Strict SK25 + Adaptive Vision + Closed Candle Lock", "analysis_crop_mode": crop_name,
+            "reasons": ["Insufficient readable candle structure for Pattern Type 1-25 recognition."], "warnings": warnings,
+            "pattern_status": {"Candle geometry": "Unreadable", "Pattern library": "Pattern Type 1-25"},
+            "engine": "RAJA V41 · Strict SK25 + Adaptive Vision + Closed Candle Lock", "analysis_crop_mode": crop_name,
             "timing_verified": bool(captured_at_close), "forming_candle_excluded": forming_candle_excluded, "newborn_candle_excluded": newborn_candle_excluded,
             **legacy_aliases("NO ACTIVE STRATEGY SETUP", "NONE", 0.0, []),
         }
@@ -5858,6 +5866,8 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "pattern_direction": selected_dir,
         "pattern_score": round(float(match_score), 1),
         "setup_rules": list(best.get("rules") or []) if best else list((best_near or {}).get("rules") or []),
+        "rules_matched": int((best or best_near or {}).get("rules_matched") or 0),
+        "rules_total": int((best or best_near or {}).get("rules_total") or 0),
         "pattern_signals": signals_out,
         "pattern_library": library,
         "pattern_library_size": SK25_PATTERN_LIBRARY_SIZE,
@@ -5878,15 +5888,15 @@ def analyze_chart_image(raw: bytes, timeframe: str = "1m", market: str = "", las
         "reasons": reasons[:10],
         "warnings": warnings[:7],
         "pattern_status": {
-            "Mode": "RAJA 14 selected strategies",
-            "Indicators": "OFF - signal engine uses only the selected closed-candle strategy rules",
+            "Mode": "RAJA Pattern Type 1-25 only",
+            "Indicators": "OFF - signal engine uses only closed-candle SK25 rules",
             "Context": f"Visual candle context: {context_label}",
             "Candle geometry": f"{count} closed candles analysed / {detected_count} visible structures",
             "Closed Candle Lock": "VERIFIED AT CLOSE" if captured_at_close else "FORMING CANDLE EXCLUDED - ENTRY NOT ARMED",
             "Conflict Gate": "BLOCK" if conflict_gate else "PASS",
             "Timeframe rules": "Type 11=30s; Type 12/13=2m; Type 1=OTC; Type 24=Live market",
         },
-        "engine": "RAJA V11 · Strict SK25 + Adaptive Vision + Closed Candle Lock + Conflict Gate",
+        "engine": "RAJA V41 · Strict SK25 + Adaptive Vision + Closed Candle Lock + Conflict Gate",
         "analysis_crop_mode": crop_name,
     }
     result.update(legacy_aliases(selected, selected_dir, round(float(match_score), 1), signals_out, 25))
@@ -6004,6 +6014,7 @@ def chart_scanner_page():
 
 @app.route("/chart-scan", methods=["POST"])
 def chart_scan_api():
+    request_received_ms = int(time.time() * 1000)
     auth_data = {
         "key": request.form.get("key"), "user": request.form.get("user"),
         "device": request.form.get("device"), "session_token": request.form.get("session_token"),
@@ -6018,6 +6029,10 @@ def chart_scan_api():
     market=str(request.form.get("market") or "ForexLive").strip()[:40]
     pair=str(request.form.get("pair") or "").strip()[:120]
     timeframe=str(request.form.get("timeframe") or "1m").strip().lower()[:20]
+    source=str(request.form.get("source") or "CHART_SCANNER").strip()[:80]
+    capture_mode=str(request.form.get("capture_mode") or "SCREENSHOT").strip().upper()[:30]
+    chart_crop_set=str(request.form.get("chart_crop_set") or "").lower() in {"1","true","yes","on"}
+    previous_signal_key=str(request.form.get("last_signal_key") or "").strip()[:96]
     if timeframe not in {"30s","1m","2m","5m","10m","15m","30m"}:
         return jsonify({"status":"error","message":"Unsupported timeframe."}),400
     captured=str(request.form.get("captured_at_close") or "").lower() in {"1","true","yes","on"}
@@ -6030,27 +6045,126 @@ def chart_scan_api():
         result=analyze_chart_image_mobile_safe(raw,timeframe=timeframe,market=market,last_outcome=last_outcome,captured_at_close=captured)
     except (ValueError,UnidentifiedImageError) as exc:
         return jsonify({"status":"error","message":str(exc)}),400
-    now_epoch = int(time.time())
-    result.update({"broker":broker,"market":market,"pair":pair,"timeframe":timeframe,"created_at":now_epoch,"engine":"RAJA V29 · VISUAL SK25","pattern_library":"RAJA Selected 14 Strategy Library"})
+    now_epoch_ms = int(time.time() * 1000)
+    now_epoch = now_epoch_ms // 1000
+    result.update({
+        "broker":broker,"market":market,"pair":pair,"timeframe":timeframe,
+        "created_at":now_epoch,"created_at_ms":now_epoch_ms,
+        "engine":"RAJA V41 · VISUAL SK25 · FIVE SAFETY GATES",
+        "pattern_library":"RAJA SK25 Pattern Type 1-25",
+        "pattern_library_size":25,
+        "chart_crop_set":chart_crop_set,
+        "capture_mode":capture_mode,
+        "source":source,
+    })
 
-    # V29 explicit entry timing for One-Tap Close Camera. The browser supplies the
-    # exact candle boundary it armed; server validates it is reasonably recent.
-    if captured and str(result.get("bias") or "").upper().startswith(("UP", "DOWN")) and not result.get("rescan_required"):
-        duration_seconds = {"30s":30,"1m":60,"2m":120,"5m":300,"10m":600,"15m":900,"30m":1800}.get(timeframe, 60)
-        capture_epoch = int(captured_at_epoch_ms / 1000) if captured_at_epoch_ms > 0 else 0
-        if not capture_epoch or abs(now_epoch - capture_epoch) > max(180, duration_seconds):
-            capture_epoch = (now_epoch // duration_seconds) * duration_seconds
-        entry_window_seconds = {"30s":10,"1m":30,"2m":45,"5m":45,"10m":60,"15m":60,"30m":60}.get(timeframe, 30)
+    # V41 Auto Chart Gate: a live boundary frame must be an explicit candle-area
+    # crop. Full-screen broker controls/sidebars can look like candle geometry and
+    # are therefore WATCH-only. Screenshot scans remain analysis-only as before.
+    live_boundary_source = source == "RAJA_LIVE_SCREEN_SCANNER" and captured
+    if live_boundary_source and not chart_crop_set:
+        gate_message = "Set CHART AREA around candles before a close scan; full-frame live signals are blocked."
         result.update({
-            "entry_epoch": capture_epoch,
-            "entry_window_seconds": entry_window_seconds,
-            "entry_timing_mode": "target_candle_open",
-            "entry_instruction": "TAKE TRADE NOW" if now_epoch <= capture_epoch + entry_window_seconds else "ENTRY WINDOW PASSED — DO NOT ENTER THIS CANDLE",
-            "seconds_since_entry_open": max(0, now_epoch - capture_epoch),
-            "seconds_left_in_entry_window": max(0, capture_epoch + entry_window_seconds - now_epoch),
+            "raw_bias_before_chart_gate": result.get("bias"),
+            "bias":"NO TRADE","confidence":0.0,"pattern_direction":"NONE",
+            "next_candle_color":"NONE","entry_instruction":"SET CHART AREA FIRST",
+            "rescan_required":True,"scan_gate":"RESCAN","scan_gate_reason":gate_message,
+            "signal_state":"GATE BLOCKED","entry_allowed":False,
+            "duplicate_signal":False,"late_signal":False,"signal_key":"",
         })
+        warnings=list(result.get("warnings") or [])
+        warnings.insert(0,gate_message)
+        result["warnings"]=warnings[:7]
 
-    return jsonify({"status":"success","result":result,"server_epoch":now_epoch})
+    # V41 Exact Entry Clock. The close frame targets the candle that opens at the
+    # captured boundary. Short windows prevent a late mid-candle entry from being
+    # presented as the original setup.
+    duration_seconds={"30s":30,"1m":60,"2m":120,"5m":300,"10m":600,"15m":900,"30m":1800}.get(timeframe,60)
+    duration_ms=duration_seconds*1000
+    entry_window_seconds={"30s":5,"1m":8,"2m":10,"5m":12,"10m":12,"15m":12,"30m":12}.get(timeframe,8)
+    capture_boundary_ms=int(captured_at_epoch_ms or 0)
+    max_clock_error_ms=max(180000,duration_ms)
+    clock_alignment_corrected=False
+    if not capture_boundary_ms or abs(request_received_ms-capture_boundary_ms)>max_clock_error_ms:
+        capture_boundary_ms=(request_received_ms//duration_ms)*duration_ms
+        clock_alignment_corrected=True
+    else:
+        boundary_remainder=capture_boundary_ms%duration_ms
+        boundary_error=min(boundary_remainder,duration_ms-boundary_remainder)
+        if boundary_error>1800:
+            capture_boundary_ms=(request_received_ms//duration_ms)*duration_ms
+            clock_alignment_corrected=True
+
+    directional = captured and str(result.get("bias") or "").upper().startswith(("UP","DOWN")) and not result.get("rescan_required")
+    signal_key=""
+    duplicate_signal=False
+    entry_allowed=False
+    if directional:
+        bias=str(result.get("bias") or "").upper()
+        key_material="|".join([
+            str(auth.get("user") or ""),broker,market,pair,timeframe,
+            str(capture_boundary_ms),str(result.get("pattern_type") or 0),bias,
+        ])
+        signal_key=hashlib.sha256(key_material.encode("utf-8")).hexdigest()[:24]
+        duplicate_signal=bool(previous_signal_key and hmac.compare_digest(previous_signal_key,signal_key))
+        latest_ms=int(time.time()*1000)
+        late_signal=latest_ms>capture_boundary_ms+entry_window_seconds*1000
+        entry_allowed=not duplicate_signal and not late_signal
+        instruction=(
+            "DUPLICATE SIGNAL — DO NOT PLACE AGAIN" if duplicate_signal else
+            "ENTRY WINDOW PASSED — DO NOT ENTER THIS CANDLE" if late_signal else
+            "TAKE TRADE NOW"
+        )
+        result.update({
+            "entry_epoch":capture_boundary_ms//1000,
+            "entry_epoch_ms":capture_boundary_ms,
+            "expiry_epoch":(capture_boundary_ms+duration_ms)//1000,
+            "expiry_epoch_ms":capture_boundary_ms+duration_ms,
+            "entry_window_seconds":entry_window_seconds,
+            "entry_timing_mode":"target_candle_open",
+            "entry_instruction":instruction,
+            "entry_allowed":entry_allowed,
+            "duplicate_signal":duplicate_signal,
+            "late_signal":late_signal,
+            "signal_key":signal_key,
+            "signal_state":"CONFIRMED" if entry_allowed else "DUPLICATE" if duplicate_signal else "EXPIRED",
+            "seconds_since_entry_open":max(0,(latest_ms-capture_boundary_ms)//1000),
+            "seconds_left_in_entry_window":max(0,(capture_boundary_ms+entry_window_seconds*1000-latest_ms+999)//1000),
+        })
+    elif not result.get("signal_state"):
+        selected=str(result.get("selected_pattern") or "").upper()
+        result["signal_state"]="ARMED" if selected.startswith("WAIT CLOSE:") else "CLOSE CHECKED" if captured else "WATCH"
+        result["entry_allowed"]=False
+        result["duplicate_signal"]=False
+        result["late_signal"]=False
+        result["signal_key"]=""
+
+    finished_ms=int(time.time()*1000)
+    proof={
+        "version":"V41_FIVE_GATE_PROOF",
+        "broker":broker,"market":market,"pair":pair,"timeframe":timeframe,
+        "signal_state":result.get("signal_state"),"direction":result.get("pattern_direction"),
+        "pattern_type":int(result.get("pattern_type") or 0),
+        "selected_pattern":str(result.get("selected_pattern") or ""),
+        "rules_matched":int(result.get("rules_matched") or 0),
+        "rules_total":int(result.get("rules_total") or 0),
+        "captured_at_close":bool(captured),"chart_crop_set":bool(chart_crop_set),
+        "scan_gate":str(result.get("scan_gate") or "PASS"),
+        "image_quality_score":float(result.get("image_quality_score") or 0),
+        "detected_candles":int(result.get("detected_candles") or 0),
+        "setup_candle_close_epoch_ms":capture_boundary_ms if captured else 0,
+        "entry_epoch_ms":int(result.get("entry_epoch_ms") or 0),
+        "expiry_epoch_ms":int(result.get("expiry_epoch_ms") or 0),
+        "server_analysis_ms":max(0,finished_ms-request_received_ms),
+        "capture_to_response_ms":max(0,finished_ms-capture_boundary_ms) if captured else 0,
+        "clock_alignment_corrected":clock_alignment_corrected,
+        "signal_key":signal_key,
+    }
+    result["proof"]=proof
+    return jsonify({
+        "status":"success","result":result,"server_epoch":finished_ms//1000,
+        "server_epoch_ms":finished_ms,"request_received_epoch_ms":request_received_ms,
+    })
 
 
 @app.route("/side-auto-signals", methods=["POST"])
