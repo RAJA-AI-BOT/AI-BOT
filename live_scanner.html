@@ -273,6 +273,20 @@ function normalizePairOcr(value){
   return String(value||'').toUpperCase().replace(/0TC/g,'OTC').replace(/[|]/g,'I').replace(/[^A-Z0-9]+/g,' ').replace(/\s+/g,' ').trim();
 }
 function compactPairOcr(value){return normalizePairOcr(value).replace(/[^A-Z0-9]/g,'');}
+const FIAT_CURRENCY_CODES=new Set('USD EUR GBP JPY AUD CAD CHF NZD CNY CNH HKD SGD INR BRL MXN ZAR TRY AED BHD QAR SAR KWD OMR EGP PKR BDT IDR PHP MYR THB KRW VND NGN DZD MAD TND KES GHS UGX TZS RWF XOF XAF ARS COP CLP PEN UYU PYG BOB CRC DOP JMD'.split(' '));
+function explicitCurrencyPairMatch(text,carriedBrokerHint=''){
+  const raw=String(text||'').toUpperCase().replace(/0TC/g,'OTC'),hits=new Map(),rx=/\b([A-Z]{3})\s*([\/-])\s*([A-Z]{3})\b/g;let m;
+  while((m=rx.exec(raw))){
+    const left=m[1],right=m[3];if(!FIAT_CURRENCY_CODES.has(left)||!FIAT_CURRENCY_CODES.has(right))continue;
+    const base=`${left}/${right}`,near=raw.slice(Math.max(0,m.index-14),Math.min(raw.length,rx.lastIndex+20)),row=hits.get(base)||{base,count:0,otc:false,lastIndex:0};
+    row.count++;row.otc=row.otc||/(^|[^A-Z])O[T7]C([^A-Z]|$)/.test(near);row.lastIndex=m.index;hits.set(base,row);
+  }
+  if(!hits.size)return {hit:null,ambiguous:false};
+  const ranked=[...hits.values()].sort((a,b)=>b.count-a.count||b.lastIndex-a.lastIndex);
+  if(ranked.length>1&&ranked[0].count<=ranked[1].count)return {hit:null,ambiguous:true};
+  const top=ranked[0],market=top.otc?'OTC':'LIVE',broker=LIVE_PAIR_DATA[carriedBrokerHint]?carriedBrokerHint:$('broker').value;
+  return {hit:{pair:market==='OTC'?`${top.base} (OTC)`:top.base,market,broker,score:180,broker_confidence:carriedBrokerHint?'BRAND_OCR':'CURRENT_SAFE',explicit_pair:true},ambiguous:false};
+}
 function pairAliases(pair){
   const raw=String(pair||''),isOtc=/\(OTC\)/i.test(raw),clean=raw.replace(/\s*\(OTC\)\s*/ig,'').trim(),aliases=new Set([raw,clean]);
   if(clean.includes('/')){aliases.add(clean.replace('/',''));aliases.add(clean.replace('/','-'));}
@@ -306,7 +320,8 @@ function scorePairText(text,pair,market,broker){
   return best;
 }
 function matchPairFromText(text,carriedBrokerHint=''){
-  const hint=detectBrokerHint(text)||carriedBrokerHint;let best=null,second=null;
+  const hint=detectBrokerHint(text)||carriedBrokerHint,explicit=explicitCurrencyPairMatch(text,hint);
+  if(explicit.ambiguous)return null;if(explicit.hit)return explicit.hit;let best=null,second=null;
   for(const item of pairCandidates()){let score=scorePairText(text,item.pair,item.market,item.broker);if(hint)score+=hint===item.broker?35:-40;const hit={...item,score};if(!best||score>best.score){second=best;best=hit;}else if(!second||score>second.score)second=hit;}
   if(!best||best.score<94)return null;
   const currentBroker=$('broker').value;
@@ -320,10 +335,13 @@ function matchPairFromText(text,carriedBrokerHint=''){
 function pairDetectRegions(mode=sourceMode,exhaustive=false){
   const rows=[];
   if(mode==='SCREEN'){
-    rows.push({x:.01,y:.005,w:.98,h:.24,name:'top-wide'});
+    if(roi){const y=Math.max(.01,Math.min(.72,Number(roi.y||0)-.18));rows.push({x:.01,y,w:.52,h:Math.min(.24,.99-y),name:'active-near-chart'});}
+    rows.push({x:.01,y:.17,w:.40,h:.15,name:'active-pair-tight'});
+    rows.push({x:.01,y:.12,w:.50,h:.23,name:'active-pair-header'});
     if(roi){const right=Math.max(.58,Math.min(.82,roi.x+roi.w));rows.push({x:right,y:.01,w:Math.max(.16,.99-right),h:.20,name:'chart-right'});}
     rows.push({x:.66,y:.005,w:.335,h:.22,name:'right-panel'});
     rows.push({x:.01,y:.005,w:.58,h:.21,name:'left-header'});
+    rows.push({x:.01,y:.005,w:.98,h:.24,name:'top-wide'});
   }else{
     rows.push({x:.02,y:.02,w:.96,h:.30,name:'camera-top'});
     rows.push({x:.04,y:.08,w:.92,h:.38,name:'camera-upper'});
@@ -377,6 +395,7 @@ async function blobToPairSource(blob){
   return {source:img,close(){URL.revokeObjectURL(url);}};
 }
 function resetPairCandidate(){pairCandidate='';pairCandidateHits=0;pairVerified=false;brokerVerified=false;updateQualityHud();}
+function ensurePairAvailable(broker,market,pair){const rows=LIVE_PAIR_DATA[broker]?.[market];if(!Array.isArray(rows)||!pair)return false;if(!rows.includes(pair))rows.unshift(pair);return true;}
 function setHudPill(id,text,tone='warn'){const el=$(id);if(!el)return;el.textContent=text;el.className=tone;}
 function updateQualityHud(){
   const pairOk=pairVerified||!$('autoPair')?.checked,chartOk=!!roi&&roiConfirmed&&lastCropTestPassed,frameOk=!!lastFramePass;
@@ -393,7 +412,7 @@ function resetSignalForPairChange(reason='Pair changed.'){
 function setDetectedPair(next,source='AUTO OCR',detectedMarket=$('market').value,staticSource=false,detectedBroker=$('broker').value){
   const select=$('pair'),old=select.value,oldMarket=$('market').value,oldBroker=$('broker').value,targetMarket=detectedMarket==='LIVE'?'LIVE':'OTC',targetBroker=LIVE_PAIR_DATA[detectedBroker]?detectedBroker:oldBroker;
   const brokerChanged=targetBroker!==oldBroker,marketChanged=targetMarket!==oldMarket;
-  if(brokerChanged)$('broker').value=targetBroker;if(marketChanged)$('market').value=targetMarket;refreshLivePairs(next);
+  ensurePairAvailable(targetBroker,targetMarket,next);if(brokerChanged)$('broker').value=targetBroker;if(marketChanged)$('market').value=targetMarket;refreshLivePairs(next);
   if(select.value!==next){$('broker').value=oldBroker;$('market').value=oldMarket;refreshLivePairs(old);return false;}
   const changed=next!==old||marketChanged||brokerChanged;pairVerified=true;brokerVerified=targetBroker===detectedBroker;setBrokerDetectState(`${targetBroker} · ${targetMarket}`,brokerVerified?'ok':'warn');updateQualityHud();
   if(!changed){setMetric('pairDetectState','LOCKED · '+targetMarket+' · '+next,'ok');return false;}
@@ -409,7 +428,7 @@ async function runPairDetectCycle(){
   if(!stream||!['SCREEN','CAMERA'].includes(sourceMode)||!$('autoPair').checked||pairDetectBusy||preflightBusy||autoRecalBusy)return;if(busy)return;
   pairDetectBusy=true;try{
     const hit=await detectPairFromSource($('video'),sourceMode,pairDetectFailures>=2);
-    if(!hit){resetPairCandidate();pairDetectFailures++;setMetric('pairDetectState',pairDetectFailures>=3?'AUTO · SEARCHING':'AUTO · CHECK','warn');setBrokerDetectState($('autoBroker').checked?'AUTO · SEARCHING':'MANUAL','warn');return;}
+    if(!hit){resetPairCandidate();pairDetectFailures++;setMetric('pairDetectState',pairDetectFailures>=3?'AUTO · UNVERIFIED':'AUTO · CHECK',pairDetectFailures>=3?'block':'warn');setBrokerDetectState($('autoBroker').checked?'AUTO · SEARCHING':'MANUAL','warn');if(pairDetectFailures===3)setStatus('Active pair could not be verified. Scanning is paused so an old pair cannot be used. Keep the active pair header visible.');return;}
     pairDetectFailures=0;const candidateKey=hit.broker+'|'+hit.market+'|'+hit.pair;if(candidateKey===pairCandidate)pairCandidateHits++;else{pairCandidate=candidateKey;pairCandidateHits=1;}
     setBrokerDetectState(`${hit.broker} · ${hit.market}`,pairCandidateHits>=PAIR_STABLE_HITS?'ok':'warn');
     if(hit.pair===$('pair').value&&hit.market===$('market').value&&hit.broker===$('broker').value){pairCandidateHits=Math.max(pairCandidateHits,PAIR_STABLE_HITS);pairVerified=true;brokerVerified=true;setMetric('pairDetectState','LOCKED · '+hit.market+' · '+hit.pair,'ok');setBrokerDetectState(`${hit.broker} · ${hit.market}`,'ok');updateQualityHud();return;}
@@ -596,6 +615,7 @@ async function confirmCrop(){if(!roi)return;setStatus('Confirming chart area wit
 $('autoDetectBtn').onclick=runAutoDetect;$('testFrameBtn').onclick=()=>runTestFrame(false);$('confirmCropBtn').onclick=confirmCrop;
 async function captureAndQueue(atClose,epoch){
   try{
+    if($('autoPair')?.checked&&!pairVerified){const message='Scan paused: active pair is not verified. Keep the active broker pair header visible, or turn Auto pair detection off and select it manually.';setMetric('pairDetectState','AUTO · UNVERIFIED','block');setSignalState('PAIR UNVERIFIED','block');if(atClose)renderLocalGateBlock(message);setStatus(message);return;}
     if(Date.now()<pairSettlingUntil){setStatus('Pair sync in progress — waiting for the new broker chart to settle.');return;}
     if(!roi||!roiConfirmed||!lastCropTestPassed){const message='Scan blocked: AUTO DETECT/SET AREA, CONFIRM CHART AREA, then pass TEST FRAME.';setMetric('gateState','BLOCK · CONFIRM/TEST','block');setSignalState('GATE BLOCKED','block');if(atClose)renderLocalGateBlock(message);setStatus(message);return;}
     const blob=await captureBlob();
@@ -610,6 +630,7 @@ async function captureAndQueue(atClose,epoch){
 }
 function previewBlob(blob){if(lastObjectUrl)URL.revokeObjectURL(lastObjectUrl);lastObjectUrl=URL.createObjectURL(blob);$('previewImg').src=lastObjectUrl;$('preview').style.display='block';}
 async function scanBlob(blob,atClose,epoch,captureModeOverride=''){
+  if($('autoPair')?.checked&&!pairVerified){const message='Scan blocked: active pair is not verified. Auto detection must lock the visible pair first.';setMetric('pairDetectState','AUTO · UNVERIFIED','block');setSignalState('PAIR UNVERIFIED','block');if(atClose)renderLocalGateBlock(message);setStatus(message);return;}
   const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('RAJA AI login session missing.');return;}
   const scanPair=$('pair').value.trim()||'SCREEN CHART',scanPairGeneration=pairGeneration;
   busy=true;currentKind=atClose?'CLOSE':'WATCH';setEngine(atClose?'CLOSE SCAN':'WATCH SCAN',true);
