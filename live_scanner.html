@@ -19,6 +19,7 @@
 .safetybar{grid-template-columns:repeat(4,minmax(0,1fr))}
 .preflight-hint{margin-top:8px;padding:9px;border-radius:10px;border:1px solid rgba(96,239,255,.18);background:#040a13;color:#a9c1d1;font-size:9px;line-height:1.45}
 .preflight-hint.good{border-color:rgba(0,255,135,.35);color:#8dffc4}.preflight-hint.block{border-color:rgba(255,66,106,.4);color:#ff9aae}
+.quality-hud{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin-top:8px;padding:8px;border:1px solid rgba(96,239,255,.22);border-radius:11px;background:linear-gradient(90deg,rgba(2,10,20,.96),rgba(5,16,29,.96))}.quality-hud span{font-size:8px;font-weight:950;letter-spacing:.2px;padding:5px 7px;border-radius:999px;border:1px solid rgba(96,239,255,.18);color:#9ab0c2;white-space:nowrap}.quality-hud span.ok{color:#8dffc4;border-color:rgba(0,255,135,.35);background:rgba(0,255,135,.05)}.quality-hud span.warn{color:#f6d98d;border-color:rgba(246,200,95,.32);background:rgba(246,200,95,.04)}.quality-hud span.block{color:#ff9aae;border-color:rgba(255,66,106,.35);background:rgba(255,66,106,.04)}
 @media(max-width:600px){.safetybar{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 </head>
@@ -29,12 +30,12 @@
   <div id="signalBannerClock" class="clock"></div>
 </div>
 <div class="app">
-  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V44 · AUTO PAIR ALL SOURCES · SK25</span></div>
+  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V45 · SMART AUTO DETECT · SK25</span></div>
   <section class="card">
     <h1>🎥 RAJA Live Screen Scanner</h1>
-    <p>Auto-detects the selected broker pair and LIVE/OTC market from Screen Share or Live Camera, also checks uploaded screenshots, keeps the selector synchronized, auto-detects a candle-only crop, and scans Pattern Type 1-25 exactly at each selected candle boundary.</p>
+    <p>Auto-detects Quotex/Pocket Option, LIVE/OTC market and selected pair from Screen Share, Live Camera or Screenshot; continuously protects the chart crop with auto recalibration; shows a live signal-quality HUD; and scans Pattern Type 1-25 at each selected candle boundary.</p>
     <div class="compat" id="compat"></div>
-    <div class="notice">For trade integrity, forming-candle frames are WATCH only. A directional entry can be armed only from the boundary frame after the candle closes. Mobile fallback: Live Camera and Screenshot pair detection work when the broker pair/header is visible and readable; keep the phone steady and the pair label inside the frame.</div>
+    <div class="notice">For trade integrity, forming-candle frames are WATCH only. A directional entry can be armed only from the boundary frame after the candle closes. Mobile fallback: Live Camera and Screenshot detection work when the broker header/pair is visible and readable. Confirmed CALL says “BUY NOW”; confirmed PUT says “SELL NOW”. Android-compatible vibration is used when supported.</div>
   </section>
 
   <section class="card">
@@ -75,6 +76,9 @@
     </div>
     <div class="switchrow"><input type="checkbox" id="autoScan" checked><label for="autoScan" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Live WATCH scans between candle closes</label></div>
     <div class="switchrow"><input type="checkbox" id="autoPair" checked><label for="autoPair" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Auto detect pair + LIVE/OTC market from Screen Share / Live Camera / Screenshot (local OCR)</label></div>
+    <div class="switchrow"><input type="checkbox" id="autoBroker" checked><label for="autoBroker" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Auto detect broker (Quotex / Pocket Option) and synchronize broker + market safely</label></div>
+    <div class="switchrow"><input type="checkbox" id="autoRecal" checked><label for="autoRecal" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Auto recalibrate chart area after rotate, resize, zoom/layout drift or failed crop validation</label></div>
+    <div class="switchrow"><input type="checkbox" id="signalAlerts" checked><label for="signalAlerts" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Voice + sound + vibration alerts: CALL = BUY NOW · PUT = SELL NOW</label></div>
     <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
     <input id="legacyCamera" type="file" accept="image/*" capture="environment" hidden>
 
@@ -98,6 +102,12 @@
       <div class="metric"><small>CANDLE COUNT</small><strong id="candleCountState">-- / 14 MIN</strong></div>
       <div class="metric"><small>ZOOM GUIDE</small><strong id="zoomGuideState">SHOW 20–30</strong></div>
       <div class="metric"><small>PAIR DETECT</small><strong id="pairDetectState" class="warn">AUTO · WAIT</strong></div>
+      <div class="metric"><small>BROKER / MARKET</small><strong id="brokerDetectState" class="warn">AUTO · WAIT</strong></div>
+      <div class="metric"><small>AUTO RECAL</small><strong id="recalState" class="warn">READY</strong></div>
+      <div class="metric"><small>ALERTS</small><strong id="alertState" class="warn">ARMED</strong></div>
+    </div>
+    <div id="qualityHud" class="quality-hud" aria-label="Signal quality HUD">
+      <span id="qhPair" class="warn">PAIR ?</span><span id="qhTf" class="ok">TF 1M ✓</span><span id="qhChart" class="warn">CHART ?</span><span id="qhFrame" class="warn">FRAME ?</span><span id="qhCandles" class="warn">CANDLES --</span><span id="qhQuality" class="warn">QUALITY --</span>
     </div>
     <div id="preflightHint" class="preflight-hint">Start a source, then use AUTO DETECT. Green box is only a proposal until CONFIRM + TEST FRAME passes.</div>
     <div id="status" class="status">Ready. Choose Screen Share, Live Camera, or Screenshot.</div>
@@ -168,8 +178,9 @@ const LIVE_PAIR_DATA={
 };
 
 let stream=null,sourceMode='',watchTimer=null,clockTimer=null,busy=false,currentKind='',nextCloseMs=0,pendingBoundary=null,cropMode=false,dragStart=null,roi=null,roiConfirmed=false,lastCropTestPassed=false,lastPreflight=null,lastLayoutSignature='',layoutRecheckTimer=null,preflightBusy=false,lastObjectUrl='',lastSignalKey='',entryTimer=null,activeController=null,serverOffsetMs=0,clockSynced=false,lastRoundTripMs=0;
-let pairDetectTimer=null,pairDetectBusy=false,pairCandidate='',pairCandidateHits=0,pairGeneration=0,pairChangedAt=0,pairSettlingUntil=0,pairOcrWorker=null,pairOcrPromise=null,pairScriptPromise=null,nativeTextDetector=null,pairDetectFailures=0;
-const PAIR_DETECT_INTERVAL_SCREEN_MS=1150,PAIR_DETECT_INTERVAL_CAMERA_MS=1750,PAIR_STABLE_HITS=2,PAIR_SETTLE_MS=2200;
+let pairDetectTimer=null,pairDetectBusy=false,pairCandidate='',pairCandidateHits=0,pairGeneration=0,pairChangedAt=0,pairSettlingUntil=0,pairOcrWorker=null,pairOcrPromise=null,pairScriptPromise=null,nativeTextDetector=null,pairDetectFailures=0,pairVerified=false,brokerVerified=false;
+let autoRecalTimer=null,autoRecalBusy=false,autoRecalDebounce=null,lastAutoRecalAt=0,lastFrameQuality=0,lastFrameCandles=0,lastFramePass=false,audioCtx=null,alertsUnlocked=false;
+const PAIR_DETECT_INTERVAL_SCREEN_MS=1150,PAIR_DETECT_INTERVAL_CAMERA_MS=1750,PAIR_STABLE_HITS=2,PAIR_SETTLE_MS=2200,AUTO_RECAL_VALIDATE_MS=22000,AUTO_RECAL_MIN_GAP_MS=5500;
 const PAIR_OCR_CDN='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 const ASSET_CODE_ALIASES={
   'BITCOIN':['BTC/USD','BTCUSD'],'ETHEREUM':['ETH/USD','ETHUSD'],'SOLANA':['SOL/USD','SOLUSD'],'LITECOIN':['LTC/USD','LTCUSD'],
@@ -213,9 +224,10 @@ async function syncServerClock(){
 function setSignalState(state,tone=''){setMetric('signalState',state,tone);}
 function updateChartGate(){
   const box=$('crop');if(box){box.classList.toggle('confirmed',!!roi&&roiConfirmed&&lastCropTestPassed);box.classList.toggle('proposed',!!roi&&!(roiConfirmed&&lastCropTestPassed));}
-  if(roi&&roiConfirmed&&lastCropTestPassed){setMetric('gateState','PASS · TESTED','ok');$('cropState').textContent='CROP CONFIRMED';return true;}
-  if(roi){setMetric('gateState',lastCropTestPassed?'CONFIRM CROP':'TEST + CONFIRM','warn');$('cropState').textContent='CROP PROPOSED';return false;}
-  setMetric('gateState',stream?'BLOCK · SET CROP':'SET CROP','warn');$('cropState').textContent='FULL FRAME';return false;
+  let passed=false;if(roi&&roiConfirmed&&lastCropTestPassed){setMetric('gateState','PASS · TESTED','ok');$('cropState').textContent='CROP CONFIRMED';passed=true;}
+  else if(roi){setMetric('gateState',lastCropTestPassed?'CONFIRM CROP':'TEST + CONFIRM','warn');$('cropState').textContent='CROP PROPOSED';}
+  else{setMetric('gateState',stream?'BLOCK · SET CROP':'SET CROP','warn');$('cropState').textContent='FULL FRAME';}
+  updateQualityHud();return passed;
 }
 function setPreflightHint(text,tone=''){const el=$('preflightHint');if(!el)return;el.textContent=text;el.className='preflight-hint'+(tone?' '+tone:'');}
 function updatePreflightButtons(){const hasSource=!!stream,hasCrop=!!roi;$('autoDetectBtn').disabled=!hasSource||preflightBusy;$('cropBtn').disabled=!hasSource||preflightBusy;$('confirmCropBtn').disabled=!hasSource||!hasCrop||preflightBusy;$('testFrameBtn').disabled=!hasSource||!hasCrop||preflightBusy;}
@@ -226,7 +238,7 @@ function cropPresetKey(){return `raja_chart_crop_v42:${$('broker').value}:${sour
 function validRoi(value){return value&&['x','y','w','h'].every(k=>Number.isFinite(Number(value[k])))&&Number(value.w)>=.12&&Number(value.h)>=.18&&Number(value.x)>=0&&Number(value.y)>=0&&Number(value.x)+Number(value.w)<=1.001&&Number(value.y)+Number(value.h)<=1.001;}
 function saveCropPreset(){if(!validRoi(roi))return;try{localStorage.setItem(cropPresetKey(),JSON.stringify({roi,broker:$('broker').value,layout:layoutSignature(),saved_at:Date.now()}));}catch(_){}}
 function loadCropPreset(){let saved=null;try{saved=JSON.parse(localStorage.getItem(cropPresetKey())||'null');}catch(_){}if(!validRoi(saved?.roi))return false;roi={x:Number(saved.roi.x),y:Number(saved.roi.y),w:Number(saved.roi.w),h:Number(saved.roi.h)};roiConfirmed=false;lastCropTestPassed=false;drawRoi();updatePreflightButtons();setPreflightHint(`${$('broker').value} crop position restored for this screen. CONFIRM CHART AREA to re-test it.`);return true;}
-function scheduleLayoutRecheck(){if(layoutRecheckTimer)clearTimeout(layoutRecheckTimer);layoutRecheckTimer=setTimeout(()=>{if(!stream)return;const sig=layoutSignature();if(sig===lastLayoutSignature)return;lastLayoutSignature=sig;invalidateCrop('Screen size/orientation changed. Chart area must be detected and tested again.',false);resetPreflightMetrics();if(!loadCropPreset())setStatus('Layout changed — run AUTO DETECT CHART AREA again.');},300);}
+function scheduleLayoutRecheck(){if(layoutRecheckTimer)clearTimeout(layoutRecheckTimer);layoutRecheckTimer=setTimeout(()=>{if(!stream)return;const sig=layoutSignature();if(sig===lastLayoutSignature)return;lastLayoutSignature=sig;invalidateCrop('Screen size/orientation changed. Auto recalibration is checking the chart again.',false);resetPreflightMetrics();if($('autoRecal')?.checked)triggerAutoRecalibration('Screen size/orientation changed',500);else if(!loadCropPreset())setStatus('Layout changed — run AUTO DETECT CHART AREA again.');},350);}
 function hideSignalBanner(){const b=$('signalBanner');b.classList.remove('show','up','down');}
 function renderLocalGateBlock(message){
   hideSignalBanner();if(entryTimer)clearInterval(entryTimer);entryTimer=null;$('result').style.display='block';$('hero').className='hero blocked';
@@ -236,20 +248,24 @@ function renderLocalGateBlock(message){
 }
 function showSignalBanner(dir,pair,entryMs,expiryMs,left){
   const b=$('signalBanner'),up=dir==='UP';b.className='signal-banner show '+(up?'up':'down');
-  $('signalBannerDirection').textContent=up?'⬆ UP / CALL':'⬇ DOWN / PUT';
+  $('signalBannerDirection').textContent=up?'🟢 BUY NOW · CALL':'🔴 SELL NOW · PUT';
   $('signalBannerDetail').textContent=`CONFIRMED · ${pair} · ${$('tf').value.toUpperCase()} · ENTRY ${fmtClock(entryMs)} · EXPIRY ${fmtClock(expiryMs)}`;
   $('signalBannerClock').textContent=`ENTER NOW · ${Math.max(0,Math.ceil(left/1000))}s WINDOW LEFT`;
 }
 function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
-function renderCompat(){const canShare=!!navigator.mediaDevices?.getDisplayMedia,canCam=!!navigator.mediaDevices?.getUserMedia;const rows=[];rows.push(`<span class="${canShare?'ok':'warn'}">SCREEN SHARE ${canShare?'✓':'FALLBACK'}</span>`);rows.push(`<span class="${canCam?'ok':'warn'}">LIVE CAMERA ${canCam?'✓':'FALLBACK'}</span>`);rows.push(`<span class="ok">SCREENSHOT ✓</span>`);if(isIOS())rows.push('<span class="warn">iPhone/iPad: external-app screen sharing depends on iOS browser permissions</span>');$('compat').innerHTML=rows.join('');}
-function pairUniverse(market=$('market').value){
-  const broker=$('broker').value;
-  const rows=LIVE_PAIR_DATA[broker]?.[market];
-  return Array.isArray(rows)?rows.slice():[];
+function renderCompat(){const canShare=!!navigator.mediaDevices?.getDisplayMedia,canCam=!!navigator.mediaDevices?.getUserMedia,canVoice='speechSynthesis' in window,canVibrate='vibrate' in navigator;const rows=[];rows.push(`<span class="${canShare?'ok':'warn'}">SCREEN SHARE ${canShare?'✓':'FALLBACK'}</span>`);rows.push(`<span class="${canCam?'ok':'warn'}">LIVE CAMERA ${canCam?'✓':'FALLBACK'}</span>`);rows.push(`<span class="ok">SCREENSHOT ✓</span>`);rows.push(`<span class="${canVoice?'ok':'warn'}">VOICE ${canVoice?'✓':'UNAVAILABLE'}</span>`);rows.push(`<span class="${canVibrate?'ok':'warn'}">VIBRATION ${canVibrate?'✓':'UNSUPPORTED'}</span>`);if(isIOS())rows.push('<span class="warn">iPhone/iPad: external-app screen sharing and vibration depend on platform/browser support</span>');$('compat').innerHTML=rows.join('');}
+function brokerPairUniverse(broker,market){const rows=LIVE_PAIR_DATA[broker]?.[market];return Array.isArray(rows)?rows.slice():[];}
+function pairUniverse(market=$('market').value){return brokerPairUniverse($('broker').value,market);}
+function detectBrokerHint(text){
+  const norm=normalizePairOcr(text),compact=compactPairOcr(text);
+  if(norm.includes('QUOTEX')||compact.includes('QUOTEX'))return 'Quotex';
+  if(norm.includes('POCKET OPTION')||compact.includes('POCKETOPTION')||compact.includes('POCKETBROKER'))return 'Pocket Option';
+  return '';
 }
 function pairCandidates(){
-  const current=$('market').value,order=current==='LIVE'?['LIVE','OTC']:['OTC','LIVE'],out=[];
-  for(const market of order)for(const pair of pairUniverse(market))out.push({pair,market});
+  const currentMarket=$('market').value,markets=currentMarket==='LIVE'?['LIVE','OTC']:['OTC','LIVE'],currentBroker=$('broker').value;
+  const brokers=$('autoBroker')?.checked?[currentBroker,...Object.keys(LIVE_PAIR_DATA).filter(x=>x!==currentBroker)]:[currentBroker],out=[];
+  for(const broker of brokers)for(const market of markets)for(const pair of brokerPairUniverse(broker,market))out.push({pair,market,broker});
   return out;
 }
 
@@ -267,7 +283,7 @@ function pairAliases(pair){
   if(isOtc){[...aliases].forEach(x=>aliases.add(String(x).replace(/\s*\(OTC\)\s*/ig,'').trim()+' OTC'));}
   return [...aliases].filter(Boolean);
 }
-function scorePairText(text,pair,market){
+function scorePairText(text,pair,market,broker){
   const norm=normalizePairOcr(text),compact=compactPairOcr(text);if(!norm)return 0;let best=0;
   for(const alias of pairAliases(pair)){
     const an=normalizePairOcr(alias),ac=compactPairOcr(alias);if(!an||!ac)continue;
@@ -281,23 +297,33 @@ function scorePairText(text,pair,market){
   if(saysOtc)best+=candidateOtc?18:-34;
   else if(candidateOtc){
     const clean=String(pair).replace(/\s*\(OTC\)\s*/ig,'').trim();
-    const hasLiveEquivalent=pairUniverse('LIVE').some(x=>String(x).replace(/[-/]/g,'').toUpperCase()===clean.replace(/[-/]/g,'').toUpperCase());
+    const hasLiveEquivalent=brokerPairUniverse(broker,'LIVE').some(x=>String(x).replace(/[-/]/g,'').toUpperCase()===clean.replace(/[-/]/g,'').toUpperCase());
     best-=hasLiveEquivalent?12:2;
   }else best+=8;
   if(market===$('market').value)best+=2;
+  if(broker===$('broker').value)best+=3;
+  const brokerHint=detectBrokerHint(text);if(brokerHint)best+=brokerHint===broker?45:-55;
   return best;
 }
-function matchPairFromText(text){
-  let best='',bestMarket='',bestScore=0;for(const item of pairCandidates()){const score=scorePairText(text,item.pair,item.market);if(score>bestScore){bestScore=score;best=item.pair;bestMarket=item.market;}}
-  return bestScore>=94?{pair:best,market:bestMarket,score:bestScore}:null;
+function matchPairFromText(text,carriedBrokerHint=''){
+  const hint=detectBrokerHint(text)||carriedBrokerHint;let best=null,second=null;
+  for(const item of pairCandidates()){let score=scorePairText(text,item.pair,item.market,item.broker);if(hint)score+=hint===item.broker?35:-40;const hit={...item,score};if(!best||score>best.score){second=best;best=hit;}else if(!second||score>second.score)second=hit;}
+  if(!best||best.score<94)return null;
+  const currentBroker=$('broker').value;
+  if(best.broker!==currentBroker&&!hint){
+    const existsCurrent=brokerPairUniverse(currentBroker,best.market).includes(best.pair);
+    if(existsCurrent)return {...best,broker:currentBroker,broker_confidence:'CURRENT_SAFE'};
+    if(second&&best.score-second.score<12)return null;
+  }
+  return {...best,broker_confidence:hint?'BRAND_OCR':best.broker===currentBroker?'CURRENT_SAFE':'UNIQUE_PAIR'};
 }
 function pairDetectRegions(mode=sourceMode,exhaustive=false){
-  const broker=$('broker').value,rows=[];
+  const rows=[];
   if(mode==='SCREEN'){
+    rows.push({x:.01,y:.005,w:.98,h:.24,name:'top-wide'});
     if(roi){const right=Math.max(.58,Math.min(.82,roi.x+roi.w));rows.push({x:right,y:.01,w:Math.max(.16,.99-right),h:.20,name:'chart-right'});}
     rows.push({x:.66,y:.005,w:.335,h:.22,name:'right-panel'});
-    rows.push(broker==='Pocket Option'?{x:.01,y:.005,w:.54,h:.21,name:'left-header'}:{x:.06,y:.005,w:.50,h:.18,name:'left-header'});
-    rows.push({x:.01,y:.005,w:.98,h:.24,name:'top-wide'});
+    rows.push({x:.01,y:.005,w:.58,h:.21,name:'left-header'});
   }else{
     rows.push({x:.02,y:.02,w:.96,h:.30,name:'camera-top'});
     rows.push({x:.04,y:.08,w:.92,h:.38,name:'camera-upper'});
@@ -337,11 +363,12 @@ async function readPairTextFromSource(source,region){
 }
 async function readPairText(region){return readPairTextFromSource($('video'),region);}
 async function detectPairFromSource(source,mode=sourceMode,exhaustive=false){
+  let brokerHint='',tentative=null;
   for(const region of pairDetectRegions(mode,exhaustive)){
-    const text=await readPairTextFromSource(source,region),found=matchPairFromText(text);
-    if(found)return {...found,region:region.name,text};
+    const text=await readPairTextFromSource(source,region);brokerHint=detectBrokerHint(text)||brokerHint;const found=matchPairFromText(text,brokerHint);
+    if(found){const hit={...found,region:region.name,text,broker_hint:brokerHint};if(found.broker_confidence==='BRAND_OCR'||found.broker===$('broker').value)return hit;if(!tentative)tentative=hit;}
   }
-  return null;
+  return tentative;
 }
 async function blobToPairSource(blob){
   if(typeof createImageBitmap==='function'){try{return {source:await createImageBitmap(blob),close(){try{this.source.close?.();}catch(_){}}};}catch(_){} }
@@ -349,44 +376,54 @@ async function blobToPairSource(blob){
   await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('Screenshot could not be decoded.'));img.src=url;});
   return {source:img,close(){URL.revokeObjectURL(url);}};
 }
-function resetPairCandidate(){pairCandidate='';pairCandidateHits=0;}
+function resetPairCandidate(){pairCandidate='';pairCandidateHits=0;pairVerified=false;brokerVerified=false;updateQualityHud();}
+function setHudPill(id,text,tone='warn'){const el=$(id);if(!el)return;el.textContent=text;el.className=tone;}
+function updateQualityHud(){
+  const pairOk=pairVerified||!$('autoPair')?.checked,chartOk=!!roi&&roiConfirmed&&lastCropTestPassed,frameOk=!!lastFramePass;
+  setHudPill('qhPair',pairOk?'PAIR ✓':'PAIR ?',pairOk?'ok':'warn');setHudPill('qhTf',`TF ${$('tf')?.value?.toUpperCase()||'--'} ✓`,'ok');
+  setHudPill('qhChart',chartOk?'CHART ✓':'CHART ?',chartOk?'ok':'warn');setHudPill('qhFrame',frameOk?'FRAME ✓':'FRAME ?',frameOk?'ok':'warn');
+  setHudPill('qhCandles',`CANDLES ${lastFrameCandles||'--'}`,lastFrameCandles>=14?'ok':'warn');setHudPill('qhQuality',`QUALITY ${lastFrameQuality?Math.round(lastFrameQuality)+'%':'--'}`,lastFrameQuality>=70?'ok':lastFrameQuality>0?'warn':'warn');
+}
+function setBrokerDetectState(text,tone='warn'){setMetric('brokerDetectState',text,tone);}
 function resetSignalForPairChange(reason='Pair changed.'){
   pairGeneration++;pairChangedAt=Date.now();pairSettlingUntil=Date.now()+PAIR_SETTLE_MS;pendingBoundary=null;resetPairCandidate();
   try{activeController?.abort();}catch(_){}if(entryTimer)clearInterval(entryTimer);entryTimer=null;hideSignalBanner();$('entry').style.display='none';$('result').style.display='none';
   setSignalState('PAIR SYNC','warn');nextCloseMs=boundaryAfter();setEngine('PAIR SYNC',!!stream);setStatus(reason+' Waiting briefly for the new chart to settle.');
 }
-function setDetectedPair(next,source='AUTO OCR',detectedMarket=$('market').value,staticSource=false){
-  const select=$('pair'),old=select.value,oldMarket=$('market').value,targetMarket=detectedMarket==='LIVE'?'LIVE':'OTC';
-  if(targetMarket!==oldMarket)$('market').value=targetMarket;
-  refreshLivePairs(next);
-  if(select.value!==next){if(targetMarket!==oldMarket){$('market').value=oldMarket;refreshLivePairs(old);}return false;}
-  const changed=next!==old||targetMarket!==oldMarket;
+function setDetectedPair(next,source='AUTO OCR',detectedMarket=$('market').value,staticSource=false,detectedBroker=$('broker').value){
+  const select=$('pair'),old=select.value,oldMarket=$('market').value,oldBroker=$('broker').value,targetMarket=detectedMarket==='LIVE'?'LIVE':'OTC',targetBroker=LIVE_PAIR_DATA[detectedBroker]?detectedBroker:oldBroker;
+  const brokerChanged=targetBroker!==oldBroker,marketChanged=targetMarket!==oldMarket;
+  if(brokerChanged)$('broker').value=targetBroker;if(marketChanged)$('market').value=targetMarket;refreshLivePairs(next);
+  if(select.value!==next){$('broker').value=oldBroker;$('market').value=oldMarket;refreshLivePairs(old);return false;}
+  const changed=next!==old||marketChanged||brokerChanged;pairVerified=true;brokerVerified=targetBroker===detectedBroker;setBrokerDetectState(`${targetBroker} · ${targetMarket}`,brokerVerified?'ok':'warn');updateQualityHud();
   if(!changed){setMetric('pairDetectState','LOCKED · '+targetMarket+' · '+next,'ok');return false;}
   savePrefs();
-  if(staticSource&&!stream){pairGeneration++;pairChangedAt=Date.now();pairSettlingUntil=0;pendingBoundary=null;resetPairCandidate();hideSignalBanner();setSignalState('WATCH');setEngine('READY');setStatus(`Pair auto-detected from ${source}: ${oldMarket} ${old||'--'} → ${targetMarket} ${next}.`);}
-  else resetSignalForPairChange(`Pair auto-detected from ${source}: ${oldMarket} ${old||'--'} → ${targetMarket} ${next}.`);
-  setMetric('pairDetectState','SYNCED · '+targetMarket+' · '+next,'ok');
-  if(stream)setTimeout(()=>{if(stream&&Date.now()>=pairSettlingUntil){setSignalState('WATCH');setEngine('LIVE',true);}},PAIR_SETTLE_MS+50);
+  if(brokerChanged&&stream){invalidateCrop('Broker auto-changed. Recalibrating chart area for the new broker layout…',false);resetPreflightMetrics();}
+  if(staticSource&&!stream){pairGeneration++;pairChangedAt=Date.now();pairSettlingUntil=0;pendingBoundary=null;resetPairCandidate();pairVerified=true;brokerVerified=true;hideSignalBanner();setSignalState('WATCH');setEngine('READY');setStatus(`Auto-detected ${targetBroker} · ${targetMarket} · ${next} from ${source}.`);}
+  else resetSignalForPairChange(`Auto-detected ${targetBroker} · ${targetMarket} · ${next} from ${source}.`);
+  pairVerified=true;brokerVerified=true;setMetric('pairDetectState','SYNCED · '+targetMarket+' · '+next,'ok');setBrokerDetectState(`${targetBroker} · ${targetMarket}`,'ok');updateQualityHud();
+  if(stream){setTimeout(()=>{if(stream&&Date.now()>=pairSettlingUntil){setSignalState('WATCH');setEngine('LIVE',true);if(brokerChanged&&$('autoRecal')?.checked)triggerAutoRecalibration('Broker layout changed',450);}},PAIR_SETTLE_MS+50);}
   return true;
 }
 async function runPairDetectCycle(){
-  if(!stream||!['SCREEN','CAMERA'].includes(sourceMode)||!$('autoPair').checked||pairDetectBusy||preflightBusy)return;if(busy)return;
+  if(!stream||!['SCREEN','CAMERA'].includes(sourceMode)||!$('autoPair').checked||pairDetectBusy||preflightBusy||autoRecalBusy)return;if(busy)return;
   pairDetectBusy=true;try{
     const hit=await detectPairFromSource($('video'),sourceMode,pairDetectFailures>=2);
-    if(!hit){resetPairCandidate();pairDetectFailures++;setMetric('pairDetectState',pairDetectFailures>=3?'AUTO · SEARCHING':'AUTO · CHECK','warn');return;}
-    pairDetectFailures=0;const candidateKey=hit.market+'|'+hit.pair;if(candidateKey===pairCandidate)pairCandidateHits++;else{pairCandidate=candidateKey;pairCandidateHits=1;}
-    if(hit.pair===$('pair').value&&hit.market===$('market').value){pairCandidateHits=Math.max(pairCandidateHits,PAIR_STABLE_HITS);setMetric('pairDetectState','LOCKED · '+hit.market+' · '+hit.pair,'ok');return;}
+    if(!hit){resetPairCandidate();pairDetectFailures++;setMetric('pairDetectState',pairDetectFailures>=3?'AUTO · SEARCHING':'AUTO · CHECK','warn');setBrokerDetectState($('autoBroker').checked?'AUTO · SEARCHING':'MANUAL','warn');return;}
+    pairDetectFailures=0;const candidateKey=hit.broker+'|'+hit.market+'|'+hit.pair;if(candidateKey===pairCandidate)pairCandidateHits++;else{pairCandidate=candidateKey;pairCandidateHits=1;}
+    setBrokerDetectState(`${hit.broker} · ${hit.market}`,pairCandidateHits>=PAIR_STABLE_HITS?'ok':'warn');
+    if(hit.pair===$('pair').value&&hit.market===$('market').value&&hit.broker===$('broker').value){pairCandidateHits=Math.max(pairCandidateHits,PAIR_STABLE_HITS);pairVerified=true;brokerVerified=true;setMetric('pairDetectState','LOCKED · '+hit.market+' · '+hit.pair,'ok');setBrokerDetectState(`${hit.broker} · ${hit.market}`,'ok');updateQualityHud();return;}
     setMetric('pairDetectState',`VERIFY ${pairCandidateHits}/${PAIR_STABLE_HITS} · ${hit.market} · ${hit.pair}`,'warn');
-    if(pairCandidateHits>=PAIR_STABLE_HITS)setDetectedPair(hit.pair,hit.region,hit.market,false);
-  }catch(e){pairDetectFailures++;setMetric('pairDetectState','MANUAL FALLBACK','block');if(pairDetectFailures===1)setStatus('Auto pair detection unavailable: '+(e.message||e)+'. Pair dropdown still works manually.');}
+    if(pairCandidateHits>=PAIR_STABLE_HITS)setDetectedPair(hit.pair,hit.region,hit.market,false,hit.broker);
+  }catch(e){pairDetectFailures++;setMetric('pairDetectState','MANUAL FALLBACK','block');setBrokerDetectState('MANUAL FALLBACK','block');if(pairDetectFailures===1)setStatus('Auto broker/pair detection unavailable: '+(e.message||e)+'. Manual selectors still work.');}
   finally{pairDetectBusy=false;}
 }
 function startPairDetectLoop(){
   if(pairDetectTimer)clearInterval(pairDetectTimer);pairDetectTimer=null;resetPairCandidate();pairDetectFailures=0;
-  if(!stream||!['SCREEN','CAMERA'].includes(sourceMode)){setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');return;}
-  if(!$('autoPair').checked){setMetric('pairDetectState','MANUAL','warn');return;}
+  if(!stream||!['SCREEN','CAMERA'].includes(sourceMode)){setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');setBrokerDetectState($('autoBroker').checked?'AUTO · READY':'MANUAL','warn');return;}
+  if(!$('autoPair').checked){setMetric('pairDetectState','MANUAL','warn');setBrokerDetectState('MANUAL','warn');return;}
   const cadence=sourceMode==='CAMERA'?PAIR_DETECT_INTERVAL_CAMERA_MS:PAIR_DETECT_INTERVAL_SCREEN_MS;
-  setMetric('pairDetectState','AUTO · '+sourceMode,'warn');setTimeout(runPairDetectCycle,350);pairDetectTimer=setInterval(runPairDetectCycle,cadence);
+  setMetric('pairDetectState','AUTO · '+sourceMode,'warn');setBrokerDetectState($('autoBroker').checked?'AUTO · '+sourceMode:'MANUAL','warn');setTimeout(runPairDetectCycle,350);pairDetectTimer=setInterval(runPairDetectCycle,cadence);
 }
 async function detectPairFromBlob(blob,mode='SCREENSHOT'){
   if(!$('autoPair').checked)return null;
@@ -394,8 +431,8 @@ async function detectPairFromBlob(blob,mode='SCREENSHOT'){
   try{
     decoded=await blobToPairSource(blob);let hit=await detectPairFromSource(decoded.source,mode==='CAMERA_PHOTO'?'CAMERA':'SCREEN',true);
     if(!hit&&mode!=='CAMERA_PHOTO')hit=await detectPairFromSource(decoded.source,'CAMERA',true);
-    if(!hit){setMetric('pairDetectState','PHOTO · NOT FOUND','warn');return null;}
-    setDetectedPair(hit.pair,mode+' '+hit.region,hit.market,true);setMetric('pairDetectState','PHOTO · '+hit.market+' · '+hit.pair,'ok');return hit;
+    if(!hit){setMetric('pairDetectState','PHOTO · NOT FOUND','warn');setBrokerDetectState($('autoBroker').checked?'PHOTO · NOT FOUND':'MANUAL','warn');return null;}
+    setDetectedPair(hit.pair,mode+' '+hit.region,hit.market,true,hit.broker);pairVerified=true;brokerVerified=true;setMetric('pairDetectState','PHOTO · '+hit.market+' · '+hit.pair,'ok');setBrokerDetectState(hit.broker+' · '+hit.market,'ok');updateQualityHud();return hit;
   }catch(e){setMetric('pairDetectState','PHOTO · MANUAL','warn');setStatus('Screenshot pair auto-detect could not read the pair label: '+(e.message||e)+'. Using the selected pair.');return null;}
   finally{try{decoded?.close?.();}catch(_){} }
 }
@@ -428,18 +465,18 @@ function refreshLivePairs(preferred=''){
 function savePrefs(){
   localStorage.setItem('raja_live_scanner_prefs',JSON.stringify({
     broker:$('broker').value,market:$('market').value,pair:$('pair').value,tf:$('tf').value,
-    interval:$('interval').value,quality:$('quality').value,auto:$('autoScan').checked,autoPair:$('autoPair').checked
+    interval:$('interval').value,quality:$('quality').value,auto:$('autoScan').checked,autoPair:$('autoPair').checked,autoBroker:$('autoBroker').checked,autoRecal:$('autoRecal').checked,signalAlerts:$('signalAlerts').checked
   }));
 }
 function loadPrefs(){
   let p={};
   try{p=JSON.parse(localStorage.getItem('raja_live_scanner_prefs')||'{}')||{};}catch(_){}
   ['broker','market','tf','interval','quality'].forEach(k=>{if(p[k]!=null&&$(k))$(k).value=p[k];});
-  if(typeof p.auto==='boolean')$('autoScan').checked=p.auto;if(typeof p.autoPair==='boolean')$('autoPair').checked=p.autoPair;
+  if(typeof p.auto==='boolean')$('autoScan').checked=p.auto;if(typeof p.autoPair==='boolean')$('autoPair').checked=p.autoPair;if(typeof p.autoBroker==='boolean')$('autoBroker').checked=p.autoBroker;if(typeof p.autoRecal==='boolean')$('autoRecal').checked=p.autoRecal;if(typeof p.signalAlerts==='boolean')$('signalAlerts').checked=p.signalAlerts;
   refreshLivePairs(p.pair||'');
 }
-$('broker').addEventListener('change',()=>{refreshLivePairs();savePrefs();resetPairCandidate();if(stream){resetSignalForPairChange('Broker changed.');invalidateCrop('Broker layout changed. Load/detect and confirm its chart area again.',false);resetPreflightMetrics();loadCropPreset();startPairDetectLoop();}});
-$('market').addEventListener('change',()=>{refreshLivePairs();savePrefs();resetPairCandidate();if(stream){resetSignalForPairChange('Market changed.');startPairDetectLoop();}});
+$('broker').addEventListener('change',()=>{refreshLivePairs();savePrefs();resetPairCandidate();setBrokerDetectState('MANUAL · '+$('broker').value+' · '+$('market').value,'warn');if(stream){resetSignalForPairChange('Broker changed.');invalidateCrop('Broker layout changed. Auto recalibration will detect the candle area again.',false);resetPreflightMetrics();startPairDetectLoop();if($('autoRecal').checked)triggerAutoRecalibration('Broker changed',550);else loadCropPreset();}});
+$('market').addEventListener('change',()=>{refreshLivePairs();savePrefs();resetPairCandidate();setBrokerDetectState($('broker').value+' · '+$('market').value,'warn');if(stream){resetSignalForPairChange('Market changed.');startPairDetectLoop();}});
 $('pair').addEventListener('change',()=>{savePrefs();if(stream)resetSignalForPairChange('Pair changed manually to '+$('pair').value+'.');});
 $('pairSearch').addEventListener('input',()=>filterLivePairs($('pairSearch').value,$('pair').value));
 $('pairSearch').addEventListener('search',()=>filterLivePairs($('pairSearch').value,$('pair').value));
@@ -455,9 +492,12 @@ $('pairSearchClear').addEventListener('click',()=>{
 });
 ['tf','interval','quality','autoScan'].forEach(id=>$(id).addEventListener('change',()=>{
   savePrefs();
-  if(id==='tf'&&stream)nextCloseMs=boundaryAfter();
+  if(id==='tf'&&stream)nextCloseMs=boundaryAfter();updateQualityHud();
 }));
-$('autoPair').addEventListener('change',()=>{savePrefs();resetPairCandidate();if(stream)startPairDetectLoop();else setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');});
+$('autoPair').addEventListener('change',()=>{savePrefs();resetPairCandidate();if(stream)startPairDetectLoop();else setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');updateQualityHud();});
+$('autoBroker').addEventListener('change',()=>{if($('autoBroker').checked&&!$('autoPair').checked)$('autoPair').checked=true;savePrefs();resetPairCandidate();setBrokerDetectState($('autoBroker').checked?'AUTO · READY':'MANUAL','warn');if(stream)startPairDetectLoop();});
+$('autoRecal').addEventListener('change',()=>{savePrefs();setMetric('recalState',$('autoRecal').checked?'READY':'OFF',$('autoRecal').checked?'warn':'block');if(stream)startAutoRecalLoop();});
+$('signalAlerts').addEventListener('change',()=>{savePrefs();setMetric('alertState',$('signalAlerts').checked?'ARMED':'MUTED',$('signalAlerts').checked?'ok':'warn');if($('signalAlerts').checked)unlockAlerts();});
 function contentRect(){const stage=$('stage'),v=$('video'),r=stage.getBoundingClientRect();if(!v.videoWidth||!v.videoHeight)return{x:0,y:0,w:r.width,h:r.height};const va=v.videoWidth/v.videoHeight,sa=r.width/r.height;let w,h,x,y;if(va>sa){w=r.width;h=w/va;x=0;y=(r.height-h)/2;}else{h=r.height;w=h*va;y=0;x=(r.width-w)/2;}return{x,y,w,h};}
 function drawRoi(){const box=$('crop');if(!roi){box.style.display='none';updateChartGate();return;}const c=contentRect();box.style.display='block';box.style.left=(c.x+roi.x*c.w)+'px';box.style.top=(c.y+roi.y*c.h)+'px';box.style.width=(roi.w*c.w)+'px';box.style.height=(roi.h*c.h)+'px';updateChartGate();}
 window.addEventListener('resize',()=>{drawRoi();scheduleLayoutRecheck();});
@@ -468,6 +508,29 @@ $('stage').addEventListener('pointerdown',ev=>{if(!cropMode)return;ev.preventDef
 $('stage').addEventListener('pointermove',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y),b=$('dragbox');b.style.left=x+'px';b.style.top=y+'px';b.style.width=w+'px';b.style.height=h+'px';});
 $('stage').addEventListener('pointerup',ev=>{if(!cropMode||!dragStart)return;const p=pointerPos(ev),c=p.c,x=Math.min(dragStart.x,p.x),y=Math.min(dragStart.y,p.y),w=Math.abs(p.x-dragStart.x),h=Math.abs(p.y-dragStart.y);dragStart=null;$('dragbox').style.display='none';if(w<Math.max(120,c.w*.28)||h<Math.max(90,c.h*.24)){setStatus('Chart area too small. Include at least 14–20 complete candles.');setMetric('gateState','BLOCK · CROP SMALL','block');return;}roi={x:(x-c.x)/c.w,y:(y-c.y)/c.h,w:w/c.w,h:h/c.h};roiConfirmed=false;lastCropTestPassed=false;lastPreflight=null;cropMode=false;$('stage').classList.remove('crop-mode');$('cropBtn').textContent='↺ RESET / SET AREA MANUALLY';drawRoi();updatePreflightButtons();setPreflightHint('Manual green crop proposed. Remove indicators/sidebar, then press CONFIRM CHART AREA.');setStatus('Manual crop ready for confirmation and TEST FRAME.');});
 $('cropBtn').onclick=()=>{if(!stream)return;if(roi){invalidateCrop('',false);resetPreflightMetrics();}cropMode=true;$('stage').classList.add('crop-mode');setMetric('gateState','SELECT AREA','warn');setPreflightHint('Drag over 20–30 complete candles only. Exclude broker buttons, pair list and every indicator.');setStatus('Drag around ONLY the candle chart. Exclude broker buttons, pair list and indicators.');};
+function roiDistance(a,b){if(!validRoi(a)||!validRoi(b))return 1;return Math.max(Math.abs(a.x-b.x),Math.abs(a.y-b.y),Math.abs(a.w-b.w),Math.abs(a.h-b.h));}
+async function performAutoRecalibration(reason='Layout drift'){
+  if(!stream||!$('autoRecal')?.checked)return false;
+  if(autoRecalBusy||preflightBusy||busy||pairDetectBusy){triggerAutoRecalibration(reason,1200);return false;}
+  const gapLeft=AUTO_RECAL_MIN_GAP_MS-(Date.now()-lastAutoRecalAt);if(gapLeft>0){triggerAutoRecalibration(reason,gapLeft+150);return false;}autoRecalBusy=true;preflightBusy=true;lastAutoRecalAt=Date.now();updatePreflightButtons();setMetric('recalState','CHECKING','warn');setEngine('AUTO RECAL',true);
+  try{
+    const fullBlob=await captureBlob(false),det=await requestPreflight(fullBlob,false);lastPreflight=det;applyPreflightMetrics(det);
+    if(!det.auto_detected||!validRoi(det.roi)){setMetric('recalState','WAIT / MANUAL','block');setStatus('Auto recalibration could not safely find the candle chart. Keep 20–30 candles visible or set the area manually.');setTimeout(()=>{if(stream&&$('autoRecal')?.checked&&!roi)triggerAutoRecalibration('Retry unreadable chart',100);},7000);return false;}
+    const nextRoi={x:Number(det.roi.x),y:Number(det.roi.y),w:Number(det.roi.w),h:Number(det.roi.h)},moved=roiDistance(roi,nextRoi)>.025;roi=nextRoi;roiConfirmed=false;lastCropTestPassed=false;drawRoi();
+    const cropBlob=await captureBlob(true),test=await requestPreflight(cropBlob,true);lastPreflight=test;applyPreflightMetrics(test);const count=Number(test.detected_candles||0),pass=test.scan_gate==='PASS'&&count>=14&&!test.possible_indicator_overlay;lastCropTestPassed=pass;
+    if(pass){roiConfirmed=true;lastLayoutSignature=layoutSignature();saveCropPreset();drawRoi();setMetric('recalState',moved?'RELOCKED':'STABLE','ok');setPreflightHint(`AUTO RECAL PASS · ${count} candles · quality ${Math.round(Number(test.image_quality_score||0))}/100 · ${reason}.`,'good');setStatus(moved?'Chart moved/zoomed — crop automatically re-locked and tested.':'Auto recalibration confirmed the chart crop is stable.');return true;}
+    roiConfirmed=false;drawRoi();setMetric('recalState','BLOCK · RETRY','block');setSignalState('GATE BLOCKED','block');setStatus('Auto recalibration found the chart but TEST FRAME failed. No signal until a clean chart is restored.');setTimeout(()=>{if(stream&&$('autoRecal')?.checked&&!lastCropTestPassed)triggerAutoRecalibration('Retry failed chart test',100);},7000);return false;
+  }catch(e){setMetric('recalState','RETRY LATER','warn');setStatus('Auto recalibration error: '+(e.message||e));return false;}
+  finally{preflightBusy=false;autoRecalBusy=false;setEngine('LIVE',!!stream);updatePreflightButtons();updateChartGate();updateQualityHud();}
+}
+function triggerAutoRecalibration(reason='Layout drift',delay=250){if(autoRecalDebounce)clearTimeout(autoRecalDebounce);autoRecalDebounce=setTimeout(()=>performAutoRecalibration(reason),delay);}
+async function validateCropForDrift(){
+  if(!stream||!$('autoRecal')?.checked)return;if(!roi||!roiConfirmed||!lastCropTestPassed){triggerAutoRecalibration('Missing/unconfirmed chart crop',150);return;}if(busy||preflightBusy||pairDetectBusy||autoRecalBusy||Date.now()<pairSettlingUntil)return;
+  const left=nextCloseMs-serverNowMs();if(left<2500)return;preflightBusy=true;setMetric('recalState','VALIDATING','warn');
+  try{const blob=await captureBlob(true),x=await requestPreflight(blob,true);lastPreflight=x;applyPreflightMetrics(x);const count=Number(x.detected_candles||0),pass=x.scan_gate==='PASS'&&count>=14&&!x.possible_indicator_overlay;lastCropTestPassed=pass;if(pass){setMetric('recalState','STABLE','ok');roiConfirmed=true;updateChartGate();}else{roiConfirmed=false;updateChartGate();setMetric('recalState','DRIFT FOUND','block');setStatus('Chart crop changed or degraded — auto recalibration started.');setTimeout(()=>triggerAutoRecalibration('Periodic chart drift detected',100),0);}}catch(_){setMetric('recalState','CHECK RETRY','warn');}
+  finally{preflightBusy=false;updatePreflightButtons();updateQualityHud();}
+}
+function startAutoRecalLoop(){if(autoRecalTimer)clearInterval(autoRecalTimer);autoRecalTimer=null;if(!stream||!$('autoRecal')?.checked){setMetric('recalState',$('autoRecal')?.checked?'READY':'OFF',$('autoRecal')?.checked?'warn':'block');return;}setMetric('recalState',roiConfirmed&&lastCropTestPassed?'STABLE':'READY',roiConfirmed&&lastCropTestPassed?'ok':'warn');autoRecalTimer=setInterval(validateCropForDrift,AUTO_RECAL_VALIDATE_MS);}
 async function startSource(mode){
   stopSource('');const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('Login to RAJA AI first, then reopen Live Scanner.');return;}
   const clockPromise=syncServerClock();
@@ -483,18 +546,18 @@ async function startSource(mode){
     const track=stream.getVideoTracks()[0];track?.addEventListener('ended',()=>stopSource('Screen/camera sharing ended.'));
     if(sourceMode==='CAMERA'&&track?.getCapabilities&&track?.applyConstraints){try{const caps=track.getCapabilities();if(Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous'))await track.applyConstraints({advanced:[{focusMode:'continuous'}]});}catch(_){} }
     $('modeHud').textContent='SOURCE: '+sourceMode;$('captureState').textContent='LIVE';$('captureState').classList.add('live');$('stopBtn').disabled=false;
-    lastLayoutSignature=layoutSignature();nextCloseMs=boundaryAfter();startLoops();startPairDetectLoop();updatePreflightButtons();updateChartGate();setSignalState('WATCH');resetPreflightMetrics();
-    if(!loadCropPreset())setPreflightHint('Press AUTO DETECT CHART AREA. Keep 20–30 candles visible and remove indicators/sidebar.');
-    setStatus(sourceMode==='SCREEN'?'Screen received. Pair/LIVE-OTC auto-detect is active. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.':'Camera received. Pair/LIVE-OTC auto-detect is active; keep the broker pair label visible and phone steady. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.');
+    lastLayoutSignature=layoutSignature();nextCloseMs=boundaryAfter();startLoops();startPairDetectLoop();startAutoRecalLoop();updatePreflightButtons();updateChartGate();setSignalState('WATCH');resetPreflightMetrics();pairVerified=false;brokerVerified=false;lastFramePass=false;lastFrameQuality=0;lastFrameCandles=0;updateQualityHud();
+    if(!loadCropPreset()){setPreflightHint('Auto recalibration will detect the chart area. Keep 20–30 candles visible and remove indicators/sidebar.');if($('autoRecal').checked)triggerAutoRecalibration('Source started',900);}else if($('autoRecal').checked)triggerAutoRecalibration('Saved crop verification',650);
+    setStatus(sourceMode==='SCREEN'?'Screen received. Broker + market + pair auto-detect is active. Auto recalibration will lock/test the chart before signals.':'Camera received. Broker + market + pair auto-detect is active; keep the broker header and pair visible. Auto recalibration will lock/test the chart before signals.');
     setTimeout(()=>{lastLayoutSignature=layoutSignature();drawRoi();},100);
   }catch(e){stopSource('');setStatus((mode==='screen'?'Screen share':'Camera')+' unavailable: '+(e.message||e));if(mode==='camera'&&isIOS())$('legacyCamera').click();}
 }
 function stopSource(msg='Live scanner stopped.'){
-  if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);if(entryTimer)clearInterval(entryTimer);if(layoutRecheckTimer)clearTimeout(layoutRecheckTimer);if(pairDetectTimer)clearInterval(pairDetectTimer);
-  try{activeController?.abort();}catch(_){}watchTimer=clockTimer=entryTimer=layoutRecheckTimer=pairDetectTimer=null;activeController=null;pendingBoundary=null;busy=false;preflightBusy=false;pairDetectBusy=false;resetPairCandidate();pairSettlingUntil=0;
+  if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);if(entryTimer)clearInterval(entryTimer);if(layoutRecheckTimer)clearTimeout(layoutRecheckTimer);if(pairDetectTimer)clearInterval(pairDetectTimer);if(autoRecalTimer)clearInterval(autoRecalTimer);if(autoRecalDebounce)clearTimeout(autoRecalDebounce);
+  try{activeController?.abort();}catch(_){}watchTimer=clockTimer=entryTimer=layoutRecheckTimer=pairDetectTimer=autoRecalTimer=autoRecalDebounce=null;activeController=null;pendingBoundary=null;busy=false;preflightBusy=false;pairDetectBusy=false;autoRecalBusy=false;resetPairCandidate();pairSettlingUntil=0;
   try{stream?.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;sourceMode='';$('video').srcObject=null;$('stage').style.display='none';$('captureState').textContent='OFF';$('captureState').classList.remove('live');
   ['autoDetectBtn','cropBtn','confirmCropBtn','testFrameBtn','stopBtn'].forEach(id=>$(id).disabled=true);roi=null;roiConfirmed=false;lastCropTestPassed=false;lastPreflight=null;lastLayoutSignature='';cropMode=false;$('stage').classList.remove('crop-mode');drawRoi();resetPreflightMetrics();
-  setPreflightHint('Start a source, then use AUTO DETECT. Green box is only a proposal until CONFIRM + TEST FRAME passes.');$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');hideSignalBanner();if(msg)setStatus(msg);
+  setPreflightHint('Start a source. Auto recalibration can detect, confirm and re-test the chart area automatically.');$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');setBrokerDetectState($('autoBroker').checked?'AUTO · READY':'MANUAL','warn');setMetric('recalState',$('autoRecal').checked?'READY':'OFF',$('autoRecal').checked?'warn':'block');lastFramePass=false;lastFrameQuality=0;lastFrameCandles=0;updateQualityHud();hideSignalBanner();if(msg)setStatus(msg);
 }
 $('shareBtn').onclick=()=>startSource('screen');$('cameraBtn').onclick=()=>startSource('camera');$('stopBtn').onclick=()=>stopSource();$('shotBtn').onclick=()=>$('file').click();
 function startLoops(){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);const cadence=Math.max(2,Number($('interval').value)||3)*1000;watchTimer=setInterval(()=>{if(!$('autoScan').checked||!stream||busy||preflightBusy||!roiConfirmed||!lastCropTestPassed||Date.now()<pairSettlingUntil)return;const left=nextCloseMs-serverNowMs();if(left<1600)return;captureAndQueue(false,0);},cadence);clockTimer=setInterval(()=>{if(!stream)return;const now=serverNowMs();if(!nextCloseMs)nextCloseMs=boundaryAfter(now);$('closeHud').textContent='NEXT CLOSE: '+fmtLeft(nextCloseMs-now);if(now>=nextCloseMs){const epoch=nextCloseMs;nextCloseMs=boundaryAfter(now+250);if(Date.now()<pairSettlingUntil||epoch<=pairChangedAt+PAIR_SETTLE_MS){setStatus('Pair just changed — this boundary is skipped to avoid mixing old/new chart frames.');return;}setTimeout(()=>captureAndQueue(true,epoch),380);}},120);}
@@ -504,7 +567,7 @@ function applyPreflightMetrics(x){
   const count=Number(x.detected_candles||0),quality=Math.round(Number(x.image_quality_score||0)),guide=String(x.zoom_guidance||'CHECK FRAME');
   setMetric('candleCountState',`${count} / 14 MIN`,count>=20&&count<=30?'ok':count>=14?'warn':'block');
   setMetric('zoomGuideState',guide,guide==='READY'?'ok':guide.includes('REMOVE')||guide==='CLEARER FRAME'?'block':'warn');
-  const warning=Array.isArray(x.warnings)&&x.warnings.length?x.warnings[0]:'';
+  lastFrameQuality=quality;lastFrameCandles=count;lastFramePass=x.scan_gate==='PASS';updateQualityHud();const warning=Array.isArray(x.warnings)&&x.warnings.length?x.warnings[0]:'';
   const sidebar=x.sidebars_excluded?' Sidebar/control area excluded.':'';
   setPreflightHint(`${x.scan_gate==='PASS'?'FRAME PASS':'FRAME BLOCKED'} · ${count} candles · quality ${quality}/100 · ${guide}.${sidebar}${warning?' '+warning:''}`,x.scan_gate==='PASS'?'good':'block');
 }
@@ -573,19 +636,24 @@ async function scanBlob(blob,atClose,epoch,captureModeOverride=''){
   }catch(e){if(String(e.name)!=='AbortError')setStatus('Scan error: '+(e.message||e));else if(atClose)setStatus('Close scan timed out — NO TRADE. Wait for the next candle.');}
   finally{clearTimeout(timeout);activeController=null;busy=false;currentKind='';setEngine('LIVE',!!stream);if(pendingBoundary){const p=pendingBoundary;pendingBoundary=null;scanBlob(p.blob,true,p.epoch);}}
 }
-function speak(text){try{if(!('speechSynthesis' in window))return;const u=new SpeechSynthesisUtterance(text);u.rate=1.03;u.pitch=.9;u.volume=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(_){}}
+function unlockAlerts(){try{if(!audioCtx){const C=window.AudioContext||window.webkitAudioContext;if(C)audioCtx=new C();}if(audioCtx?.state==='suspended')audioCtx.resume().catch(()=>{});alertsUnlocked=true;setMetric('alertState',$('signalAlerts').checked?'ARMED':'MUTED',$('signalAlerts').checked?'ok':'warn');}catch(_){}}
+function playSignalTone(up){if(!$('signalAlerts')?.checked)return;try{unlockAlerts();if(!audioCtx)return;const now=audioCtx.currentTime,tones=up?[740,980]:[520,340];tones.forEach((freq,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(.0001,now+i*.16);g.gain.exponentialRampToValueAtTime(.18,now+i*.16+.02);g.gain.exponentialRampToValueAtTime(.0001,now+i*.16+.14);o.connect(g);g.connect(audioCtx.destination);o.start(now+i*.16);o.stop(now+i*.16+.16);});}catch(_){}}
+function vibrateSignal(up){if(!$('signalAlerts')?.checked)return;try{navigator.vibrate?.(up?[120,60,120]:[260,80,90]);}catch(_){}}
+function speak(text){if(!$('signalAlerts')?.checked)return;try{if(!('speechSynthesis' in window))return;const u=new SpeechSynthesisUtterance(text);u.rate=.92;u.pitch=1;u.volume=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(_){}}
+function alertConfirmedSignal(up){if(!$('signalAlerts')?.checked)return;playSignalTone(up);vibrateSignal(up);speak(up?'Buy now':'Sell now');}
+
 function startEntry(x,state){
   if(entryTimer)clearInterval(entryTimer);entryTimer=null;hideSignalBanner();
   const box=$('entry'),bias=String(x.bias||'').toUpperCase(),up=bias.startsWith('UP'),down=bias.startsWith('DOWN');
   if(!up&&!down){box.style.display='none';return;}
-  const dir=up?'UP / CALL':'DOWN / PUT',entryMs=Number(x.entry_epoch_ms||Number(x.entry_epoch||0)*1000),expiryMs=Number(x.expiry_epoch_ms||0),grace=Math.max(3,Number(x.entry_window_seconds||8))*1000;
+  const dir=up?'BUY NOW · CALL':'SELL NOW · PUT',entryMs=Number(x.entry_epoch_ms||Number(x.entry_epoch||0)*1000),expiryMs=Number(x.expiry_epoch_ms||0),grace=Math.max(3,Number(x.entry_window_seconds||8))*1000;
   box.style.display='block';box.className='entry '+(up?'up':'down')+((state==='DUPLICATE'||state==='EXPIRED')?' blocked':'');
   if(state==='DUPLICATE'){$('entryMain').textContent='DUPLICATE BLOCKED';$('entrySub').textContent='This pair/timeframe/candle signal was already shown. Do not place it again.';return;}
   if(state==='EXPIRED'||!entryMs){$('entryMain').textContent='ENTRY WINDOW PASSED';$('entrySub').textContent='Do not chase this candle. Wait for a fresh confirmed close.';return;}
   const tick=()=>{
     const now=serverNowMs(),d=now-entryMs,left=grace-d;
     if(d<0){$('entryMain').textContent='WAIT '+Math.ceil(-d/1000)+'s · '+dir;$('entrySub').textContent=`Entry ${fmtClock(entryMs)} · Expiry ${fmtClock(expiryMs)}`;hideSignalBanner();}
-    else if(left>=0&&x.entry_allowed){$('entryMain').textContent='TAKE '+dir+' NOW';$('entrySub').textContent=`${Math.ceil(left/1000)}s left · Entry ${fmtClock(entryMs)} · Expiry ${fmtClock(expiryMs)}`;showSignalBanner(up?'UP':'DOWN',$('pair').value,entryMs,expiryMs,left);}
+    else if(left>=0&&x.entry_allowed){$('entryMain').textContent=dir;$('entrySub').textContent=`${Math.ceil(left/1000)}s left · Entry ${fmtClock(entryMs)} · Expiry ${fmtClock(expiryMs)}`;showSignalBanner(up?'UP':'DOWN',$('pair').value,entryMs,expiryMs,left);}
     else{$('entryMain').textContent='ENTRY WINDOW PASSED';$('entrySub').textContent='Do not chase this candle. Wait for a fresh confirmed close.';hideSignalBanner();setSignalState('EXPIRED','block');if(entryTimer){clearInterval(entryTimer);entryTimer=null;}}
   };
   tick();entryTimer=setInterval(tick,200);
@@ -605,18 +673,18 @@ function renderResult(x,atClose){
   let state=String(x.signal_state||'').toUpperCase();if(!state)state=atClose?(up||down?'CONFIRMED':'CLOSE CHECKED'):selected.toUpperCase().startsWith('WAIT CLOSE:')?'ARMED':'WATCH';
   const confirmed=state==='CONFIRMED'&&atClose&&(up||down)&&x.entry_allowed&&!x.duplicate_signal&&!x.late_signal;
   hero.className='hero '+(confirmed?'confirmed ':'')+(up?'up':down?'down':state==='ARMED'?'armed':state==='EXPIRED'||state==='DUPLICATE'||state==='GATE BLOCKED'?'blocked':'');
-  $('big').textContent=confirmed?(up?'✅ CONFIRMED\n⬆ UP / CALL':'✅ CONFIRMED\n⬇ DOWN / PUT'):state==='ARMED'?'🟡 ARMED · WAIT CLOSE':state==='DUPLICATE'?'🚫 DUPLICATE BLOCKED':state==='EXPIRED'?'⌛ SIGNAL LATE · SKIP':state==='GATE BLOCKED'?'🚫 CHART GATE BLOCKED':atClose?'⏸ NO TRADE · CLOSE CHECKED':'👁 LIVE WATCH';
+  $('big').textContent=confirmed?(up?'✅ CONFIRMED\n🟢 BUY NOW · CALL':'✅ CONFIRMED\n🔴 SELL NOW · PUT'):state==='ARMED'?'🟡 ARMED · WAIT CLOSE':state==='DUPLICATE'?'🚫 DUPLICATE BLOCKED':state==='EXPIRED'?'⌛ SIGNAL LATE · SKIP':state==='GATE BLOCKED'?'🚫 CHART GATE BLOCKED':atClose?'⏸ NO TRADE · CLOSE CHECKED':'👁 LIVE WATCH';
   $('big').style.whiteSpace='pre-line';const timing=atClose?'CLOSED-CANDLE FRAME':'FORMING CANDLE EXCLUDED';
   $('meta').innerHTML=`${esc($('broker').value)} · ${esc($('pair').value||'SCREEN CHART')} · ${esc($('tf').value.toUpperCase())}<br>${timing}`;
   $('strategy').textContent=selected||x.scan_gate_reason||'No exact active setup yet.';
-  const q=Math.round(Number(x.image_quality_score||0)),c=Number(x.detected_candles||x.closed_candles_analyzed||0),rules=Array.isArray(x.setup_rules)?x.setup_rules:Array.isArray(x.rules)?x.rules:[],matched=Number(x.rules_matched??rules.filter(r=>r.ok).length),total=Number(x.rules_total??rules.length);
+  const q=Math.round(Number(x.image_quality_score||0)),c=Number(x.detected_candles||x.closed_candles_analyzed||0),rules=Array.isArray(x.setup_rules)?x.setup_rules:Array.isArray(x.rules)?x.rules:[],matched=Number(x.rules_matched??rules.filter(r=>r.ok).length),total=Number(x.rules_total??rules.length);lastFrameQuality=q;lastFrameCandles=c;lastFramePass=x.scan_gate!=='RESCAN'&&q>0;updateQualityHud();
   $('qualityChip').textContent='QUALITY '+q+'/100';$('candlesChip').textContent='CANDLES '+c;$('matchChip').textContent=total?'RULES '+matched+'/'+total:'RULES --';
   $('timingChip').textContent=state;$('timingChip').classList.toggle('good',confirmed);$('rules').innerHTML=rules.slice(0,10).map(r=>`<li>${r.ok?'✓':'✕'} ${esc(r.name||'Rule')}</li>`).join('');
   setSignalState(state,confirmed?'ok':state==='ARMED'?'warn':state==='WATCH'||state==='CLOSE CHECKED'?'':'block');
   const gateBlocked=x.scan_gate==='RESCAN',gatePassed=!!x.chart_crop_set&&!!x.chart_crop_tested&&!gateBlocked;
   setMetric('gateState',gateBlocked?'BLOCK · RESCAN':gatePassed?'PASS · TESTED':'WATCH ONLY',gateBlocked?'block':gatePassed?'ok':'warn');
   renderProof(x,state,rules);startEntry(x,state);
-  if(confirmed){const key=x.signal_key||[x.pattern_type,x.selected_pattern,x.entry_epoch,bias].join('|'),already=key&&(key===storedSignalKey()||key===lastSignalKey);if(!already){storeSignalKey(key);speak(`RAJA AI confirmed. ${$('pair').value}. ${up?'UP CALL':'DOWN PUT'}. Take trade now.`);}else{state='DUPLICATE';setSignalState('DUPLICATE','block');hideSignalBanner();}}
+  if(confirmed){const key=x.signal_key||[x.pattern_type,x.selected_pattern,x.entry_epoch,bias].join('|'),already=key&&(key===storedSignalKey()||key===lastSignalKey);if(!already){storeSignalKey(key);alertConfirmedSignal(up);}else{state='DUPLICATE';setSignalState('DUPLICATE','block');hideSignalBanner();}}
   return state;
 }
 async function handleStaticImage(f,mode='SCREENSHOT'){
@@ -626,8 +694,9 @@ async function handleStaticImage(f,mode='SCREENSHOT'){
 }
 $('file').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;handleStaticImage(f,'SCREENSHOT');};
 $('legacyCamera').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;handleStaticImage(f,'CAMERA_PHOTO');};
-renderCompat();loadPrefs();updateChartGate();setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');syncServerClock().finally(()=>{nextCloseMs=boundaryAfter();});
-window.addEventListener('beforeunload',()=>{try{pairOcrWorker?.terminate();}catch(_){}});
+renderCompat();loadPrefs();updateChartGate();setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');setBrokerDetectState($('autoBroker').checked?'AUTO · READY':'MANUAL','warn');setMetric('recalState',$('autoRecal').checked?'READY':'OFF',$('autoRecal').checked?'warn':'block');setMetric('alertState',$('signalAlerts').checked?'ARMED':'MUTED',$('signalAlerts').checked?'ok':'warn');updateQualityHud();syncServerClock().finally(()=>{nextCloseMs=boundaryAfter();});
+['shareBtn','cameraBtn','shotBtn','autoDetectBtn','confirmCropBtn','testFrameBtn'].forEach(id=>$(id)?.addEventListener('click',unlockAlerts,{passive:true}));document.addEventListener('touchstart',()=>{if(!alertsUnlocked&&$('signalAlerts')?.checked)unlockAlerts();},{once:true,passive:true});
+window.addEventListener('beforeunload',()=>{try{pairOcrWorker?.terminate();}catch(_){}try{audioCtx?.close?.();}catch(_){}});
 </script>
 </body>
 </html>
