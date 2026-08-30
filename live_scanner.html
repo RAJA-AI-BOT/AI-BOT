@@ -29,12 +29,12 @@
   <div id="signalBannerClock" class="clock"></div>
 </div>
 <div class="app">
-  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V43 · AUTO PAIR + CHART · SK25</span></div>
+  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V44 · AUTO PAIR ALL SOURCES · SK25</span></div>
   <section class="card">
     <h1>🎥 RAJA Live Screen Scanner</h1>
-    <p>Auto-detects the selected broker pair from a shared screen, keeps the pair selector synchronized, auto-detects a candle-only crop, and scans Pattern Type 1-25 exactly at each selected candle boundary.</p>
+    <p>Auto-detects the selected broker pair and LIVE/OTC market from Screen Share or Live Camera, also checks uploaded screenshots, keeps the selector synchronized, auto-detects a candle-only crop, and scans Pattern Type 1-25 exactly at each selected candle boundary.</p>
     <div class="compat" id="compat"></div>
-    <div class="notice">For trade integrity, forming-candle frames are WATCH only. A directional entry can be armed only from the boundary frame after the candle closes. On iPhone/iPad, another app's screen may not be shareable from a browser; use Live Camera or Screenshot mode there.</div>
+    <div class="notice">For trade integrity, forming-candle frames are WATCH only. A directional entry can be armed only from the boundary frame after the candle closes. Mobile fallback: Live Camera and Screenshot pair detection work when the broker pair/header is visible and readable; keep the phone steady and the pair label inside the frame.</div>
   </section>
 
   <section class="card">
@@ -74,7 +74,7 @@
       <button class="btn danger" id="stopBtn" disabled>■ STOP LIVE SCANNER</button>
     </div>
     <div class="switchrow"><input type="checkbox" id="autoScan" checked><label for="autoScan" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Live WATCH scans between candle closes</label></div>
-    <div class="switchrow"><input type="checkbox" id="autoPair" checked><label for="autoPair" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Auto detect selected pair from shared broker screen (local OCR)</label></div>
+    <div class="switchrow"><input type="checkbox" id="autoPair" checked><label for="autoPair" style="margin:0;color:#d6e1e9;text-transform:none;font-size:9px">Auto detect pair + LIVE/OTC market from Screen Share / Live Camera / Screenshot (local OCR)</label></div>
     <input id="file" type="file" accept="image/png,image/jpeg,image/webp" hidden>
     <input id="legacyCamera" type="file" accept="image/*" capture="environment" hidden>
 
@@ -169,7 +169,7 @@ const LIVE_PAIR_DATA={
 
 let stream=null,sourceMode='',watchTimer=null,clockTimer=null,busy=false,currentKind='',nextCloseMs=0,pendingBoundary=null,cropMode=false,dragStart=null,roi=null,roiConfirmed=false,lastCropTestPassed=false,lastPreflight=null,lastLayoutSignature='',layoutRecheckTimer=null,preflightBusy=false,lastObjectUrl='',lastSignalKey='',entryTimer=null,activeController=null,serverOffsetMs=0,clockSynced=false,lastRoundTripMs=0;
 let pairDetectTimer=null,pairDetectBusy=false,pairCandidate='',pairCandidateHits=0,pairGeneration=0,pairChangedAt=0,pairSettlingUntil=0,pairOcrWorker=null,pairOcrPromise=null,pairScriptPromise=null,nativeTextDetector=null,pairDetectFailures=0;
-const PAIR_DETECT_INTERVAL_MS=1150,PAIR_STABLE_HITS=2,PAIR_SETTLE_MS=2200;
+const PAIR_DETECT_INTERVAL_SCREEN_MS=1150,PAIR_DETECT_INTERVAL_CAMERA_MS=1750,PAIR_STABLE_HITS=2,PAIR_SETTLE_MS=2200;
 const PAIR_OCR_CDN='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
 const ASSET_CODE_ALIASES={
   'BITCOIN':['BTC/USD','BTCUSD'],'ETHEREUM':['ETH/USD','ETHUSD'],'SOLANA':['SOL/USD','SOLUSD'],'LITECOIN':['LTC/USD','LTCUSD'],
@@ -178,6 +178,11 @@ const ASSET_CODE_ALIASES={
   'ZCASH':['ZEC/USD','ZECUSD'],'COSMOS':['ATOM/USD','ATOMUSD'],'ETHEREUM CLASSIC':['ETC/USD','ETCUSD'],'AXIE INFINITY':['AXS/USD','AXSUSD'],
   'TRUMP':['TRUMP/USD','TRUMPUSD'],'DASH':['DASH/USD','DASHUSD'],'TONCOIN':['TON/USD','TONUSD'],'AVALANCHE':['AVAX/USD','AVAXUSD'],
   'POLYGON':['MATIC/USD','MATICUSD'],'TRON':['TRX/USD','TRXUSD'],'BITCOIN ETF':['BITCOIN ETF','BTC ETF']
+};
+const LIVE_PAIR_NAME_ALIASES={
+  'BTC-USD':['BTC/USD','BTCUSD','BITCOIN'],'ETH-USD':['ETH/USD','ETHUSD','ETHEREUM'],'SOL-USD':['SOL/USD','SOLUSD','SOLANA'],
+  'LTC-USD':['LTC/USD','LTCUSD','LITECOIN'],'XRP-USD':['XRP/USD','XRPUSD','RIPPLE'],'ADA-USD':['ADA/USD','ADAUSD','CARDANO'],
+  'DOGE-USD':['DOGE/USD','DOGEUSD','DOGECOIN']
 };
 function auth(){const key=localStorage.getItem('raja_active_key')||'';return{key,user:localStorage.getItem('raja_active_user')||'',device:localStorage.getItem('raja_device_uid')||'',session_token:key?(localStorage.getItem('raja_token_'+key)||''):''};}
 function esc(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
@@ -237,10 +242,15 @@ function showSignalBanner(dir,pair,entryMs,expiryMs,left){
 }
 function isIOS(){return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);}
 function renderCompat(){const canShare=!!navigator.mediaDevices?.getDisplayMedia,canCam=!!navigator.mediaDevices?.getUserMedia;const rows=[];rows.push(`<span class="${canShare?'ok':'warn'}">SCREEN SHARE ${canShare?'✓':'FALLBACK'}</span>`);rows.push(`<span class="${canCam?'ok':'warn'}">LIVE CAMERA ${canCam?'✓':'FALLBACK'}</span>`);rows.push(`<span class="ok">SCREENSHOT ✓</span>`);if(isIOS())rows.push('<span class="warn">iPhone/iPad: external-app screen sharing depends on iOS browser permissions</span>');$('compat').innerHTML=rows.join('');}
-function pairUniverse(){
-  const broker=$('broker').value,market=$('market').value;
+function pairUniverse(market=$('market').value){
+  const broker=$('broker').value;
   const rows=LIVE_PAIR_DATA[broker]?.[market];
   return Array.isArray(rows)?rows.slice():[];
+}
+function pairCandidates(){
+  const current=$('market').value,order=current==='LIVE'?['LIVE','OTC']:['OTC','LIVE'],out=[];
+  for(const market of order)for(const pair of pairUniverse(market))out.push({pair,market});
+  return out;
 }
 
 function normalizePairOcr(value){
@@ -253,10 +263,11 @@ function pairAliases(pair){
   if(clean.includes('-')){aliases.add(clean.replace('-','/'));aliases.add(clean.replace('-',''));}
   const key=normalizePairOcr(clean);
   (ASSET_CODE_ALIASES[key]||[]).forEach(x=>aliases.add(x));
+  (LIVE_PAIR_NAME_ALIASES[clean.toUpperCase()]||[]).forEach(x=>aliases.add(x));
   if(isOtc){[...aliases].forEach(x=>aliases.add(String(x).replace(/\s*\(OTC\)\s*/ig,'').trim()+' OTC'));}
   return [...aliases].filter(Boolean);
 }
-function scorePairText(text,pair){
+function scorePairText(text,pair,market){
   const norm=normalizePairOcr(text),compact=compactPairOcr(text);if(!norm)return 0;let best=0;
   for(const alias of pairAliases(pair)){
     const an=normalizePairOcr(alias),ac=compactPairOcr(alias);if(!an||!ac)continue;
@@ -266,42 +277,77 @@ function scorePairText(text,pair){
     if(tokens.length>=2){const hits=tokens.filter(t=>norm.includes(t)).length,coverage=hits/tokens.length;if(coverage===1)best=Math.max(best,100+tokens.join('').length);else if(coverage>=.75)best=Math.max(best,86+Math.round(coverage*10));}
     if(ac.length>=3&&ac.length<=4&&norm.split(' ').includes(an)&&norm.length<=24)best=Math.max(best,92);
   }
+  const saysOtc=/(^|\s)OTC($|\s)/.test(norm),candidateOtc=market==='OTC'||/\(OTC\)/i.test(pair);
+  if(saysOtc)best+=candidateOtc?18:-34;
+  else if(candidateOtc){
+    const clean=String(pair).replace(/\s*\(OTC\)\s*/ig,'').trim();
+    const hasLiveEquivalent=pairUniverse('LIVE').some(x=>String(x).replace(/[-/]/g,'').toUpperCase()===clean.replace(/[-/]/g,'').toUpperCase());
+    best-=hasLiveEquivalent?12:2;
+  }else best+=8;
+  if(market===$('market').value)best+=2;
   return best;
 }
 function matchPairFromText(text){
-  let best='',bestScore=0;for(const pair of pairUniverse()){const score=scorePairText(text,pair);if(score>bestScore){bestScore=score;best=pair;}}
-  return bestScore>=92?{pair:best,score:bestScore}:null;
+  let best='',bestMarket='',bestScore=0;for(const item of pairCandidates()){const score=scorePairText(text,item.pair,item.market);if(score>bestScore){bestScore=score;best=item.pair;bestMarket=item.market;}}
+  return bestScore>=94?{pair:best,market:bestMarket,score:bestScore}:null;
 }
-function pairDetectRegions(){
+function pairDetectRegions(mode=sourceMode,exhaustive=false){
   const broker=$('broker').value,rows=[];
-  if(roi){const right=Math.max(.58,Math.min(.82,roi.x+roi.w));rows.push({x:right,y:.015,w:Math.max(.16,.985-right),h:.19,name:'chart-right'});}
-  rows.push({x:.68,y:.01,w:.315,h:.20,name:'right-panel'});
-  if(broker==='Pocket Option')rows.push({x:.015,y:.01,w:.50,h:.18,name:'left-header'});
-  else rows.push({x:.08,y:.01,w:.46,h:.15,name:'left-header'});
+  if(mode==='SCREEN'){
+    if(roi){const right=Math.max(.58,Math.min(.82,roi.x+roi.w));rows.push({x:right,y:.01,w:Math.max(.16,.99-right),h:.20,name:'chart-right'});}
+    rows.push({x:.66,y:.005,w:.335,h:.22,name:'right-panel'});
+    rows.push(broker==='Pocket Option'?{x:.01,y:.005,w:.54,h:.21,name:'left-header'}:{x:.06,y:.005,w:.50,h:.18,name:'left-header'});
+    rows.push({x:.01,y:.005,w:.98,h:.24,name:'top-wide'});
+  }else{
+    rows.push({x:.02,y:.02,w:.96,h:.30,name:'camera-top'});
+    rows.push({x:.04,y:.08,w:.92,h:.38,name:'camera-upper'});
+    rows.push({x:.42,y:.03,w:.56,h:.36,name:'camera-right'});
+    rows.push({x:.02,y:.03,w:.58,h:.34,name:'camera-left'});
+    if(exhaustive)rows.push({x:.02,y:.02,w:.96,h:.56,name:'camera-wide'});
+  }
   return rows;
 }
-function capturePairCanvas(region,preprocess=false){
-  const v=$('video');if(!v.videoWidth||!v.videoHeight)throw new Error('Video frame is not ready.');
-  const sx=Math.max(0,Math.round(region.x*v.videoWidth)),sy=Math.max(0,Math.round(region.y*v.videoHeight));
-  const sw=Math.max(80,Math.min(v.videoWidth-sx,Math.round(region.w*v.videoWidth))),sh=Math.max(40,Math.min(v.videoHeight-sy,Math.round(region.h*v.videoHeight)));
-  const scale=Math.min(2.3,Math.max(1,760/sw)),c=document.createElement('canvas');c.width=Math.max(260,Math.round(sw*scale));c.height=Math.max(80,Math.round(sh*scale));
-  const ctx=c.getContext('2d',{alpha:false,willReadFrequently:preprocess});ctx.imageSmoothingEnabled=true;ctx.drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
-  if(preprocess){const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;for(let i=0;i<d.length;i+=4){const lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];let q=255-lum;q=q<35?0:q>220?255:Math.round((q-128)*1.45+128);q=Math.max(0,Math.min(255,q));d[i]=d[i+1]=d[i+2]=q;d[i+3]=255;}ctx.putImageData(im,0,0);}return c;
+function pairSourceSize(source){
+  const w=Number(source?.videoWidth||source?.naturalWidth||source?.width||0),h=Number(source?.videoHeight||source?.naturalHeight||source?.height||0);
+  return {w,h};
 }
+function capturePairCanvasFromSource(source,region,preprocess=false){
+  const size=pairSourceSize(source);if(!size.w||!size.h)throw new Error('Pair source frame is not ready.');
+  const sx=Math.max(0,Math.round(region.x*size.w)),sy=Math.max(0,Math.round(region.y*size.h));
+  const sw=Math.max(80,Math.min(size.w-sx,Math.round(region.w*size.w))),sh=Math.max(40,Math.min(size.h-sy,Math.round(region.h*size.h)));
+  const scale=Math.min(2.25,Math.max(1,820/sw)),c=document.createElement('canvas');c.width=Math.max(280,Math.round(sw*scale));c.height=Math.max(84,Math.round(sh*scale));
+  const ctx=c.getContext('2d',{alpha:false,willReadFrequently:preprocess});ctx.imageSmoothingEnabled=true;ctx.drawImage(source,sx,sy,sw,sh,0,0,c.width,c.height);
+  if(preprocess){const im=ctx.getImageData(0,0,c.width,c.height),d=im.data;for(let i=0;i<d.length;i+=4){const lum=.2126*d[i]+.7152*d[i+1]+.0722*d[i+2];let q=255-lum;q=q<28?0:q>226?255:Math.round((q-128)*1.55+128);q=Math.max(0,Math.min(255,q));d[i]=d[i+1]=d[i+2]=q;d[i+3]=255;}ctx.putImageData(im,0,0);}return c;
+}
+function capturePairCanvas(region,preprocess=false){return capturePairCanvasFromSource($('video'),region,preprocess);}
 async function ensurePairOcrScript(){
   if(window.Tesseract)return true;if(pairScriptPromise)return pairScriptPromise;
-  pairScriptPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=PAIR_OCR_CDN;script.async=true;script.onload=()=>resolve(true);script.onerror=()=>reject(new Error('Pair OCR library could not load.'));document.head.appendChild(script);});
+  pairScriptPromise=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=PAIR_OCR_CDN;script.async=true;script.crossOrigin='anonymous';script.onload=()=>resolve(true);script.onerror=()=>reject(new Error('Pair OCR library could not load.'));document.head.appendChild(script);});
   return pairScriptPromise;
 }
 async function ensurePairOcrWorker(){
   if(pairOcrWorker)return pairOcrWorker;if(pairOcrPromise)return pairOcrPromise;
-  pairOcrPromise=(async()=>{setMetric('pairDetectState','OCR LOADING','warn');await ensurePairOcrScript();if(!window.Tesseract?.createWorker)throw new Error('Pair OCR is unavailable.');const worker=await window.Tesseract.createWorker('eng');await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/()-&. ',preserve_interword_spaces:'1',tessedit_pageseg_mode:'6'});pairOcrWorker=worker;return worker;})();
+  pairOcrPromise=(async()=>{setMetric('pairDetectState','OCR LOADING','warn');await ensurePairOcrScript();if(!window.Tesseract?.createWorker)throw new Error('Pair OCR is unavailable.');const worker=await window.Tesseract.createWorker('eng');await worker.setParameters({tessedit_char_whitelist:'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/()-&. ',preserve_interword_spaces:'1',tessedit_pageseg_mode:'11'});pairOcrWorker=worker;return worker;})();
   try{return await pairOcrPromise;}finally{pairOcrPromise=null;}
 }
-async function readPairText(region){
-  const raw= capturePairCanvas(region,false);
+async function readPairTextFromSource(source,region){
+  const raw=capturePairCanvasFromSource(source,region,false);
   if('TextDetector' in window){try{if(!nativeTextDetector)nativeTextDetector=new TextDetector();const found=await nativeTextDetector.detect(raw);const text=(found||[]).map(x=>x.rawValue||'').join(' ');if(text.trim())return text;}catch(_){} }
-  const worker=await ensurePairOcrWorker(),ocrCanvas=capturePairCanvas(region,true),result=await worker.recognize(ocrCanvas);return String(result?.data?.text||'');
+  const worker=await ensurePairOcrWorker(),ocrCanvas=capturePairCanvasFromSource(source,region,true),result=await worker.recognize(ocrCanvas);return String(result?.data?.text||'');
+}
+async function readPairText(region){return readPairTextFromSource($('video'),region);}
+async function detectPairFromSource(source,mode=sourceMode,exhaustive=false){
+  for(const region of pairDetectRegions(mode,exhaustive)){
+    const text=await readPairTextFromSource(source,region),found=matchPairFromText(text);
+    if(found)return {...found,region:region.name,text};
+  }
+  return null;
+}
+async function blobToPairSource(blob){
+  if(typeof createImageBitmap==='function'){try{return {source:await createImageBitmap(blob),close(){try{this.source.close?.();}catch(_){}}};}catch(_){} }
+  const url=URL.createObjectURL(blob),img=new Image();img.decoding='async';
+  await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('Screenshot could not be decoded.'));img.src=url;});
+  return {source:img,close(){URL.revokeObjectURL(url);}};
 }
 function resetPairCandidate(){pairCandidate='';pairCandidateHits=0;}
 function resetSignalForPairChange(reason='Pair changed.'){
@@ -309,28 +355,49 @@ function resetSignalForPairChange(reason='Pair changed.'){
   try{activeController?.abort();}catch(_){}if(entryTimer)clearInterval(entryTimer);entryTimer=null;hideSignalBanner();$('entry').style.display='none';$('result').style.display='none';
   setSignalState('PAIR SYNC','warn');nextCloseMs=boundaryAfter();setEngine('PAIR SYNC',!!stream);setStatus(reason+' Waiting briefly for the new chart to settle.');
 }
-function setDetectedPair(next,source='AUTO OCR'){
-  const select=$('pair'),old=select.value;if(!next||next===old){setMetric('pairDetectState','LOCKED · '+(next||old||'--'),'ok');return false;}
-  refreshLivePairs(next);if(select.value!==next)return false;savePrefs();resetSignalForPairChange(`Pair auto-detected: ${old||'--'} → ${next}.`);setMetric('pairDetectState','SYNCED · '+next,'ok');
-  setTimeout(()=>{if(stream&&Date.now()>=pairSettlingUntil){setSignalState('WATCH');setEngine('LIVE',true);}},PAIR_SETTLE_MS+50);return true;
+function setDetectedPair(next,source='AUTO OCR',detectedMarket=$('market').value,staticSource=false){
+  const select=$('pair'),old=select.value,oldMarket=$('market').value,targetMarket=detectedMarket==='LIVE'?'LIVE':'OTC';
+  if(targetMarket!==oldMarket)$('market').value=targetMarket;
+  refreshLivePairs(next);
+  if(select.value!==next){if(targetMarket!==oldMarket){$('market').value=oldMarket;refreshLivePairs(old);}return false;}
+  const changed=next!==old||targetMarket!==oldMarket;
+  if(!changed){setMetric('pairDetectState','LOCKED · '+targetMarket+' · '+next,'ok');return false;}
+  savePrefs();
+  if(staticSource&&!stream){pairGeneration++;pairChangedAt=Date.now();pairSettlingUntil=0;pendingBoundary=null;resetPairCandidate();hideSignalBanner();setSignalState('WATCH');setEngine('READY');setStatus(`Pair auto-detected from ${source}: ${oldMarket} ${old||'--'} → ${targetMarket} ${next}.`);}
+  else resetSignalForPairChange(`Pair auto-detected from ${source}: ${oldMarket} ${old||'--'} → ${targetMarket} ${next}.`);
+  setMetric('pairDetectState','SYNCED · '+targetMarket+' · '+next,'ok');
+  if(stream)setTimeout(()=>{if(stream&&Date.now()>=pairSettlingUntil){setSignalState('WATCH');setEngine('LIVE',true);}},PAIR_SETTLE_MS+50);
+  return true;
 }
 async function runPairDetectCycle(){
-  if(!stream||sourceMode!=='SCREEN'||!$('autoPair').checked||pairDetectBusy||preflightBusy)return;if(busy)return;
+  if(!stream||!['SCREEN','CAMERA'].includes(sourceMode)||!$('autoPair').checked||pairDetectBusy||preflightBusy)return;if(busy)return;
   pairDetectBusy=true;try{
-    let hit=null,used='';for(const region of pairDetectRegions()){const text=await readPairText(region);const found=matchPairFromText(text);if(found){hit=found;used=region.name;break;}}
+    const hit=await detectPairFromSource($('video'),sourceMode,pairDetectFailures>=2);
     if(!hit){resetPairCandidate();pairDetectFailures++;setMetric('pairDetectState',pairDetectFailures>=3?'AUTO · SEARCHING':'AUTO · CHECK','warn');return;}
-    pairDetectFailures=0;if(hit.pair===pairCandidate)pairCandidateHits++;else{pairCandidate=hit.pair;pairCandidateHits=1;}
-    if(hit.pair===$('pair').value){pairCandidateHits=Math.max(pairCandidateHits,PAIR_STABLE_HITS);setMetric('pairDetectState','LOCKED · '+hit.pair,'ok');return;}
-    setMetric('pairDetectState',`VERIFY ${pairCandidateHits}/${PAIR_STABLE_HITS} · ${hit.pair}`,'warn');
-    if(pairCandidateHits>=PAIR_STABLE_HITS)setDetectedPair(hit.pair,used);
+    pairDetectFailures=0;const candidateKey=hit.market+'|'+hit.pair;if(candidateKey===pairCandidate)pairCandidateHits++;else{pairCandidate=candidateKey;pairCandidateHits=1;}
+    if(hit.pair===$('pair').value&&hit.market===$('market').value){pairCandidateHits=Math.max(pairCandidateHits,PAIR_STABLE_HITS);setMetric('pairDetectState','LOCKED · '+hit.market+' · '+hit.pair,'ok');return;}
+    setMetric('pairDetectState',`VERIFY ${pairCandidateHits}/${PAIR_STABLE_HITS} · ${hit.market} · ${hit.pair}`,'warn');
+    if(pairCandidateHits>=PAIR_STABLE_HITS)setDetectedPair(hit.pair,hit.region,hit.market,false);
   }catch(e){pairDetectFailures++;setMetric('pairDetectState','MANUAL FALLBACK','block');if(pairDetectFailures===1)setStatus('Auto pair detection unavailable: '+(e.message||e)+'. Pair dropdown still works manually.');}
   finally{pairDetectBusy=false;}
 }
 function startPairDetectLoop(){
   if(pairDetectTimer)clearInterval(pairDetectTimer);pairDetectTimer=null;resetPairCandidate();pairDetectFailures=0;
-  if(!stream||sourceMode!=='SCREEN'){setMetric('pairDetectState','SCREEN ONLY','warn');return;}
+  if(!stream||!['SCREEN','CAMERA'].includes(sourceMode)){setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');return;}
   if(!$('autoPair').checked){setMetric('pairDetectState','MANUAL','warn');return;}
-  setMetric('pairDetectState','AUTO · STARTING','warn');setTimeout(runPairDetectCycle,250);pairDetectTimer=setInterval(runPairDetectCycle,PAIR_DETECT_INTERVAL_MS);
+  const cadence=sourceMode==='CAMERA'?PAIR_DETECT_INTERVAL_CAMERA_MS:PAIR_DETECT_INTERVAL_SCREEN_MS;
+  setMetric('pairDetectState','AUTO · '+sourceMode,'warn');setTimeout(runPairDetectCycle,350);pairDetectTimer=setInterval(runPairDetectCycle,cadence);
+}
+async function detectPairFromBlob(blob,mode='SCREENSHOT'){
+  if(!$('autoPair').checked)return null;
+  let decoded=null;setMetric('pairDetectState','PHOTO · CHECKING','warn');
+  try{
+    decoded=await blobToPairSource(blob);let hit=await detectPairFromSource(decoded.source,mode==='CAMERA_PHOTO'?'CAMERA':'SCREEN',true);
+    if(!hit&&mode!=='CAMERA_PHOTO')hit=await detectPairFromSource(decoded.source,'CAMERA',true);
+    if(!hit){setMetric('pairDetectState','PHOTO · NOT FOUND','warn');return null;}
+    setDetectedPair(hit.pair,mode+' '+hit.region,hit.market,true);setMetric('pairDetectState','PHOTO · '+hit.market+' · '+hit.pair,'ok');return hit;
+  }catch(e){setMetric('pairDetectState','PHOTO · MANUAL','warn');setStatus('Screenshot pair auto-detect could not read the pair label: '+(e.message||e)+'. Using the selected pair.');return null;}
+  finally{try{decoded?.close?.();}catch(_){} }
 }
 function filterLivePairs(query='',preferred=''){
   const select=$('pair'),count=$('pairSearchCount'),all=pairUniverse();
@@ -390,7 +457,7 @@ $('pairSearchClear').addEventListener('click',()=>{
   savePrefs();
   if(id==='tf'&&stream)nextCloseMs=boundaryAfter();
 }));
-$('autoPair').addEventListener('change',()=>{savePrefs();resetPairCandidate();if(stream)startPairDetectLoop();else setMetric('pairDetectState',$('autoPair').checked?'AUTO · WAIT':'MANUAL','warn');});
+$('autoPair').addEventListener('change',()=>{savePrefs();resetPairCandidate();if(stream)startPairDetectLoop();else setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');});
 function contentRect(){const stage=$('stage'),v=$('video'),r=stage.getBoundingClientRect();if(!v.videoWidth||!v.videoHeight)return{x:0,y:0,w:r.width,h:r.height};const va=v.videoWidth/v.videoHeight,sa=r.width/r.height;let w,h,x,y;if(va>sa){w=r.width;h=w/va;x=0;y=(r.height-h)/2;}else{h=r.height;w=h*va;y=0;x=(r.width-w)/2;}return{x,y,w,h};}
 function drawRoi(){const box=$('crop');if(!roi){box.style.display='none';updateChartGate();return;}const c=contentRect();box.style.display='block';box.style.left=(c.x+roi.x*c.w)+'px';box.style.top=(c.y+roi.y*c.h)+'px';box.style.width=(roi.w*c.w)+'px';box.style.height=(roi.h*c.h)+'px';updateChartGate();}
 window.addEventListener('resize',()=>{drawRoi();scheduleLayoutRecheck();});
@@ -414,10 +481,11 @@ async function startSource(mode){
     }
     await clockPromise.catch(()=>false);const v=$('video');v.srcObject=stream;$('stage').style.display='block';await v.play().catch(()=>{});
     const track=stream.getVideoTracks()[0];track?.addEventListener('ended',()=>stopSource('Screen/camera sharing ended.'));
+    if(sourceMode==='CAMERA'&&track?.getCapabilities&&track?.applyConstraints){try{const caps=track.getCapabilities();if(Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous'))await track.applyConstraints({advanced:[{focusMode:'continuous'}]});}catch(_){} }
     $('modeHud').textContent='SOURCE: '+sourceMode;$('captureState').textContent='LIVE';$('captureState').classList.add('live');$('stopBtn').disabled=false;
     lastLayoutSignature=layoutSignature();nextCloseMs=boundaryAfter();startLoops();startPairDetectLoop();updatePreflightButtons();updateChartGate();setSignalState('WATCH');resetPreflightMetrics();
     if(!loadCropPreset())setPreflightHint('Press AUTO DETECT CHART AREA. Keep 20–30 candles visible and remove indicators/sidebar.');
-    setStatus(sourceMode==='SCREEN'?'Screen received. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.':'Camera received. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.');
+    setStatus(sourceMode==='SCREEN'?'Screen received. Pair/LIVE-OTC auto-detect is active. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.':'Camera received. Pair/LIVE-OTC auto-detect is active; keep the broker pair label visible and phone steady. AUTO DETECT, CONFIRM and TEST FRAME are required before any signal.');
     setTimeout(()=>{lastLayoutSignature=layoutSignature();drawRoi();},100);
   }catch(e){stopSource('');setStatus((mode==='screen'?'Screen share':'Camera')+' unavailable: '+(e.message||e));if(mode==='camera'&&isIOS())$('legacyCamera').click();}
 }
@@ -426,7 +494,7 @@ function stopSource(msg='Live scanner stopped.'){
   try{activeController?.abort();}catch(_){}watchTimer=clockTimer=entryTimer=layoutRecheckTimer=pairDetectTimer=null;activeController=null;pendingBoundary=null;busy=false;preflightBusy=false;pairDetectBusy=false;resetPairCandidate();pairSettlingUntil=0;
   try{stream?.getTracks().forEach(t=>t.stop());}catch(_){}stream=null;sourceMode='';$('video').srcObject=null;$('stage').style.display='none';$('captureState').textContent='OFF';$('captureState').classList.remove('live');
   ['autoDetectBtn','cropBtn','confirmCropBtn','testFrameBtn','stopBtn'].forEach(id=>$(id).disabled=true);roi=null;roiConfirmed=false;lastCropTestPassed=false;lastPreflight=null;lastLayoutSignature='';cropMode=false;$('stage').classList.remove('crop-mode');drawRoi();resetPreflightMetrics();
-  setPreflightHint('Start a source, then use AUTO DETECT. Green box is only a proposal until CONFIRM + TEST FRAME passes.');$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · WAIT':'MANUAL','warn');hideSignalBanner();if(msg)setStatus(msg);
+  setPreflightHint('Start a source, then use AUTO DETECT. Green box is only a proposal until CONFIRM + TEST FRAME passes.');$('closeHud').textContent='NEXT CLOSE: --:--';setEngine('READY');setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');hideSignalBanner();if(msg)setStatus(msg);
 }
 $('shareBtn').onclick=()=>startSource('screen');$('cameraBtn').onclick=()=>startSource('camera');$('stopBtn').onclick=()=>stopSource();$('shotBtn').onclick=()=>$('file').click();
 function startLoops(){if(watchTimer)clearInterval(watchTimer);if(clockTimer)clearInterval(clockTimer);const cadence=Math.max(2,Number($('interval').value)||3)*1000;watchTimer=setInterval(()=>{if(!$('autoScan').checked||!stream||busy||preflightBusy||!roiConfirmed||!lastCropTestPassed||Date.now()<pairSettlingUntil)return;const left=nextCloseMs-serverNowMs();if(left<1600)return;captureAndQueue(false,0);},cadence);clockTimer=setInterval(()=>{if(!stream)return;const now=serverNowMs();if(!nextCloseMs)nextCloseMs=boundaryAfter(now);$('closeHud').textContent='NEXT CLOSE: '+fmtLeft(nextCloseMs-now);if(now>=nextCloseMs){const epoch=nextCloseMs;nextCloseMs=boundaryAfter(now+250);if(Date.now()<pairSettlingUntil||epoch<=pairChangedAt+PAIR_SETTLE_MS){setStatus('Pair just changed — this boundary is skipped to avoid mixing old/new chart frames.');return;}setTimeout(()=>captureAndQueue(true,epoch),380);}},120);}
@@ -478,7 +546,7 @@ async function captureAndQueue(atClose,epoch){
   }catch(e){setStatus('Capture error: '+(e.message||e));}
 }
 function previewBlob(blob){if(lastObjectUrl)URL.revokeObjectURL(lastObjectUrl);lastObjectUrl=URL.createObjectURL(blob);$('previewImg').src=lastObjectUrl;$('preview').style.display='block';}
-async function scanBlob(blob,atClose,epoch){
+async function scanBlob(blob,atClose,epoch,captureModeOverride=''){
   const a=auth();if(!a.key||!a.user||!a.device||!a.session_token){setStatus('RAJA AI login session missing.');return;}
   const scanPair=$('pair').value.trim()||'SCREEN CHART',scanPairGeneration=pairGeneration;
   busy=true;currentKind=atClose?'CLOSE':'WATCH';setEngine(atClose?'CLOSE SCAN':'WATCH SCAN',true);
@@ -487,7 +555,7 @@ async function scanBlob(blob,atClose,epoch){
   fd.append('image',blob,'raja-live-frame.jpg');fd.append('broker',$('broker').value);fd.append('market',$('market').value);
   fd.append('pair',scanPair);fd.append('timeframe',$('tf').value);
   fd.append('captured_at_close',atClose?'1':'0');fd.append('captured_at_epoch_ms',String(epoch||0));
-  fd.append('chart_crop_set',roi&&roiConfirmed?'1':'0');fd.append('chart_crop_tested',lastCropTestPassed?'1':'0');fd.append('capture_mode',sourceMode||'SCREENSHOT');
+  const staticCapture=['SCREENSHOT','CAMERA_PHOTO'].includes(captureModeOverride);fd.append('chart_crop_set',!staticCapture&&roi&&roiConfirmed?'1':'0');fd.append('chart_crop_tested',!staticCapture&&lastCropTestPassed?'1':'0');fd.append('capture_mode',captureModeOverride||sourceMode||'SCREENSHOT');
   fd.append('last_signal_key',storedSignalKey());fd.append('client_request_started_ms',String(t0));
   fd.append('source','RAJA_LIVE_SCREEN_SCANNER');Object.entries(a).forEach(([k,v])=>fd.append(k,v));
   activeController=new AbortController();const timeout=setTimeout(()=>activeController?.abort(),atClose?15000:10000);
@@ -551,9 +619,14 @@ function renderResult(x,atClose){
   if(confirmed){const key=x.signal_key||[x.pattern_type,x.selected_pattern,x.entry_epoch,bias].join('|'),already=key&&(key===storedSignalKey()||key===lastSignalKey);if(!already){storeSignalKey(key);speak(`RAJA AI confirmed. ${$('pair').value}. ${up?'UP CALL':'DOWN PUT'}. Take trade now.`);}else{state='DUPLICATE';setSignalState('DUPLICATE','block');hideSignalBanner();}}
   return state;
 }
-$('file').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;previewBlob(f);scanBlob(f,false,0);};
-$('legacyCamera').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;previewBlob(f);scanBlob(f,false,0);};
-renderCompat();loadPrefs();updateChartGate();setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · WAIT':'MANUAL','warn');syncServerClock().finally(()=>{nextCloseMs=boundaryAfter();});
+async function handleStaticImage(f,mode='SCREENSHOT'){
+  if(!f)return;previewBlob(f);setStatus('Reading pair from image before analysis…');
+  await detectPairFromBlob(f,mode);setStatus('Image ready. Starting visual analysis with the detected/selected pair.');
+  await scanBlob(f,false,0,mode==='CAMERA_PHOTO'?'CAMERA_PHOTO':'SCREENSHOT');
+}
+$('file').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;handleStaticImage(f,'SCREENSHOT');};
+$('legacyCamera').onchange=e=>{const f=e.target.files?.[0];e.target.value='';if(!f)return;handleStaticImage(f,'CAMERA_PHOTO');};
+renderCompat();loadPrefs();updateChartGate();setSignalState('WATCH');setMetric('pairDetectState',$('autoPair').checked?'AUTO · READY':'MANUAL','warn');syncServerClock().finally(()=>{nextCloseMs=boundaryAfter();});
 window.addEventListener('beforeunload',()=>{try{pairOcrWorker?.terminate();}catch(_){}});
 </script>
 </body>
