@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v41-mobile-market-setup';
+const CACHE_VERSION = 'raja-ai-pwa-v42-mobile-market-actions-flow';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -33,6 +33,7 @@ const API_PREFIXES = [
 self.addEventListener('install', event => {
   event.waitUntil((async () => {
     self.skipWaiting();
+
     const cache = await caches.open(ASSET_CACHE);
 
     await Promise.allSettled(
@@ -41,11 +42,8 @@ self.addEventListener('install', event => {
           cache: 'reload'
         });
 
-        if (response && response.ok) {
-          await cache.put(
-            url,
-            response.clone()
-          );
+        if (response?.ok) {
+          await cache.put(url, response.clone());
         }
       })
     );
@@ -108,12 +106,13 @@ function offlineJson() {
 
 async function networkFirstNavigation(request) {
   const cache = await caches.open(SHELL_CACHE);
+  const pathname = new URL(request.url).pathname;
 
   let shellKey = '/';
 
-  if (request.url.includes('/live-scanner')) {
+  if (pathname.startsWith('/live-scanner')) {
     shellKey = '/live-scanner';
-  } else if (request.url.includes('/chart-scanner')) {
+  } else if (pathname.startsWith('/chart-scanner')) {
     shellKey = '/chart-scanner';
   }
 
@@ -122,7 +121,7 @@ async function networkFirstNavigation(request) {
       cache: 'no-store'
     });
 
-    if (response && response.ok) {
+    if (response?.ok) {
       await cache.put(
         shellKey,
         response.clone()
@@ -145,7 +144,7 @@ async function networkFirstAsset(request) {
       cache: 'no-store'
     });
 
-    if (response && response.ok) {
+    if (response?.ok) {
       await cache.put(
         request,
         response.clone()
