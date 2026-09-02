@@ -12604,6 +12604,8 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 `${marketText || 'Market'} · ${currentPairLabel()} · ${currentModeLabel()} · <b>${currentExpiryLabel()}</b>`;
         }
 
+        let rajaConfigReturnScrollY = 0;
+
         function configPanel() {
             return document.querySelector('#mainAppContent .config-panel');
         }
@@ -12615,6 +12617,16 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             if (!panel || !mobileQuery.matches) return;
 
             const nextOpen = Boolean(open);
+
+            if (nextOpen) {
+                rajaConfigReturnScrollY = Math.max(
+                    0,
+                    window.scrollY ||
+                    document.documentElement.scrollTop ||
+                    document.body.scrollTop ||
+                    0
+                );
+            }
 
             panel.classList.toggle('raja-mobile-sheet-open', nextOpen);
             document.body.classList.toggle('raja-config-open', nextOpen);
@@ -12659,6 +12671,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             panel.scrollTo(0, 0);
                         } catch (_) {}
                     }, delay);
+                });
+            } else {
+                // Chrome/Opera may leave the document at the sheet's former
+                // scroll offset, which looks like a completely blank page.
+                panel.scrollTop = 0;
+                const restoreY = Number.isFinite(rajaConfigReturnScrollY)
+                    ? rajaConfigReturnScrollY
+                    : 0;
+                requestAnimationFrame(function () {
+                    window.scrollTo(0, restoreY);
+                    setTimeout(function () { window.scrollTo(0, restoreY); }, 80);
                 });
             }
         }
@@ -16243,6 +16266,81 @@ window.RAJA_ENTRY_TIMING_VERSION='V38_PREP_ENTRY_COUNTDOWN';
   }
 }
 </style>
+
+<style id="raja-v45-chrome-opera-viewport-fix">
+/* V45 · Chrome PWA blank-space + Opera mobile viewport compatibility. */
+@media (max-width:820px) {
+  html,
+  body {
+    min-height:100% !important;
+  }
+
+  body:not(.raja-config-open) #mainAppContent {
+    min-height:0 !important;
+    height:auto !important;
+  }
+
+  body.raja-mobile-ready:not(.raja-config-open),
+  body.raja-mobile-result:not(.raja-config-open),
+  body.raja-mobile-nosignal:not(.raja-config-open) {
+    padding-bottom:max(8px, env(safe-area-inset-bottom)) !important;
+  }
+
+  body:not(.raja-config-open) #mainAppContent::after {
+    display:none !important;
+    content:none !important;
+    height:0 !important;
+  }
+
+  #mainAppContent .config-panel.raja-mobile-sheet-open {
+    inset:auto !important;
+    top:6px !important;
+    right:6px !important;
+    bottom:6px !important;
+    left:6px !important;
+    height:calc(100vh - 12px) !important;
+    max-height:calc(100vh - 12px) !important;
+  }
+
+  @supports (height:100dvh) {
+    #mainAppContent .config-panel.raja-mobile-sheet-open {
+      height:calc(100dvh - 12px) !important;
+      max-height:calc(100dvh - 12px) !important;
+    }
+  }
+}
+</style>
+
+<script id="raja-v45-sheet-state-recovery">
+(() => {
+  function recoverMobileSheetState() {
+    const body = document.body;
+    const panel = document.querySelector('#mainAppContent .config-panel');
+    const backdrop = document.getElementById('rajaMobileConfigBackdrop');
+    if (!body || !panel) return;
+
+    const panelOpen = panel.classList.contains('raja-mobile-sheet-open');
+    if (!panelOpen && body.classList.contains('raja-config-open')) {
+      body.classList.remove('raja-config-open');
+      backdrop?.classList.remove('visible');
+      backdrop?.setAttribute('aria-hidden', 'true');
+      window.scrollTo(0, 0);
+    }
+
+    if (panelOpen) {
+      body.classList.add('raja-config-open');
+      backdrop?.classList.add('visible');
+      backdrop?.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  window.addEventListener('pageshow', recoverMobileSheetState);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) setTimeout(recoverMobileSheetState, 0);
+  });
+  window.addEventListener('resize', recoverMobileSheetState, { passive:true });
+})();
+</script>
 
 </body>
 <!-- RAJA UI BROKER-PAIR-LAUNCH V1 · AUDNZD SKIP · HISTORY WINLOSS · 2026-08-28 -->
