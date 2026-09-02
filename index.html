@@ -16013,6 +16013,33 @@ window.RAJA_ENTRY_TIMING_VERSION='V38_PREP_ENTRY_COUNTDOWN';
 })();
 </script>
 
+<style id="raja-v41-mobile-market-actions-flow-fix">
+/* V41 · Keep the Market Setup actions in normal document flow.
+   The older sticky footer covered the expiry buttons on short phone screens. */
+@media (max-width:820px) {
+  #mainAppContent .config-panel.raja-mobile-sheet-open {
+    padding-bottom:calc(14px + env(safe-area-inset-bottom)) !important;
+    scroll-padding-bottom:calc(14px + env(safe-area-inset-bottom)) !important;
+  }
+
+  #mainAppContent .config-panel.raja-mobile-sheet-open .raja-mobile-sheet-inline-actions {
+    position:static !important;
+    inset:auto !important;
+    bottom:auto !important;
+    z-index:auto !important;
+    width:100% !important;
+    margin:12px 0 2px !important;
+    transform:none !important;
+  }
+
+  #mainAppContent .config-panel.raja-mobile-sheet-open .expiry-wide {
+    position:relative !important;
+    z-index:1 !important;
+    margin-bottom:0 !important;
+  }
+}
+</style>
+
 </body>
 <!-- RAJA UI BROKER-PAIR-LAUNCH V1 · AUDNZD SKIP · HISTORY WINLOSS · 2026-08-28 -->
 <!-- RAJA STRONG SIGNAL FEED V1 · TOP4 POWER · AUTO BUTTON RESTORED · 2026-08-28 -->
