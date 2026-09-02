@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v42-mobile-market-actions-flow';
+const CACHE_VERSION = 'raja-ai-pwa-v43-front-broker-pair';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -43,7 +43,10 @@ self.addEventListener('install', event => {
         });
 
         if (response?.ok) {
-          await cache.put(url, response.clone());
+          await cache.put(
+            url,
+            response.clone()
+          );
         }
       })
     );
