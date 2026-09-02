@@ -12646,6 +12646,14 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             try { syncMobilePairListbox(); } catch (_) {}
 
             if (nextOpen) {
+                // Keep the actual trading controls at the front of the mobile sheet.
+                // Older builds placed the navigation hub before these fields, which
+                // made Broker and Pair look missing on shorter Android screens.
+                const grid = panel.querySelector('.config-grid');
+                const hub = panel.querySelector('.mobile-hub-grid');
+                if (grid && hub && grid.nextElementSibling !== hub) {
+                    panel.insertBefore(grid, hub);
+                }
                 // Always open at the top. Use direct scrollTop as Android Chrome can ignore
                 // smooth scroll on a newly-created fixed overflow container.
                 panel.scrollTop = 0;
@@ -15881,6 +15889,98 @@ window.RAJA_ENTRY_TIMING_VERSION='V38_PREP_ENTRY_COUNTDOWN';
   }
   #mainAppContent .config-panel.raja-mobile-sheet-open .raja-mobile-sheet-inline-actions {
     bottom:calc(-10px + env(safe-area-inset-bottom)) !important;
+  }
+}
+</style>
+
+<style id="raja-v39-mobile-broker-pair-front-fix">
+/* V39 · Keep Broker and Pair visible first in the mobile Market Setup sheet. */
+@media (max-width:820px) {
+  #mainAppContent .config-panel.raja-mobile-sheet-open {
+    display:flex !important;
+    flex-direction:column !important;
+    height:calc(100dvh - 12px) !important;
+    padding:0 10px calc(76px + env(safe-area-inset-bottom)) !important;
+    overflow-y:auto !important;
+    scroll-padding-top:58px;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .raja-mobile-sheet-head {
+    order:-20;
+    top:0 !important;
+    margin:0 -10px 10px !important;
+    flex:0 0 auto;
+    border-radius:15px 15px 0 0;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .config-title { display:none !important; }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .config-grid {
+    order:-10;
+    display:block !important;
+    flex:0 0 auto;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .selection-card::before {
+    content:"BROKER & PAIR SETUP";
+    display:block;
+    margin:1px 0 8px;
+    color:#60efff;
+    font-size:11px;
+    line-height:1.2;
+    font-weight:950;
+    letter-spacing:.7px;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .selection-card {
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    gap:8px;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .config-field {
+    min-width:0;
+    margin:0 !important;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .config-field:first-child {
+    grid-column:1 / -1;
+    padding:9px !important;
+    border:1px solid rgba(0,255,154,.48);
+    border-radius:12px;
+    background:linear-gradient(135deg,rgba(0,255,154,.12),rgba(0,174,255,.08));
+    box-shadow:0 0 18px rgba(0,255,154,.07);
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .config-field:first-child label::after {
+    content:" · CHOOSE FIRST";
+    color:#00ff9a;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open #brokerSelect {
+    min-height:48px !important;
+    border-color:rgba(0,255,154,.55) !important;
+    color:#fff !important;
+    font-size:14px !important;
+    font-weight:900 !important;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .pair-search-field {
+    grid-column:1 / -1;
+    margin:0 !important;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open #pairSelect {
+    min-height:126px !important;
+    max-height:25dvh !important;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .mode-panel,
+  #mainAppContent .config-panel.raja-mobile-sheet-open .expiry-wide,
+  #mainAppContent .config-panel.raja-mobile-sheet-open .utility-grid,
+  #mainAppContent .config-panel.raja-mobile-sheet-open .raja-mobile-sheet-inline-actions {
+    grid-column:1 / -1;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .mobile-hub-grid {
+    order:10;
+    margin-top:10px;
+  }
+}
+@media (max-width:390px) {
+  #mainAppContent .config-panel.raja-mobile-sheet-open .selection-card {
+    grid-template-columns:1fr;
+  }
+  #mainAppContent .config-panel.raja-mobile-sheet-open .config-field,
+  #mainAppContent .config-panel.raja-mobile-sheet-open .pair-search-field {
+    grid-column:1 !important;
   }
 }
 </style>
