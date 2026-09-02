@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v40-live-screen-scanner';
+const CACHE_VERSION = 'raja-ai-pwa-v41-mobile-market-setup';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
