@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v42-mobile-market-actions-flow';
+const CACHE_VERSION = 'raja-ai-pwa-v45-chrome-opera-fix';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -60,11 +60,16 @@ self.addEventListener('activate', event => {
     const keys = await caches.keys();
 
     await Promise.all(
-      keys.map(key =>
-        /^raja-ai-pwa-/i.test(key) && !keep.has(key)
-          ? caches.delete(key)
-          : Promise.resolve(false)
-      )
+      keys.map(key => {
+        if (
+          /^raja-ai-pwa-/i.test(key) &&
+          !keep.has(key)
+        ) {
+          return caches.delete(key);
+        }
+
+        return Promise.resolve(false);
+      })
     );
 
     await self.clients.claim();
@@ -81,11 +86,12 @@ self.addEventListener('message', event => {
 });
 
 function isApiPath(pathname) {
-  return API_PREFIXES.some(
-    prefix =>
+  return API_PREFIXES.some(prefix => {
+    return (
       pathname === prefix ||
       pathname.startsWith(prefix)
-  );
+    );
+  });
 }
 
 function offlineJson() {
@@ -93,7 +99,8 @@ function offlineJson() {
     JSON.stringify({
       status: 'error',
       offline: true,
-      message: 'RAJA AI backend is waking or temporarily offline.'
+      message:
+        'RAJA AI backend is waking or temporarily offline.'
     }),
     {
       status: 503,
@@ -112,7 +119,9 @@ async function networkFirstNavigation(request) {
 
   if (pathname.startsWith('/live-scanner')) {
     shellKey = '/live-scanner';
-  } else if (pathname.startsWith('/chart-scanner')) {
+  } else if (
+    pathname.startsWith('/chart-scanner')
+  ) {
     shellKey = '/chart-scanner';
   }
 
@@ -183,7 +192,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(request, {
         cache: 'no-store'
-      }).catch(offlineJson)
+      }).catch(() => offlineJson())
     );
     return;
   }
