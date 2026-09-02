@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v43-front-broker-pair';
+const CACHE_VERSION = 'raja-ai-pwa-v44-clean-settings-sheet';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
