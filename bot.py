@@ -3260,6 +3260,235 @@ def _movement_info(df):
     return {"label":label,"percent":round(pct,5)}
 
 
+# =========================================================
+# PRE-SCAN MARKET HEALTH TEST
+# Recent closed-candle structure + rolling SK25 replay. This is a market-fitness
+# gate, not a guaranteed win-rate predictor and it never places an order.
+# =========================================================
+MARKET_HEALTH_VERSION = "RAJA_MARKET_HEALTH_V1"
+MARKET_HEALTH_LOOKBACK = max(40, min(120, int(os.environ.get("RAJA_MARKET_HEALTH_LOOKBACK", "80"))))
+MARKET_HEALTH_REPLAY_STEPS = max(12, min(40, int(os.environ.get("RAJA_MARKET_HEALTH_REPLAY_STEPS", "28"))))
+
+
+def _safe_pct(num, den):
+    try:
+        den = abs(float(den))
+        return float(num) / den * 100.0 if den > 1e-12 else 0.0
+    except Exception:
+        return 0.0
+
+
+def _market_health_structure(tf_df):
+    """Return indicator-free structure diagnostics from closed OHLC candles only."""
+    frame = tf_df.tail(MARKET_HEALTH_LOOKBACK).copy()
+    ranges_pct, body_ratios, closes, dirs = [], [], [], []
+    for _, row in frame.iterrows():
+        o = _f(row.get("Open"), 0.0); h = _f(row.get("High"), 0.0)
+        l = _f(row.get("Low"), 0.0); c = _f(row.get("Close"), 0.0)
+        mid = max(1e-12, abs((o + c) / 2.0))
+        rng = max(0.0, h - l)
+        ranges_pct.append(rng / mid * 100.0)
+        body_ratios.append(abs(c - o) / max(rng, 1e-12))
+        closes.append(c)
+        dirs.append(1 if c > o else (-1 if c < o else 0))
+
+    med_range = _median(ranges_pct, 0.0)
+    spike_rate = (sum(1 for x in ranges_pct if med_range > 0 and x > med_range * 3.5) / max(1, len(ranges_pct))) * 100.0
+    dead_rate = (sum(1 for x in ranges_pct if med_range > 0 and x < med_range * 0.22) / max(1, len(ranges_pct))) * 100.0
+    doji_rate = (sum(1 for x in body_ratios if x < 0.15) / max(1, len(body_ratios))) * 100.0
+
+    active_dirs = [d for d in dirs if d]
+    flips = sum(1 for a, b in zip(active_dirs, active_dirs[1:]) if a != b)
+    flip_rate = flips / max(1, len(active_dirs) - 1) * 100.0
+
+    path = 0.0
+    for a, b in zip(closes, closes[1:]):
+        path += abs(b - a)
+    efficiency = abs(closes[-1] - closes[0]) / max(path, 1e-12) * 100.0 if len(closes) >= 2 else 0.0
+
+    score = 100.0
+    reasons, warnings = [], []
+    if med_range <= 0.0015:
+        score -= 48; reasons.append("Recent candles are nearly flat / inactive.")
+    elif med_range < 0.008:
+        score -= 14; warnings.append("Movement is very quiet; entries may have weak follow-through.")
+
+    if flip_rate >= 78:
+        score -= 28; reasons.append("Very high candle-direction flip rate: market is choppy.")
+    elif flip_rate >= 68:
+        score -= 16; warnings.append("Direction changes frequently; use selective entries only.")
+    elif flip_rate >= 58:
+        score -= 7
+
+    if spike_rate >= 18:
+        score -= 24; reasons.append("Too many abnormal range spikes were detected.")
+    elif spike_rate >= 10:
+        score -= 12; warnings.append("Recent volatility contains repeated spikes.")
+
+    if doji_rate >= 45:
+        score -= 18; reasons.append("Too many indecision/small-body candles.")
+    elif doji_rate >= 32:
+        score -= 8; warnings.append("Indecision candles are elevated.")
+
+    if dead_rate >= 35:
+        score -= 14; warnings.append("Many candles have unusually small ranges.")
+
+    if efficiency < 7 and flip_rate > 58:
+        score -= 14; reasons.append("Price is moving without clean directional efficiency.")
+    elif efficiency < 12 and flip_rate > 52:
+        score -= 7
+
+    return {
+        "score": max(0.0, min(100.0, score)),
+        "median_range_pct": round(med_range, 5),
+        "flip_rate_pct": round(flip_rate, 1),
+        "spike_rate_pct": round(spike_rate, 1),
+        "doji_rate_pct": round(doji_rate, 1),
+        "dead_candle_rate_pct": round(dead_rate, 1),
+        "directional_efficiency_pct": round(efficiency, 1),
+        "reasons": reasons,
+        "warnings": warnings,
+    }
+
+
+def _market_health_sk25_replay(tf_df, timeframe, market_name):
+    """Replay recent closed candles: each prefix predicts the next already-closed candle."""
+    frame = tf_df.tail(max(45, MARKET_HEALTH_REPLAY_STEPS + 24)).copy()
+    n = len(frame)
+    if n < 22:
+        return {"sample_size": 0, "wins": 0, "losses": 0, "draws": 0, "win_rate": None, "status": "LEARNING", "patterns": {}}
+
+    start = max(20, n - MARKET_HEALTH_REPLAY_STEPS - 1)
+    wins = losses = draws = 0
+    patterns = Counter()
+    last_outcome = ""
+    for next_pos in range(start, n):
+        prefix = frame.iloc[:next_pos]
+        if len(prefix) < SK25_LIVE_MIN_CANDLES:
+            continue
+        try:
+            setup = analyze_sk25_ohlc(prefix, timeframe, market_name, last_outcome)
+        except Exception:
+            continue
+        signal = str(setup.get("signal") or "").upper()
+        if signal not in {"CALL", "PUT"}:
+            continue
+        nxt = frame.iloc[next_pos]
+        o = _f(nxt.get("Open"), 0.0); c = _f(nxt.get("Close"), 0.0)
+        if c == o:
+            result = "DRAW"; draws += 1
+        elif (signal == "CALL" and c > o) or (signal == "PUT" and c < o):
+            result = "WIN"; wins += 1
+        else:
+            result = "LOSS"; losses += 1
+        last_outcome = result if result in {"WIN", "LOSS"} else last_outcome
+        ptype = int(setup.get("pattern_type") or 0)
+        if ptype:
+            patterns[str(ptype)] += 1
+
+    decided = wins + losses
+    win_rate = round(wins / decided * 100.0, 1) if decided else None
+    if decided >= 8:
+        status = "STRONG SAMPLE"
+    elif decided >= 4:
+        status = "USABLE SAMPLE"
+    else:
+        status = "LEARNING"
+    return {
+        "sample_size": decided,
+        "wins": wins,
+        "losses": losses,
+        "draws": draws,
+        "win_rate": win_rate,
+        "status": status,
+        "patterns": dict(patterns.most_common(6)),
+    }
+
+
+def calculate_market_health(pair, selected_expiry=None, bridge_user=None, broker=None):
+    """Pre-scan gate for one pair. Uses only closed OHLC structure + SK25 rolling replay."""
+    tf = str(selected_expiry or "1m").strip().lower()
+    base = {
+        "pair": pair, "selected_expiry": tf, "health_version": MARKET_HEALTH_VERSION,
+        "tradeable": False, "grade": "BAD", "status": "BAD", "score": 0.0,
+        "reason": "Market health could not be verified.", "backtest_is_guarantee": False,
+    }
+    if tf not in TIMEFRAMES:
+        base["reason"] = f"{tf} is not available for live market-health testing."
+        return base
+
+    base_df, data_age, symbol, source_info = get_market_data(pair, bridge_user=bridge_user, broker=broker)
+    base.update({
+        "source": (source_info or {}).get("source") or "Unknown",
+        "source_mode": (source_info or {}).get("source_mode") or "",
+        "provider_symbol": (source_info or {}).get("provider_symbol") or symbol,
+        "data_age_seconds": round(float(data_age), 2) if data_age is not None else None,
+    })
+    if base_df is None or getattr(base_df, "empty", True):
+        base["reason"] = (source_info or {}).get("unavailable_reason") or "No market data is available for the health test."
+        return base
+    if data_age is not None and float(data_age) > MAX_SOURCE_CANDLE_AGE_SECONDS:
+        base.update({"reason": f"Market data is stale ({format_market_data_age(data_age)} old).", "stale": True})
+        return base
+
+    tf_df = build_timeframe(base_df, TIMEFRAMES[tf])
+    if tf_df is None or getattr(tf_df, "empty", True) or len(tf_df) < 25:
+        base["reason"] = f"Only {0 if tf_df is None else len(tf_df)} closed {tf} candles are available; at least 25 are required."
+        return base
+
+    structure = _market_health_structure(tf_df)
+    market_name = "OTC" if "(OTC)" in str(pair).upper() else "LIVE"
+    replay = _market_health_sk25_replay(tf_df, tf, market_name)
+    score = float(structure["score"])
+    sample = int(replay.get("sample_size") or 0)
+    wr = replay.get("win_rate")
+    notes = list(structure.get("reasons") or [])
+    warnings = list(structure.get("warnings") or [])
+
+    if sample >= 4 and wr is not None:
+        score += max(-18.0, min(18.0, (float(wr) - 50.0) * 0.45))
+        if wr < 45:
+            notes.append(f"Recent SK25 replay is weak: {wr:.0f}% over {sample} decided setups.")
+        elif wr >= 62:
+            warnings.append(f"Recent SK25 replay is supportive: {wr:.0f}% over {sample} decided setups (not a guarantee).")
+    elif sample == 0:
+        score -= 7.0
+        warnings.append("No exact SK25 setup occurred in the recent replay window; market may be inactive for this strategy set.")
+    else:
+        warnings.append(f"Only {sample} recent SK25 replay setups were available; backtest sample is still small.")
+
+    score = round(max(0.0, min(100.0, score)), 1)
+    if score >= 70:
+        grade, tradeable = "GOOD", True
+        headline = "GOOD MARKET — TRADEABLE"
+    elif score >= 50:
+        grade, tradeable = "CAUTION", True
+        headline = "CAUTION — SELECTIVE TRADES ONLY"
+    else:
+        grade, tradeable = "BAD", False
+        headline = "BAD MARKET — DO NOT TRADE"
+
+    if grade == "BAD" and not notes:
+        notes.append("Combined structure and recent SK25 replay score is below the safe pre-scan threshold.")
+
+    base.update({
+        "tradeable": tradeable,
+        "grade": grade,
+        "status": grade,
+        "headline": headline,
+        "score": score,
+        "closed_candles_tested": min(len(tf_df), MARKET_HEALTH_LOOKBACK),
+        "structure": structure,
+        "backtest": replay,
+        "reason": " ".join(notes[:4]) if notes else "Recent closed-candle structure passed the pre-scan health gate.",
+        "warnings": warnings[:5],
+        "forming_candle_excluded": True,
+        "method": "Closed-candle structure + rolling SK25 next-candle replay",
+        "backtest_is_guarantee": False,
+    })
+    return base
+
+
 def calculate_live_strategy_signal(pair, selected_expiry=None, scan_options=None, bridge_user=None, broker=None):
     """Single-pair strategy-only scan. One selected timeframe; exact SK25 match or NO SIGNAL."""
     opts=normalize_scan_options(scan_options)
@@ -6485,6 +6714,75 @@ def side_auto_signals():
             "elapsed_seconds": round(time.time() - started, 2),
             "scan_mode": opts["mode"],
         },
+    })
+
+
+@app.route("/market-health", methods=["POST"])
+def market_health_test():
+    data = request.get_json(silent=True) or {}
+    auth, error = _auth_session(data)
+    if error: return error
+
+    maintenance = scan_maintenance_state()
+    if maintenance:
+        return jsonify({"status":"error","maintenance":True,"message":maintenance.get("maintenance_message") or "RAJA AI scans are temporarily paused."}), 503
+
+    raw_pairs = data.get("pairs")
+    if not isinstance(raw_pairs, list):
+        single = str(data.get("pair") or "").strip()
+        raw_pairs = [single] if single else []
+    tf = str(data.get("expiry") or "1m").strip().lower()
+    broker = str(data.get("broker") or "").strip()[:80]
+    market = str(data.get("market") or "Unknown")[:80]
+    broker_key = broker.casefold().replace(" ", "")
+    broker_is_native = broker_key in {"quotex","pocketoption","pocket_option","pocket"}
+
+    pairs, seen = [], set()
+    for raw in raw_pairs[:40]:
+        pair = str(raw or "").strip()
+        supported = pair in YAHOO_SYMBOLS or (broker_is_native and "(otc)" in pair.casefold())
+        if pair and supported and raja_pair_allowed_for_broker(broker, pair) and pair not in seen:
+            pairs.append(pair); seen.add(pair)
+    if not pairs:
+        return jsonify({"status":"error","message":"No supported pairs were supplied for market health testing."}), 400
+
+    started = time.time()
+    workers = min(max(1, BATCH_SCAN_WORKERS), len(pairs))
+    results_by_pair = {}
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="raja-health")
+    future_map = {pool.submit(calculate_market_health, pair, tf, auth["user"], broker): pair for pair in pairs}
+    done, pending = wait(future_map.keys(), timeout=min(BATCH_SCAN_DEADLINE_SECONDS, 70.0))
+    for fut in done:
+        pair = future_map[fut]
+        try:
+            results_by_pair[pair] = fut.result()
+        except Exception as exc:
+            results_by_pair[pair] = {"pair":pair,"selected_expiry":tf,"grade":"BAD","status":"BAD","score":0.0,"tradeable":False,"reason":f"Market health worker failed: {type(exc).__name__}."}
+    timed_out = []
+    for fut in pending:
+        pair = future_map[fut]; timed_out.append(pair); fut.cancel()
+        results_by_pair[pair] = {"pair":pair,"selected_expiry":tf,"grade":"BAD","status":"BAD","score":0.0,"tradeable":False,"reason":"Market health test timed out; pair was blocked conservatively."}
+    pool.shutdown(wait=False, cancel_futures=True)
+
+    rows = [results_by_pair[p] for p in pairs]
+    good = sum(1 for r in rows if r.get("grade") == "GOOD")
+    caution = sum(1 for r in rows if r.get("grade") == "CAUTION")
+    bad = len(rows) - good - caution
+    allowed_pairs = [r.get("pair") for r in rows if r.get("tradeable")]
+    summary_score = round(sum(float(r.get("score") or 0.0) for r in rows) / max(1, len(rows)), 1)
+    summary_grade = "GOOD" if good and bad == 0 and summary_score >= 70 else ("CAUTION" if allowed_pairs else "BAD")
+
+    return jsonify({
+        "status":"success",
+        "data":rows,
+        "summary":{
+            "market":market,"expiry":tf,"grade":summary_grade,"score":summary_score,
+            "total_pairs":len(rows),"good_pairs":good,"caution_pairs":caution,"bad_pairs":bad,
+            "tradeable_pairs":allowed_pairs,"blocked_pairs":[r.get("pair") for r in rows if not r.get("tradeable")],
+            "timed_out_pairs":timed_out,"elapsed_seconds":round(time.time()-started,2),
+            "method":"Closed-candle structure + rolling SK25 next-candle replay",
+            "backtest_is_guarantee":False,
+        }
     })
 
 
