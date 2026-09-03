@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v46-market-health';
+const CACHE_VERSION = 'raja-ai-pwa-v47-market-health-front';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
