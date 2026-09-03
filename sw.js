@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'raja-ai-pwa-v45-chrome-opera-fix';
+const CACHE_VERSION = 'raja-ai-pwa-v46-market-health';
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 
@@ -19,6 +19,7 @@ const API_PREFIXES = [
   '/track-signal',
   '/scan',
   '/scan-batch',
+  '/market-health',
   '/batch-scan',
   '/side-auto-signals',
   '/chart-scan',
