@@ -353,6 +353,11 @@
         .raja-side-signal-card.raja-broker-clickable:hover{transform:translateY(-1px);border-color:rgba(96,239,255,.48)}
         @media(max-width:700px){.raja-history-performance{grid-template-columns:1fr 1fr}.raja-broker-open-btn{font-size:9px;min-height:42px}}
 
+
+        .market-health-card{margin:10px 0 4px;padding:10px;border:1px solid rgba(96,239,255,.24);border-radius:12px;background:linear-gradient(180deg,rgba(4,13,25,.94),rgba(2,7,15,.98));box-shadow:0 8px 22px rgba(0,0,0,.2)}
+        .market-health-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px}.market-health-head strong{font-size:10px;color:#60efff;letter-spacing:.5px}.market-health-grade{font-size:9px;font-weight:950;padding:4px 7px;border-radius:999px;border:1px solid rgba(148,163,184,.35);color:#cbd5e1}.market-health-grade.good{color:#8dffc4;border-color:rgba(0,255,135,.45);background:rgba(0,255,135,.07)}.market-health-grade.caution{color:#ffe59a;border-color:rgba(246,200,95,.48);background:rgba(246,200,95,.07)}.market-health-grade.bad{color:#ff9aae;border-color:rgba(255,66,106,.5);background:rgba(255,66,106,.07)}
+        .market-health-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:7px}.market-health-metric{padding:6px;border-radius:8px;background:#040a13;border:1px solid rgba(96,239,255,.12);text-align:center;min-width:0}.market-health-metric small{display:block;color:#7892a8;font-size:7px;font-weight:800}.market-health-metric b{display:block;color:#fff;font-size:9px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.market-health-copy{font-size:8.5px;line-height:1.45;color:#b9c9d6;margin-top:7px}.market-health-test-btn{width:100%;margin-top:8px;min-height:36px;border-radius:9px;border:1px solid rgba(96,239,255,.38);background:rgba(96,239,255,.08);color:#bff8ff;font-weight:950;font-size:9px;cursor:pointer}.market-health-test-btn:disabled{opacity:.55;cursor:not-allowed}
+        @media(max-width:520px){.market-health-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>
 
     <style id="raja-dashboard-v5">
@@ -7048,6 +7053,17 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button><button class="utility-btn" type="button" onclick="location.href='/live-scanner'">🎥 Live Scanner</button><button class="utility-btn" type="button" onclick="location.href='/chart-scanner'">📷 Chart Scanner</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
                         </div>
+                        <section id="marketHealthPanel" class="market-health-card" aria-live="polite">
+                            <div class="market-health-head"><strong>🧪 PRE-SCAN MARKET HEALTH TEST</strong><span id="marketHealthGrade" class="market-health-grade">NOT TESTED</span></div>
+                            <div class="market-health-grid">
+                                <div class="market-health-metric"><small>HEALTH SCORE</small><b id="marketHealthScore">-- / 100</b></div>
+                                <div class="market-health-metric"><small>SK25 REPLAY</small><b id="marketHealthReplay">--</b></div>
+                                <div class="market-health-metric"><small>CHOP / FLIPS</small><b id="marketHealthChop">--</b></div>
+                                <div class="market-health-metric"><small>SPIKES</small><b id="marketHealthSpikes">--</b></div>
+                            </div>
+                            <div id="marketHealthCopy" class="market-health-copy">Test the selected pair/market before scanning. RAJA uses recent closed-candle structure plus a rolling SK25 next-candle replay. It is a fitness filter, not a guaranteed win-rate predictor.</div>
+                            <button id="marketHealthTestBtn" class="market-health-test-btn" type="button" onclick="playClickSound(); runMarketHealthTest(true)">🧪 TEST MARKET BEFORE SCAN</button>
+                        </section>
                         <div class="v32-scan-action-row raja-three-actions">
                         <button id="rajaAutoBestPairBtn" class="raja-auto-best-btn" type="button" onclick="playClickSound(); runAutoBestPairNow()">✨ AUTO SCAN BEST PAIR · KEEP SEARCHING</button>
                         <button id="scanBtn" class="scan-btn" type="button" onclick="playClickSound(); startDeepScan(false)">▶ START AI MARKET SCAN</button>
@@ -9957,6 +9973,69 @@ body:not(.raja-authenticated).raja-mobile-scanning {
         }
 
 
+
+        let rajaLatestMarketHealth = null;
+
+        function renderMarketHealthReport(payload) {
+            const gradeEl=document.getElementById('marketHealthGrade'), scoreEl=document.getElementById('marketHealthScore');
+            const replayEl=document.getElementById('marketHealthReplay'), chopEl=document.getElementById('marketHealthChop');
+            const spikesEl=document.getElementById('marketHealthSpikes'), copyEl=document.getElementById('marketHealthCopy');
+            if(!payload || !Array.isArray(payload.data) || !payload.data.length) return;
+            rajaLatestMarketHealth=payload;
+            const rows=payload.data, summary=payload.summary||{};
+            let focus=rows.length===1?rows[0]:null;
+            const grade=String(focus?.grade||summary.grade||'BAD').toUpperCase();
+            if(gradeEl){gradeEl.className='market-health-grade '+grade.toLowerCase();gradeEl.textContent=focus?.headline||`${grade} MARKET`;}
+            if(scoreEl)scoreEl.textContent=`${Number(focus?.score??summary.score??0).toFixed(0)} / 100`;
+            if(focus){
+                const bt=focus.backtest||{}, st=focus.structure||{};
+                if(replayEl)replayEl.textContent=Number(bt.sample_size||0)?`${Number(bt.win_rate||0).toFixed(0)}% · n=${Number(bt.sample_size||0)}`:'LEARNING';
+                if(chopEl)chopEl.textContent=`${Number(st.flip_rate_pct||0).toFixed(0)}% flips`;
+                if(spikesEl)spikesEl.textContent=`${Number(st.spike_rate_pct||0).toFixed(0)}%`;
+                if(copyEl){const warning=Array.isArray(focus.warnings)&&focus.warnings.length?` ${focus.warnings[0]}`:'';copyEl.textContent=`${focus.pair} · ${focus.selected_expiry}: ${focus.reason||focus.headline||grade}.${warning}`;}
+            }else{
+                if(replayEl)replayEl.textContent=`${Number(summary.good_pairs||0)} good · ${Number(summary.caution_pairs||0)} caution`;
+                if(chopEl)chopEl.textContent=`${Number(summary.bad_pairs||0)} blocked`;
+                if(spikesEl)spikesEl.textContent=`${Number(summary.tradeable_pairs?.length||0)}/${Number(summary.total_pairs||0)} pass`;
+                if(copyEl)copyEl.textContent=`Full-market pre-test: ${Number(summary.good_pairs||0)} GOOD, ${Number(summary.caution_pairs||0)} CAUTION, ${Number(summary.bad_pairs||0)} BAD. Only GOOD/CAUTION pairs continue to strategy scan.`;
+            }
+        }
+
+        async function requestMarketHealth(pairs) {
+            const list=(Array.isArray(pairs)?pairs:[]).filter(Boolean);
+            if(!list.length) throw new Error('No pair is selected for market health testing.');
+            const controller=new AbortController();
+            const timeoutId=setTimeout(()=>controller.abort(),75000);
+            try{
+                const response=await fetch('/market-health',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pairs:list,expiry:selectedExpiry,market:document.getElementById('marketType')?.value||'',broker:document.getElementById('brokerSelect')?.value||'Quotex',client_id:deviceSessionId,...getAuthPayload()}),signal:controller.signal});
+                const result=await response.json().catch(()=>null);
+                if(!response.ok||!result||result.status!=='success'||!Array.isArray(result.data))throw new Error((result&&result.message)||`Market health test failed: ${response.status}`);
+                renderMarketHealthReport(result);
+                return result;
+            }catch(error){
+                if(error?.name==='AbortError')throw new Error('Market health test timed out. No scan was started.');
+                throw error;
+            }finally{clearTimeout(timeoutId);}
+        }
+
+        async function runMarketHealthTest(manual=true) {
+            const btn=document.getElementById('marketHealthTestBtn'), grade=document.getElementById('marketHealthGrade'), copy=document.getElementById('marketHealthCopy');
+            const broker=document.getElementById('brokerSelect')?.value||'Quotex', market=document.getElementById('marketType')?.value||'';
+            const selected=document.getElementById('pairSelect')?.value||'';
+            const auto=selected.includes('Auto Scan')||selected==='';
+            const pairs=auto?(brokerData?.[broker]?.[market]||[]).slice(1).filter(Boolean):[selected];
+            if(btn){btn.disabled=true;btn.textContent='🧪 TESTING CLOSED CANDLES...';}
+            if(grade){grade.className='market-health-grade';grade.textContent='TESTING';}
+            if(copy)copy.textContent=`Testing ${pairs.length} ${pairs.length===1?'pair':'pairs'} on ${selectedExpiry} closed candles before strategy scan...`;
+            try{return await requestMarketHealth(pairs);}
+            catch(error){
+                if(grade){grade.className='market-health-grade bad';grade.textContent='TEST FAILED';}
+                if(copy)copy.textContent=error?.message||'Market health test failed.';
+                if(manual) alert('⚠️ '+(error?.message||'Market health test failed.'));
+                return null;
+            }finally{if(btn){btn.disabled=false;btn.textContent='🧪 TEST MARKET BEFORE SCAN';}}
+        }
+
         async function scanPairFromBackend(pair) {
             const maxAttempts = 2;
             let lastError = null;
@@ -10444,6 +10523,47 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                 }
             } else {
                 eligiblePairs = [selectedPair];
+            }
+
+            // PRE-SCAN MARKET HEALTH GATE: test closed-candle fitness before any SK25 signal scan.
+            const healthGradeEl = document.getElementById('marketHealthGrade');
+            const healthCopyEl = document.getElementById('marketHealthCopy');
+            if (healthGradeEl) { healthGradeEl.className='market-health-grade'; healthGradeEl.textContent='TESTING'; }
+            if (healthCopyEl) healthCopyEl.textContent=`Pre-testing ${eligiblePairs.length} pair(s) on ${selectedExpiry} closed candles...`;
+            if (scanStepEarly) scanStepEarly.innerText = 'Pre-scan market health test: structure + recent SK25 replay...';
+            let marketHealthPayload = null;
+            try {
+                marketHealthPayload = await requestMarketHealth(eligiblePairs);
+            } catch (healthError) {
+                completeScanSession('error');
+                rajaScanStartPending = false;
+                if (existingScanBtn) { existingScanBtn.disabled=false; existingScanBtn.innerText='↻ TEST / SCAN AGAIN'; }
+                showRajaNoTradeView('⚠️ MARKET TEST FAILED — SCAN BLOCKED', healthError?.message || 'RAJA could not verify current market health, so no strategy scan was started.');
+                return;
+            }
+
+            const healthRows = Array.isArray(marketHealthPayload?.data) ? marketHealthPayload.data : [];
+            if (isAutoScan) {
+                const allowed = new Set(healthRows.filter(row => row && row.tradeable).map(row => String(row.pair||'')));
+                eligiblePairs = eligiblePairs.filter(pair => allowed.has(String(pair)));
+                if (!eligiblePairs.length) {
+                    completeScanSession('nosignal');
+                    rajaScanStartPending = false;
+                    if (existingScanBtn) { existingScanBtn.disabled=false; existingScanBtn.innerText='↻ TEST / SCAN AGAIN'; }
+                    showRajaNoTradeView('🔴 BAD MARKET — SCAN BLOCKED', 'Pre-scan Market Health Test found no GOOD/CAUTION pair in this market. Wait for cleaner conditions or change market/timeframe.');
+                    return;
+                }
+                if (scanConsoleEarly) scanConsoleEarly.innerHTML += `<div class="live-scan-row scanning">🧪 Market Test PASS: ${eligiblePairs.length}/${healthRows.length} pairs allowed · BAD pairs skipped.</div>`;
+            } else {
+                const row = healthRows[0];
+                if (!row || !row.tradeable) {
+                    completeScanSession('nosignal');
+                    rajaScanStartPending = false;
+                    if (existingScanBtn) { existingScanBtn.disabled=false; existingScanBtn.innerText='↻ TEST / SCAN AGAIN'; }
+                    showRajaNoTradeView('🔴 BAD MARKET — DO NOT TRADE', row?.reason || 'This pair did not pass the pre-scan market health gate.');
+                    return;
+                }
+                if (scanConsoleEarly) scanConsoleEarly.innerHTML += `<div class="live-scan-row scanning">🧪 Market Test ${escapeHtml(row.grade||'PASS')} · ${Number(row.score||0).toFixed(0)}/100 · strategy scan unlocked.</div>`;
             }
 
             // Keep the instant session start time; only promote it to the
