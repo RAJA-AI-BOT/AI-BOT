@@ -30,15 +30,15 @@
   <div id="signalBannerClock" class="clock"></div>
 </div>
 <div class="app">
-  <div class="top"><a class="back" href="/">← RAJA AI HOME</a><span class="pill">V45 · SMART AUTO DETECT · SK25</span></div>
-  <section class="card">
+  <div class="top"><a class="back" id="homeBtn" href="/index.html" onclick="window.location.replace(window.location.origin + '/index.html?home=1'); return false;">← RAJA AI HOME</a><span class="pill">V45 · SMART AUTO DETECT · SK25</span></div>
+  <section class="card" id="scannerIntroCard">
     <h1>🎥 RAJA Live Screen Scanner</h1>
     <p>Auto-detects Quotex/Pocket Option, LIVE/OTC market and selected pair from Screen Share, Live Camera or Screenshot; continuously protects the chart crop with auto recalibration; shows a live signal-quality HUD; and scans Pattern Type 1-25 at each selected candle boundary.</p>
     <div class="compat" id="compat"></div>
     <div class="notice">For trade integrity, forming-candle frames are WATCH only. A directional entry can be armed only from the boundary frame after the candle closes. Mobile fallback: Live Camera and Screenshot detection work when the broker header/pair is visible and readable. Confirmed CALL says “BUY NOW”; confirmed PUT says “SELL NOW”. Android-compatible vibration is used when supported.</div>
   </section>
 
-  <section class="card">
+  <section class="card" id="scannerControlsCard">
     <div class="grid">
       <div><label>Broker</label><select id="broker"><option>Quotex</option><option>Pocket Option</option></select></div>
       <div><label>Market</label><select id="market"><option value="OTC" selected>OTC</option><option value="LIVE">LIVE</option></select></div>
@@ -114,6 +114,30 @@
     <div id="preview" class="preview"><img id="previewImg" alt="Last scanned chart frame"></div>
   </section>
 
+
+  <section id="v47CompactWatch" class="card v47-watch-card" aria-label="RAJA live watch compact panel">
+    <div class="v47-watch-top">
+      <div class="v47-watch-brand"><span class="v47-eye">◉</span><div><b>LIVE WATCH</b><small>Screen Scanner Active</small></div></div>
+      <div class="v47-mini"><small>DETECTED PAIR</small><strong id="v47Pair">--</strong><em>from active chart (main area)</em></div>
+      <div class="v47-mini"><small>TIMEFRAME</small><strong id="v47Tf">--</strong></div>
+      <div class="v47-mini"><small>CHART</small><strong id="v47Chart">WAIT</strong></div>
+      <div class="v47-mini"><small>CANDLES</small><strong id="v47Candles">--</strong></div>
+      <div class="v47-mini"><small>QUALITY</small><strong id="v47Quality">--</strong></div>
+      <label class="v47-auto"><small>AUTO DETECT</small><span><input id="v47AutoPair" type="checkbox" checked> <b id="v47AutoText">ON</b></span><em>main active chart only</em></label>
+      <label class="v47-manual"><small>MANUAL SELECT</small><select id="v47ManualPair"></select></label>
+      <div id="v47PairMatch" class="v47-match">PAIR CHECK</div>
+    </div>
+
+    <div id="v47SignalRow" class="v47-signal-row watch">
+      <div id="v47SignalCard" class="v47-signal-card watch"><small>CURRENT STATUS</small><strong id="v47SignalMain">WATCH</strong><span id="v47SignalSub">Analyzing live candles…</span></div>
+      <div class="v47-state"><small>SETUP</small><strong id="v47Setup">Rescan Required</strong><span>Checking latest candle structure</span></div>
+      <div class="v47-state"><small>RULES</small><strong id="v47Rules">--</strong><span>SK25 conditions</span></div>
+      <div class="v47-state"><small>ENTRY</small><strong id="v47Entry">No Entry</strong><span id="v47EntrySub">Waiting for confirmed signal</span></div>
+      <div class="v47-count"><small id="v47CountLabel">NEXT CHECK</small><strong id="v47Count">--</strong></div>
+    </div>
+
+    <details id="v47Details" class="v47-details"><summary>ⓘ DETAILS <span>Click to view technical scanner data</span></summary><div id="v47TechnicalHost"></div></details>
+  </section>
   <section id="result" class="card result">
     <div id="hero" class="hero"><div id="big" class="big">WATCHING</div><div id="meta" class="sub"></div></div>
     <div class="watch"><strong>RAJA SK25 · PATTERN TYPE 1–25 ONLY</strong><div id="strategy">Waiting for a readable chart frame.</div></div>
@@ -335,6 +359,14 @@ function matchPairFromText(text,carriedBrokerHint=''){
 function pairDetectRegions(mode=sourceMode,exhaustive=false){
   const rows=[];
   if(mode==='SCREEN'){
+    // V47: read the ACTIVE chart selector first. Pocket Option can show recent/inactive
+    // pair tabs above it; those top tabs must not drive RAJA's selected pair.
+    if(roi){
+      const y=Math.max(.08,Math.min(.78,Number(roi.y||0)-.13));
+      rows.push({x:.015,y,w:.46,h:Math.min(.13,.99-y),name:'main-active-pair-near-chart'});
+    }
+    rows.push({x:.015,y:.19,w:.42,h:.145,name:'main-active-pair'});
+    rows.push({x:.015,y:.16,w:.44,h:.17,name:'active-pair-fallback'});
     if(roi){const y=Math.max(.01,Math.min(.72,Number(roi.y||0)-.18));rows.push({x:.01,y,w:.52,h:Math.min(.24,.99-y),name:'active-near-chart'});}
     rows.push({x:.01,y:.17,w:.40,h:.15,name:'active-pair-tight'});
     rows.push({x:.01,y:.12,w:.50,h:.23,name:'active-pair-header'});
@@ -384,7 +416,14 @@ async function detectPairFromSource(source,mode=sourceMode,exhaustive=false){
   let brokerHint='',tentative=null;
   for(const region of pairDetectRegions(mode,exhaustive)){
     const text=await readPairTextFromSource(source,region);brokerHint=detectBrokerHint(text)||brokerHint;const found=matchPairFromText(text,brokerHint);
-    if(found){const hit={...found,region:region.name,text,broker_hint:brokerHint};if(found.broker_confidence==='BRAND_OCR'||found.broker===$('broker').value)return hit;if(!tentative)tentative=hit;}
+    if(found){
+      const hit={...found,region:region.name,text,broker_hint:brokerHint};
+      // V47: the selector immediately above the main candle chart is authoritative.
+      // This prevents recent/inactive pair cards in the top strip from winning OCR.
+      if(String(region.name||'').startsWith('main-active-pair')) return hit;
+      if(found.broker_confidence==='BRAND_OCR'||found.broker===$('broker').value)return hit;
+      if(!tentative)tentative=hit;
+    }
   }
   return tentative;
 }
@@ -661,21 +700,41 @@ function unlockAlerts(){try{if(!audioCtx){const C=window.AudioContext||window.we
 function playSignalTone(up){if(!$('signalAlerts')?.checked)return;try{unlockAlerts();if(!audioCtx)return;const now=audioCtx.currentTime,tones=up?[740,980]:[520,340];tones.forEach((freq,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(.0001,now+i*.16);g.gain.exponentialRampToValueAtTime(.18,now+i*.16+.02);g.gain.exponentialRampToValueAtTime(.0001,now+i*.16+.14);o.connect(g);g.connect(audioCtx.destination);o.start(now+i*.16);o.stop(now+i*.16+.16);});}catch(_){}}
 function vibrateSignal(up){if(!$('signalAlerts')?.checked)return;try{navigator.vibrate?.(up?[120,60,120]:[260,80,90]);}catch(_){}}
 function speak(text){if(!$('signalAlerts')?.checked)return;try{if(!('speechSynthesis' in window))return;const u=new SpeechSynthesisUtterance(text);u.rate=.92;u.pitch=1;u.volume=1;speechSynthesis.cancel();speechSynthesis.speak(u);}catch(_){}}
-function alertConfirmedSignal(up){if(!$('signalAlerts')?.checked)return;playSignalTone(up);vibrateSignal(up);speak(up?'Buy now':'Sell now');}
+function alertConfirmedSignal(up){if(!$('signalAlerts')?.checked)return;playSignalTone(up);vibrateSignal(up);speak(up?'Call signal':'Put signal');}
 
 function startEntry(x,state){
   if(entryTimer)clearInterval(entryTimer);entryTimer=null;hideSignalBanner();
   const box=$('entry'),bias=String(x.bias||'').toUpperCase(),up=bias.startsWith('UP'),down=bias.startsWith('DOWN');
-  if(!up&&!down){box.style.display='none';return;}
-  const dir=up?'BUY NOW · CALL':'SELL NOW · PUT',entryMs=Number(x.entry_epoch_ms||Number(x.entry_epoch||0)*1000),expiryMs=Number(x.expiry_epoch_ms||0),grace=Math.max(3,Number(x.entry_window_seconds||8))*1000;
+  if(!up&&!down){box.style.display='none';syncV47SignalCard(null);return;}
+  const dir=up?'CALL (UP)':'PUT (DOWN)',entryMs=Number(x.entry_epoch_ms||Number(x.entry_epoch||0)*1000),expiryMs=Number(x.expiry_epoch_ms||0),grace=Math.max(3,Number(x.entry_window_seconds||10))*1000;
   box.style.display='block';box.className='entry '+(up?'up':'down')+((state==='DUPLICATE'||state==='EXPIRED')?' blocked':'');
-  if(state==='DUPLICATE'){$('entryMain').textContent='DUPLICATE BLOCKED';$('entrySub').textContent='This pair/timeframe/candle signal was already shown. Do not place it again.';return;}
-  if(state==='EXPIRED'||!entryMs){$('entryMain').textContent='ENTRY WINDOW PASSED';$('entrySub').textContent='Do not chase this candle. Wait for a fresh confirmed close.';return;}
+  if(state==='DUPLICATE'){$('entryMain').textContent=dir+' · DUPLICATE BLOCKED';$('entrySub').textContent='This candle signal was already shown. Wait for a fresh signal.';syncV47SignalCard({up,dir,state:'DUPLICATE',text:'Duplicate blocked'});return;}
+  if(state==='EXPIRED'||!entryMs){$('entryMain').textContent=dir+' · SIGNAL EXPIRED';$('entrySub').textContent='Fresh scan required.';syncV47SignalCard({up,dir,state:'EXPIRED',text:'Fresh scan required'});return;}
   const tick=()=>{
-    const now=serverNowMs(),d=now-entryMs,left=grace-d;
-    if(d<0){$('entryMain').textContent='WAIT '+Math.ceil(-d/1000)+'s · '+dir;$('entrySub').textContent=`Entry ${fmtClock(entryMs)} · Expiry ${fmtClock(expiryMs)}`;hideSignalBanner();}
-    else if(left>=0&&x.entry_allowed){$('entryMain').textContent=dir;$('entrySub').textContent=`${Math.ceil(left/1000)}s left · Entry ${fmtClock(entryMs)} · Expiry ${fmtClock(expiryMs)}`;showSignalBanner(up?'UP':'DOWN',$('pair').value,entryMs,expiryMs,left);}
-    else{$('entryMain').textContent='ENTRY WINDOW PASSED';$('entrySub').textContent='Do not chase this candle. Wait for a fresh confirmed close.';hideSignalBanner();setSignalState('EXPIRED','block');if(entryTimer){clearInterval(entryTimer);entryTimer=null;}}
+    const now=serverNowMs(),untilEntry=entryMs-now,windowLeft=(entryMs+grace)-now,untilExpiry=expiryMs?expiryMs-now:0;
+    if(untilEntry>0){
+      const sec=Math.ceil(untilEntry/1000);
+      $('entryMain').textContent=dir;
+      $('entrySub').textContent=(sec<=10?`ENTRY COUNTDOWN ${sec}`:`Entry in ${fmtRemain(untilEntry)}`)+` · Expiry ${fmtClock(expiryMs)}`;
+      syncV47SignalCard({up,dir,state:'COUNTDOWN',seconds:sec,entryMs,expiryMs});
+      hideSignalBanner();
+    }else if(windowLeft>=0&&x.entry_allowed){
+      const sec=Math.max(0,Math.ceil(windowLeft/1000));
+      $('entryMain').textContent=dir;
+      $('entrySub').textContent=`ENTRY NOW · ${sec}s window · Expiry ${fmtClock(expiryMs)}`;
+      syncV47SignalCard({up,dir,state:'ENTRY',seconds:sec,entryMs,expiryMs});
+      showSignalBanner(up?'UP':'DOWN',$('pair').value,entryMs,expiryMs,windowLeft);
+    }else if(expiryMs&&untilExpiry>0){
+      $('entryMain').textContent=dir;
+      $('entrySub').textContent=`ENTRY WINDOW CLOSED · Signal remains visible · Expires in ${fmtRemain(untilExpiry)}`;
+      syncV47SignalCard({up,dir,state:'ACTIVE',seconds:Math.ceil(untilExpiry/1000),entryMs,expiryMs});
+      hideSignalBanner();
+    }else{
+      $('entryMain').textContent=dir+' · SIGNAL EXPIRED';
+      $('entrySub').textContent='Fresh scan required.';
+      syncV47SignalCard({up,dir,state:'EXPIRED',text:'Fresh scan required'});
+      hideSignalBanner();setSignalState('EXPIRED','block');if(entryTimer){clearInterval(entryTimer);entryTimer=null;}
+    }
   };
   tick();entryTimer=setInterval(tick,200);
 }
@@ -694,7 +753,7 @@ function renderResult(x,atClose){
   let state=String(x.signal_state||'').toUpperCase();if(!state)state=atClose?(up||down?'CONFIRMED':'CLOSE CHECKED'):selected.toUpperCase().startsWith('WAIT CLOSE:')?'ARMED':'WATCH';
   const confirmed=state==='CONFIRMED'&&atClose&&(up||down)&&x.entry_allowed&&!x.duplicate_signal&&!x.late_signal;
   hero.className='hero '+(confirmed?'confirmed ':'')+(up?'up':down?'down':state==='ARMED'?'armed':state==='EXPIRED'||state==='DUPLICATE'||state==='GATE BLOCKED'?'blocked':'');
-  $('big').textContent=confirmed?(up?'✅ CONFIRMED\n🟢 BUY NOW · CALL':'✅ CONFIRMED\n🔴 SELL NOW · PUT'):state==='ARMED'?'🟡 ARMED · WAIT CLOSE':state==='DUPLICATE'?'🚫 DUPLICATE BLOCKED':state==='EXPIRED'?'⌛ SIGNAL LATE · SKIP':state==='GATE BLOCKED'?'🚫 CHART GATE BLOCKED':atClose?'⏸ NO TRADE · CLOSE CHECKED':'👁 LIVE WATCH';
+  $('big').textContent=confirmed?(up?'✅ CONFIRMED\n🟢 CALL (UP)':'✅ CONFIRMED\n🔴 PUT (DOWN)'):state==='ARMED'?'🟡 ARMED · WAIT CLOSE':state==='DUPLICATE'?'🚫 DUPLICATE BLOCKED':state==='EXPIRED'?'⌛ SIGNAL LATE · SKIP':state==='GATE BLOCKED'?'🚫 CHART GATE BLOCKED':atClose?'⏸ NO TRADE · CLOSE CHECKED':'👁 LIVE WATCH';
   $('big').style.whiteSpace='pre-line';const timing=atClose?'CLOSED-CANDLE FRAME':'FORMING CANDLE EXCLUDED';
   $('meta').innerHTML=`${esc($('broker').value)} · ${esc($('pair').value||'SCREEN CHART')} · ${esc($('tf').value.toUpperCase())}<br>${timing}`;
   $('strategy').textContent=selected||x.scan_gate_reason||'No exact active setup yet.';
@@ -719,5 +778,157 @@ renderCompat();loadPrefs();updateChartGate();setSignalState('WATCH');setMetric('
 ['shareBtn','cameraBtn','shotBtn','autoDetectBtn','confirmCropBtn','testFrameBtn'].forEach(id=>$(id)?.addEventListener('click',unlockAlerts,{passive:true}));document.addEventListener('touchstart',()=>{if(!alertsUnlocked&&$('signalAlerts')?.checked)unlockAlerts();},{once:true,passive:true});
 window.addEventListener('beforeunload',()=>{try{pairOcrWorker?.terminate();}catch(_){}try{audioCtx?.close?.();}catch(_){}});
 </script>
+
+
+<style id="raja-v48-short-style">
+/* V48 compact layout: keeps all scanner logic, removes only duplicated visual output. */
+#result{display:none!important}
+#scannerIntroCard{padding:10px 12px}
+#scannerIntroCard h1{font-size:17px;margin-bottom:3px}
+#scannerIntroCard>p{font-size:9px;line-height:1.3}
+#scannerIntroCard .notice{margin-top:6px;padding:7px;font-size:8px}
+#scannerControlsCard{padding:10px 12px}
+#scannerControlsCard label{margin-top:4px}
+#scannerControlsCard select,#scannerControlsCard input{height:35px}
+#scannerControlsCard .btn{min-height:37px;padding:7px 9px}
+#scannerControlsCard .stage{max-height:46vh;min-height:180px;margin-top:7px}
+.v48-advanced{margin-top:8px;border:1px solid rgba(96,239,255,.14);border-radius:10px;background:#030913}
+.v48-advanced summary{cursor:pointer;padding:8px 10px;font-size:8px;font-weight:950;color:#d5f7ff;list-style:none}
+.v48-advanced summary::-webkit-details-marker{display:none}
+.v48-advanced .v48-advanced-body{padding:0 9px 8px}
+.v47-watch-card{margin-top:8px!important;padding:8px!important}
+.v47-watch-top{gap:5px!important}
+.v47-watch-brand,.v47-mini,.v47-auto,.v47-manual,.v47-match{padding:7px!important;border-radius:9px!important}
+.v47-watch-brand b{font-size:13px!important}.v47-eye{font-size:24px!important}
+.v47-signal-row{gap:6px!important;margin-top:7px!important}
+.v47-signal-card,.v47-state,.v47-count{padding:8px!important;border-radius:9px!important}
+.v47-signal-card strong{font-size:18px!important}.v47-count strong{font-size:20px!important}
+.v47-details{margin-top:7px!important}.v47-details summary{padding:7px 9px!important}
+body.v48-live-compact #scannerIntroCard{display:none}
+body.v48-live-compact #scannerControlsCard .grid:not(.modebar),
+body.v48-live-compact #scannerControlsCard .modebar,
+body.v48-live-compact #scannerControlsCard>.grid3:not(.modebar),
+body.v48-live-compact #scannerControlsCard>.grid[style]{display:none}
+body.v48-live-compact #scannerControlsCard{padding:7px 9px}
+body.v48-live-compact #scannerControlsCard .stage{margin-top:0;max-height:42vh}
+body.v48-live-compact #scannerControlsCard .v48-advanced{display:none}
+@media(max-width:760px){
+  #scannerIntroCard>p,#scannerIntroCard .notice{display:none}
+  #scannerIntroCard{padding:7px 9px}
+  #scannerControlsCard{padding:8px}
+  #scannerControlsCard .stage{max-height:40vh;min-height:160px}
+  .v47-watch-top{grid-template-columns:1fr 1fr!important}
+  .v47-watch-brand{grid-column:1/-1}
+  .v47-mini em,.v47-auto em{display:none}
+  .v47-signal-row{grid-template-columns:1fr 1fr!important}
+  .v47-signal-card{grid-column:1/-1}
+  .v47-count{grid-column:1/-1}
+}
+</style>
+<style id="raja-v47-compact-style">
+.v47-watch-card{border-color:rgba(0,255,135,.28);padding:10px}.v47-watch-top{display:grid;grid-template-columns:1.35fr 1.7fr .72fr .78fr .68fr .75fr 1.05fr 1.25fr 1.05fr;gap:7px;align-items:stretch}.v47-watch-brand,.v47-mini,.v47-auto,.v47-manual,.v47-match{border:1px solid rgba(96,239,255,.17);border-radius:11px;background:#040b15;padding:9px;min-width:0}.v47-watch-brand{display:flex;align-items:center;gap:9px}.v47-eye{font-size:29px;color:var(--gold);text-shadow:0 0 18px rgba(246,200,95,.5)}.v47-watch-brand b{display:block;color:var(--gold);font-size:15px}.v47-watch-brand small,.v47-mini small,.v47-auto small,.v47-manual small,.v47-state small,.v47-count small,.v47-signal-card small{display:block;color:#7892a8;font-size:7px;font-weight:950;letter-spacing:.35px}.v47-watch-brand small{margin-top:2px}.v47-mini strong{display:block;margin-top:4px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.v47-mini em,.v47-auto em{display:block;margin-top:3px;color:#6f8da5;font-style:normal;font-size:6.5px;line-height:1.2}.v47-auto{cursor:pointer}.v47-auto span{display:flex;align-items:center;gap:5px;margin-top:4px;color:var(--green);font-size:10px}.v47-auto input{width:18px;height:18px;margin:0}.v47-manual select{height:31px;margin-top:4px;padding:0 7px;font-size:9px}.v47-match{display:grid;place-items:center;text-align:center;color:var(--gold);font-size:9px;font-weight:1000}.v47-match.ok{border-color:rgba(0,255,135,.55);color:var(--green);box-shadow:0 0 18px rgba(0,255,135,.08)}.v47-match.block{border-color:rgba(255,66,106,.5);color:var(--red)}
+.v47-signal-row{display:grid;grid-template-columns:1.45fr 1fr 1fr 1.25fr .82fr;gap:8px;margin-top:9px}.v47-signal-card,.v47-state,.v47-count{border:1px solid rgba(96,239,255,.16);border-radius:11px;background:#040b15;padding:10px;min-width:0}.v47-signal-card strong{display:block;margin-top:4px;font-size:20px;color:#7cbcff}.v47-signal-card span,.v47-state span{display:block;margin-top:4px;color:#86a1b7;font-size:8px;line-height:1.25}.v47-signal-card.call{border-color:rgba(0,255,135,.65);background:linear-gradient(135deg,rgba(0,255,135,.17),rgba(3,13,20,.94));box-shadow:0 0 24px rgba(0,255,135,.12)}.v47-signal-card.call strong{color:var(--green)}.v47-signal-card.put{border-color:rgba(255,66,106,.65);background:linear-gradient(135deg,rgba(255,66,106,.17),rgba(3,13,20,.94));box-shadow:0 0 24px rgba(255,66,106,.11)}.v47-signal-card.put strong{color:var(--red)}.v47-state strong{display:block;margin-top:4px;font-size:11px}.v47-count{display:grid;align-content:center;text-align:center}.v47-count strong{display:block;margin-top:2px;color:var(--cyan);font-size:23px;font-variant-numeric:tabular-nums}.v47-details{margin-top:9px;border:1px solid rgba(96,239,255,.15);border-radius:10px;background:#030913}.v47-details summary{cursor:pointer;padding:9px 11px;color:#d5f7ff;font-size:9px;font-weight:950;list-style:none}.v47-details summary::-webkit-details-marker{display:none}.v47-details summary span{color:#6f8da5;font-weight:700;margin-left:5px}.v47-details[open] #v47TechnicalHost{padding:0 9px 9px}.v47-details .statusbar,.v47-details .safetybar,.v47-details .quality-hud,.v47-details .preflight-hint,.v47-details .status{margin-top:7px}.v47-details .proof{display:block!important}
+@media(max-width:760px){.app{width:100%}.stage{aspect-ratio:16/10;max-height:48vh;min-height:190px}.v47-watch-top{grid-template-columns:1fr 1fr}.v47-watch-brand{grid-column:1/-1}.v47-mini:nth-of-type(2){grid-column:1/-1}.v47-match{grid-column:1/-1;min-height:38px}.v47-signal-row{grid-template-columns:1fr 1fr}.v47-signal-card{grid-column:1/-1;position:sticky;top:max(6px,env(safe-area-inset-top));z-index:20}.v47-count{grid-column:1/-1}.v47-signal-card strong{font-size:28px}.v47-count strong{font-size:28px}.v47-state{min-height:76px}.v47-details summary span{display:none}.top{position:sticky;top:0;z-index:30;background:rgba(2,7,19,.88);backdrop-filter:blur(12px);padding:5px 0}.card{border-radius:13px}}
+@media(max-width:420px){body{padding:6px}.v47-watch-top{gap:5px}.v47-watch-brand,.v47-mini,.v47-auto,.v47-manual,.v47-match{padding:8px}.v47-signal-row{gap:6px}.v47-state{padding:8px}.v47-signal-card strong{font-size:25px}}
+</style>
+<script id="raja-v47-compact-bridge">
+(function(){
+  'use strict';
+  const q=id=>document.getElementById(id);
+  let v47LastSignal=null;
+  let v47SignalHoldUntil=0;
+  let v47SignalHoldKey='';
+  const V47_MIN_SIGNAL_HOLD_MS=10000;
+  window.syncV47SignalCard=function(data){
+    const now=Date.now();
+    const hasDir=!!(data&&/CALL|PUT/.test(String(data.dir||'')));
+    if(hasDir){
+      const key=[String(data.dir||''),String(data.entryMs||''),String(data.expiryMs||'')].join('|');
+      if(key!==v47SignalHoldKey){
+        v47SignalHoldKey=key;
+        v47SignalHoldUntil=now+V47_MIN_SIGNAL_HOLD_MS;
+      }
+      v47LastSignal={...data,holdUntil:v47SignalHoldUntil};
+      renderV47();
+      return;
+    }
+    // A normal WATCH/rescan frame must not erase a fresh directional signal.
+    // Keep CALL/PUT visible for at least 10 seconds from first display.
+    if(v47LastSignal&&/CALL|PUT/.test(String(v47LastSignal.dir||''))&&now<v47SignalHoldUntil){
+      renderV47();
+      return;
+    }
+    v47LastSignal=data||null;
+    if(!v47LastSignal){v47SignalHoldKey='';v47SignalHoldUntil=0;}
+    renderV47();
+  };
+  function copyManualOptions(){
+    const src=q('pair'),dst=q('v47ManualPair');if(!src||!dst)return;
+    const sig=[...src.options].map(o=>o.value).join('|');if(dst.dataset.sig===sig)return;
+    dst.innerHTML=[...src.options].map(o=>`<option value="${String(o.value).replace(/"/g,'&quot;')}">${o.textContent}</option>`).join('');dst.dataset.sig=sig;dst.value=src.value;
+  }
+  function technicalNodes(){return ['statusbar','safetybar','qualityHud','preflightHint','status'].map(id=>q(id)).filter(Boolean);}
+  function moveTechnical(){const host=q('v47TechnicalHost');if(!host)return;technicalNodes().forEach(n=>host.appendChild(n));}
+  function fmt(n){n=Math.max(0,Math.ceil(Number(n)||0));return n<60?'00:'+String(n).padStart(2,'0'):String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');}
+  function renderV47(){
+    try{
+      copyManualOptions();
+      const pair=q('pair')?.value||'--',tf=q('tf')?.value?.toUpperCase()||'--';q('v47Pair').textContent=pair;q('v47Tf').textContent=tf;
+      const auto=!!q('autoPair')?.checked;if(q('v47AutoPair'))q('v47AutoPair').checked=auto;q('v47AutoText').textContent=auto?'ON':'OFF';
+      if(q('v47ManualPair')&&q('v47ManualPair').value!==pair)q('v47ManualPair').value=pair;
+      const chartOk=!!window.roi&&!!window.roiConfirmed&&!!window.lastCropTestPassed;q('v47Chart').textContent=chartOk?'Detected ✓':'WAIT';
+      q('v47Candles').textContent=String(window.lastFrameCandles||'--');q('v47Quality').textContent=window.lastFrameQuality?Math.round(window.lastFrameQuality)+'%':'--';
+      const match=q('v47PairMatch');const verified=!!window.pairVerified||!auto;match.textContent=verified?'PAIR MATCH · SCAN READY':(auto?'PAIR CHECKING':'MANUAL PAIR');match.className='v47-match '+(verified?'ok':'');
+      const state=String(q('signalState')?.textContent||'WATCH').toUpperCase();const setup=q('proofPattern')?.textContent||'Rescan Required',rules=q('proofRules')?.textContent||'--';
+      q('v47Setup').textContent=/NO EXACT|--/.test(setup)?'Rescan Required':setup.replace(/^TYPE\s*\d+\s*·\s*/,'');q('v47Rules').textContent=rules;
+      const card=q('v47SignalCard'),main=q('v47SignalMain'),sub=q('v47SignalSub'),entry=q('v47Entry'),entrySub=q('v47EntrySub'),cnt=q('v47Count'),lab=q('v47CountLabel');
+      card.className='v47-signal-card watch';
+      if(v47LastSignal&&/CALL|PUT/.test(v47LastSignal.dir||'')){
+        const isCall=v47LastSignal.dir.includes('CALL');card.className='v47-signal-card '+(isCall?'call':'put');main.textContent=(isCall?'↗ ':'↘ ')+v47LastSignal.dir;
+        if(v47LastSignal.state==='COUNTDOWN'){const sec=Math.max(0,v47LastSignal.seconds||0);sub.textContent=sec<=10?'Entry countdown running':'Confirmed signal · waiting for entry';entry.textContent='Wait for countdown';entrySub.textContent='Signal stays visible';lab.textContent='ENTRY IN';cnt.textContent=fmt(sec);}
+        else if(v47LastSignal.state==='ENTRY'){sub.textContent='Confirmed signal · entry window';entry.textContent='ENTRY NOW';entrySub.textContent='Follow your risk rules';lab.textContent='WINDOW';cnt.textContent=fmt(v47LastSignal.seconds||0);}
+        else if(v47LastSignal.state==='ACTIVE'){sub.textContent='Signal active · entry window closed';entry.textContent='No late entry';entrySub.textContent='Wait for next fresh setup';lab.textContent='EXPIRES IN';cnt.textContent=fmt(v47LastSignal.seconds||0);}
+        else if(v47LastSignal.state==='EXPIRED'){sub.textContent='Fresh scan required';entry.textContent='No Entry';entrySub.textContent='Signal expired';lab.textContent='STATUS';cnt.textContent='EXPIRED';}
+        else{sub.textContent=v47LastSignal.text||'Confirmed signal';entry.textContent='No Entry';entrySub.textContent='Waiting for fresh setup';const hold=Math.max(0,Math.ceil(((v47LastSignal.holdUntil||0)-Date.now())/1000));if(hold>0){lab.textContent='SIGNAL HOLD';cnt.textContent=fmt(hold);sub.textContent='Signal locked on screen';}else{lab.textContent='STATUS';cnt.textContent='--';}}
+      }else{
+        main.textContent=state.includes('BLOCK')?'NO TRADE':state.includes('ARMED')?'ARMED':'WATCH';sub.textContent=state.includes('BLOCK')?'Scanner gate is blocking entry':'Analyzing live candles…';entry.textContent='No Entry';entrySub.textContent='Waiting for confirmed signal';
+        const interval=Math.max(2,Number(q('interval')?.value||3));const t=Math.max(0,interval-(Math.floor(Date.now()/1000)%interval));lab.textContent='NEXT CHECK';cnt.textContent=fmt(t===interval?0:t);
+      }
+    }catch(_){ }
+  }
+  document.addEventListener('DOMContentLoaded',()=>{
+    moveTechnical();copyManualOptions();
+    q('v47AutoPair')?.addEventListener('change',e=>{if(q('autoPair')){q('autoPair').checked=e.target.checked;q('autoPair').dispatchEvent(new Event('change',{bubbles:true}));}renderV47();});
+    q('v47ManualPair')?.addEventListener('change',e=>{if(q('pair')){q('pair').value=e.target.value;q('pair').dispatchEvent(new Event('change',{bubbles:true}));}if(q('autoPair')){q('autoPair').checked=false;q('autoPair').dispatchEvent(new Event('change',{bubbles:true}));}renderV47();});
+    setInterval(renderV47,250);setTimeout(renderV47,250);
+  },{once:true});
+})();
+</script>
+
+
+<script id="raja-v48-short-bridge">
+(function(){
+  const q=id=>document.getElementById(id);
+  function buildAdvanced(){
+    const card=q('scannerControlsCard'); if(!card || card.querySelector('.v48-advanced')) return;
+    const rows=[...card.querySelectorAll(':scope > .switchrow')]; if(!rows.length) return;
+    const d=document.createElement('details'); d.className='v48-advanced';
+    const s=document.createElement('summary'); s.textContent='⚙ ADVANCED SCANNER OPTIONS';
+    const b=document.createElement('div'); b.className='v48-advanced-body';
+    rows.forEach(r=>b.appendChild(r)); d.append(s,b);
+    const file=card.querySelector('#file'); card.insertBefore(d,file||card.querySelector('#stage'));
+  }
+  function updateCompact(){
+    const live=!!window.stream && ['SCREEN','CAMERA'].includes(String(window.sourceMode||''));
+    document.body.classList.toggle('v48-live-compact',live);
+  }
+  document.addEventListener('DOMContentLoaded',()=>{
+    buildAdvanced(); updateCompact();
+    const home=q('homeBtn'); if(home){home.addEventListener('click',e=>{e.preventDefault(); window.location.replace(window.location.origin+'/index.html?home=1');});}
+    setInterval(updateCompact,500);
+  },{once:true});
+})();
+</script>
+
 </body>
 </html>
