@@ -790,7 +790,32 @@ window.addEventListener('beforeunload',()=>{try{pairOcrWorker?.terminate();}catc
   'use strict';
   const q=id=>document.getElementById(id);
   let v47LastSignal=null;
-  window.syncV47SignalCard=function(data){v47LastSignal=data||null;renderV47();};
+  let v47SignalHoldUntil=0;
+  let v47SignalHoldKey='';
+  const V47_MIN_SIGNAL_HOLD_MS=10000;
+  window.syncV47SignalCard=function(data){
+    const now=Date.now();
+    const hasDir=!!(data&&/CALL|PUT/.test(String(data.dir||'')));
+    if(hasDir){
+      const key=[String(data.dir||''),String(data.entryMs||''),String(data.expiryMs||'')].join('|');
+      if(key!==v47SignalHoldKey){
+        v47SignalHoldKey=key;
+        v47SignalHoldUntil=now+V47_MIN_SIGNAL_HOLD_MS;
+      }
+      v47LastSignal={...data,holdUntil:v47SignalHoldUntil};
+      renderV47();
+      return;
+    }
+    // A normal WATCH/rescan frame must not erase a fresh directional signal.
+    // Keep CALL/PUT visible for at least 10 seconds from first display.
+    if(v47LastSignal&&/CALL|PUT/.test(String(v47LastSignal.dir||''))&&now<v47SignalHoldUntil){
+      renderV47();
+      return;
+    }
+    v47LastSignal=data||null;
+    if(!v47LastSignal){v47SignalHoldKey='';v47SignalHoldUntil=0;}
+    renderV47();
+  };
   function copyManualOptions(){
     const src=q('pair'),dst=q('v47ManualPair');if(!src||!dst)return;
     const sig=[...src.options].map(o=>o.value).join('|');if(dst.dataset.sig===sig)return;
@@ -818,7 +843,7 @@ window.addEventListener('beforeunload',()=>{try{pairOcrWorker?.terminate();}catc
         else if(v47LastSignal.state==='ENTRY'){sub.textContent='Confirmed signal · entry window';entry.textContent='ENTRY NOW';entrySub.textContent='Follow your risk rules';lab.textContent='WINDOW';cnt.textContent=fmt(v47LastSignal.seconds||0);}
         else if(v47LastSignal.state==='ACTIVE'){sub.textContent='Signal active · entry window closed';entry.textContent='No late entry';entrySub.textContent='Wait for next fresh setup';lab.textContent='EXPIRES IN';cnt.textContent=fmt(v47LastSignal.seconds||0);}
         else if(v47LastSignal.state==='EXPIRED'){sub.textContent='Fresh scan required';entry.textContent='No Entry';entrySub.textContent='Signal expired';lab.textContent='STATUS';cnt.textContent='EXPIRED';}
-        else{sub.textContent=v47LastSignal.text||'Confirmed signal';entry.textContent='No Entry';entrySub.textContent='Waiting for fresh setup';lab.textContent='STATUS';cnt.textContent='--';}
+        else{sub.textContent=v47LastSignal.text||'Confirmed signal';entry.textContent='No Entry';entrySub.textContent='Waiting for fresh setup';const hold=Math.max(0,Math.ceil(((v47LastSignal.holdUntil||0)-Date.now())/1000));if(hold>0){lab.textContent='SIGNAL HOLD';cnt.textContent=fmt(hold);sub.textContent='Signal locked on screen';}else{lab.textContent='STATUS';cnt.textContent='--';}}
       }else{
         main.textContent=state.includes('BLOCK')?'NO TRADE':state.includes('ARMED')?'ARMED':'WATCH';sub.textContent=state.includes('BLOCK')?'Scanner gate is blocking entry':'Analyzing live candles…';entry.textContent='No Entry';entrySub.textContent='Waiting for confirmed signal';
         const interval=Math.max(2,Number(q('interval')?.value||3));const t=Math.max(0,interval-(Math.floor(Date.now()/1000)%interval));lab.textContent='NEXT CHECK';cnt.textContent=fmt(t===interval?0:t);
