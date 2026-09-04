@@ -6268,6 +6268,20 @@ body:not(.raja-authenticated).raja-mobile-scanning {
     }
 </style>
 
+
+<style id="raja-v46-visual-pair-css">
+.raja-visual-pair-tools{margin-top:8px;padding:8px;border:1px solid rgba(96,239,255,.20);border-radius:10px;background:rgba(3,12,24,.72)}
+.raja-visual-pair-title{font-size:8px;font-weight:950;color:#60efff;letter-spacing:.45px;text-transform:uppercase;margin-bottom:6px}
+.raja-visual-pair-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.raja-visual-pair-btn{min-height:36px;border:1px solid rgba(96,239,255,.30);border-radius:8px;background:linear-gradient(135deg,rgba(0,255,135,.10),rgba(0,159,255,.12));color:#eaffff;font-size:8.5px;font-weight:900;cursor:pointer}
+.raja-visual-pair-btn:hover{border-color:#60efff}.raja-visual-pair-btn.stop{border-color:rgba(255,51,102,.45);color:#ff9ab3}
+.raja-visual-pair-state{margin-top:6px;padding:6px 8px;border-radius:7px;border:1px solid rgba(100,116,139,.26);background:rgba(2,8,17,.76);font-size:7.5px;font-weight:850;color:#8fa6bc;line-height:1.45}
+.raja-visual-pair-state.ok{border-color:rgba(0,255,135,.42);color:#00ff87}.raja-visual-pair-state.warn{border-color:rgba(255,190,60,.48);color:#ffd166}.raja-visual-pair-state.block{border-color:rgba(255,51,102,.58);color:#ff6688;box-shadow:0 0 14px rgba(255,51,102,.10)}
+.raja-pair-match-banner{display:none;margin:7px 0 0;padding:7px 9px;border-radius:8px;font-size:8px;font-weight:950;text-align:center;letter-spacing:.3px}.raja-pair-match-banner.show{display:block}.raja-pair-match-banner.ok{background:rgba(0,255,135,.10);border:1px solid rgba(0,255,135,.40);color:#00ff87}.raja-pair-match-banner.block{background:rgba(255,51,102,.09);border:1px solid rgba(255,51,102,.52);color:#ff6688}
+#rajaVisualPairVideo{position:fixed;width:2px;height:2px;opacity:.001;pointer-events:none;left:-10px;top:-10px}
+@media(max-width:520px){.raja-visual-pair-actions{grid-template-columns:1fr}.raja-visual-pair-btn{min-height:38px}}
+</style>
+
 </head>
 <body>
 
@@ -7078,7 +7092,20 @@ body:not(.raja-authenticated).raja-mobile-scanning {
                             <div class="selection-card">
                                 <div class="config-field"><label>1. SELECT BROKER PLATFORM</label><select id="brokerSelect" onchange="playClickSound(); updateBrokerAssets();"><option value="Quotex">⚡ Quotex (Broker)</option><option value="PocketOption">🔵 Pocket Option (Broker)</option></select></div>
                                 <div class="config-field"><label>2. SELECT MARKET TYPE</label><select id="marketType" onchange="playClickSound(); updatePairs();"><option value="CryptoLive">🪙 Crypto Live Market</option><option value="CryptoOTC">🪙 Crypto OTC Market</option><option value="ForexLive">🟢 Forex Live Market</option><option value="ForexOTC">⚡ Forex OTC Market</option></select></div>
-                                <div class="config-field pair-search-field"><label>3. SELECT PAIR / ASSET</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearchInput" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — e.g. EUR/USD, BTC, OTC" aria-label="Search pair or asset"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Type above to filter the pair list</div><div class="pair-search-count" style="color:#6f91a8;margin:2px 0 6px;">PAIR LIST · swipe inside the list to see more pairs</div><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay();"></select></div><div class="mode-panel"><div class="upgrade-title">AI STRATEGY MODE</div><div class="strict-mode-lock">🔒 RAJA 14 STRICT MODE</div><div id="modeDescription" class="mode-copy">24 selected strategies · selected timeframe only · every coded rule must match · timed entry gives preparation before the scheduled candle.</div></div>
+                                <div class="config-field pair-search-field"><label>3. SELECT PAIR / ASSET</label><div class="pair-search-wrap"><span class="pair-search-icon">⌕</span><input id="pairSearchInput" class="pair-search-input" type="search" inputmode="search" autocomplete="off" placeholder="Search pair — e.g. EUR/USD, BTC, OTC" aria-label="Search pair or asset"><button id="pairSearchClear" class="pair-search-clear" type="button" aria-label="Clear pair search">✕</button></div><div id="pairSearchCount" class="pair-search-count">Type above to filter the pair list</div><div class="pair-search-count" style="color:#6f91a8;margin:2px 0 6px;">PAIR LIST · swipe inside the list to see more pairs</div><select id="pairSelect" onchange="playClickSound(); syncTargetPairDisplay(); rajaVisualPairSelectionChanged();"></select>
+<div class="raja-visual-pair-tools" id="rajaVisualPairTools">
+  <div class="raja-visual-pair-title">AUTO DETECT BROKER / PAIR FROM SCREEN</div>
+  <div class="raja-visual-pair-actions">
+    <button type="button" id="rajaShareBrokerScreenBtn" class="raja-visual-pair-btn" onclick="rajaStartBrokerScreenShare()">🖥 SHARE BROKER SCREEN</button>
+    <button type="button" class="raja-visual-pair-btn" onclick="document.getElementById('rajaPairScreenshotInput').click()">📷 DETECT FROM SCREENSHOT</button>
+  </div>
+  <input id="rajaPairScreenshotInput" type="file" accept="image/*" style="display:none" onchange="rajaDetectPairFromScreenshot(this.files && this.files[0])">
+  <video id="rajaVisualPairVideo" muted playsinline></video>
+  <canvas id="rajaVisualPairCanvas" style="display:none"></canvas>
+  <div id="rajaVisualPairState" class="raja-visual-pair-state">Ready · screen/screenshot pair detection is optional.</div>
+  <div id="rajaPairMatchBanner" class="raja-pair-match-banner"></div>
+</div>
+</div><div class="mode-panel"><div class="upgrade-title">AI STRATEGY MODE</div><div class="strict-mode-lock">🔒 RAJA 14 STRICT MODE</div><div id="modeDescription" class="mode-copy">24 selected strategies · selected timeframe only · every coded rule must match · timed entry gives preparation before the scheduled candle.</div></div>
                                 <div class="config-field expiry-wide"><label>4. TRADE EXPIRY TIME</label><div class="expiry-container"><button class="expiry-btn expiry-disabled" data-time="15s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">15s</button><button class="expiry-btn expiry-disabled" data-time="30s" type="button" disabled aria-disabled="true" title="Disabled: base feed is 1-minute">30s</button><button class="expiry-btn active" data-time="1m" onclick="playClickSound(); setExpiry(this,'1m')">1m</button><button class="expiry-btn" data-time="2m" onclick="playClickSound(); setExpiry(this,'2m')">2m</button><button class="expiry-btn" data-time="5m" onclick="playClickSound(); setExpiry(this,'5m')">5m</button><button class="expiry-btn" data-time="10m" onclick="playClickSound(); setExpiry(this,'10m')">10m</button><button class="expiry-btn" data-time="15m" onclick="playClickSound(); setExpiry(this,'15m')">15m</button><button class="expiry-btn" data-time="30m" onclick="playClickSound(); setExpiry(this,'30m')">30m</button></div></div>
                                 <div class="utility-grid"><button class="utility-btn" onclick="openHistoryInline()">📊 History</button><button class="utility-btn" onclick="openSettingsInline()">⚙️ Settings</button><button class="utility-btn" onclick="openNewsInline()">📰 Live News</button><button class="utility-btn" onclick="openRiskInline()">🛡️ Risk & Recovery</button><button class="utility-btn" onclick="openProfileInline()">👤 Profile</button><button class="utility-btn" type="button" onclick="location.href='/live-scanner'">🎥 Live Scanner</button><button class="utility-btn" type="button" onclick="location.href='/chart-scanner'">📷 Chart Scanner</button></div><div class="raja-mobile-sheet-inline-actions" aria-label="Quick action buttons inside settings"><button id="rajaSheetHomeBtn" class="raja-mobile-home-btn" type="button">🏠 HOME</button><button id="rajaSheetCloseBtn" class="raja-mobile-settings-btn" type="button">✕ CLOSE</button><button id="rajaSheetScanBtn" class="raja-mobile-scan-btn" type="button">▶ SCAN NOW</button></div>
                             </div>
@@ -10417,6 +10444,244 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             runRajaContinuousAutoCycle();
         }
 
+
+        // =============================================================
+        // V46 VISUAL BROKER/PAIR AUTO-DETECT + OTC MISMATCH GUARD
+        // Screen Share and screenshot OCR only select/verify the pair.
+        // Existing RAJA strategies and scan engine are not modified.
+        // =============================================================
+        window.rajaVisualPairState = window.rajaVisualPairState || {
+            active:false, source:'', pair:'', broker:'', market:'', lastSeen:0,
+            stream:null, timer:null, busy:false, ocrReady:false, rawText:''
+        };
+
+        function rajaSetVisualPairState(message, level='') {
+            const el = document.getElementById('rajaVisualPairState');
+            if (!el) return;
+            el.textContent = message;
+            el.className = 'raja-visual-pair-state' + (level ? ' ' + level : '');
+        }
+
+        function rajaSetPairMatchBanner(message='', blocked=false) {
+            const el = document.getElementById('rajaPairMatchBanner');
+            if (!el) return;
+            if (!message) { el.textContent=''; el.className='raja-pair-match-banner'; return; }
+            el.textContent = message;
+            el.className = 'raja-pair-match-banner show ' + (blocked ? 'block' : 'ok');
+        }
+
+        function rajaPairKey(value) {
+            return String(value || '').toUpperCase()
+                .replace(/\(OTC\)/g,' OTC ')
+                .replace(/[^A-Z0-9]+/g,'')
+                .replace(/OTC$/,'');
+        }
+
+        function rajaVisualCandidateCatalog() {
+            const rows=[];
+            Object.entries(brokerData || {}).forEach(([broker, markets]) => {
+                Object.entries(markets || {}).forEach(([market, pairs]) => {
+                    (pairs || []).forEach(pair => {
+                        if (!pair || String(pair).includes('Auto Scan')) return;
+                        rows.push({broker,market,pair:String(pair),key:rajaPairKey(pair),otc:/OTC/i.test(String(pair)) || /OTC/i.test(market)});
+                    });
+                });
+            });
+            return rows;
+        }
+
+        function rajaFindVisualPair(text) {
+            const raw = String(text || '').toUpperCase();
+            const compact = raw.replace(/[^A-Z0-9]+/g,'');
+            const currentBroker = document.getElementById('brokerSelect')?.value || '';
+            const currentMarket = document.getElementById('marketType')?.value || '';
+            const brokerHint = /POCKET\s*OPTION|POCKETOPTION/.test(raw) ? 'PocketOption' : (/QUOTEX/.test(raw) ? 'Quotex' : '');
+            const otcHint = /\bOTC\b/.test(raw);
+            let best=null, score=-1;
+            rajaVisualCandidateCatalog().forEach(row => {
+                if (!row.key || row.key.length < 5 || !compact.includes(row.key)) return;
+                let sc = row.key.length * 10;
+                if (brokerHint && row.broker === brokerHint) sc += 80;
+                if (!brokerHint && row.broker === currentBroker) sc += 22;
+                if (otcHint === row.otc) sc += 45;
+                if (row.market === currentMarket) sc += 12;
+                if (/FOREX/.test(row.market) && /^[A-Z]{6}/.test(row.key)) sc += 8;
+                if (sc > score) { score=sc; best={...row, broker:brokerHint || row.broker, score:sc}; }
+            });
+            // OCR often separates EUR / USD or reads punctuation inconsistently.
+            if (!best) {
+                const fx = raw.match(/\b([A-Z]{3})\s*[\/\-]?\s*([A-Z]{3})\b/);
+                if (fx) {
+                    const key=fx[1]+fx[2];
+                    const rows=rajaVisualCandidateCatalog().filter(r=>r.key===key && (!brokerHint || r.broker===brokerHint));
+                    const preferred=rows.find(r=>r.otc===otcHint) || rows.find(r=>r.market===currentMarket) || rows[0];
+                    if (preferred) best={...preferred, broker:brokerHint || preferred.broker, score:80};
+                }
+            }
+            return best;
+        }
+
+        async function rajaEnsureTesseract() {
+            if (window.Tesseract) return true;
+            rajaSetVisualPairState('Loading pair detector…','warn');
+            await new Promise((resolve,reject)=>{
+                const old=document.getElementById('rajaTesseractScript');
+                if (old) { old.addEventListener('load',resolve,{once:true}); old.addEventListener('error',reject,{once:true}); return; }
+                const sc=document.createElement('script'); sc.id='rajaTesseractScript'; sc.async=true;
+                sc.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+                sc.onload=resolve; sc.onerror=reject; document.head.appendChild(sc);
+            });
+            return !!window.Tesseract;
+        }
+
+        async function rajaOcrImage(source) {
+            await rajaEnsureTesseract();
+            if (!window.Tesseract) throw new Error('Pair detector could not load.');
+            const result = await window.Tesseract.recognize(source, 'eng', { logger:()=>{} });
+            return String(result?.data?.text || '');
+        }
+
+        function rajaApplyDetectedPair(match, source='screen') {
+            if (!match) {
+                rajaSetVisualPairState('Pair not detected · keep broker pair name visible and try again.','warn');
+                return false;
+            }
+            const brokerEl=document.getElementById('brokerSelect');
+            const marketEl=document.getElementById('marketType');
+            const pairEl=document.getElementById('pairSelect');
+            if (!brokerEl || !marketEl || !pairEl) return false;
+
+            if (match.broker && brokerData?.[match.broker]) brokerEl.value=match.broker;
+            if (match.market && brokerData?.[brokerEl.value]?.[match.market]) marketEl.value=match.market;
+            try { updatePairs(); } catch(_) {}
+
+            let wanted=match.pair;
+            let exists=Array.from(pairEl.options||[]).some(o=>o.value===wanted);
+            if (!exists) {
+                const wantedKey=rajaPairKey(wanted);
+                const opt=Array.from(pairEl.options||[]).find(o=>rajaPairKey(o.value)===wantedKey);
+                if (opt) { wanted=opt.value; exists=true; }
+            }
+            if (!exists) {
+                rajaSetVisualPairState(`Detected ${match.pair}, but it is not in the selected broker list.`,'block');
+                rajaSetPairMatchBanner(`PAIR MISMATCH – ${match.pair} NOT AVAILABLE`, true);
+                return false;
+            }
+            pairEl.value=wanted;
+            try { syncTargetPairDisplay(); } catch(_) {}
+            try { renderForexOtcFallbackPairs(); } catch(_) {}
+            window.rajaVisualPairState.pair=wanted;
+            window.rajaVisualPairState.broker=brokerEl.value;
+            window.rajaVisualPairState.market=marketEl.value;
+            window.rajaVisualPairState.source=source;
+            window.rajaVisualPairState.lastSeen=Date.now();
+            window.rajaVisualPairState.active=true;
+            const brokerName=brokerEl.value==='PocketOption'?'Pocket Option':'Quotex';
+            rajaSetVisualPairState(`AUTO DETECT ✓ ${brokerName} · ${wanted} · ${marketEl.value} · synced for scan`,'ok');
+            rajaSetPairMatchBanner(`PAIR MATCH ✓ ${wanted} · SCAN READY`, false);
+            return true;
+        }
+
+        async function rajaDetectPairFromScreenshot(file) {
+            if (!file) return;
+            try {
+                rajaSetVisualPairState('Reading screenshot · detecting broker and pair…','warn');
+                const text=await rajaOcrImage(file);
+                window.rajaVisualPairState.rawText=text;
+                const match=rajaFindVisualPair(text);
+                if (!rajaApplyDetectedPair(match,'screenshot')) throw new Error('Pair not detected');
+            } catch(err) {
+                console.warn('RAJA screenshot pair detect:',err);
+                rajaSetVisualPairState('Could not detect pair from screenshot · keep pair name clear/visible and retry.','block');
+                rajaSetPairMatchBanner('PAIR NOT VERIFIED – SCAN BLOCKED FOR VISUAL OTC MODE', true);
+            } finally {
+                const input=document.getElementById('rajaPairScreenshotInput'); if(input) input.value='';
+            }
+        }
+
+        async function rajaCaptureAndDetectSharedScreen() {
+            const st=window.rajaVisualPairState;
+            if (!st.stream || st.busy) return;
+            const video=document.getElementById('rajaVisualPairVideo');
+            const canvas=document.getElementById('rajaVisualPairCanvas');
+            if (!video || !canvas || video.readyState < 2) return;
+            st.busy=true;
+            try {
+                const w=video.videoWidth||1280, h=video.videoHeight||720;
+                // Pair/broker names are usually in the upper part of broker UIs.
+                canvas.width=Math.min(1600,w); canvas.height=Math.max(180,Math.min(520,Math.round(h*.42)));
+                const ctx=canvas.getContext('2d',{willReadFrequently:true});
+                ctx.drawImage(video,0,0,w,Math.round(h*.45),0,0,canvas.width,canvas.height);
+                const text=await rajaOcrImage(canvas);
+                st.rawText=text;
+                const match=rajaFindVisualPair(text);
+                if (match) rajaApplyDetectedPair(match,'screen-share');
+                else {
+                    rajaSetVisualPairState('Screen connected · pair name not readable yet. Keep pair header visible.','warn');
+                    rajaSetPairMatchBanner('PAIR NOT VERIFIED – WAITING FOR SCREEN DETECTION', true);
+                }
+            } catch(err) { console.warn('RAJA screen pair detect:',err); }
+            finally { st.busy=false; }
+        }
+
+        function rajaStopBrokerScreenShare(reason='stopped') {
+            const st=window.rajaVisualPairState;
+            if (st.timer) { clearInterval(st.timer); st.timer=null; }
+            try { (st.stream?.getTracks?.()||[]).forEach(t=>t.stop()); } catch(_) {}
+            st.stream=null; st.active=false;
+            const btn=document.getElementById('rajaShareBrokerScreenBtn');
+            if(btn){btn.textContent='🖥 SHARE BROKER SCREEN';btn.classList.remove('stop');}
+            if(reason!=='restarting') rajaSetVisualPairState('Screen share stopped · visual pair guard inactive.','');
+        }
+
+        async function rajaStartBrokerScreenShare() {
+            const st=window.rajaVisualPairState;
+            if (st.stream) { rajaStopBrokerScreenShare(); return; }
+            if (!navigator.mediaDevices?.getDisplayMedia) {
+                rajaSetVisualPairState('Screen sharing is not supported in this browser.','block'); return;
+            }
+            try {
+                const stream=await navigator.mediaDevices.getDisplayMedia({video:{frameRate:{ideal:5,max:10}},audio:false});
+                st.stream=stream; st.active=true; st.source='screen-share';
+                const video=document.getElementById('rajaVisualPairVideo'); video.srcObject=stream; await video.play();
+                const btn=document.getElementById('rajaShareBrokerScreenBtn');
+                if(btn){btn.textContent='■ STOP SCREEN SHARE';btn.classList.add('stop');}
+                rajaSetVisualPairState('Screen connected · auto-detecting broker and pair…','warn');
+                stream.getVideoTracks()[0]?.addEventListener('ended',()=>rajaStopBrokerScreenShare('ended'),{once:true});
+                await rajaCaptureAndDetectSharedScreen();
+                st.timer=setInterval(rajaCaptureAndDetectSharedScreen,5000);
+            } catch(err) {
+                console.warn('RAJA screen share:',err);
+                rajaStopBrokerScreenShare('error');
+                rajaSetVisualPairState('Screen share cancelled or blocked.','warn');
+            }
+        }
+
+        function rajaVisualPairSelectionChanged() {
+            const st=window.rajaVisualPairState;
+            if (!st?.active || !st.pair) return;
+            const selected=document.getElementById('pairSelect')?.value||'';
+            if (rajaPairKey(selected)!==rajaPairKey(st.pair)) {
+                rajaSetPairMatchBanner(`PAIR MISMATCH – SCREEN ${st.pair} ≠ BOT ${selected || 'NONE'} – SCAN BLOCKED`, true);
+            } else rajaSetPairMatchBanner(`PAIR MATCH ✓ ${selected} · SCAN READY`, false);
+        }
+
+        function rajaValidateVisualPairBeforeScan() {
+            const market=String(document.getElementById('marketType')?.value||'');
+            if (!/OTC/i.test(market)) return {ok:true};
+            const st=window.rajaVisualPairState;
+            // Only enforce when visual screen/screenshot mode has been activated.
+            if (!st?.active) return {ok:true};
+            const selected=String(document.getElementById('pairSelect')?.value||'');
+            if (!st.pair) return {ok:false,message:'PAIR NOT VERIFIED – SCAN BLOCKED'};
+            if (rajaPairKey(selected)!==rajaPairKey(st.pair)) {
+                return {ok:false,message:`PAIR MISMATCH – SCREEN ${st.pair} ≠ BOT ${selected || 'NONE'} – SCAN BLOCKED`};
+            }
+            const broker=String(document.getElementById('brokerSelect')?.value||'');
+            if (st.broker && broker!==st.broker) return {ok:false,message:`BROKER MISMATCH – SCREEN ${st.broker} ≠ BOT ${broker} – SCAN BLOCKED`};
+            return {ok:true};
+        }
+
         async function startDeepScan(autoTriggered = false) {
             rajaLatestNoTradeReason = '';
             rajaLatestNewsLock = null;
@@ -10448,6 +10713,13 @@ body:not(.raja-authenticated).raja-mobile-scanning {
             let broker = document.getElementById('brokerSelect').value;
             let market = document.getElementById('marketType').value;
             let selectedPair = document.getElementById('pairSelect').value;
+
+            const visualPairGuard = rajaValidateVisualPairBeforeScan();
+            if (!visualPairGuard.ok) {
+                rajaSetPairMatchBanner(visualPairGuard.message, true);
+                showRajaNoTradeView('⛔ ' + visualPairGuard.message, 'The shared/screenshot broker pair must match the RAJA AI selected pair before an OTC scan can start. Re-share the broker chart or use auto-detect again.');
+                return;
+            }
 
             try {
                 if (typeof window.rajaSetScanningMarketBadge === 'function') {
