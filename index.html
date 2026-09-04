@@ -16853,6 +16853,145 @@ window.RAJA_ENTRY_TIMING_VERSION='V38_PREP_ENTRY_COUNTDOWN';
 })();
 </script>
 
+
+
+<!-- RAJA V46.1 VISUAL PAIR PRIORITY + PERSISTENT SIGNAL COUNTDOWN FIX -->
+<style id="raja-v461-signal-fix-style">
+#rajaSignalCountdownBadge{margin-top:5px;padding:5px 9px;border-radius:8px;border:1px solid rgba(96,239,255,.35);background:rgba(2,15,25,.78);color:#60efff;font-size:10px;font-weight:950;letter-spacing:.5px;font-variant-numeric:tabular-nums;text-align:center;box-shadow:inset 0 0 12px rgba(96,239,255,.05)}
+#rajaSignalCountdownBadge.hot{border-color:rgba(0,255,135,.65);color:#00ff87;box-shadow:0 0 18px rgba(0,255,135,.14),inset 0 0 12px rgba(0,255,135,.06)}
+#rajaSignalCountdownBadge.put{border-color:rgba(255,51,102,.58);color:#ff5577;box-shadow:0 0 18px rgba(255,51,102,.12),inset 0 0 12px rgba(255,51,102,.05)}
+</style>
+<script id="raja-v461-pair-signal-fix">
+(function(){
+  'use strict';
+
+  // Prefer the MAIN broker pair when OCR sees more than one pair on screen.
+  // Pocket Option can show a small suggestion/recent-pair card above the active chart pair;
+  // choosing the later valid pair occurrence in OCR reading order avoids locking onto that card.
+  if (typeof window.rajaVisualCandidateCatalog === 'function' || typeof rajaVisualCandidateCatalog === 'function') {
+    window.rajaFindVisualPair = rajaFindVisualPair = function(text) {
+      const raw = String(text || '').toUpperCase();
+      const currentBroker = document.getElementById('brokerSelect')?.value || '';
+      const currentMarket = document.getElementById('marketType')?.value || '';
+      const brokerHint = /POCKET\s*OPTION|POCKETOPTION/.test(raw) ? 'PocketOption' : (/QUOTEX/.test(raw) ? 'Quotex' : '');
+      const globalOtcHint = /\bOTC\b/.test(raw);
+      const catalog = rajaVisualCandidateCatalog();
+      const occurrences = [];
+      const rx = /\b([A-Z]{3})\s*[\/\-]?\s*([A-Z]{3})\s*(OTC)?\b/g;
+      let m;
+      while ((m = rx.exec(raw))) {
+        const key = m[1] + m[2];
+        const localOtc = !!m[3] || /OTC/.test(raw.slice(m.index, Math.min(raw.length, m.index + 22)));
+        const rows = catalog.filter(r => r.key === key && (!brokerHint || r.broker === brokerHint));
+        const row = rows.find(r => r.otc === localOtc)
+          || rows.find(r => r.market === currentMarket)
+          || rows.find(r => r.otc === globalOtcHint)
+          || rows[0];
+        if (!row) continue;
+        let score = 100;
+        if (brokerHint && row.broker === brokerHint) score += 80;
+        if (!brokerHint && row.broker === currentBroker) score += 25;
+        if (row.otc === localOtc) score += 65;
+        if (row.market === currentMarket) score += 20;
+        // Main active pair is normally below small recent/suggestion cards in broker UI.
+        score += Math.min(70, Math.round((m.index / Math.max(1, raw.length)) * 70));
+        occurrences.push({...row, broker:brokerHint || row.broker, score, ocrIndex:m.index});
+      }
+      if (occurrences.length) {
+        occurrences.sort((a,b) => (b.score-a.score) || (b.ocrIndex-a.ocrIndex));
+        return occurrences[0];
+      }
+
+      // Fallback for OCR that removes separators/spaces.
+      const compact = raw.replace(/[^A-Z0-9]+/g,'');
+      let best=null, score=-1;
+      catalog.forEach(row => {
+        if (!row.key || row.key.length < 5) return;
+        const pos = compact.lastIndexOf(row.key);
+        if (pos < 0) return;
+        let sc = row.key.length * 10 + Math.min(55, Math.round((pos / Math.max(1, compact.length)) * 55));
+        if (brokerHint && row.broker === brokerHint) sc += 80;
+        if (!brokerHint && row.broker === currentBroker) sc += 22;
+        if (globalOtcHint === row.otc) sc += 45;
+        if (row.market === currentMarket) sc += 12;
+        if (sc > score) { score=sc; best={...row, broker:brokerHint || row.broker, score:sc}; }
+      });
+      return best;
+    };
+  }
+
+  function signalDirection(){
+    const raw=String(window.activePremiumSignal?.dir || window.activePremiumSignal?.signal || activePremiumSignal?.dir || activePremiumSignal?.signal || '').toUpperCase();
+    if(raw.includes('CALL') || raw.includes('UP')) return {dir:'UP', side:'CALL', put:false};
+    if(raw.includes('PUT') || raw.includes('DOWN')) return {dir:'DOWN', side:'PUT', put:true};
+    return {dir:'SIGNAL', side:'', put:false};
+  }
+
+  function ensureCountdownBadge(){
+    let badge=document.getElementById('rajaSignalCountdownBadge');
+    if(badge) return badge;
+    const action=document.getElementById('v37SignalAction');
+    if(!action || !action.parentElement) return null;
+    badge=document.createElement('div');
+    badge.id='rajaSignalCountdownBadge';
+    badge.textContent='WAITING FOR ENTRY TIME';
+    action.insertAdjacentElement('afterend', badge);
+    return badge;
+  }
+
+  function fmtSec(sec){
+    sec=Math.max(0,Math.ceil(Number(sec)||0));
+    const m=Math.floor(sec/60), s=sec%60;
+    return (m?String(m).padStart(2,'0')+':':'')+String(s).padStart(2,'0');
+  }
+
+  // Keep UP/DOWN visible through the target candle and show an explicit last-10-second countdown.
+  function syncPersistentSignal(){
+    try{
+      const sig=(typeof activePremiumSignal!=='undefined') ? activePremiumSignal : window.activePremiumSignal;
+      const entry=(typeof activeSignalEntryEpochMs!=='undefined') ? Number(activeSignalEntryEpochMs||0) : Number(window.activeSignalEntryEpochMs||0);
+      if(!sig || !entry) return;
+      const d=signalDirection();
+      const expiryMs=Math.max(1000, (typeof getExpirySeconds==='function' ? getExpirySeconds(selectedExpiry) : 60)*1000);
+      const targetEnd=entry+expiryMs;
+      const now=Date.now();
+      const action=document.getElementById('v37SignalAction');
+      const dirEl=document.getElementById('resModalDirection');
+      const badge=ensureCountdownBadge();
+      if(dirEl) dirEl.textContent=d.dir;
+      if(action) action.textContent=d.dir==='UP' ? 'UP / CALL SIGNAL' : (d.dir==='DOWN' ? 'DOWN / PUT SIGNAL' : 'SIGNAL');
+      if(badge){
+        badge.classList.toggle('put', d.put);
+        badge.classList.remove('hot');
+        const remaining=Math.ceil((entry-now)/1000);
+        if(remaining>10){
+          badge.textContent=`${d.dir} / ${d.side} · ENTRY OPENS IN ${fmtSec(remaining)}`;
+        } else if(remaining>=1){
+          badge.classList.add('hot');
+          badge.textContent=`${d.dir} / ${d.side} · ENTRY COUNTDOWN ${remaining}`;
+        } else if(now<targetEnd){
+          badge.classList.add('hot');
+          badge.textContent=`${d.dir} / ${d.side} · ENTER NOW · SIGNAL ACTIVE`;
+        } else {
+          badge.textContent=`${d.dir} / ${d.side} · SIGNAL EXPIRED · FRESH SCAN REQUIRED`;
+        }
+      }
+
+      // Do not let a background UI refresh replace a still-active confirmed signal.
+      // Manual scans still take precedence while scanSessionState.running is true.
+      if(now < targetEnd && typeof currentSection!=='undefined' && currentSection==='dashboard' &&
+         typeof scanSessionState!=='undefined' && !scanSessionState.running){
+        if(typeof primaryViewState!=='undefined') primaryViewState='signal';
+        const sv=document.getElementById('signalView');
+        if(sv && getComputedStyle(sv).display==='none' && typeof renderPrimaryView==='function') renderPrimaryView();
+      }
+    }catch(_){ }
+  }
+
+  setInterval(syncPersistentSignal,250);
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(syncPersistentSignal,400),{once:true});
+})();
+</script>
 </body>
 <!-- RAJA UI BROKER-PAIR-LAUNCH V1 · AUDNZD SKIP · HISTORY WINLOSS · 2026-08-28 -->
 <!-- RAJA STRONG SIGNAL FEED V1 · TOP4 POWER · AUTO BUTTON RESTORED · 2026-08-28 -->
